@@ -4,6 +4,7 @@ from pyrogram.client import Client
 from kmua import database
 from kmua.common import ops
 from kmua.config import app_config
+from kmua.i18n import t
 
 
 @Client.on_message(pyrogram.filters.command("status"), group=0)
@@ -18,10 +19,7 @@ async def status_command(client: Client, message: pyrogram.types.Message):
         return
     stats = await ops.collect_stats()
     await message.reply_text(
-        f"users: {stats['users']}\n"
-        f"chats: {stats['chats']}\n"
-        f"quotes: {stats['quotes']}\n"
-        f"associations: {stats['associations']}\n"
-        f"bottles: {stats['bottles']}\n"
-        f"affection stats: {stats['affection']}",
+        t("bot.hardcoded.status.summary", locale=db_user.user_config.lang).format(
+            **stats
+        ),
     )

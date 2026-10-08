@@ -27,7 +27,7 @@ import { t, tError } from "@/i18n";
 import { useMeStore } from "@/stores/me";
 import { haptics } from "@/telegram";
 import { formatNumber, formatPercent } from "@/utils/format";
-import { localeName } from "@/utils/locale";
+import { languageOptions } from "@/utils/locale";
 
 const router = useRouter();
 const meStore = useMeStore();
@@ -41,18 +41,13 @@ const profile = useAsyncData(async () => {
   return me;
 });
 
-const form = useDirtyState({ lang: "zh-CN", waifu_mention: false });
+const form = useDirtyState({ lang: "vi", waifu_mention: false });
 
 // The bot may ship locales the panel has no catalogue for; offer what the bot
 // accepts and let the i18n layer fall back for the ones it does not know.
 const locales = useAsyncData(async (signal) => (await systemInfo(signal)).available_locales);
 
-const localeOptions = computed(() =>
-  (locales.data.value ?? [form.draft.value.lang]).map((value) => ({
-    value,
-    text: localeName(value),
-  })),
-);
+const localeOptions = computed(() => languageOptions(locales.data.value, form.draft.value.lang));
 
 const accountItems = computed<DefinitionItem[]>(() => {
   const me = profile.data.value;

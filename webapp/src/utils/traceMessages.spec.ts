@@ -8,7 +8,8 @@
  * instead of silently vanishing, and an unknown part is still visible.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { setLocale } from "@/i18n";
 
 import { traceBlocks } from "./traceMessages";
 
@@ -17,6 +18,8 @@ function partsOf(...parts: object[]): unknown[] {
 }
 
 describe("traceBlocks", () => {
+  beforeEach(() => setLocale("en"));
+  afterEach(() => setLocale("vi"));
   it("separates user prompts from model text", () => {
     const blocks = traceBlocks([
       { kind: "request", parts: [{ part_kind: "user-prompt", content: "hello" }] },
@@ -60,7 +63,18 @@ describe("traceBlocks", () => {
       }),
     );
 
-    expect(blocks[0]?.text).toBe("look at this\n[media: image/png, 2048 bytes]");
+    expect(blocks[0]?.text).toBe("look at this\n[media: image/png, 2,048 bytes]");
+  });
+
+  it("localizes media metadata without changing recorded content", () => {
+    setLocale("vi-VN");
+    const blocks = traceBlocks(
+      partsOf({
+        part_kind: "user-prompt",
+        content: ["中文 content", { kind: "binary", media_type: "image/png", size: 2048 }],
+      }),
+    );
+    expect(blocks[0]?.text).toBe("中文 content\n[Đa phương tiện: image/png, 2.048 byte]");
   });
 
   it("names the role of a system prompt", () => {

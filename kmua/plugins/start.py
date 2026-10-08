@@ -22,7 +22,7 @@ _BOTTLE_MSG_PREFIX = "bottle_msg:"
 
 
 class PrivateStartBotMarkup:
-    def __init__(self, lang: str = "zh-CN") -> None:
+    def __init__(self, lang: str = "") -> None:
         self.lang = lang
 
     def build(self) -> InlineKeyboardMarkup:

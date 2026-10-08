@@ -121,7 +121,7 @@ def main() -> None:
     parser.add_argument("--first-name", default="Dev")
     parser.add_argument("--last-name", default=None)
     parser.add_argument("--username", default="dev_user")
-    parser.add_argument("--lang", default="zh-CN")
+    parser.add_argument("--lang", default="vi")
     parser.add_argument(
         "--chat-id",
         type=int,

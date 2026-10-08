@@ -42,7 +42,7 @@ def waifu_markup(
 
 
 async def waifu_text(
-    waifu: UserData, is_got: bool, user: UserData | None = None, lang: str = "zh-CN"
+    waifu: UserData, is_got: bool, user: UserData | None = None, lang: str = ""
 ) -> str:
     if waifu.waifu_mention or not waifu.is_real_user:
         waifu_text = await common.mention_html(waifu)
@@ -81,7 +81,7 @@ async def get_waifu_for_user(
 
 
 def remove_markup(
-    waifu_id: int, user_id: int, lang: str = "zh-CN"
+    waifu_id: int, user_id: int, lang: str = ""
 ) -> pyrogram.types.InlineKeyboardMarkup:
     return pyrogram.types.InlineKeyboardMarkup(
         [
@@ -100,7 +100,7 @@ def remove_markup(
 
 
 def marry_markup(
-    waifu_id: int, user_id: int, lang: str = "zh-CN"
+    waifu_id: int, user_id: int, lang: str = ""
 ) -> pyrogram.types.InlineKeyboardMarkup:
     return pyrogram.types.InlineKeyboardMarkup(
         [

@@ -15,6 +15,7 @@ from agentfs_sdk import AgentFS, AgentFSOptions
 
 from kmua.config import app_config
 from kmua.logger import logger
+from kmua.plugins.agent.localization import tr
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
 
@@ -242,7 +243,7 @@ async def list_files(
     """List files and directories in the virtual filesystem."""
     agent = await get_code_agentfs()
     if agent is None:
-        raise RuntimeError("Code repository not initialized")
+        raise RuntimeError(tr("tool_code_repository_not_initialized"))
 
     try:
         entries = await agent.fs.readdir(path)
@@ -291,7 +292,7 @@ async def read_file(path: str, start_line: int = 1, max_lines: int = 200) -> str
     """
     agent = await get_code_agentfs()
     if agent is None:
-        raise RuntimeError("Code repository not initialized")
+        raise RuntimeError(tr("tool_code_repository_not_initialized"))
 
     try:
         content: str = await agent.fs.read_file(path)  # type: ignore
@@ -306,15 +307,21 @@ async def read_file(path: str, start_line: int = 1, max_lines: int = 200) -> str
 
         result_lines = []
         if start_idx > 0:
-            result_lines.append(f"... ({start_idx} lines above)")
+            result_lines.append(tr("tool_p0_lines_above", p0=start_idx))
 
         for i, line in enumerate(selected_lines, start=start_line):
             result_lines.append(f"{i:4d}: {line}")
 
         if end_idx < len(lines):
-            result_lines.append(f"... ({len(lines) - end_idx} lines below)")
+            result_lines.append(tr("tool_p0_lines_below", p0=len(lines) - end_idx))
 
-        header = f"File: {path} (lines {start_line}-{end_idx} of {len(lines)})"
+        header = tr(
+            "tool_file_p0_lines_p1_p2_of_p3",
+            p0=path,
+            p1=start_line,
+            p2=end_idx,
+            p3=len(lines),
+        )
         return f"{header}\n{'=' * len(header)}\n" + "\n".join(result_lines)
 
     except Exception as e:
@@ -337,7 +344,7 @@ async def search_in_files(
 
     agent = await get_code_agentfs()
     if agent is None:
-        raise RuntimeError("Code repository not initialized")
+        raise RuntimeError(tr("tool_code_repository_not_initialized"))
 
     pattern = None
     query_lower = None
@@ -346,7 +353,7 @@ async def search_in_files(
             flags = 0 if case_sensitive else re.IGNORECASE
             pattern = re.compile(query, flags)
         except re.error as e:
-            raise ValueError(f"Invalid regex pattern: {e}")
+            raise ValueError(tr("invalid_regex", p0=e))
     elif not case_sensitive:
         query_lower = query.lower()
 
@@ -431,7 +438,7 @@ async def get_repository_info() -> dict[str, Any]:
     """Return metadata about the loaded code repository, with file and directory counts."""
     agent = await get_code_agentfs()
     if agent is None:
-        return {"error": "Code repository not initialized"}
+        return {"error": tr("tool_code_repository_not_initialized")}
 
     meta = await agent.kv.get("codebase:meta") or {}
 
@@ -463,7 +470,7 @@ async def get_repository_info() -> dict[str, Any]:
 
     return {
         "project_name": "kmua-bot",
-        "description": "A Telegram bot with AI agent capabilities",
+        "description": tr("tool_a_telegram_bot_with_ai_agent_capabilities"),
         "virtual_files": file_count,
         "virtual_directories": dir_count,
         **meta,

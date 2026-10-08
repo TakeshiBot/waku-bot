@@ -9,6 +9,8 @@
  *
  * Values are tabular so figures line up and do not jitter on refresh.
  */
+import { formatNumber } from "@/utils/format";
+
 export interface DefinitionItem {
   label: string;
   value: string | number;
@@ -33,7 +35,7 @@ defineProps<{ items: DefinitionItem[] }>();
         class="m-0 shrink-0 text-body tabular-nums"
         :class="[item.mono ? 'font-mono text-sub' : '', item.muted ? 'text-hint' : '']"
       >
-        {{ item.value }}
+        {{ typeof item.value === "number" && !item.mono ? formatNumber(item.value) : item.value }}
       </dd>
     </div>
   </dl>

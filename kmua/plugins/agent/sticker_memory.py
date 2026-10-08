@@ -11,6 +11,7 @@ from pyrogram.client import Client as PyrogramClient
 from kmua import common, database
 from kmua.config import app_config
 from kmua.logger import logger
+from kmua.plugins.agent.localization import configured_prompt, localized_message, tr
 
 from . import provider, quota, sticker_vec, trace
 from .whitelist import is_chat_allowed
@@ -108,7 +109,7 @@ async def _get_description(
         try:
             timeout = app_config.agent_small_model_timeout
             coro = _description_agent.run(
-                [content_part, app_config.agent_sticker_description_prompt]
+                [content_part, configured_prompt("agent_sticker_description_prompt")]
             )
 
             if timeout > 0:
@@ -226,6 +227,7 @@ async def _is_admin_actor(
 
 
 @PyrogramClient.on_message(filters.command("addsticker") & filters.group, group=11)
+@localized_message
 async def add_sticker_command(
     client: PyrogramClient, message: pyrogram.types.Message
 ) -> None:
@@ -247,7 +249,7 @@ async def add_sticker_command(
         return
     reply = message.reply_to_message
     if reply is None or reply.sticker is None:
-        await message.reply_text("请回复一条贴纸消息")
+        await message.reply_text(tr("sticker_reply_required"))
         return
     sticker = reply.sticker
     chat_id = chat.id
@@ -262,10 +264,11 @@ async def add_sticker_command(
     logger.info(
         f"Sticker {sticker.file_unique_id} added to chat {chat_id} by {user.id}"
     )
-    await message.reply_text("这个贴纸我记下啦, 之后可能会用它")
+    await message.reply_text(tr("sticker_added"))
 
 
 @PyrogramClient.on_message(filters.command("delsticker") & filters.group, group=11)
+@localized_message
 async def del_sticker_command(
     client: PyrogramClient, message: pyrogram.types.Message
 ) -> None:
@@ -286,7 +289,7 @@ async def del_sticker_command(
         return
     reply = message.reply_to_message
     if reply is None or reply.sticker is None:
-        await message.reply_text("请回复一条贴纸消息")
+        await message.reply_text(tr("sticker_reply_required"))
         return
     deleted = await sticker_vec.delete(reply.sticker.file_unique_id, chat.id)
     if deleted:
@@ -294,12 +297,13 @@ async def del_sticker_command(
             f"Sticker {reply.sticker.file_unique_id} removed from "
             f"chat {chat.id} by {user.id}"
         )
-        await message.reply_text("以后不会发这个贴纸啦 (只要别人也不发...")
+        await message.reply_text(tr("sticker_deleted"))
     else:
-        await message.reply_text("这个贴纸本就不在库中呢")
+        await message.reply_text(tr("sticker_not_stored"))
 
 
 @PyrogramClient.on_message(filters.command("clearsticker") & filters.group, group=11)
+@localized_message
 async def clear_sticker_command(
     client: PyrogramClient, message: pyrogram.types.Message
 ) -> None:
@@ -319,12 +323,13 @@ async def clear_sticker_command(
         logger.info(
             f"Sticker memory cleared for chat {chat.id} by {user.id}: {removed} stickers"
         )
-        await message.reply_text(f"已清空本群的贴纸记忆 ({removed} 张贴纸)")
+        await message.reply_text(tr("stickers_cleared", p0=removed))
     else:
-        await message.reply_text("本群贴纸库本来就是空的呢")
+        await message.reply_text(tr("stickers_already_empty"))
 
 
 @PyrogramClient.on_message(_sticker_filter, group=11)
+@localized_message
 async def on_sticker(client: PyrogramClient, message: pyrogram.types.Message) -> None:
     if not app_config.agent:
         return

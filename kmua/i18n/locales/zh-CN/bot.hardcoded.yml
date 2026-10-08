@@ -1,0 +1,285 @@
+{
+  "bot": {
+    "hardcoded": {
+      "gift": {
+        "rarity": {
+          "common": "凡芽",
+          "enchanted": "灵植",
+          "rare": "仪花",
+          "epic": "秘种",
+          "legendary": "禁华"
+        },
+        "items": {
+          "severed_grass_silence": {
+            "name": "默断之草",
+            "description": "花色褪尽, 草根断离; 记忆并非被抹去, 只是再也无人能够指认它曾经存在",
+            "comment": "清空记忆"
+          },
+          "vow_lotus_seal": {
+            "name": "誓印之莲",
+            "description": "以莲为誓，心如止水；愿君安然，无惧风浪",
+            "comment": "在一段时间内显著避免好感度变动"
+          },
+          "amaranth_heart_lamp": {
+            "name": "苋色心灯",
+            "description": "灯火未央，心之所向；苋色如霞，暖意绵长",
+            "comment": "短暂地大幅提升好感度数值"
+          },
+          "frost_flower_whisper": {
+            "name": "低语霜花",
+            "description": "花开静谧, 心亦无声; 洞悉万籁, 以观人心",
+            "comment": "查看当前对你的记忆"
+          },
+          "dawn_bell_herb": {
+            "name": "晓钟之草",
+            "description": "晓钟一响, 夜障皆消; 草叶拂霜, 晨光不灭",
+            "comment": "解除被拉黑状态, 并在一段时间内免疫拉黑"
+          },
+          "otherworldly_flower": {
+            "name": "异界之花",
+            "description": "本不应存在于此的花朵",
+            "comment": "异常礼物, 不应出现"
+          }
+        },
+        "cannot_buy": "你现在似乎不能买任何礼物呢",
+        "choose_buy": "要买点什么呢?",
+        "leave": "离开",
+        "not_your_purchase": "这不是你的购买请求哦",
+        "user_missing": "用户数据未找到",
+        "insufficient": "你的余额似乎不足以购买此礼物呢",
+        "buy_again": "再买一个",
+        "cancelled_empty": "已取消购买\n你现在似乎不能买任何礼物呢",
+        "cancelled_choose": "已取消购买, 要买点其他的什么呢?",
+        "confirm": "确认",
+        "cancel": "算了",
+        "unknown_action": "未知操作",
+        "inventory_empty": "你还没有买下任何礼物哦",
+        "choose_send": "要送什么给咱呢? 点击序号按钮即可赠送",
+        "previous": "上一页",
+        "next": "下一页",
+        "no_more": "没有更多了哦",
+        "no_more_gifts": "没有更多礼物了哦",
+        "gift_missing": "礼物未找到",
+        "not_your_gift": "这不是你的礼物哦",
+        "already_sent": "这件礼物已经送过了哦",
+        "unknown_gift": "收到了一件奇怪的礼物呢",
+        "send_failed": "送礼失败",
+        "sent_all": "礼物送完了哦",
+        "choose_more": "还要送些什么呢? 礼物效果不一定能叠加哦",
+        "bought": "成功购买了 {rarity}的{name} *1",
+        "send_success": "成功送出 {rarity}的{name} *1",
+        "repeat": "要再次购买 {name} 吗?\n这将花费你 {percent}% 的余额哦",
+        "confirm_purchase": "<b>{name}</b>\n<i>{description}</i>\n\n效果注释: {comment}\n\n你确定要购买 {name}*1 吗? 这将花费你 {percent}% 的余额哦",
+        "inventory_row": "\n{index}. {rarity}的{name}",
+        "memory": "当前对你的记忆:\n{memory}\n\n好感度排名: {rank:.2%}",
+        "no_memory": "无"
+      },
+      "unknown": "未知",
+      "bottle": {
+        "mysterious": "神秘人",
+        "ban_usage": "用法: /banseapest <user_id> [天数]",
+        "ban_numbers": "用户ID和天数必须是数字",
+        "banned": "你已被禁止使用漂流瓶功能"
+      },
+      "link": {
+        "video": "视频",
+        "coolapk": "酷安",
+        "tieba": "贴吧"
+      },
+      "slash": {
+        "with_target": "{actor} {action} {target} {suffix} !",
+        "with_self": "{actor} {action}自己{suffix} !",
+        "passive_target": "{actor} 被 {target} {action}了 !",
+        "passive_self": "{actor} 被自己{action}了 !",
+        "active_target": "{actor} {action}了 {target} !",
+        "active_self": "{actor} {action}了自己 !"
+      },
+      "meme": {
+        "title": "魔裁 MEME",
+        "description": "魔法少女的魔女审判相关 MEME 生成",
+        "anan": "安安说",
+        "trial": "辩论",
+        "anan_prompt": "让吾辈「说话」",
+        "anan_usage": "用法: ms anan [表情] [文本]",
+        "ema_title": "辩论-艾玛",
+        "hiro_title": "辩论-希罗",
+        "ema_description": "开始穷举",
+        "hiro_description": "神秘伪证女",
+        "ema_caption": "选择「在意的地方」",
+        "hiro_caption": "开始你的伪证",
+        "generated_later": "将在发送后生成",
+        "anan_writing": "安安正在写字...",
+        "ema_busy": "{name} 正在穷举...",
+        "hiro_busy": "{name} 正在思考...",
+        "expired": "查询过期了呢, 请重新生成",
+        "failed": "生成图片失败了呢, 请稍后再试",
+        "no_options": "没有有效的选项呢, 请重新生成",
+        "default_text": "吾辈现在不想说话",
+        "anan_result": "安安说 [{face}]",
+        "help": "魔裁 MEME 生成器, 用法:\n\n1. 安安说: ms anan [表情] [文本]\n示例: ms anan speechless 吾辈现在不想说话\n2. 辩论: ms trial [角色] ([类型] 文本...)\n示例: ms trial Hiro [perjury] 我当时睡得可香了",
+        "face": {
+          "yandere": "病娇",
+          "angry": "生气",
+          "shy": "害羞",
+          "speechless": "无语",
+          "happy": "开心"
+        },
+        "statement": {
+          "agreement": "赞同",
+          "doubt": "疑问",
+          "perjury": "伪证",
+          "refutation": "反驳",
+          "magic": "魔法"
+        },
+        "character": {
+          "ema": "艾玛",
+          "hiro": "希罗"
+        }
+      },
+      "lang": {
+        "choose_user": "选择你想使用的语言",
+        "choose_chat": "选择此群使用的语言"
+      },
+      "reload": {
+        "denied": "无权限",
+        "changed": "已更改的字段 ({count}): {fields}",
+        "unchanged": "没有字段更改"
+      },
+      "status": {
+        "summary": "用户: {users}\n聊天: {chats}\n语录: {quotes}\n关联: {associations}\n漂流瓶: {bottles}\n好感度统计: {affection}"
+      },
+      "ping": {
+        "pong": "Pong!",
+        "latency": "Pong! | {ms:.3f}毫秒"
+      },
+      "id": {
+        "chat_user": "此聊天 ID: `{chat_id}`\n你的用户 ID: `{user_id}`",
+        "reply": "此聊天 ID: `{chat_id}`\n被回复用户 ID: `{target_id}`\n你的用户 ID: `{user_id}`"
+      },
+      "api": {
+        "INIT_DATA_MISSING": "缺少 Telegram 验证数据",
+        "INIT_DATA_MALFORMED": "Telegram 验证数据格式错误",
+        "INIT_DATA_INVALID": "Telegram 验证数据无效",
+        "INIT_DATA_EXPIRED": "Telegram 验证数据已过期，请重新打开面板",
+        "TOKEN_MISSING": "缺少登录令牌",
+        "TOKEN_INVALID": "登录令牌无效",
+        "TOKEN_EXPIRED": "登录已过期，请重新打开面板",
+        "FORBIDDEN": "无权执行此操作",
+        "OWNER_REQUIRED": "需要机器人所有者权限",
+        "ADMIN_REQUIRED": "需要机器人管理员权限",
+        "CHAT_ADMIN_REQUIRED": "需要此群的机器人管理权限",
+        "USER_NOT_FOUND": "未找到用户",
+        "CHAT_NOT_FOUND": "未找到群聊",
+        "QUOTE_NOT_FOUND": "未找到语录",
+        "NOT_FOUND": "未找到资源",
+        "VALIDATION_FAILED": "请求数据无效，请检查输入",
+        "RATE_LIMITED": "请求过于频繁，请稍后再试",
+        "COOLDOWN": "请等待冷却时间结束后再试",
+        "CONFLICT": "数据已变更或操作冲突，请刷新后重试",
+        "FEATURE_DISABLED": "此功能已停用",
+        "NOT_MARRIED": "你尚未结婚",
+        "INSUFFICIENT_COINS": "金币不足",
+        "GIFT_NOT_FOUND": "未找到礼物",
+        "GIFT_ALREADY_SENT": "此礼物已送出",
+        "TELEGRAM_ERROR": "Telegram 操作失败，请稍后再试",
+        "INTERNAL_ERROR": "服务器内部错误，请稍后再试",
+        "invalid_field": "字段值无效"
+      },
+      "wordcloud": {
+        "no_text": "没有可用于生成词云的文本"
+      },
+      "api_reasons": {
+        "init_empty": "initData 为空",
+        "bot_token_missing": "尚未配置 Bot token",
+        "init_query": "initData 不是查询字符串",
+        "init_hash": "initData 缺少 hash",
+        "init_signature": "initData 签名不匹配",
+        "init_date": "initData 缺少 auth_date",
+        "init_expired": "initData 已过期",
+        "init_user_missing": "initData 缺少用户",
+        "init_user_object": "initData 用户数据不是对象",
+        "init_user_fields": "initData 用户缺少 id 或 first_name",
+        "init_user_json": "initData 用户不是有效 JSON",
+        "session_subject": "登录身份无效",
+        "session_expired": "登录已过期",
+        "session_invalid": "登录令牌无效",
+        "authorization_missing": "缺少 Authorization 请求头",
+        "session_user_gone": "登录用户已不存在",
+        "admin_required": "需要机器人管理员权限",
+        "owner_required": "需要机器人所有者权限",
+        "group_id": "该 ID 不是群聊 ID",
+        "chat_missing": "未找到群聊",
+        "chat_admin_required": "需要此群的机器人管理权限",
+        "chat_permissions_unverified": "无法验证群权限",
+        "rate_limit": "请求过于频繁，请稍后重试",
+        "user_missing": "未找到用户",
+        "editing_disabled": "用户编辑已停用",
+        "owner_record": "只有所有者可以修改所有者资料",
+        "user_gone": "用户已不存在",
+        "policy_missing": "此聊天未设置策略",
+        "quota_group_only": "额度字段仅适用于群聊，不适用于私聊",
+        "run_missing": "未找到 Agent 运行",
+        "run_event_missing": "未找到 Agent 运行事件",
+        "bot_panel": "机器人无法使用此面板",
+        "members_recent": "最近已同步成员",
+        "quote_missing": "未找到语录",
+        "rss_disabled": "RSS 已停用",
+        "chat_rss_disabled": "此聊天未启用 RSS",
+        "url_http": "URL 必须使用 http(s)",
+        "subscription_limit": "已达到订阅数量上限",
+        "subscription_missing": "未找到订阅",
+        "members_failed": "无法读取成员列表，机器人可能需要管理员权限",
+        "subscribed": "已订阅",
+        "gift_missing": "未找到礼物",
+        "coins_insufficient": "金币不足",
+        "avatar_recent": "最近已刷新头像",
+        "target_invalid": "目标无效",
+        "target_upstream": "无法操作提拔你的管理员",
+        "target_bot": "目标是机器人",
+        "target_not_in_chat": "用户不在此聊天中",
+        "already_set": "当前已处于该状态",
+        "gift_other": "此礼物不属于你",
+        "gift_sent": "此礼物已送出",
+        "gift_unknown": "未知礼物",
+        "not_married": "用户尚未结婚",
+        "partner_missing": "未找到婚姻伴侣",
+        "feed_unreachable": "无法访问订阅源: {error_type}"
+      },
+      "api_validation": {
+        "required": "此字段为必填项",
+        "integer": "请输入有效整数",
+        "number": "请输入有效数字",
+        "boolean": "请输入有效布尔值",
+        "string": "请输入文本",
+        "list": "请输入列表",
+        "object": "请输入对象",
+        "greater_than": "数值必须大于 {gt}",
+        "greater_than_equal": "数值不得小于 {ge}",
+        "less_than": "数值必须小于 {lt}",
+        "less_than_equal": "数值不得大于 {le}",
+        "multiple_of": "数值必须为 {multiple_of} 的倍数",
+        "string_too_short": "请至少输入 {min_length} 个字符",
+        "string_too_long": "请勿超过 {max_length} 个字符",
+        "too_short": "列表至少需要 {min_length} 项",
+        "too_long": "列表最多允许 {max_length} 项",
+        "literal_error": "请选择: {expected}",
+        "extra_forbidden": "不支持此字段",
+        "json": "请输入有效 JSON",
+        "date": "请输入有效日期或时间",
+        "url": "请输入有效 URL",
+        "url_scheme": "URL 须使用以下协议: {expected_schemes}",
+        "locale": "不支持此语言，请选择 {allowed}",
+        "select": "select 必须是 all 或 any",
+        "question_blank": "问题不能为空",
+        "options_required": "请提供至少 2 个不同且非空的选项",
+        "option_long": "选项不得超过 100 个字符",
+        "answers_required": "请提供至少 1 个非空答案",
+        "answers_options": "每个答案都必须属于选项",
+        "verify_strategy": "不支持此验证策略，请选择 {allowed}",
+        "verify_method": "不支持此验证方式，请选择 {allowed}",
+        "verify_action": "不支持此失败处理方式，请选择 {allowed}",
+        "permissions": "一个或多个权限不受支持"
+      }
+    }
+  }
+}

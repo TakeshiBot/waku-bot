@@ -1,0 +1,42 @@
+name: Vietnamese i18n checks
+
+on:
+  push:
+    paths:
+      - "kmua/**"
+      - "webapp/src/i18n/**"
+      - "scripts/check_i18n.py"
+      - "scripts/dev_init_data.py"
+      - "settings.toml"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/i18n.yml"
+  pull_request:
+    paths:
+      - "kmua/**"
+      - "webapp/src/i18n/**"
+      - "scripts/check_i18n.py"
+      - "scripts/dev_init_data.py"
+      - "settings.toml"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/i18n.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  i18n:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - run: uv sync --frozen
+      - run: uv run --no-sync python -m pytest tests -q
+      - run: uv run --no-sync python scripts/check_i18n.py

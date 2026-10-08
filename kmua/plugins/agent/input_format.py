@@ -21,6 +21,7 @@ from kmua.common.utils import is_explicit_reply
 from kmua.config import app_config
 from kmua.logger import logger
 from kmua.plugins.agent import datatype, state
+from kmua.plugins.agent.localization import tr
 
 # Media types deliverable to the model, with size caps and the multimodal-inputs key.
 _SIZE_CAPS = {
@@ -158,8 +159,8 @@ class SenderInfo:
 
 
 _STATUS_NAMES = {
-    pyrogram.enums.ChatMemberStatus.OWNER: "群主",
-    pyrogram.enums.ChatMemberStatus.ADMINISTRATOR: "管理员",
+    pyrogram.enums.ChatMemberStatus.OWNER: "owner",
+    pyrogram.enums.ChatMemberStatus.ADMINISTRATOR: "administrator",
 }
 
 
@@ -172,9 +173,11 @@ async def resolve_sender(
     sender = message.sender_chat or message.from_user
     if sender is None:
         # Service message (join/leave/pin): no sender at all.
-        return SenderInfo("系统", "系统", "系统", "系统")
+        return SenderInfo(tr("system"), tr("system"), tr("system"), tr("system"))
     name = (
-        getattr(sender, "first_name", None) or getattr(sender, "title", None) or "未知"
+        getattr(sender, "first_name", None)
+        or getattr(sender, "title", None)
+        or tr("unknown")
     )
     user_id = getattr(sender, "id", None)
     user_id_str = str(user_id) if user_id is not None else "?"
@@ -182,26 +185,28 @@ async def resolve_sender(
         # Anonymous admins and channel posts both travel with sender_chat set;
         # a sender_chat equal to the group itself is an anonymous admin.
         if message.sender_chat.id != chat_id:
-            return SenderInfo(name, user_id_str, "频道", "频道")
+            return SenderInfo(name, user_id_str, tr("channel"), tr("channel"))
         from_user = message.from_user
         if from_user is not None and from_user.id == enums.ChatID.ANONYMOUS_ADMIN:
-            return SenderInfo(name, user_id_str, "匿名管理", "管理员")
-        return SenderInfo(name, user_id_str, "匿名管理", "管理员")
+            return SenderInfo(
+                name, user_id_str, tr("anonymous_admin"), tr("administrator")
+            )
+        return SenderInfo(name, user_id_str, tr("anonymous_admin"), tr("administrator"))
     if getattr(message.from_user, "is_bot", False):
-        return SenderInfo(name, user_id_str, "Bot", "群员")
-    status = "群员"
+        return SenderInfo(name, user_id_str, "Bot", tr("member"))
+    status = tr("member")
     if user_id is not None:
         try:
             from kmua.common.tgmethod import get_chat_member
 
             member = await get_chat_member(client, chat_id, user_id)
-            status = _STATUS_NAMES.get(member.status, "群员")
+            status = tr(_STATUS_NAMES.get(member.status, "member"))
         except Exception as e:
             logger.debug(
                 f"member status lookup failed for {user_id} in {chat_id}: "
                 f"{e.__class__.__name__}"
             )
-    return SenderInfo(name, user_id_str, "真人", status)
+    return SenderInfo(name, user_id_str, tr("human"), status)
 
 
 def _quote(value: str) -> str:
@@ -376,7 +381,7 @@ def _service_text(message: pyrogram.types.Message) -> str:
             target = getattr(left, "first_name", None) or ""
     kind = str(service).rsplit(".", 1)[-1] if service is not None else "SERVICE"
     parts = [p for p in (kind, actor, target) if p]
-    return " ".join(parts) if parts else "系统消息"
+    return " ".join(parts) if parts else tr("service_message")
 
 
 def _unprocessed_reason(message: pyrogram.types.Message) -> str | None:
@@ -385,7 +390,7 @@ def _unprocessed_reason(message: pyrogram.types.Message) -> str | None:
         return None
     if is_deliverable(message):
         return None
-    return "无法查看此内容"
+    return tr("unavailable_content")
 
 
 def _env_header(
@@ -396,20 +401,20 @@ def _env_header(
     already show (user profile, memory about the user, affection prompt)
     are included only on the first prompt (ctx present)."""
     chat = message.chat
-    title = getattr(chat, "title", None) or "未知群组"
-    lines = [f"# 群聊 - {title}", f"当前时间: {_now_text()}"]
+    title = getattr(chat, "title", None) or tr("unknown_group")
+    lines = [tr("group_header", p0=title), tr("current_time", p0=_now_text())]
     if ctx is None:
         return "\n".join(lines)
     info_lines = _chat_info_lines(chat)
     if info_lines:
-        lines.append("群组信息:")
+        lines.append(tr("group_info"))
         lines.extend(f"  {line}" for line in info_lines)
     if ctx.memory_about_user is not None:
         memory_text = ctx.memory_about_user.to_text(is_group_chat=ctx.is_group_chat)
         if memory_text:
-            lines.append(f"关于用户的记忆: ({memory_text})")
+            lines.append(tr("user_memory", p0=memory_text))
     if ctx.append_prompt:
-        lines.append(f"附加提示: {ctx.append_prompt}")
+        lines.append(tr("additional_prompt", p0=ctx.append_prompt))
     return "\n".join(lines)
 
 
@@ -423,14 +428,14 @@ def _chat_info_lines(chat: pyrogram.types.Chat | None) -> list[str]:
         return []
     fields: list[tuple[str, Any]] = []
     if chat.id is not None:
-        fields.append(("群 ID", chat.id))
+        fields.append((tr("group_id"), chat.id))
     if getattr(chat, "username", None):
-        fields.append(("用户名", f"@{chat.username}"))
+        fields.append((tr("username"), f"@{chat.username}"))
     if getattr(chat, "description", None):
-        fields.append(("简介", chat.description))
+        fields.append((tr("description"), chat.description))
     member_count = getattr(chat, "members_count", None)
     if member_count:
-        fields.append(("成员数", member_count))
+        fields.append((tr("member_count"), member_count))
     return [f"{name}: {value}" for name, value in fields]
 
 
@@ -655,43 +660,43 @@ async def build_group_prompt(
     parts: list[str] = [_env_header(message, ctx)]
 
     if history:
-        parts.append("## 历史消息\n")
+        parts.append(tr("history_heading"))
         parts.append(_render_history(history, senders, budget))
 
-    parts.append("## 当前消息\n")
+    parts.append(tr("current_message_heading"))
     sender = senders.get(message.id)
     sender_label = sender.label() if sender else "?"
-    current_lines = [f"当前用户: {sender_label}"]
+    current_lines = [tr("current_user", p0=sender_label)]
     current_text = message_plain_text(message)
-    current_lines.append(f"消息内容: {_quote(current_text)}")
+    current_lines.append(tr("message_content", p0=_quote(current_text)))
     if message.id in budget.numbered:
         if message.id in budget.referenced_ids:
             current_lines.append(
-                f"消息图号: 图{budget.numbered[message.id]} (此图已在之前的对话中展示)"
+                tr("image_reference_previous", p0=budget.numbered[message.id])
             )
         else:
-            current_lines.append(f"消息图号: 图{budget.numbered[message.id]}")
-    current_lines.append(f"消息 ID: {message.id}")
+            current_lines.append(tr("image_reference", p0=budget.numbered[message.id]))
+    current_lines.append(tr("message_id", p0=message.id))
     depth = _reply_chain_depth(message)
     if depth > 1:
-        current_lines.append(
-            f"reply_chain_depth={depth} (可用 chat://history?reply_chain_of={message.id} 获取该消息的完整回复链)"
-        )
+        current_lines.append(tr("reply_chain_hint", p0=depth, p1=message.id))
     if reply_msg is not None:
         reply_sender = senders.get(reply_msg.id)
         reply_label = reply_sender.label() if reply_sender else "?"
         reply_text = message_plain_text(reply_msg)
-        current_lines.append("当前用户所回复的消息:")
-        current_lines.append(f"    发送者: {reply_label}")
-        current_lines.append(f"    消息内容: {_quote(reply_text)}")
+        current_lines.append(tr("reply_heading"))
+        current_lines.append(tr("reply_sender", p0=reply_label))
+        current_lines.append(tr("reply_content", p0=_quote(reply_text)))
         if reply_msg.id in budget.numbered:
             if reply_msg.id in budget.referenced_ids:
                 current_lines.append(
-                    f"    消息图号: 图{budget.numbered[reply_msg.id]} (此图已在之前的对话中展示)"
+                    tr("reply_image_previous", p0=budget.numbered[reply_msg.id])
                 )
             else:
-                current_lines.append(f"    消息图号: 图{budget.numbered[reply_msg.id]}")
-        current_lines.append(f"    消息 ID: {reply_msg.id}")
+                current_lines.append(
+                    tr("reply_image", p0=budget.numbered[reply_msg.id])
+                )
+        current_lines.append(tr("reply_id", p0=reply_msg.id))
     parts.append("\n".join(current_lines))
 
     markdown = "\n\n".join(parts)

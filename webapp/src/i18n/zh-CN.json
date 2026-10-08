@@ -35,6 +35,22 @@
     "admin": "开发者后台",
     "adminHint": "统计, 运行时配置, 群组与用户"
   },
+  "dev": {
+    "nativeButtons": "dev · Telegram 原生按钮模拟",
+    "noChanges": "无待保存更改"
+  },
+  "parseSites": {
+    "wechat": "微信公众号",
+    "coolapk": "酷安",
+    "tieba": "贴吧",
+    "pixiv": "Pixiv",
+    "bilibili": "Bilibili",
+    "danbooru": "Danbooru",
+    "kemono": "Kemono",
+    "yandere": "Yande.re",
+    "nhentai": "Nhentai",
+    "twitter": "Twitter/X"
+  },
   "me": {
     "title": "我的资料",
     "profile": "账号",
@@ -199,6 +215,7 @@
     "can_pin_messages": "置顶消息"
   },
   "admin": {
+    "secrets": "密钥",
     "title": "开发者后台",
     "stats": "统计",
     "users": "用户",
@@ -395,6 +412,9 @@
       "status": "状态",
       "since": "起始时间",
       "until": "结束时间",
+      "sincePlaceholder": "2026-09-01 00:00",
+      "untilPlaceholder": "2026-09-30",
+      "dateFormatHint": "按你的时区输入 YYYY-MM-DD 或 YYYY-MM-DD HH:MM",
       "search": "搜索",
       "searchPlaceholder": "输出或错误信息",
       "reset": "重置",
@@ -459,6 +479,8 @@
       "transcribe": "转写模型"
     },
     "detail": {
+      "charCount": "{count} 字符",
+      "media": "[媒体: {type}, {size} 字节]",
       "title": "运行 {id}",
       "summary": "运行概要",
       "events": "时间线",
@@ -483,8 +505,8 @@
       "streaming": "流式",
       "cacheTokens": "缓存读 / 写 token",
       "outputChars": "输出去截断字符数",
-      "increment": "新增 {stored} 条 (该请求共 {total} 条)",
-      "instructionsNotStored": "",
+      "increment": "本行新增 {stored} 条消息 (共 {total} 条), 前 {prefix} 条与上次请求相同",
+      "instructionsNotStored": "本行未存储指令: 与上次请求相同",
       "noMessages": "这一步没有记录消息"
     },
     "session": "会话"

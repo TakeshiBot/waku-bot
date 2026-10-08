@@ -20,6 +20,7 @@ from kmua.database.models import ChatData, UserData
 from kmua.logger import logger
 from kmua.webapp.auth import decode_token
 from kmua.webapp.errors import ErrorCode, forbidden, not_found, unauthorized
+from kmua.webapp.i18n import api_text
 
 # auto_error=False so a missing header produces our own error shape instead of
 # FastAPI's default {"detail": ...}.
@@ -73,17 +74,19 @@ def resolve_roles(user: UserData) -> list[str]:
 
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+    request: Request,
 ) -> SessionUser:
     """Authenticate the bearer token and load the caller's current record."""
     if credentials is None or not credentials.credentials:
-        raise unauthorized(ErrorCode.TOKEN_MISSING, "Authorization header is missing")
+        raise unauthorized(ErrorCode.TOKEN_MISSING, api_text("authorization_missing"))
 
     user_id = decode_token(credentials.credentials)
     user_data = await database.get_user_by_id(user_id)
     if user_data is None:
         # The token is well-formed but the account is gone.
-        raise unauthorized(ErrorCode.USER_NOT_FOUND, "Session user no longer exists")
+        raise unauthorized(ErrorCode.USER_NOT_FOUND, api_text("session_user_gone"))
 
+    request.state.locale = user_data.user_config.lang
     return SessionUser(id=user_id, data=user_data, roles=resolve_roles(user_data))
 
 
@@ -93,14 +96,14 @@ CurrentUser = Annotated[SessionUser, Depends(get_current_user)]
 async def require_bot_admin(user: CurrentUser) -> SessionUser:
     """Allow owners and global admins only."""
     if not user.is_admin:
-        raise forbidden(ErrorCode.ADMIN_REQUIRED, "Bot admin rights are required")
+        raise forbidden(ErrorCode.ADMIN_REQUIRED, api_text("admin_required"))
     return user
 
 
 async def require_owner(user: CurrentUser) -> SessionUser:
     """Allow owners only."""
     if not user.is_owner:
-        raise forbidden(ErrorCode.OWNER_REQUIRED, "Bot owner rights are required")
+        raise forbidden(ErrorCode.OWNER_REQUIRED, api_text("owner_required"))
     return user
 
 
@@ -130,11 +133,11 @@ async def require_chat_admin(
     chat id or a user id from being probed through this path.
     """
     if chat_id >= 0:
-        raise not_found(ErrorCode.CHAT_NOT_FOUND, "Not a group chat id")
+        raise not_found(ErrorCode.CHAT_NOT_FOUND, api_text("group_id"))
 
     chat = await database.get_chat_by_id(chat_id)
     if chat is None:
-        raise not_found(ErrorCode.CHAT_NOT_FOUND, "Chat not found")
+        raise not_found(ErrorCode.CHAT_NOT_FOUND, api_text("chat_missing"))
 
     # Owners and global admins manage every chat; skip the Telegram round trip.
     if user.is_admin:
@@ -150,13 +153,11 @@ async def require_chat_admin(
         # A Telegram lookup failure must not read as "authorized".
         logger.warning(f"webapp: chat admin check failed for {user.id}@{chat_id}: {e}")
         raise forbidden(
-            ErrorCode.CHAT_ADMIN_REQUIRED, "Could not verify chat permissions"
+            ErrorCode.CHAT_ADMIN_REQUIRED, api_text("chat_permissions_unverified")
         ) from e
 
     if not allowed:
-        raise forbidden(
-            ErrorCode.CHAT_ADMIN_REQUIRED, "Bot admin rights in this chat are required"
-        )
+        raise forbidden(ErrorCode.CHAT_ADMIN_REQUIRED, api_text("chat_admin_required"))
     return ChatContext(chat=chat, user=user)
 
 

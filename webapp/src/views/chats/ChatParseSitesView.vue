@@ -56,7 +56,7 @@ const EMPTY_CONFIG: ChatConfigInput = {
   verify_max_attempts: 3,
   verify_timeout_seconds: 120,
   verify_fail_action: "kick",
-  lang: "zh-CN",
+  lang: "vi",
 };
 
 const form = useDirtyState<ChatConfigInput & Record<string, unknown>>({ ...EMPTY_CONFIG });
@@ -74,16 +74,16 @@ const chat = useAsyncData(async (signal) => {
 
 /** Per-site link parsers; keys must match the backend parse_sites_enabled keys. */
 const PARSE_SITES = [
-  { key: "wechat", label: "微信公众号" },
-  { key: "coolapk", label: "酷安" },
-  { key: "tieba", label: "贴吧" },
-  { key: "pixiv", label: "Pixiv" },
-  { key: "bilibili", label: "Bilibili" },
-  { key: "danbooru", label: "Danbooru" },
-  { key: "kemono", label: "Kemono" },
-  { key: "yandere", label: "Yande.re" },
-  { key: "nhentai", label: "Nhentai" },
-  { key: "twitter", label: "Twitter/X" },
+  "wechat",
+  "coolapk",
+  "tieba",
+  "pixiv",
+  "bilibili",
+  "danbooru",
+  "kemono",
+  "yandere",
+  "nhentai",
+  "twitter",
 ] as const;
 
 function siteEnabled(key: string): boolean {
@@ -134,12 +134,12 @@ useMainButton({
     @retry="chat.reload"
   >
     <SettingsSection :hint="t('chatConfig.parseSitesHint')">
-      <SettingsRow v-for="site in PARSE_SITES" :key="site.key" :label="site.label">
+      <SettingsRow v-for="site in PARSE_SITES" :key="site" :label="t(`parseSites.${site}`)">
         <template #control>
           <ToggleSwitch
-            :model-value="siteEnabled(site.key)"
-            :aria-label="site.label"
-            @update:model-value="(v: boolean) => setSiteEnabled(site.key, v)"
+            :model-value="siteEnabled(site)"
+            :aria-label="t(`parseSites.${site}`)"
+            @update:model-value="(v: boolean) => setSiteEnabled(site, v)"
           />
         </template>
       </SettingsRow>

@@ -19,6 +19,7 @@ from kmua.services.rss import redact_url
 from kmua.webapp import audit
 from kmua.webapp.deps import ChatAdminCtx, client_key
 from kmua.webapp.errors import ApiError, ErrorCode, forbidden, not_found
+from kmua.webapp.i18n import api_text
 from kmua.webapp.ratelimit import write_limiter
 from kmua.webapp.schemas import (
     TITLE_PERMISSION_KEYS,
@@ -44,18 +45,27 @@ router = APIRouter(prefix="/api/chats", tags=["chats"])
 
 # Mirrors the bot-side result codes onto HTTP semantics.
 _BOT_ADMIN_ERRORS = {
-    ops.BotAdminResult.INVALID_TARGET: (ErrorCode.VALIDATION_FAILED, "Invalid target"),
+    ops.BotAdminResult.INVALID_TARGET: (
+        ErrorCode.VALIDATION_FAILED,
+        api_text("target_invalid"),
+    ),
     ops.BotAdminResult.TARGET_IS_UPSTREAM: (
         ErrorCode.FORBIDDEN,
-        "Cannot act on the admin who promoted you",
+        api_text("target_upstream"),
     ),
-    ops.BotAdminResult.USER_NOT_FOUND: (ErrorCode.USER_NOT_FOUND, "User not found"),
-    ops.BotAdminResult.USER_IS_BOT: (ErrorCode.VALIDATION_FAILED, "Target is a bot"),
+    ops.BotAdminResult.USER_NOT_FOUND: (
+        ErrorCode.USER_NOT_FOUND,
+        api_text("user_missing"),
+    ),
+    ops.BotAdminResult.USER_IS_BOT: (
+        ErrorCode.VALIDATION_FAILED,
+        api_text("target_bot"),
+    ),
     ops.BotAdminResult.USER_NOT_IN_CHAT: (
         ErrorCode.USER_NOT_FOUND,
-        "User is not in this chat",
+        api_text("target_not_in_chat"),
     ),
-    ops.BotAdminResult.ALREADY_SET: (ErrorCode.CONFLICT, "Already in that state"),
+    ops.BotAdminResult.ALREADY_SET: (ErrorCode.CONFLICT, api_text("already_set")),
 }
 
 
@@ -310,7 +320,7 @@ async def sync_members(request: Request, ctx: ChatAdminCtx) -> SyncMembersOut:
 
     cooldown_key = f"sync_members:{ctx.chat.id}"
     if await common.memttlcache.get(cooldown_key):
-        raise ApiError(ErrorCode.COOLDOWN, "Members were synced recently")
+        raise ApiError(ErrorCode.COOLDOWN, api_text("members_recent"))
     await common.memttlcache.set(cooldown_key, True, app_config.cachettl_sync_members)
 
     try:
@@ -319,7 +329,7 @@ async def sync_members(request: Request, ctx: ChatAdminCtx) -> SyncMembersOut:
         logger.error(f"webapp: sync members failed for {ctx.chat.id}: {e}")
         raise ApiError(
             ErrorCode.TELEGRAM_ERROR,
-            "Could not read the member list, the bot may need admin rights",
+            api_text("members_failed"),
         ) from e
 
     audit.record(
@@ -365,7 +375,7 @@ async def delete_chat_quote(
 
     quote = await database.get_quote_by_link(link)
     if quote is None or quote.chat_id != ctx.chat.id:
-        raise not_found(ErrorCode.QUOTE_NOT_FOUND, "Quote not found")
+        raise not_found(ErrorCode.QUOTE_NOT_FOUND, api_text("quote_missing"))
     await database.delete_quote(link)
 
     audit.record(
@@ -387,9 +397,9 @@ async def list_chat_rss(
     size: int = Query(20, ge=1, le=100),
 ) -> PageOut[RssSubscriptionOut]:
     if not app_config.rss_enabled:
-        raise ApiError(ErrorCode.FEATURE_DISABLED, "RSS is disabled")
+        raise ApiError(ErrorCode.FEATURE_DISABLED, api_text("rss_disabled"))
     if not await database.is_rss_allowed(ctx.chat.id):
-        raise forbidden(ErrorCode.FORBIDDEN, "RSS is not enabled for this chat")
+        raise forbidden(ErrorCode.FORBIDDEN, api_text("chat_rss_disabled"))
 
     result = await database.get_chat_subscriptions_paged(
         ctx.chat.id, page=page, size=size
@@ -407,14 +417,14 @@ async def add_chat_rss(
     request: Request, ctx: ChatAdminCtx, payload: RssSubscriptionIn
 ) -> RssSubscriptionOut:
     if not app_config.rss_enabled:
-        raise ApiError(ErrorCode.FEATURE_DISABLED, "RSS is disabled")
+        raise ApiError(ErrorCode.FEATURE_DISABLED, api_text("rss_disabled"))
     if not await database.is_rss_allowed(ctx.chat.id):
-        raise forbidden(ErrorCode.FORBIDDEN, "RSS is not enabled for this chat")
+        raise forbidden(ErrorCode.FORBIDDEN, api_text("chat_rss_disabled"))
     write_limiter.check(client_key(request, ctx.user.id))
 
     url = payload.url.strip()
     if not url.startswith(("http://", "https://")):
-        raise ApiError(ErrorCode.VALIDATION_FAILED, "URL must be http(s)")
+        raise ApiError(ErrorCode.VALIDATION_FAILED, api_text("url_http"))
 
     # Validate synchronously: subscribing to a URL that cannot be fetched would
     # otherwise be a silent never-pushing subscription.
@@ -422,7 +432,8 @@ async def add_chat_rss(
         result = await rss_service.fetch_feed(url)
     except Exception as e:
         raise ApiError(
-            ErrorCode.VALIDATION_FAILED, f"Feed unreachable: {e.__class__.__name__}"
+            ErrorCode.VALIDATION_FAILED,
+            api_text("feed_unreachable", error_type=e.__class__.__name__),
         )
 
     sub, reason = await database.add_subscription(
@@ -430,8 +441,8 @@ async def add_chat_rss(
     )
     if sub is None:
         if reason == "already_subscribed":
-            raise ApiError(ErrorCode.CONFLICT, "Already subscribed", 409)
-        raise ApiError(ErrorCode.CONFLICT, "Subscription limit reached", 409)
+            raise ApiError(ErrorCode.CONFLICT, api_text("subscribed"), 409)
+        raise ApiError(ErrorCode.CONFLICT, api_text("subscription_limit"), 409)
 
     # Seed the seen window immediately, matching the command path and the poll
     # job's first-fetch rule: no history flood on the next poll.
@@ -469,9 +480,9 @@ async def update_chat_rss(
     feed_id: int = Path(description="Feed the subscription points at"),
 ) -> list[RssSubscriptionOut]:
     if not app_config.rss_enabled:
-        raise ApiError(ErrorCode.FEATURE_DISABLED, "RSS is disabled")
+        raise ApiError(ErrorCode.FEATURE_DISABLED, api_text("rss_disabled"))
     if not await database.is_rss_allowed(ctx.chat.id):
-        raise forbidden(ErrorCode.FORBIDDEN, "RSS is not enabled for this chat")
+        raise forbidden(ErrorCode.FORBIDDEN, api_text("chat_rss_disabled"))
     write_limiter.check(client_key(request, ctx.user.id))
 
     fields = payload.model_fields_set
@@ -489,7 +500,7 @@ async def update_chat_rss(
             or updated
         )
     if not updated:
-        raise not_found(ErrorCode.NOT_FOUND, "Subscription not found")
+        raise not_found(ErrorCode.NOT_FOUND, api_text("subscription_missing"))
 
     audit.record(
         action="chat.rss.update",
@@ -511,13 +522,13 @@ async def delete_chat_rss(
     feed_id: int = Path(description="Feed the subscription points at"),
 ) -> None:
     if not app_config.rss_enabled:
-        raise ApiError(ErrorCode.FEATURE_DISABLED, "RSS is disabled")
+        raise ApiError(ErrorCode.FEATURE_DISABLED, api_text("rss_disabled"))
     if not await database.is_rss_allowed(ctx.chat.id):
-        raise forbidden(ErrorCode.FORBIDDEN, "RSS is not enabled for this chat")
+        raise forbidden(ErrorCode.FORBIDDEN, api_text("chat_rss_disabled"))
     write_limiter.check(client_key(request, ctx.user.id))
 
     if not await database.remove_subscription(ctx.chat.id, feed_id):
-        raise not_found(ErrorCode.NOT_FOUND, "Subscription not found")
+        raise not_found(ErrorCode.NOT_FOUND, api_text("subscription_missing"))
 
     audit.record(
         action="chat.rss.delete",

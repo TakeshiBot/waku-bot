@@ -11,6 +11,7 @@ from pydantic_ai.common_tools.duckduckgo import DuckDuckGoSearchTool
 
 from kmua.config import app_config
 from kmua.logger import logger
+from kmua.plugins.agent.localization import tr
 
 from .. import bot, chat, code_repo, datatype, workspace
 from .content import _read_content
@@ -52,9 +53,9 @@ async def read(
     to 1500).
     """
     if max_lines < 1 or max_lines > 1500:
-        raise ModelRetry("max_lines must be between 1 and 1500")
+        raise ModelRetry(tr("tool_max_lines_must_be_between_1_and_1500"))
     if start_line < 1:
-        raise ModelRetry("start_line must be >= 1")
+        raise ModelRetry(tr("tool_start_line_must_be_1"))
     try:
         protocol, rest = _split_target(path)
     except ValueError:
@@ -82,7 +83,7 @@ async def read(
                 )
         except Exception as e:
             logger.error(f"read error for {path}: {e}")
-            return f"Error: {e}"
+            return tr("error", p0=e)
         if native is not None:
             return native
 
@@ -105,7 +106,7 @@ async def read(
         return result
     except Exception as e:
         logger.error(f"read error for {path}: {e}")
-        return f"Error: {e}"
+        return tr("error", p0=e)
 
 
 async def write(
@@ -137,7 +138,7 @@ async def write(
     try:
         protocol, rest = _split_target(path)
     except ValueError as e:
-        return f"Error: {e}"
+        return tr("error", p0=e)
     denied = _require(protocol, ctx.deps)
     if denied:
         return denied
@@ -154,9 +155,9 @@ async def write(
                 content = await read_bytes(content, ctx)
             except Exception as e:
                 logger.error(f"write error for {path}: resolving {content}: {e}")
-                return f"Error: {e}"
+                return tr("error", p0=e)
     if content is None:
-        return f"Error: content is required for {path} targets."
+        return tr("target_content_required", p0=path)
     try:
         if protocol == "memory://":
             text = content if isinstance(content, str) else content.decode("utf-8")
@@ -169,18 +170,21 @@ async def write(
             target.write_bytes(
                 content.encode("utf-8") if isinstance(content, str) else content
             )
-            return f"Wrote {len(content) if isinstance(content, bytes) else len(content.encode('utf-8'))} bytes to {path}."
+            return tr(
+                "workspace_written",
+                p0=len(content)
+                if isinstance(content, bytes)
+                else len(content.encode("utf-8")),
+                p1=path,
+            )
         if protocol != "work://":
-            return f"Error: {path} is read-only or not writable; only work://, sandbox://, persist:// and memory:// targets accept writes."
+            return tr("target_not_writable", p0=path)
         await workspace.write_file(_session_key(ctx), rest, content)
     except Exception as e:
         logger.error(f"write error for {path}: {e}")
-        return f"Error: {e}"
+        return tr("error", p0=e)
     size = len(content) if isinstance(content, bytes) else len(content.encode("utf-8"))
-    return (
-        f"Wrote {size} bytes to {path}. "
-        f"Use read to verify, or tg sendDocument to share it."
-    )
+    return tr("workspace_written_hint", p0=size, p1=path)
 
 
 async def edit(
@@ -201,9 +205,9 @@ async def edit(
     try:
         protocol, rest = _split_target(path)
     except ValueError as e:
-        return f"Error: {e}"
+        return tr("error", p0=e)
     if protocol != "work://":
-        return f"Error: {path} is read-only or not editable; only work:// targets accept edits."
+        return tr("target_not_editable", p0=path)
     denied = _require(protocol, ctx.deps)
     if denied:
         return denied
@@ -213,8 +217,8 @@ async def edit(
         )
     except Exception as e:
         logger.error(f"edit error for {path}: {e}")
-        return f"Error: {e}"
-    return f"Edited {path}. Use read to verify."
+        return tr("error", p0=e)
+    return tr("workspace_edited", p0=path)
 
 
 async def list(ctx: RunContext[datatype.ContextDeps], path: str = "work://") -> str:
@@ -228,7 +232,7 @@ async def list(ctx: RunContext[datatype.ContextDeps], path: str = "work://") -> 
     try:
         protocol, rest = _split_target(path)
     except ValueError as e:
-        return f"Error: {e}"
+        return tr("error", p0=e)
     denied = _require(protocol, ctx.deps)
     if denied:
         return denied
@@ -239,8 +243,8 @@ async def list(ctx: RunContext[datatype.ContextDeps], path: str = "work://") -> 
             files = await pf_db.list_persistent_files(ctx.deps.chat_id)
             _ = rest
             if not files:
-                return "No persisted files for this chat."
-            lines = ["name | size | updated"]
+                return tr("persisted_files_empty")
+            lines = [tr("tool_name_size_updated")]
             for f in files:
                 kb = (f.file_size or 0) / 1024
                 lines.append(f"{f.name} | {kb:.1f} KB | {f.updated_at:%Y-%m-%d %H:%M}")
@@ -248,8 +252,8 @@ async def list(ctx: RunContext[datatype.ContextDeps], path: str = "work://") -> 
         if protocol == "sandbox://":
             root = _sandbox_target(_session_key(ctx), rest)
             if not root.exists():
-                return f"Path not found: {path}"
-            lines = ["name | size | type"]
+                return tr("path_missing", p0=path)
+            lines = [tr("tool_name_size_type")]
             for item in sorted(root.iterdir(), key=lambda p: p.name):
                 kind = "dir" if item.is_dir() else str(item.stat().st_size)
                 lines.append(f"{item.name} | {kind}")
@@ -257,30 +261,30 @@ async def list(ctx: RunContext[datatype.ContextDeps], path: str = "work://") -> 
         if protocol == "kmua://":
             entries = await code_repo.list_files(rest, include_dirs=True)
             if not entries:
-                return f"Path not found: {path}"
-            lines = ["name | size | type"]
+                return tr("path_missing", p0=path)
+            lines = [tr("tool_name_size_type")]
             for e in entries:
                 kind = "dir" if e.get("is_dir") else str(e.get("size", "?"))
                 lines.append(f"{e.get('name', '?')} | {kind}")
             return "\n".join(lines)
         entries = await workspace.list_files(_session_key(ctx), rest)
         if not entries:
-            return f"Workspace is empty at {path}."
-        lines = ["name | size | type"]
+            return tr("workspace_empty", p0=path)
+        lines = [tr("tool_name_size_type")]
         for e in entries:
             kind = "dir" if e["is_dir"] else str(e["size"])
             lines.append(f"{e['name']} | {kind}")
         return "\n".join(lines)
     except Exception as e:
         logger.error(f"list error for {path}: {e}")
-        return f"Error: {e}"
+        return tr("error", p0=e)
 
 
 def _format_search_results(query: str, results: builtins.list[Any]) -> str:
     """Render search results; results are dicts with title/href/body keys."""
     if not results:
-        return f"No results found for '{query}'"
-    lines = [f"Search results for '{query}' ({len(results)}):"]
+        return tr("search_empty", p0=query)
+    lines = [tr("tool_search_results_for_p0_p1", p0=query, p1=len(results))]
     for i, r in enumerate(results, 1):
         title = r.get("title") or ""
         url = r.get("href") or ""
@@ -316,13 +320,13 @@ async def search(
     query must be at least 2 characters; max_results 1-50.
     """
     if not query or len(query) < 2:
-        raise ModelRetry("Query must be at least 2 characters")
+        raise ModelRetry(tr("tool_query_must_be_at_least_2_characters"))
     if max_results < 1 or max_results > 50:
-        raise ModelRetry("max_results must be between 1 and 50")
+        raise ModelRetry(tr("tool_max_results_must_be_between_1_and_50"))
     try:
         protocol, rest = _split_target(path)
     except ValueError as e:
-        return f"Error: {e}"
+        return tr("error", p0=e)
     denied = _require(protocol, ctx.deps)
     if denied:
         return denied
@@ -335,14 +339,27 @@ async def search(
                 case_sensitive=case_sensitive,
             )
             if not results:
-                return f"No results found for '{query}'"
-            parts = [f"Search results for '{query}' ({len(results)} files):"]
+                return tr("search_empty", p0=query)
+            parts = [
+                tr("tool_search_results_for_p0_p1_files", p0=query, p1=len(results))
+            ]
             for i, r in enumerate(results, 1):
                 parts.append(
-                    f"\n{i}. {r.get('file', 'unknown')} ({r.get('total_matches', 0)} matches)"
+                    tr(
+                        "tool_p0_p1_p2_matches",
+                        p0=i,
+                        p1=r.get("file", "unknown"),
+                        p2=r.get("total_matches", 0),
+                    )
                 )
                 for m in r.get("matches", [])[:3]:
-                    parts.append(f"   Line {m.get('line', 0)}: {m.get('content', '')}")
+                    parts.append(
+                        tr(
+                            "tool_line_p0_p1",
+                            p0=m.get("line", 0),
+                            p1=m.get("content", ""),
+                        )
+                    )
             return "\n".join(parts)
         if protocol == "work://":
             results = await workspace.search_files(
@@ -354,12 +371,21 @@ async def search(
                 case_sensitive=case_sensitive,
             )
             if not results:
-                return f"No results found for '{query}'"
-            parts = [f"Search results for '{query}' ({len(results)} files):"]
+                return tr("search_empty", p0=query)
+            parts = [
+                tr("tool_search_results_for_p0_p1_files", p0=query, p1=len(results))
+            ]
             for i, r in enumerate(results, 1):
-                parts.append(f"\n{i}. {r['file']} ({len(r['matches'])} matches shown)")
+                parts.append(
+                    tr(
+                        "tool_p0_p1_p2_matches_shown",
+                        p0=i,
+                        p1=r["file"],
+                        p2=len(r["matches"]),
+                    )
+                )
                 for m in r["matches"]:
-                    parts.append(f"   Line {m['line']}: {m['content']}")
+                    parts.append(tr("tool_line_p0_p1", p0=m["line"], p1=m["content"]))
             return "\n".join(parts)
         if protocol == "web://":
             return await _search_web(query, max_results)
@@ -367,11 +393,11 @@ async def search(
             return await bot.search_messages(ctx, query, count=max_results)
         memories = await chat.search_group_memory(ctx, query)
         if not memories:
-            return "No memories found."
+            return tr("memories_empty")
         return "\n".join(f"- {m}" for m in memories)
     except Exception as e:
         logger.error(f"search error: {e}")
-        return f"Error: {e}"
+        return tr("error", p0=e)
 
 
 async def delete(
@@ -382,7 +408,7 @@ async def delete(
     try:
         protocol, rest = _split_target(path)
     except ValueError as e:
-        return f"Error: {e}"
+        return tr("error", p0=e)
     denied = _require(protocol, ctx.deps)
     if denied:
         return denied
@@ -393,16 +419,16 @@ async def delete(
             name = rest.lstrip("/")
             deleted = await pf_db.delete_persistent_file(ctx.deps.chat_id, name)
             if not deleted:
-                return f"Error: No persisted file named {name!r} in this chat."
-            return f"Removed {name} from the managed set; the chat message stays."
+                return tr("error_persisted_file_missing", p0=repr(name))
+            return tr("persisted_file_removed", p0=name)
         if protocol == "sandbox://":
             target = _sandbox_target(_session_key(ctx), rest)
             target.unlink(missing_ok=True)
-            return f"Deleted {path}."
+            return tr("workspace_deleted", p0=path)
         if protocol != "work://":
-            return f"Error: {path} is not deletable; only work://, sandbox:// and persist:// targets can be deleted."
+            return tr("target_not_deletable", p0=path)
         await workspace.delete_file(_session_key(ctx), rest)
     except Exception as e:
         logger.error(f"delete error for {path}: {e}")
-        return f"Error: {e}"
-    return f"Deleted {path}."
+        return tr("error", p0=e)
+    return tr("workspace_deleted", p0=path)

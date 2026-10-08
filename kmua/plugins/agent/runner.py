@@ -26,6 +26,7 @@ from kmua.logger import logger
 from kmua.plugins.agent import datatype, provider, quota, safety, state, trace
 from kmua.plugins.agent.cache_stats import log_run_cache_stats
 from kmua.plugins.agent.datatype import AskUserOutput, EndTurn
+from kmua.plugins.agent.localization import localized_argument
 from kmua.plugins.agent.output import StreamingOutput, TypingKeepAlive, reply_output
 from kmua.plugins.agent.prompt import (
     check_needs_multimodal,
@@ -141,6 +142,7 @@ async def _stop_typing_keepalive(
         logger.debug(f"Failed to stop typing keepalive: {e.__class__.__name__} - {e}")
 
 
+@localized_argument("lang")
 async def run_agent(
     agi: Agent[Any, Any],
     client: PyrogramClient,

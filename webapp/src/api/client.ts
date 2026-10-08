@@ -11,6 +11,7 @@
  *   app for that is poor; retrying more than once would risk a loop.
  */
 
+import { locale } from "@/i18n";
 import type { ApiErrorBody } from "./errors";
 import { ApiError } from "./errors";
 
@@ -72,7 +73,10 @@ async function parseError(response: Response): Promise<ApiError> {
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, query, signal, isRetry = false } = options;
 
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Accept-Language": locale.value,
+  };
   if (sessionToken) headers.Authorization = `Bearer ${sessionToken}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
 

@@ -27,6 +27,7 @@ from kmua.services.rss import redact_url
 from kmua.webapp import audit
 from kmua.webapp.deps import CurrentUser, client_key
 from kmua.webapp.errors import ApiError, ErrorCode, forbidden, not_found
+from kmua.webapp.i18n import api_text
 from kmua.webapp.ratelimit import write_limiter
 from kmua.webapp.schemas import (
     ChatBriefOut,
@@ -49,10 +50,10 @@ from kmua.webapp.serializers import quote_out, rss_subscription_out, timestamp
 router = APIRouter(prefix="/api/me", tags=["me"])
 
 
-def gift_out(gift_entry) -> GiftOut:
+def gift_out(gift_entry, locale: str = "") -> GiftOut:
     try:
         gift_id = gift_define.GiftID(gift_entry.gift_id)
-        display = gift_define.get_display_name(gift_id)
+        display = gift_define.get_display_name(gift_id, locale)
     except ValueError:
         display = gift_entry.gift_id
     return GiftOut(
@@ -60,7 +61,7 @@ def gift_out(gift_entry) -> GiftOut:
         gift_id=gift_entry.gift_id,
         display_name=display,
         rarity=gift_entry.rarity,
-        rarity_name=gift_define.get_rarity_display_name(gift_entry.rarity),
+        rarity_name=gift_define.get_rarity_display_name(gift_entry.rarity, locale),
         sent_to_bot=gift_entry.sent_to_bot,
         created_at=timestamp(gift_entry.created_at),
     )
@@ -120,7 +121,7 @@ async def update_my_config(
 
     refreshed = await database.get_user_by_id(user.id)
     if refreshed is None:
-        raise not_found(ErrorCode.USER_NOT_FOUND, "User disappeared")
+        raise not_found(ErrorCode.USER_NOT_FOUND, api_text("user_gone"))
     user.data = refreshed
     return await read_me(user)
 
@@ -175,9 +176,9 @@ async def delete_my_quote(
 
     quote = await database.get_quote_by_link(link)
     if quote is None:
-        raise not_found(ErrorCode.QUOTE_NOT_FOUND, "Quote not found")
+        raise not_found(ErrorCode.QUOTE_NOT_FOUND, api_text("quote_missing"))
     if quote.user_id != user.id:
-        raise not_found(ErrorCode.QUOTE_NOT_FOUND, "Quote not found")
+        raise not_found(ErrorCode.QUOTE_NOT_FOUND, api_text("quote_missing"))
     await database.delete_quote(link)
 
 
@@ -196,9 +197,9 @@ async def list_my_rss(
     size: int = Query(20, ge=1, le=100),
 ) -> PageOut[RssSubscriptionOut]:
     if not app_config.rss_enabled:
-        raise ApiError(ErrorCode.FEATURE_DISABLED, "RSS is disabled")
+        raise ApiError(ErrorCode.FEATURE_DISABLED, api_text("rss_disabled"))
     if not await database.is_rss_allowed(user.id):
-        raise forbidden(ErrorCode.FORBIDDEN, "RSS is not enabled for this chat")
+        raise forbidden(ErrorCode.FORBIDDEN, api_text("chat_rss_disabled"))
 
     result = await database.get_chat_subscriptions_paged(user.id, page=page, size=size)
     return PageOut[RssSubscriptionOut](
@@ -214,27 +215,28 @@ async def add_my_rss(
     request: Request, user: CurrentUser, payload: RssSubscriptionIn
 ) -> RssSubscriptionOut:
     if not app_config.rss_enabled:
-        raise ApiError(ErrorCode.FEATURE_DISABLED, "RSS is disabled")
+        raise ApiError(ErrorCode.FEATURE_DISABLED, api_text("rss_disabled"))
     if not await database.is_rss_allowed(user.id):
-        raise forbidden(ErrorCode.FORBIDDEN, "RSS is not enabled for this chat")
+        raise forbidden(ErrorCode.FORBIDDEN, api_text("chat_rss_disabled"))
     write_limiter.check(client_key(request, user.id))
 
     url = payload.url.strip()
     if not url.startswith(("http://", "https://")):
-        raise ApiError(ErrorCode.VALIDATION_FAILED, "URL must be http(s)")
+        raise ApiError(ErrorCode.VALIDATION_FAILED, api_text("url_http"))
 
     try:
         result = await rss_service.fetch_feed(url)
     except Exception as e:
         raise ApiError(
-            ErrorCode.VALIDATION_FAILED, f"Feed unreachable: {e.__class__.__name__}"
+            ErrorCode.VALIDATION_FAILED,
+            api_text("feed_unreachable", error_type=e.__class__.__name__),
         )
 
     sub, reason = await database.add_subscription(user.id, url, created_by=user.id)
     if sub is None:
         if reason == "already_subscribed":
-            raise ApiError(ErrorCode.CONFLICT, "Already subscribed", 409)
-        raise ApiError(ErrorCode.CONFLICT, "Subscription limit reached", 409)
+            raise ApiError(ErrorCode.CONFLICT, api_text("subscribed"), 409)
+        raise ApiError(ErrorCode.CONFLICT, api_text("subscription_limit"), 409)
 
     await database.record_fetch_success(
         sub.feed_id,
@@ -268,9 +270,9 @@ async def update_my_rss(
     feed_id: int = Path(description="Feed the subscription points at"),
 ) -> list[RssSubscriptionOut]:
     if not app_config.rss_enabled:
-        raise ApiError(ErrorCode.FEATURE_DISABLED, "RSS is disabled")
+        raise ApiError(ErrorCode.FEATURE_DISABLED, api_text("rss_disabled"))
     if not await database.is_rss_allowed(user.id):
-        raise forbidden(ErrorCode.FORBIDDEN, "RSS is not enabled for this chat")
+        raise forbidden(ErrorCode.FORBIDDEN, api_text("chat_rss_disabled"))
     write_limiter.check(client_key(request, user.id))
 
     fields = payload.model_fields_set
@@ -288,7 +290,7 @@ async def update_my_rss(
             or updated
         )
     if not updated:
-        raise not_found(ErrorCode.NOT_FOUND, "Subscription not found")
+        raise not_found(ErrorCode.NOT_FOUND, api_text("subscription_missing"))
 
     audit.record(
         action="me.rss.update",
@@ -308,13 +310,13 @@ async def delete_my_rss(
     feed_id: int = Path(description="Feed the subscription points at"),
 ) -> None:
     if not app_config.rss_enabled:
-        raise ApiError(ErrorCode.FEATURE_DISABLED, "RSS is disabled")
+        raise ApiError(ErrorCode.FEATURE_DISABLED, api_text("rss_disabled"))
     if not await database.is_rss_allowed(user.id):
-        raise forbidden(ErrorCode.FORBIDDEN, "RSS is not enabled for this chat")
+        raise forbidden(ErrorCode.FORBIDDEN, api_text("chat_rss_disabled"))
     write_limiter.check(client_key(request, user.id))
 
     if not await database.remove_subscription(user.id, feed_id):
-        raise not_found(ErrorCode.NOT_FOUND, "Subscription not found")
+        raise not_found(ErrorCode.NOT_FOUND, api_text("subscription_missing"))
 
     audit.record(
         action="me.rss.delete",
@@ -366,7 +368,7 @@ async def divorce(request: Request, user: CurrentUser) -> WaifuOut:
 
     refreshed = await database.get_user_by_id(user.id)
     if refreshed is None:
-        raise not_found(ErrorCode.USER_NOT_FOUND, "User disappeared")
+        raise not_found(ErrorCode.USER_NOT_FOUND, api_text("user_gone"))
     user.data = refreshed
     return await read_my_waifu(user)
 
@@ -395,18 +397,19 @@ async def list_my_gifts(
     limit: int = Query(50, ge=1, le=100),
 ) -> list[GiftOut]:
     gifts = await database.get_user_gifts(user.id, sent=sent, offset=0, limit=limit)
-    return [gift_out(gift) for gift in gifts]
+    return [gift_out(gift, user.data.user_config.lang) for gift in gifts]
 
 
 @router.get("/gifts/catalog", response_model=list[GiftCatalogOut])
 async def list_gift_catalog(user: CurrentUser) -> list[GiftCatalogOut]:
-    del user  # The catalog is public to signed-in users, not to anonymous callers.
     return [
         GiftCatalogOut(
             gift_id=item.id,
-            display_name=gift_define.get_display_name(item.id),
-            description=item.description,
-            comment=item.comment,
+            display_name=gift_define.get_display_name(
+                item.id, user.data.user_config.lang
+            ),
+            description=item.get_description(user.data.user_config.lang),
+            comment=item.get_comment(user.data.user_config.lang),
             price=item.price,
         )
         for item in gift_define.list_all_gifts()
@@ -421,25 +424,29 @@ async def buy_gift(
     try:
         gift_id = gift_define.GiftID(payload.gift_id)
     except ValueError as e:
-        raise ApiError(ErrorCode.GIFT_NOT_FOUND, "Gift not found", 404) from e
+        raise ApiError(ErrorCode.GIFT_NOT_FOUND, api_text("gift_missing"), 404) from e
     if gift_id not in gift_define.ALL_GIFTS:
         # GiftID also contains an internal sentinel used for corrupted legacy rows.
         # It is intentionally not a purchasable catalog item.
-        raise ApiError(ErrorCode.GIFT_NOT_FOUND, "Gift not found", 404)
+        raise ApiError(ErrorCode.GIFT_NOT_FOUND, api_text("gift_missing"), 404)
     item = gift_define.get_gift_by_id(gift_id)
     if user.data.user_config.coins < item.price:
-        raise ApiError(ErrorCode.INSUFFICIENT_COINS, "Not enough coins", 409)
+        raise ApiError(
+            ErrorCode.INSUFFICIENT_COINS, api_text("coins_insufficient"), 409
+        )
     gift_entry = await database.buy_gift_for_user(
         user.id, gift_id, rarity=random.randint(1, 5)
     )
-    return gift_out(gift_entry)
+    return gift_out(gift_entry, user.data.user_config.lang)
 
 
 @router.post("/gifts/{gift_db_id}/send", response_model=GiftUseOut)
 async def send_gift(request: Request, gift_db_id: int, user: CurrentUser) -> GiftUseOut:
     write_limiter.check(client_key(request, user.id))
     try:
-        result = await send_gift_to_bot(user.id, gift_db_id)
+        result = await send_gift_to_bot(
+            user.id, gift_db_id, locale=user.data.user_config.lang
+        )
     except ValueError as e:
         message = str(e)
         code = (
@@ -459,7 +466,9 @@ async def send_gift(request: Request, gift_db_id: int, user: CurrentUser) -> Gif
         raise ApiError(code, message, status_code) from e
     gift_entry = await database.get_gift_by_db_id(gift_db_id)
     assert gift_entry is not None
-    return GiftUseOut(gift=gift_out(gift_entry), detail=result.detail)
+    return GiftUseOut(
+        gift=gift_out(gift_entry, user.data.user_config.lang), detail=result.detail
+    )
 
 
 @router.post("/avatar/refresh")
@@ -473,7 +482,7 @@ async def refresh_my_avatar(request: Request, user: CurrentUser) -> dict[str, bo
 
     cooldown_key = f"user_refresh_avatar:{user.id}"
     if await common.memttlcache.get(cooldown_key):
-        raise ApiError(ErrorCode.COOLDOWN, "Avatar was refreshed recently")
+        raise ApiError(ErrorCode.COOLDOWN, api_text("avatar_recent"))
     await common.memttlcache.set(cooldown_key, True, ttl=300)
 
     avatar = common.ChatAvatar(user.id)

@@ -10,6 +10,7 @@ from pyrogram.errors import RPCError
 from pyrogram.types import CallbackQuery
 
 from kmua import common, database, enums
+from kmua.common.locale import message_locale
 from kmua.database.models import ChatConfig, VerificationSession
 from kmua.i18n import i18n
 from kmua.logger import logger
@@ -98,14 +99,25 @@ async def on_new_members(client: Client, message: pyrogram.types.Message) -> Non
 @Client.on_callback_query(pyrogram.filters.regex(r"^verify:"), group=0)
 async def on_verify_callback(client: Client, callback_query: CallbackQuery) -> None:
     """作答按钮回调: 归属校验 -> 过期兜底 -> 判对错。"""
+    lang = (
+        await message_locale(callback_query.message)
+        if callback_query.message is not None
+        else (await database.get_user_config(callback_query.from_user)).lang
+        if callback_query.from_user is not None
+        else ""
+    )
     data = _callback_data(callback_query)
     if len(data) != 3:
-        await callback_query.answer(i18n.t("bot.msg.verify.expired"), show_alert=True)
+        await callback_query.answer(
+            i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
+        )
         return
     try:
         session_id = int(data[1])
     except ValueError:
-        await callback_query.answer(i18n.t("bot.msg.verify.expired"), show_alert=True)
+        await callback_query.answer(
+            i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
+        )
         return
     session_row = _sessions.get(session_id)
     user = callback_query.from_user
@@ -113,21 +125,29 @@ async def on_verify_callback(client: Client, callback_query: CallbackQuery) -> N
     chat = message.chat if message is not None else None
     if session_row is None or chat is None or user is None:
         # 会话不存在或消息缺失
-        await callback_query.answer(i18n.t("bot.msg.verify.expired"), show_alert=True)
+        await callback_query.answer(
+            i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
+        )
         return
     if session_row.chat_id != chat.id or user.id != session_row.user_id:
         # 越权点击
-        await callback_query.answer(i18n.t("bot.msg.verify.expired"), show_alert=True)
+        await callback_query.answer(
+            i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
+        )
         return
     config = await _chat_config(session_row.chat_id)
     if config is None:
         await _cleanup_session(session_row)
-        await callback_query.answer(i18n.t("bot.msg.verify.expired"), show_alert=True)
+        await callback_query.answer(
+            i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
+        )
         return
     lang = config.lang
     if _is_expired(session_row):
         await _fail_session(session_row, "timeout")
-        await callback_query.answer(i18n.t("bot.msg.verify.expired"), show_alert=True)
+        await callback_query.answer(
+            i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
+        )
         return
     payload = session_row.payload or {}
     if data[2] == "submit":
@@ -154,7 +174,9 @@ async def on_verify_callback(client: Client, callback_query: CallbackQuery) -> N
     try:
         index = int(data[2])
     except ValueError:
-        await callback_query.answer(i18n.t("bot.msg.verify.expired"), show_alert=True)
+        await callback_query.answer(
+            i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
+        )
         return
     if _is_multi_answer(session_row):
         # 多选题: 点选只切换勾选状态, 不判对错
@@ -190,23 +212,38 @@ async def on_verify_admin_callback(
     client: Client, callback_query: CallbackQuery
 ) -> None:
     """管理员放行/封禁按钮。权限门 = 全仓统一管理权限。"""
+    lang = (
+        await message_locale(callback_query.message)
+        if callback_query.message is not None
+        else (await database.get_user_config(callback_query.from_user)).lang
+        if callback_query.from_user is not None
+        else ""
+    )
     data = _callback_data(callback_query)
     if len(data) != 3:
-        await callback_query.answer(i18n.t("bot.msg.verify.expired"), show_alert=True)
+        await callback_query.answer(
+            i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
+        )
         return
     try:
         session_id = int(data[1])
     except ValueError:
-        await callback_query.answer(i18n.t("bot.msg.verify.expired"), show_alert=True)
+        await callback_query.answer(
+            i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
+        )
         return
     session_row = _sessions.get(session_id)
     message = callback_query.message
     chat = message.chat if message is not None else None
     if session_row is None or chat is None:
-        await callback_query.answer(i18n.t("bot.msg.verify.expired"), show_alert=True)
+        await callback_query.answer(
+            i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
+        )
         return
     if session_row.chat_id != chat.id:
-        await callback_query.answer(i18n.t("bot.msg.verify.expired"), show_alert=True)
+        await callback_query.answer(
+            i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
+        )
         return
     user = callback_query.from_user
     if user is None:
@@ -220,7 +257,7 @@ async def on_verify_admin_callback(
             user_config = await database.get_user_config(user)
             locale = user_config.lang
         except Exception:
-            locale = "zh-CN"
+            locale = ""
         await callback_query.answer(
             i18n.t("bot.msg.no_permission_group", locale=locale),
             show_alert=True,
@@ -229,12 +266,16 @@ async def on_verify_admin_callback(
     config = await _chat_config(session_row.chat_id)
     if config is None:
         await _cleanup_session(session_row)
-        await callback_query.answer(i18n.t("bot.msg.verify.expired"), show_alert=True)
+        await callback_query.answer(
+            i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
+        )
         return
     lang = config.lang
     if _is_expired(session_row):
         await _fail_session(session_row, "timeout")
-        await callback_query.answer(i18n.t("bot.msg.verify.expired"), show_alert=True)
+        await callback_query.answer(
+            i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
+        )
         return
     if data[2] == "approve":
         await _succeed_session(session_row, lang)
@@ -243,7 +284,9 @@ async def on_verify_admin_callback(
         await _admin_ban_session(session_row, lang)
         await callback_query.answer()
     else:
-        await callback_query.answer(i18n.t("bot.msg.verify.expired"), show_alert=True)
+        await callback_query.answer(
+            i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
+        )
 
 
 @Client.on_message(

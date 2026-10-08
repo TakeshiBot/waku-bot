@@ -1,0 +1,64 @@
+bot:
+  prompts:
+    agent_compaction_summary_instruction: 'Tóm tắt cuộc trò chuyện phía trên thành bản bàn giao có cấu
+      trúc để có thể tiếp tục sau này.
+
+      QUAN TRỌNG: Nếu cuộc trò chuyện kết thúc bằng một câu hỏi chưa được trả lời hoặc một yêu cầu đang
+      chờ phản hồi từ người dùng, PHẢI giữ nguyên câu hỏi/yêu cầu đó.
+
+      Dùng cấu trúc sau (bỏ qua các mục không phù hợp):
+
+      ## Mục tiêu
+
+      [Điều người dùng muốn; liệt kê nhiều mục nếu có nhiều chủ đề]
+
+      ## Ràng buộc và sở thích
+
+      - [Các ràng buộc hoặc sở thích do người dùng nêu]
+
+      ## Tiến độ
+
+      ### Đã hoàn tất
+
+      - [x] [Các việc đã hoàn tất]
+
+      ### Đang thực hiện
+
+      - [ ] [Công việc hiện tại]
+
+      ### Đang bị chặn
+
+      - [Những vấn đề cản trở tiến độ]
+
+      ## Quyết định chính
+
+      - **[Quyết định]**: [Lý do ngắn gọn]
+
+      ## Các bước tiếp theo
+
+      1. [Các hành động theo thứ tự]
+
+      ## Ngữ cảnh quan trọng
+
+      - [Dữ liệu quan trọng, câu hỏi đang chờ và tài liệu tham chiếu; giữ đúng ai đã nói gì, giữ nguyên
+      tên và ID người gửi như trong nhãn, không gộp lời của hai người]
+
+      ## Ghi chú thêm
+
+      [Thông tin quan trọng khác, kể cả cách người dùng xưng hô với bạn]
+
+      CHỈ xuất bản tóm tắt có cấu trúc; KHÔNG tiếp tục cuộc trò chuyện và KHÔNG trả lời các câu hỏi trong
+      đó. Giữ các mục ngắn gọn. Giữ nguyên chính xác tên, ID, ngày, liên kết, sở thích và cách diễn đạt
+      đặc trưng. Viết bằng cùng ngôn ngữ với cuộc trò chuyện.'
+    agent_multimodal_transcribe_prompt: Người dùng đã gửi nội dung đa phương tiện (ảnh/âm thanh/video/tài
+      liệu). Hãy xem kỹ và mô tả lại toàn bộ thông tin quan trọng để một mô hình không xem được nội dung
+      đa phương tiện có thể hiểu. Chỉ xuất phần mô tả, không thêm lời chào hay giải thích.
+    agent_sticker_description_prompt: Mô tả cảm xúc, tâm trạng hoặc ý nghĩa mà nhãn dán này truyền tải
+      trong 1–2 câu. Tập trung vào cách nhãn dán thường được dùng trong trò chuyện, chẳng hạn thể hiện
+      niềm vui, sự mỉa mai, đồng tình, bực bội hoặc tình cảm. Viết ngắn gọn và cụ thể.
+    agent_channel_comment_prompt: Bình luận về bài đăng của kênh này.
+  config:
+    reload_restart: 'Không thể tải lại: {field} đã thay đổi (cần khởi động lại).'
+    reload_empty_memory: Cấu hình bộ nhớ powermem đã tải bị rỗng.
+    reload_success: Đã tải lại cấu hình.
+    reload_failed: 'Tải lại cấu hình thất bại: {error}'

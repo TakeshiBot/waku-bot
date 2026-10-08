@@ -1,4 +1,5 @@
 import asyncio
+import html
 import random
 from typing import Any
 
@@ -18,6 +19,7 @@ from kmua import common, database, i18n
 from kmua.common.utils import GROUP_CHAT_TYPES
 from kmua.config import app_config
 from kmua.logger import logger
+from kmua.plugins.agent.localization import localized_message, tr
 from kmua.services import link_parse, manyacg
 
 from . import (
@@ -111,7 +113,7 @@ async def _queue_interjection(
             f"into the running turn"
         )
         return
-    await message.reply_text("「回复不过来啦, 请稍等一会吧...」")
+    await message.reply_text(tr("busy"))
 
 
 async def _run_registered(chat_id: int, user_id: int, coro) -> Any:
@@ -293,7 +295,11 @@ if app_config.agent and app_config.agent_model:
 
     @agent.instructions
     async def _dynamic_instructions(ctx: RunContext[datatype.ContextDeps]) -> str:
-        return ctx.deps.instructions
+        return (
+            ctx.deps.instructions
+            + "\n\n"
+            + tr("output_language", locale=ctx.deps.locale or None)
+        )
 
     memory_agent = Agent(
         model=struct_model,
@@ -330,7 +336,11 @@ if app_config.agent and app_config.agent_model:
         ):
             return
         user_config = await database.get_user_config(user_id)
-        lang = user_config.lang
+        lang = (
+            user_config.lang
+            if is_private
+            else (await database.get_chat_config(chat_id)).lang
+        )
         subject = quota.subject_for_chat(user_id, message.chat)
         if not await quota.can_start(subject):
             await trace.note_rejection(
@@ -382,6 +392,7 @@ if app_config.agent and app_config.agent_model:
                     user_prompt=[user_prompt],
                     history=history,
                     deps=datatype.ContextDeps(
+                        locale=lang,
                         user_id=user_id,
                         chat_id=chat_id,
                         message=message,
@@ -445,6 +456,7 @@ if app_config.agent and app_config.agent_model:
         )
 
     @PyrogramClient.on_message(pyrogram.filters.command("clear_sessions"), group=0)
+    @localized_message(prefer_chat=True)
     async def clear_sessions_command(
         client: PyrogramClient, message: pyrogram.types.Message
     ):
@@ -463,11 +475,7 @@ if app_config.agent and app_config.agent_model:
             return
         raw_args = message.text.split() if message.text else []
         if len(raw_args) < 2 or raw_args[1] != "confirm":
-            await message.reply_text(
-                "This clears every agent conversation (histories, pending "
-                "questions, waiting states, stored overflow data) and "
-                "cannot be undone. Run /clear_sessions confirm to proceed."
-            )
+            await message.reply_text(tr("clear_sessions_confirm"))
             return
         active_runs = [t for t in _active_run_tasks.values() if not t.done()]
         for task in active_runs:
@@ -496,12 +504,18 @@ if app_config.agent and app_config.agent_model:
             f"workspaces={workspaces} persisted={persisted}"
         )
         await message.reply_text(
-            f"Cleared {histories} conversation histories, {coverages} prompt "
-            f"cursors, {asks} pending questions, {sessions} session ids, "
-            f"{spills} stored overflow entries, {steered} queued messages, "
-            f"{shells} shell workspaces, "
-            f"{workspaces} workspace databases, {persisted} persisted files "
-            f"(chat messages stay)."
+            tr(
+                "clear_sessions_done",
+                p0=histories,
+                p1=coverages,
+                p2=asks,
+                p3=sessions,
+                p4=spills,
+                p5=steered,
+                p6=shells,
+                p7=workspaces,
+                p8=persisted,
+            )
         )
 
     @PyrogramClient.on_callback_query(
@@ -536,6 +550,7 @@ if app_config.agent and app_config.agent_model:
             await callback_query.message.edit_reply_markup(reply_markup=None)  # type: ignore
 
     @PyrogramClient.on_message(pyrogram.filters.command("model"), group=0)
+    @localized_message(prefer_chat=True)
     async def set_model_command(
         client: PyrogramClient, message: pyrogram.types.Message
     ):
@@ -589,7 +604,11 @@ if app_config.agent and app_config.agent_model:
 
         is_remote = target_chat_id != current_chat_id
         chat_display = target_chat_label or str(target_chat_id)
-        chat_desc = f"chat <code>{chat_display}</code>" if is_remote else "this chat"
+        chat_desc = (
+            tr("model_remote_chat", p0=html.escape(chat_display))
+            if is_remote
+            else tr("model_this_chat")
+        )
 
         # Subcommand dispatch: /model [@chat_id] [main|multimodal|small] [model_spec]
         # /model [@chat_id]                  → show current overrides
@@ -629,14 +648,14 @@ if app_config.agent and app_config.agent_model:
             cur_mm = await get_chat_model_override(target_chat_id, "multimodal")
             cur_small = await get_chat_model_override(target_chat_id, "small")
             lines = [
-                f"<b>Current model overrides for {chat_desc}:</b>",
-                f"  main:       <code>{cur_main or '(global default: ' + app_config.agent_model + ')'}</code>",
-                f"  multimodal: <code>{cur_mm or '(global default: ' + (app_config.agent_model_multimodal or app_config.agent_model) + ')'}</code>",
-                f"  small:      <code>{cur_small or '(global default: ' + (app_config.agent_model_small or app_config.agent_model) + ')'}</code>",
+                tr("model_header", p0=chat_desc),
+                f"  main:       <code>{html.escape(cur_main or tr('model_global_default', p0=app_config.agent_model))}</code>",
+                f"  multimodal: <code>{html.escape(cur_mm or tr('model_global_default', p0=app_config.agent_model_multimodal or app_config.agent_model))}</code>",
+                f"  small:      <code>{html.escape(cur_small or tr('model_global_default', p0=app_config.agent_model_small or app_config.agent_model))}</code>",
                 "",
-                "Usage: <code>/model [@chat_id] [main|multimodal|small] [model_spec]</code>",
-                "Omit model_spec to reset to global default.",
-                "Omit @chat_id to target the current chat.",
+                tr("model_usage"),
+                tr("model_reset_hint"),
+                tr("model_target_hint"),
             ]
             await message.reply_text(
                 "\n".join(lines),
@@ -655,8 +674,13 @@ if app_config.agent and app_config.agent_model:
             await set_chat_model_override(target_chat_id, model_name, "main")
             await set_chat_model_override(target_chat_id, model_name, "multimodal")
             await message.reply_text(
-                f"Main and multimodal model for {chat_desc} set to <code>{model_name}</code> "
-                f"(was: main=<code>{prev_main}</code>, multimodal=<code>{prev_mm}</code>).",
+                tr(
+                    "model_both_set",
+                    p0=chat_desc,
+                    p1=html.escape(model_name or ""),
+                    p2=html.escape(prev_main or ""),
+                    p3=html.escape(prev_mm or ""),
+                ),
                 parse_mode=pyrogram.enums.ParseMode.HTML,
             )
             logger.info(
@@ -670,8 +694,12 @@ if app_config.agent and app_config.agent_model:
                 await set_chat_model_override(target_chat_id, model_name, "main")
                 prev = current or app_config.agent_model
                 await message.reply_text(
-                    f"Main model for {chat_desc} set to <code>{model_name}</code> "
-                    f"(was: <code>{prev}</code>).",
+                    tr(
+                        "model_main_set",
+                        p0=chat_desc,
+                        p1=html.escape(model_name or ""),
+                        p2=html.escape(prev or ""),
+                    ),
                     parse_mode=pyrogram.enums.ParseMode.HTML,
                 )
                 logger.info(
@@ -682,9 +710,12 @@ if app_config.agent and app_config.agent_model:
                 await set_chat_model_override(target_chat_id, None, "main")
                 prev = current or app_config.agent_model
                 await message.reply_text(
-                    f"Main model for {chat_desc} reset to global default "
-                    f"<code>{app_config.agent_model}</code> "
-                    f"(was: <code>{prev}</code>).",
+                    tr(
+                        "model_main_reset",
+                        p0=chat_desc,
+                        p1=html.escape(app_config.agent_model or ""),
+                        p2=html.escape(prev or ""),
+                    ),
                     parse_mode=pyrogram.enums.ParseMode.HTML,
                 )
                 logger.info(
@@ -699,8 +730,12 @@ if app_config.agent and app_config.agent_model:
                 await set_chat_model_override(target_chat_id, model_name, "multimodal")
                 prev = current or global_default
                 await message.reply_text(
-                    f"Multimodal model for {chat_desc} set to <code>{model_name}</code> "
-                    f"(was: <code>{prev}</code>).",
+                    tr(
+                        "model_multimodal_set",
+                        p0=chat_desc,
+                        p1=html.escape(model_name or ""),
+                        p2=html.escape(prev or ""),
+                    ),
                     parse_mode=pyrogram.enums.ParseMode.HTML,
                 )
                 logger.info(
@@ -711,9 +746,12 @@ if app_config.agent and app_config.agent_model:
                 await set_chat_model_override(target_chat_id, None, "multimodal")
                 prev = current or global_default
                 await message.reply_text(
-                    f"Multimodal model for {chat_desc} reset to global default "
-                    f"<code>{global_default}</code> "
-                    f"(was: <code>{prev}</code>).",
+                    tr(
+                        "model_multimodal_reset",
+                        p0=chat_desc,
+                        p1=html.escape(global_default or ""),
+                        p2=html.escape(prev or ""),
+                    ),
                     parse_mode=pyrogram.enums.ParseMode.HTML,
                 )
                 logger.info(
@@ -728,8 +766,12 @@ if app_config.agent and app_config.agent_model:
                 await set_chat_model_override(target_chat_id, model_name, "small")
                 prev = current or global_default
                 await message.reply_text(
-                    f"Small model for {chat_desc} set to <code>{model_name}</code> "
-                    f"(was: <code>{prev}</code>).",
+                    tr(
+                        "model_small_set",
+                        p0=chat_desc,
+                        p1=html.escape(model_name or ""),
+                        p2=html.escape(prev or ""),
+                    ),
                     parse_mode=pyrogram.enums.ParseMode.HTML,
                 )
                 logger.info(
@@ -740,9 +782,12 @@ if app_config.agent and app_config.agent_model:
                 await set_chat_model_override(target_chat_id, None, "small")
                 prev = current or global_default
                 await message.reply_text(
-                    f"Small model for {chat_desc} reset to global default "
-                    f"<code>{global_default}</code> "
-                    f"(was: <code>{prev}</code>).",
+                    tr(
+                        "model_small_reset",
+                        p0=chat_desc,
+                        p1=html.escape(global_default or ""),
+                        p2=html.escape(prev or ""),
+                    ),
                     parse_mode=pyrogram.enums.ParseMode.HTML,
                 )
                 logger.info(
@@ -751,6 +796,7 @@ if app_config.agent and app_config.agent_model:
                 )
 
     @PyrogramClient.on_message(pyrogram.filters.command("prompt"), group=0)
+    @localized_message(prefer_chat=True)
     async def set_prompt_command(
         client: PyrogramClient, message: pyrogram.types.Message
     ):
@@ -778,19 +824,17 @@ if app_config.agent and app_config.agent_model:
 
         if prompt_text is None:
             if current:
-                status = "Custom prompt is <b>active</b> for this chat."
+                status = tr("prompt_custom_active")
             else:
-                status = "Using <b>default</b> prompt for this chat."
+                status = tr("prompt_default_active")
             await message.reply_text(
-                f"{status}\n\nUsage:\n"
-                "<code>/prompt &lt;text&gt;</code> — set custom prompt\n"
-                "<code>/prompt reset</code> — restore default",
+                tr("prompt_usage", p0=status),
                 parse_mode=pyrogram.enums.ParseMode.HTML,
             )
         elif prompt_text.lower() == "reset":
             await set_chat_prompt_override(chat_id, None)
             await message.reply_text(
-                "Prompt for this chat reset to default.",
+                tr("prompt_reset"),
                 parse_mode=pyrogram.enums.ParseMode.HTML,
             )
             logger.info(
@@ -800,7 +844,7 @@ if app_config.agent and app_config.agent_model:
         else:
             await set_chat_prompt_override(chat_id, prompt_text)
             await message.reply_text(
-                "Custom prompt set for this chat.",
+                tr("prompt_set"),
                 parse_mode=pyrogram.enums.ParseMode.HTML,
             )
             logger.info(
@@ -907,6 +951,7 @@ async def _is_channel_member(
 
 
 @PyrogramClient.on_message(_filter | _chat_command_filter, group=0)
+@localized_message(prefer_chat=True)
 async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
     if not app_config.agent or not agent:
         return await word_reply(client, message)
@@ -1078,6 +1123,7 @@ async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
                 user_prompt=user_prompt,
                 history=history,
                 deps=datatype.ContextDeps(
+                    locale=lang,
                     user_id=user.id,
                     chat_id=chat_id,
                     message=message,

@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlsplit
 from pydantic_ai import RunContext
 
 from kmua.config import app_config
+from kmua.plugins.agent.localization import tr
 
 from .. import bot, datatype, db, web
 from .media import (
@@ -46,12 +47,18 @@ def _numbered_file(path: str, text: str, start_line: int, max_lines: int) -> str
     end_idx = min(start_idx + max_lines, len(lines))
     result: list[str] = []
     if start_idx > 0:
-        result.append(f"... ({start_idx} lines above)")
+        result.append(tr("tool_p0_lines_above", p0=start_idx))
     for i, line in enumerate(lines[start_idx:end_idx], start=start_line):
         result.append(f"{i:4d}: {line}")
     if end_idx < len(lines):
-        result.append(f"... ({len(lines) - end_idx} lines below)")
-    header = f"File: {path} (lines {start_line}-{end_idx} of {len(lines)})"
+        result.append(tr("tool_p0_lines_below", p0=len(lines) - end_idx))
+    header = tr(
+        "tool_file_p0_lines_p1_p2_of_p3",
+        p0=path,
+        p1=start_line,
+        p2=end_idx,
+        p3=len(lines),
+    )
     return f"{header}\n{'=' * len(header)}\n" + "\n".join(result)
 
 
@@ -62,17 +69,13 @@ async def _read_chat(
     if parts.path in ("", "/", "/info"):
         info = await db.get_chat_info(ctx)
         if info is None:
-            return "Error: Chat info not found."
+            return tr("chat_info_missing")
         return _format_chat_info(info)
     if parts.path == "/history":
         query = parse_qs(parts.query)
         known = {"before", "after", "from_id", "to_id", "count", "reply_chain_of"}
         if any(key not in known for key in query):
-            return (
-                "Error: unknown query parameters; supported: before=<id>, "
-                "after=<id>, from_id=<a>&to_id=<b>, "
-                "reply_chain_of=<id>, count=N."
-            )
+            return tr("query_parameters_unknown")
         try:
             params = {
                 key: int(values[0])
@@ -87,12 +90,9 @@ async def _read_chat(
                 if (values := query.get(key))
             }
         except (ValueError, IndexError):
-            return (
-                "Error: invalid query parameters; expected integers for "
-                "before/after/from_id/to_id/count/reply_chain_of."
-            )
+            return tr("query_parameters_invalid")
         return await bot.get_history_messages(ctx, **params)
-    return f"Error: Unknown chat:// target {parts.path}; use /info or /history."
+    return tr("chat_target_unknown", p0=parts.path)
 
 
 async def _read_target_bytes(path: str, ctx: RunContext[datatype.ContextDeps]) -> bytes:
@@ -100,7 +100,7 @@ async def _read_target_bytes(path: str, ctx: RunContext[datatype.ContextDeps]) -
         return await read_bytes(path, ctx)
     except Exception as e:
         if isinstance(e, FileNotFoundError) or "ENOENT" in str(e):
-            raise ValueError(f"File not found: {path}") from e
+            raise ValueError(tr("file_missing", p0=path)) from e
         raise
 
 
@@ -127,7 +127,7 @@ async def _read_content(
             return text
         content = _numbered_file(rest, text, start_line, max_lines)
         if content is None:
-            raise ValueError(f"File not found: {path}")
+            raise ValueError(tr("file_missing", p0=path))
         return content
 
     if protocol in ("work://", "sandbox://"):
@@ -143,7 +143,7 @@ async def _read_content(
         else:
             content = _page_lines(text, start_line, max_lines)
         if content is None:
-            raise ValueError(f"File not found: {path}")
+            raise ValueError(tr("file_missing", p0=path))
         return content
 
     if protocol == "persist://":
@@ -221,4 +221,4 @@ async def _read_content(
             )
         return result.content or ""
 
-    raise ValueError(f"Target {path} is not readable.")
+    raise ValueError(tr("tool_target_p0_is_not_readable", p0=path))

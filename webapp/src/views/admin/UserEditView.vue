@@ -37,7 +37,7 @@ import { t, tError } from "@/i18n";
 import { useSessionStore } from "@/stores/session";
 import { confirm, haptics } from "@/telegram";
 import { formatDateTime, formatNumber, formatTokens } from "@/utils/format";
-import { localeName } from "@/utils/locale";
+import { languageOptions } from "@/utils/locale";
 
 const props = defineProps<{ userId: number }>();
 
@@ -60,7 +60,7 @@ interface EditableUser extends Record<string, unknown> {
 const form = useDirtyState<EditableUser>({
   full_name: "",
   username: "",
-  lang: "zh-CN",
+  lang: "vi",
   waifu_mention: false,
   coins: 0,
   affection: 0,
@@ -84,12 +84,7 @@ const user = useAsyncData(async (signal) => {
 });
 
 const locales = useAsyncData(async (signal) => (await systemInfo(signal)).available_locales);
-const localeOptions = computed(() =>
-  (locales.data.value ?? [form.draft.value.lang]).map((value) => ({
-    value,
-    text: localeName(value),
-  })),
-);
+const localeOptions = computed(() => languageOptions(locales.data.value, form.draft.value.lang));
 
 /** Coins and affection move the economy and the ranking, so they need owner. */
 const canEditEconomy = computed(() => session.isOwner);

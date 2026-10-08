@@ -21,6 +21,7 @@ from pydantic_ai.usage import RunUsage
 
 from kmua.common.http import get_agent_http_client
 from kmua.plugins.agent import provider
+from kmua.plugins.agent.localization import tr
 
 _URL_PATH = "/systemone"
 # Default decision boundary on jev's calibrated probability: callers pass a
@@ -29,10 +30,10 @@ _DEFAULT_RELEVANCE_THRESHOLD = 0.5
 
 _RELEVANCE_QUESTION = {
     "type": "noul",
-    "instructions": "新消息是否是对 Bot 回复的评论、疑问、补充、反驳或相关讨论?",
+    "instructions": tr("jev_question"),
     "criteria": {
-        "true": "新消息与 Bot 回复的话题存在明显关联",
-        "false": "新消息与 Bot 回复的话题无关, 或无法确定是否相关",
+        "true": tr("jev_true"),
+        "false": tr("jev_false"),
     },
 }
 

@@ -20,6 +20,7 @@ from pydantic_ai.usage import RunUsage
 from kmua.config import app_config
 from kmua.logger import logger
 from kmua.plugins.agent import provider, quota, trace
+from kmua.plugins.agent.localization import localized_argument, tr
 from kmua.services.rss import FeedEntry
 
 _DIGEST_TIMEOUT = 30.0
@@ -29,14 +30,14 @@ _DIGEST_TIMEOUT = 30.0
 class RssEntrySummary(BaseModel):
     """One entry's chat-flavored take, keyed by the entry's stable id."""
 
-    entry_id: str = Field(description="条目 ID, 必须是输入中给出的 [entry_id]")
-    summary: str = Field(description="该条目的 1-2 句群聊口吻点评, 指出它为什么值得看")
+    entry_id: str = Field(description=tr("rss_entry_id"))
+    summary: str = Field(description=tr("rss_summary"))
 
 
 class RssDigestSummaries(BaseModel):
     """Digest of a push batch: per-entry takes for the entries worth mentioning."""
 
-    summaries: list[RssEntrySummary] = Field(description="值得点评的条目列表")
+    summaries: list[RssEntrySummary] = Field(description=tr("rss_summaries"))
 
 
 _digest_agent: Agent[Any, RssDigestSummaries] | None = None
@@ -52,7 +53,7 @@ def _make_digest_agent() -> Agent[Any, RssDigestSummaries]:
         # providers reject (DeepSeek with thinking enabled -> HTTP 400).
         output_type=PromptedOutput(
             RssDigestSummaries,
-            description="返回条目点评列表: summaries 为数组, 每项含 entry_id 与 summary",
+            description=tr("rss_output_schema"),
         ),
         capabilities=[trace.AgentTraceCapability()],
         retries=2,
@@ -69,8 +70,9 @@ def _make_broadcast_agent() -> Agent[Any, str]:
     )
 
 
+@localized_argument("lang")
 def build_digest_prompt(
-    entries: list[FeedEntry], feed_title: str, lang: str = "zh-CN"
+    entries: list[FeedEntry], feed_title: str, lang: str = "vi"
 ) -> str:
     """Build the prompt for per-entry summaries of one push batch.
 
@@ -78,24 +80,16 @@ def build_digest_prompt(
     ``lang`` is the chat's delivery locale (e.g. ``zh-CN``), so the take is
     written in the language the subscribers actually read.
     """
-    lines = [
-        f"以下是从 RSS feed「{feed_title}」抓取到的一批新条目, 需要你为其中部分条目写群聊口吻的点评:"
-    ]
+    lines = [tr("rss_digest_intro", p0=feed_title)]
     for entry in entries:
         summary = entry.summary[:300].replace("\n", " ")
         lines.append(f"\n[{entry.entry_id}]")
-        lines.append(f"标题: {entry.title}")
-        lines.append(f"链接: {entry.link}")
+        lines.append(tr("rss_title", p0=entry.title))
+        lines.append(tr("rss_link", p0=entry.link))
         if summary:
-            lines.append(f"内容摘要: {summary}")
-    lines.append(
-        f"\n要求: 对每条值得群友关注的条目输出 1-2 句点评, 指出它为什么值得看; "
-        f"不值得提的条目可以省略。点评用 {lang} 语言, 口语化, 不要复述原文。"
-    )
-    lines.append(
-        "\n输出格式: 一个 JSON 对象, summaries 为数组, 每项为 "
-        '{"entry_id": "<条目ID>", "summary": "<点评>"}。只输出 JSON, 不要输出其它内容。'
-    )
+            lines.append(tr("rss_content_summary", p0=summary))
+    lines.append(tr("rss_digest_requirements", p0=lang))
+    lines.append(tr("rss_json_format"))
     return "\n".join(lines)
 
 
@@ -143,26 +137,23 @@ def parse_digest_output(
     return out
 
 
+@localized_argument("lang")
 def build_broadcast_prompt(
-    entries: list[FeedEntry], feed_title: str, lang: str = "zh-CN"
+    entries: list[FeedEntry], feed_title: str, lang: str = "vi"
 ) -> str:
     """Build the prompt for one chat broadcast covering the whole batch.
 
     Pure function; the broadcast agent returns plain text. ``lang`` is the
     chat's delivery locale, so the message is written in the group's language.
     """
-    lines = [f"以下是从 RSS feed「{feed_title}」抓取到的新条目:"]
+    lines = [tr("rss_broadcast_intro", p0=feed_title)]
     for entry in entries:
         summary = entry.summary[:300].replace("\n", " ")
-        lines.append(f"\n- 标题: {entry.title}")
-        lines.append(f"  链接: {entry.link}")
+        lines.append(tr("rss_broadcast_title", p0=entry.title))
+        lines.append(tr("rss_broadcast_link", p0=entry.link))
         if summary:
-            lines.append(f"  内容摘要: {summary}")
-    lines.append(
-        f"\n你是一个群聊成员, 刚看到这些新内容。请发一条 1-3 句的群聊消息讨论它们: "
-        f"整体点评这一批内容(不要逐条罗列), 至少包含一个条目的标题和链接, "
-        f"用 {lang} 语言, 口语化, 不用列表符号。"
-    )
+            lines.append(tr("rss_broadcast_summary", p0=summary))
+    lines.append(tr("rss_broadcast_requirements", p0=lang))
     return "\n".join(lines)
 
 
@@ -192,10 +183,11 @@ async def _settle_shared(recipients: Sequence[int], usage: RunUsage | None) -> N
         )
 
 
+@localized_argument("lang")
 async def generate_rss_digest(
     entries: list[FeedEntry],
     feed_title: str,
-    lang: str = "zh-CN",
+    lang: str = "vi",
     recipients: Sequence[int] = (),
 ) -> dict[str, str]:
     """Summarize one push batch; {} means "no agent output, use raw push".
@@ -238,10 +230,11 @@ async def generate_rss_digest(
         trace.finish_trace(session)
 
 
+@localized_argument("lang")
 async def generate_rss_broadcast(
     entries: list[FeedEntry],
     feed_title: str,
-    lang: str = "zh-CN",
+    lang: str = "vi",
     recipients: Sequence[int] = (),
 ) -> str | None:
     """Write one broadcast message for the batch; None means "skip broadcast".

@@ -46,7 +46,7 @@ async def wordcloud_command(client: Client, message: pyrogram.types.Message):
         )
         text = "\n".join(msg.text for msg in historys if msg.text)
         if not text:
-            await message.reply_text(i18n.t("bot.msg.wordcloud.no_text", lang))
+            await message.reply_text(i18n.t("bot.hardcoded.wordcloud.no_text", lang))
             return
         result = await asyncio.to_thread(
             WordCloud(

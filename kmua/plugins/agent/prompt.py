@@ -31,6 +31,7 @@ from kmua.common.utils import GROUP_CHAT_TYPES, is_explicit_reply
 from kmua.config import app_config
 from kmua.logger import logger
 from kmua.plugins.agent import datatype, input_format, provider, quota, state, trace
+from kmua.plugins.agent.localization import configured_prompt, tr
 
 
 def _utf16_len(s: str) -> int:
@@ -164,27 +165,27 @@ def get_agent_affection_prompt(rank: float) -> str | None:
 
 
 _MEDIA_TYPE_LABELS = {
-    pyrogram.enums.MessageMediaType.PHOTO: "图片",
-    pyrogram.enums.MessageMediaType.VIDEO: "视频",
-    pyrogram.enums.MessageMediaType.AUDIO: "音频",
-    pyrogram.enums.MessageMediaType.VOICE: "语音",
-    pyrogram.enums.MessageMediaType.DOCUMENT: "文档",
-    pyrogram.enums.MessageMediaType.STICKER: "贴纸",
-    pyrogram.enums.MessageMediaType.ANIMATION: "动画",
-    pyrogram.enums.MessageMediaType.VIDEO_NOTE: "视频消息",
-    pyrogram.enums.MessageMediaType.LIVE_PHOTO: "实况照片",
-    pyrogram.enums.MessageMediaType.LOCATION: "位置",
-    pyrogram.enums.MessageMediaType.VENUE: "地点",
-    pyrogram.enums.MessageMediaType.CONTACT: "联系人",
-    pyrogram.enums.MessageMediaType.DICE: "骰子",
-    pyrogram.enums.MessageMediaType.GAME: "游戏",
-    pyrogram.enums.MessageMediaType.GIVEAWAY: "抽奖",
-    pyrogram.enums.MessageMediaType.GIVEAWAY_WINNERS: "抽奖结果",
-    pyrogram.enums.MessageMediaType.STORY: "故事",
-    pyrogram.enums.MessageMediaType.INVOICE: "账单",
-    pyrogram.enums.MessageMediaType.PAID_MEDIA: "付费内容",
-    pyrogram.enums.MessageMediaType.CHECKLIST: "清单",
-    pyrogram.enums.MessageMediaType.UNSUPPORTED: "不支持的内容",
+    pyrogram.enums.MessageMediaType.PHOTO: "media_photo",
+    pyrogram.enums.MessageMediaType.VIDEO: "media_video",
+    pyrogram.enums.MessageMediaType.AUDIO: "media_audio",
+    pyrogram.enums.MessageMediaType.VOICE: "media_voice",
+    pyrogram.enums.MessageMediaType.DOCUMENT: "media_document",
+    pyrogram.enums.MessageMediaType.STICKER: "media_sticker",
+    pyrogram.enums.MessageMediaType.ANIMATION: "media_animation",
+    pyrogram.enums.MessageMediaType.VIDEO_NOTE: "media_video_note",
+    pyrogram.enums.MessageMediaType.LIVE_PHOTO: "media_live_photo",
+    pyrogram.enums.MessageMediaType.LOCATION: "media_location",
+    pyrogram.enums.MessageMediaType.VENUE: "media_venue",
+    pyrogram.enums.MessageMediaType.CONTACT: "media_contact",
+    pyrogram.enums.MessageMediaType.DICE: "media_dice",
+    pyrogram.enums.MessageMediaType.GAME: "media_game",
+    pyrogram.enums.MessageMediaType.GIVEAWAY: "media_giveaway",
+    pyrogram.enums.MessageMediaType.GIVEAWAY_WINNERS: "media_giveaway_winners",
+    pyrogram.enums.MessageMediaType.STORY: "media_story",
+    pyrogram.enums.MessageMediaType.INVOICE: "media_invoice",
+    pyrogram.enums.MessageMediaType.PAID_MEDIA: "media_paid",
+    pyrogram.enums.MessageMediaType.CHECKLIST: "media_checklist",
+    pyrogram.enums.MessageMediaType.UNSUPPORTED: "media_unsupported",
 }
 
 
@@ -194,7 +195,7 @@ def _media_omitted_note(
 ) -> str:
     """Placeholder for media the model cannot receive, so it never answers
     as if the message had no media at all."""
-    label = _MEDIA_TYPE_LABELS.get(media, "多媒体内容")
+    label = tr(_MEDIA_TYPE_LABELS.get(media, "media_generic"))
     detail = ""
     if (
         media == pyrogram.enums.MessageMediaType.DOCUMENT
@@ -203,7 +204,7 @@ def _media_omitted_note(
         and media_message.document.file_name
     ):
         detail = f"《{media_message.document.file_name}》"
-    return f"[模型无法处理的内容: {label}{detail}]"
+    return tr("unsupported_media", p0=label, p1=detail)
 
 
 def _is_deleted_message(message: Any) -> bool:
@@ -262,7 +263,7 @@ async def get_input_prompt(
     def sender_label(sender: Any) -> str:
         """Label a sender as 'name(id)' so history recall can tell speakers apart."""
         if sender is None:
-            return "未知用户"
+            return tr("unknown_user")
         name = getattr(sender, "first_name", None) or getattr(sender, "title", None)
         if name:
             sender_id = getattr(sender, "id", None)
@@ -270,8 +271,8 @@ async def get_input_prompt(
                 return name
             return f"{name}({sender_id})"
         if hasattr(sender, "first_name"):
-            return "未知用户"
-        return "未知频道"
+            return tr("unknown_user")
+        return tr("unknown_channel")
 
     # 只取当前消息自身的媒体，不含被回复消息的媒体
     def get_media_and_message(
@@ -587,7 +588,7 @@ async def get_input_prompt(
             user_prompt.extend(
                 await build_contents_from_message(
                     reply_msg,
-                    f"[被引用的消息|发送者:{sender_name}|消息ID:{reply_msg.id}]",
+                    tr("quoted_message_label", p0=sender_name, p1=reply_msg.id),
                     include_media=(idx == last_idx),
                 )
             )
@@ -605,7 +606,7 @@ async def get_input_prompt(
     # (tg sendReaction/reply_to_message_id, chat://media) need it: without it
     # the model makes an id up and hits whichever old message carries it.
     sender = message.sender_chat or message.from_user
-    current_label = f"[当前消息|发送者:{sender_label(sender)}|消息ID:{message.id}]"
+    current_label = tr("current_message_label", p0=sender_label(sender), p1=message.id)
     ctx_text = f"{current_label}\n{ctx_str}" if ctx_str else current_label
     user_prompt.extend(
         await build_contents_from_message(
@@ -731,7 +732,7 @@ def _make_transcribe_agent(model: Any) -> Agent[Any, Any] | None:
         model_settings=provider.make_model_settings(
             app_config.agent_model_multimodal_options
         ),
-        instructions=app_config.agent_multimodal_transcribe_prompt,
+        instructions=configured_prompt("agent_multimodal_transcribe_prompt"),
         capabilities=[trace.AgentTraceCapability()],
     )
 
@@ -754,8 +755,8 @@ async def _run_transcription(
 
 
 def _transcription_request_text(item: Any) -> str:
-    media_type = getattr(item, "media_type", "多媒体内容")
-    return f"请描述这份多媒体内容（类型: {media_type}），转述其中的关键信息。"
+    media_type = getattr(item, "media_type", tr("media_generic"))
+    return tr("describe_media", p0=media_type)
 
 
 async def _transcribe_one_media(
@@ -828,7 +829,7 @@ async def transcribe_multimodal_history(
         model,
         media_items,
         subject,
-        failure_text="[历史多媒体内容转述失败, 已省略]",
+        failure_text=tr("history_media_failed"),
     )
     replacement_iter = iter(replacements)
     sanitized: list[ModelMessage] = []
@@ -874,13 +875,13 @@ async def transcribe_multimodal_content(
     if (
         user_prompt
         and isinstance(user_prompt[0], str)
-        and "## 当前消息" in user_prompt[0]
+        and tr("current_message_marker") in user_prompt[0]
     ):
         transcriptions = await _transcribe_media_items(
             model,
             media_items,
             subject,
-            failure_text="[用户发送了多媒体内容, 但转述失败, 已省略]",
+            failure_text=tr("media_failed"),
         )
         folded = input_format.apply_transcriptions(user_prompt, transcriptions)
         return [
@@ -892,7 +893,7 @@ async def transcribe_multimodal_content(
     ]
     transcribe_agent = _make_transcribe_agent(model)
     if transcribe_agent is None:
-        return [*text_items, "[用户发送了多媒体内容, 但转述失败, 已省略]"]
+        return [*text_items, tr("media_failed")]
     request_items: list[Any] = [*text_items, *media_items]
     if not text_items:
         request_items.insert(0, _transcription_request_text(media_items[0]))
@@ -902,10 +903,10 @@ async def transcribe_multimodal_content(
         logger.error(f"multimodal transcription failed: {e.__class__.__name__} - {e}")
         return [
             *text_items,
-            "[用户发送了多媒体内容, 但转述失败, 已省略]",
+            tr("media_failed"),
         ]
     transcription = str(result.output).strip()
     if not transcription:
-        return [*text_items, "[用户发送了多媒体内容, 转述为空, 已省略]"]
+        return [*text_items, tr("media_empty")]
     logger.debug(f"multimodal transcription: {transcription[:200]}")
-    return [*text_items, f"[用户发送了多媒体内容, 模型转述如下]:\n{transcription}"]
+    return [*text_items, tr("media_transcription", p0=transcription)]

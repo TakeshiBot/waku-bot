@@ -9,6 +9,7 @@ from kmua.common.memory_store import memttlcache
 from kmua.config import app_config
 from kmua.logger import logger
 from kmua.plugins.agent import datatype, quota, state, trace
+from kmua.plugins.agent.localization import tr
 
 _user_memory_locks: WeakValueDictionary[int, asyncio.Lock] = WeakValueDictionary()
 _user_memory_locks_lock = asyncio.Lock()
@@ -47,7 +48,7 @@ async def update_user_memory(
         logger.debug(f"Updating memory for user {user_id}")
         old_memory = await memttlcache.get(state.memory_key(user_id))
         if old_memory and isinstance(old_memory, datatype.ChatMemoryy):
-            message_text = f"根据已有的记忆和新的聊天消息, 更新对用户的记忆, 并决定对用户的好感变化.\n旧的记忆: {old_memory}\n新的聊天消息: {message_text}"
+            message_text = tr("update_user_memory", p0=old_memory, p1=message_text)
 
         # 使用超时控制防止模型调用阻塞事件循环
         session = await trace.start_trace("memory", user_id=user_id)
@@ -55,11 +56,7 @@ async def update_user_memory(
             timeout = app_config.agent_model_timeout
             coro = agent.run(
                 output_type=datatype.UserMemoryResult,
-                user_prompt=(
-                    "根据以下聊天记录, 总结出关于用户的重要信息, 并决定对用户的好感变化. "
-                    "记录已按聊天分组并标注时间, 注意区分用户在不同聊天中的表现:\n"
-                    f" {message_text}"
-                ),
+                user_prompt=(tr("summarize_user_memory", p0=message_text)),
             )
 
             if timeout > 0:

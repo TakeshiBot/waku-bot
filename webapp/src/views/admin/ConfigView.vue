@@ -147,7 +147,7 @@ async function onReload(): Promise<void> {
       <DefinitionList :items="providers" />
     </SettingsSection>
 
-    <SettingsSection label="secrets">
+    <SettingsSection :label="t('admin.secrets')">
       <DefinitionList :items="secrets" />
     </SettingsSection>
 

@@ -13,6 +13,7 @@ import { computed } from "vue";
 
 import ActivityDot from "@/components/ActivityDot.vue";
 import { haptics } from "@/telegram";
+import { formatNumber } from "@/utils/format";
 
 const props = withDefaults(
   defineProps<{
@@ -108,7 +109,7 @@ function onActivate(): void {
       class="text-sub text-hint shrink-0"
       :class="mono ? 'font-mono' : ''"
     >
-      {{ value }}
+      {{ typeof value === "number" && !mono ? formatNumber(value) : value }}
     </span>
 
     <slot name="control" />

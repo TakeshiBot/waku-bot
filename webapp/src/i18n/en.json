@@ -35,6 +35,22 @@
     "admin": "Developer panel",
     "adminHint": "Stats, runtime config, groups and users"
   },
+  "dev": {
+    "nativeButtons": "dev · Telegram native button simulation",
+    "noChanges": "No changes to save"
+  },
+  "parseSites": {
+    "wechat": "WeChat public accounts",
+    "coolapk": "Coolapk",
+    "tieba": "Baidu Tieba",
+    "pixiv": "Pixiv",
+    "bilibili": "Bilibili",
+    "danbooru": "Danbooru",
+    "kemono": "Kemono",
+    "yandere": "Yande.re",
+    "nhentai": "Nhentai",
+    "twitter": "Twitter/X"
+  },
   "me": {
     "title": "My profile",
     "profile": "Account",
@@ -199,6 +215,7 @@
     "can_pin_messages": "Pin messages"
   },
   "admin": {
+    "secrets": "Secrets",
     "title": "Developer panel",
     "stats": "Stats",
     "users": "Users",
@@ -395,6 +412,9 @@
       "status": "Status",
       "since": "Since",
       "until": "Until",
+      "sincePlaceholder": "2026-09-01 00:00",
+      "untilPlaceholder": "2026-09-30",
+      "dateFormatHint": "Enter YYYY-MM-DD or YYYY-MM-DD HH:MM in your timezone",
       "search": "Search",
       "searchPlaceholder": "Output or error text",
       "reset": "Reset",
@@ -459,6 +479,8 @@
       "transcribe": "Transcription model"
     },
     "detail": {
+      "charCount": "{count} chars",
+      "media": "[media: {type}, {size} bytes]",
       "title": "Run {id}",
       "summary": "Summary",
       "events": "Event timeline",

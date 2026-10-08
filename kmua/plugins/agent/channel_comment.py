@@ -11,6 +11,7 @@ from kmua.common.memory_store import memttlcache
 from kmua.common.utils import GROUP_CHAT_TYPES
 from kmua.config import app_config
 from kmua.logger import logger
+from kmua.plugins.agent.localization import configured_prompt, localized_message, tr
 from kmua.plugins.agent.output import TypingKeepAlive, reply_output
 from kmua.plugins.agent.prompt import get_input_prompt
 from kmua.plugins.agent.runner import get_chat_prompt_override
@@ -21,10 +22,10 @@ from .whitelist import is_chat_allowed
 
 
 class CommentResult(BaseModel):
-    comment: str = Field(description="评论内容")
-    poll_question: str | None = Field(default=None, description="投票问题")
-    poll_options: list[str] | None = Field(default=None, description="投票选项")
-    poll_is_anonymous: bool = Field(default=True, description="投票是否匿名")
+    comment: str = Field(description=tr("comment_content"))
+    poll_question: str | None = Field(default=None, description=tr("poll_question"))
+    poll_options: list[str] | None = Field(default=None, description=tr("poll_options"))
+    poll_is_anonymous: bool = Field(default=True, description=tr("poll_anonymous"))
 
 
 # Structured output forces a tool_choice, which thinking-enabled models
@@ -238,6 +239,7 @@ channel_comment_filter = pyrogram.filters.create(channel_comment_filter_func)
 
 
 @Client.on_message(channel_comment_filter, group=2)  # 2 to after unpin
+@localized_message(prefer_chat=True)
 async def comment_channel_message(client: Client, message: pyrogram.types.Message):
     if not app_config.agent:
         return
@@ -265,13 +267,13 @@ async def comment_channel_message(client: Client, message: pyrogram.types.Messag
     if prompt_override:
         instructions = prompt_override
     ctx_parts = [
-        "任务类型: 频道评论",
-        f"频道名称: {channel.title}",
-        f"频道简介: {channel.bio or channel.description}",
-        f"当前时间: {datetime.datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')}",
-        f"任务描述: {app_config.agent_channel_comment_prompt}",
+        tr("channel_task"),
+        tr("channel_name", p0=channel.title),
+        tr("channel_bio", p0=channel.bio or channel.description),
+        tr("current_time", p0=datetime.datetime.now().strftime(tr("date_format"))),
+        tr("task_description", p0=configured_prompt("agent_channel_comment_prompt")),
     ]
-    instructions += "\n\n" + "\n".join(ctx_parts)
+    instructions += "\n\n" + "\n".join(ctx_parts) + "\n\n" + tr("output_language")
 
     prompts, _, _ = await get_input_prompt(client, message, ctx=None)
     if not prompts:

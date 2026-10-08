@@ -4,6 +4,7 @@ from pyrogram import enums, filters, types
 from pyrogram.client import Client
 
 from kmua import database, gift
+from kmua.i18n import t
 
 
 @Client.on_message(filters.command("buygift") & filters.private, group=1)
@@ -14,26 +15,27 @@ async def buy_gift(client: Client, message: types.Message):
     user_data = await database.get_user_by_id(user.id)
     if not user_data:
         return
+    lang = user_data.user_config.lang
     user_coin = user_data.user_config.coins
     affordable_gifts = gift.list_affordable_gifts(user_coin)
     if not affordable_gifts:
-        await message.reply_text("你现在似乎不能买任何礼物呢")
+        await message.reply_text(t("bot.hardcoded.gift.cannot_buy", locale=lang))
         return
-    gift_list_text = "要买点什么呢?"
+    gift_list_text = t("bot.hardcoded.gift.choose_buy", locale=lang)
     await message.reply_text(
         gift_list_text,
         reply_markup=types.InlineKeyboardMarkup(
             [
                 [
                     types.InlineKeyboardButton(
-                        gift.get_display_name(g.id),
+                        gift.get_display_name(g.id, lang),
                         callback_data=f"buygift:{user.id}:{g.id}:req",
                     )
                     for g in affordable_gifts  # [TODO] 分个页, 等以后礼物类型多了的时候
                 ],
                 [
                     types.InlineKeyboardButton(
-                        "离开",
+                        t("bot.hardcoded.gift.leave", locale=lang),
                         callback_data="delete_callback_query_message",
                     )
                 ],
@@ -44,6 +46,7 @@ async def buy_gift(client: Client, message: types.Message):
 
 @Client.on_callback_query(filters.regex(r"^buygift:(\d+):(.+):(.+)$"), group=0)
 async def handle_buy_gift_callback(client: Client, callback_query: types.CallbackQuery):
+    lang = (await database.get_user_config(callback_query.from_user.id)).lang
     data = callback_query.data
     if data is None:
         return
@@ -57,26 +60,33 @@ async def handle_buy_gift_callback(client: Client, callback_query: types.Callbac
     except ValueError:
         return
     if callback_query.from_user.id != user_id:
-        await callback_query.answer("这不是你的购买请求哦", show_alert=True)
+        await callback_query.answer(
+            t("bot.hardcoded.gift.not_your_purchase", locale=lang), show_alert=True
+        )
         return
     gift_id = gift.GiftID(gift_id_str)
     gift_item = gift.get_gift_by_id(gift_id)
     user_data = await database.get_user_by_id(user_id)
     if not user_data:
-        await callback_query.answer("用户数据未找到", show_alert=True)
+        await callback_query.answer(
+            t("bot.hardcoded.gift.user_missing", locale=lang), show_alert=True
+        )
         return
     user_coins = user_data.user_config.coins
     match status:
         case "yes":
             if user_data.user_config.coins < gift_item.price:
                 await callback_query.answer(
-                    "你的余额似乎不足以购买此礼物呢", show_alert=True
+                    t("bot.hardcoded.gift.insufficient", locale=lang), show_alert=True
                 )
                 return
             rarity = random.randint(1, 5)
             await database.buy_gift_for_user(user_id, gift_id, rarity=rarity)
             await callback_query.answer(
-                f"成功购买了 {gift.get_rarity_display_name(rarity)}的{gift.get_display_name(gift_item.id)} *1",
+                t("bot.hardcoded.gift.bought", locale=lang).format(
+                    rarity=gift.get_rarity_display_name(rarity, lang),
+                    name=gift.get_display_name(gift_item.id, lang),
+                ),
                 show_alert=True,
             )
             user_coins_after = (await database.get_user_config(user_id)).coins
@@ -84,16 +94,18 @@ async def handle_buy_gift_callback(client: Client, callback_query: types.Callbac
             if percent_now > 100 or user_coins <= 0:
                 percent_now = 100
             await callback_query.edit_message_text(
-                f"要再次购买 {gift.get_display_name(gift_item.id)} 吗?\n这将花费你 {percent_now}% 的余额哦",
+                t("bot.hardcoded.gift.repeat", locale=lang).format(
+                    name=gift.get_display_name(gift_item.id, lang), percent=percent_now
+                ),
                 reply_markup=types.InlineKeyboardMarkup(
                     [
                         [
                             types.InlineKeyboardButton(
-                                "再买一个",
+                                t("bot.hardcoded.gift.buy_again", locale=lang),
                                 callback_data=f"buygift:{user_id}:{gift_id_str}:yes",
                             ),
                             types.InlineKeyboardButton(
-                                "离开",
+                                t("bot.hardcoded.gift.leave", locale=lang),
                                 callback_data="delete_callback_query_message",
                             ),
                         ]
@@ -104,25 +116,25 @@ async def handle_buy_gift_callback(client: Client, callback_query: types.Callbac
             affordable_gifts = gift.list_affordable_gifts(user_coins)
             if not affordable_gifts:
                 await callback_query.edit_message_text(
-                    "已取消购买\n你现在似乎不能买任何礼物呢",
+                    t("bot.hardcoded.gift.cancelled_empty", locale=lang),
                     reply_markup=None,  # type: ignore
                 )
                 return
-            gift_list_text = "已取消购买, 要买点其他的什么呢?"
+            gift_list_text = t("bot.hardcoded.gift.cancelled_choose", locale=lang)
             await callback_query.edit_message_text(
                 gift_list_text,
                 reply_markup=types.InlineKeyboardMarkup(
                     [
                         [
                             types.InlineKeyboardButton(
-                                gift.get_display_name(g.id),
+                                gift.get_display_name(g.id, lang),
                                 callback_data=f"buygift:{user_data.id}:{g.id}:req",
                             )
                             for g in affordable_gifts
                         ],
                         [
                             types.InlineKeyboardButton(
-                                "离开",
+                                t("bot.hardcoded.gift.leave", locale=lang),
                                 callback_data="delete_callback_query_message",
                             )
                         ],
@@ -135,8 +147,13 @@ async def handle_buy_gift_callback(client: Client, callback_query: types.Callbac
             )
             if price_percent > 100:
                 price_percent = 100
-            display_name = gift.get_display_name(gift_item.id)
-            text = f"<b>{display_name}</b>\n<i>{gift_item.description}</i>\n\n效果注释: {gift_item.comment}\n\n你确定要购买 {display_name}*1 吗? 这将花费你 {price_percent}% 的余额哦"
+            display_name = gift.get_display_name(gift_item.id, lang)
+            text = t("bot.hardcoded.gift.confirm_purchase", locale=lang).format(
+                name=display_name,
+                description=gift_item.get_description(lang),
+                comment=gift_item.get_comment(lang),
+                percent=price_percent,
+            )
             message = callback_query.message
             if message is None:
                 return
@@ -147,11 +164,11 @@ async def handle_buy_gift_callback(client: Client, callback_query: types.Callbac
                     [
                         [
                             types.InlineKeyboardButton(
-                                "确认",
+                                t("bot.hardcoded.gift.confirm", locale=lang),
                                 callback_data=f"buygift:{user_id}:{gift_id_str}:yes",
                             ),
                             types.InlineKeyboardButton(
-                                "算了",
+                                t("bot.hardcoded.gift.cancel", locale=lang),
                                 callback_data=f"buygift:{user_id}:{gift_id_str}:no",
                             ),
                         ]
@@ -159,7 +176,9 @@ async def handle_buy_gift_callback(client: Client, callback_query: types.Callbac
                 ),
             )
         case _:
-            await callback_query.answer("未知操作", show_alert=True)
+            await callback_query.answer(
+                t("bot.hardcoded.gift.unknown_action", locale=lang), show_alert=True
+            )
             return
 
 
@@ -171,14 +190,19 @@ async def send_gift(client: Client, message: types.Message):
     user_data = await database.get_user_by_id(user.id)
     if not user_data:
         return
+    lang = user_data.user_config.lang
     user_gifts = await database.get_user_gifts(user.id, False, 0, 5)
     if not user_gifts:
-        await message.reply_text("你还没有买下任何礼物哦")
+        await message.reply_text(t("bot.hardcoded.gift.inventory_empty", locale=lang))
         return
     user_gifts_total = await database.count_user_gifts(user.id, False)
-    text = "要送什么给咱呢? 点击序号按钮即可赠送"
+    text = t("bot.hardcoded.gift.choose_send", locale=lang)
     for i, g in enumerate(user_gifts, start=1):
-        text += f"\n{i}. {gift.get_rarity_display_name(g.rarity)}的{gift.get_display_name(gift.GiftID(g.gift_id))}"
+        text += t("bot.hardcoded.gift.inventory_row", locale=lang).format(
+            index=i,
+            rarity=gift.get_rarity_display_name(g.rarity, lang),
+            name=gift.get_display_name(gift.GiftID(g.gift_id), lang),
+        )
     # 每行5个按钮, 第2行分页
     buttons = [
         [
@@ -193,11 +217,11 @@ async def send_gift(client: Client, message: types.Message):
         buttons.append(
             [
                 types.InlineKeyboardButton(
-                    "上一页",
+                    t("bot.hardcoded.gift.previous", locale=lang),
                     callback_data="sendgift_page:-5",  # sendgift_page:OFFSET
                 ),
                 types.InlineKeyboardButton(
-                    "下一页",
+                    t("bot.hardcoded.gift.next", locale=lang),
                     callback_data="sendgift_page:5",  # sendgift_page:OFFSET
                 ),
             ]
@@ -212,6 +236,7 @@ async def send_gift(client: Client, message: types.Message):
 async def handle_send_gift_page_callback(
     client: Client, callback_query: types.CallbackQuery
 ):
+    lang = (await database.get_user_config(callback_query.from_user.id)).lang
     data = callback_query.data
     if data is None:
         return
@@ -225,20 +250,30 @@ async def handle_send_gift_page_callback(
     except ValueError:
         return
     if offset < 0:
-        await callback_query.answer("没有更多了哦", show_alert=True)
+        await callback_query.answer(
+            t("bot.hardcoded.gift.no_more", locale=lang), show_alert=True
+        )
     user_id = callback_query.from_user.id
     user_data = await database.get_user_by_id(user_id)
     if not user_data:
-        await callback_query.answer("用户数据未找到", show_alert=True)
+        await callback_query.answer(
+            t("bot.hardcoded.gift.user_missing", locale=lang), show_alert=True
+        )
         return
     user_gifts = await database.get_user_gifts(user_id, False, offset, 5)
     if not user_gifts:
-        await callback_query.answer("没有更多礼物了哦", show_alert=True)
+        await callback_query.answer(
+            t("bot.hardcoded.gift.no_more_gifts", locale=lang), show_alert=True
+        )
         return
     user_gifts_total = await database.count_user_gifts(user_id, False)
-    text = "要送什么给咱呢? 点击序号按钮即可赠送"
+    text = t("bot.hardcoded.gift.choose_send", locale=lang)
     for i, g in enumerate(user_gifts, start=1 + offset):
-        text += f"\n{i}. {gift.get_rarity_display_name(g.rarity)}的{gift.get_display_name(gift.GiftID(g.gift_id))}"
+        text += t("bot.hardcoded.gift.inventory_row", locale=lang).format(
+            index=i,
+            rarity=gift.get_rarity_display_name(g.rarity, lang),
+            name=gift.get_display_name(gift.GiftID(g.gift_id), lang),
+        )
     # 每行5个按钮, 第2行分页
     buttons = [
         [
@@ -253,11 +288,11 @@ async def handle_send_gift_page_callback(
         buttons.append(
             [
                 types.InlineKeyboardButton(
-                    "上一页",
+                    t("bot.hardcoded.gift.previous", locale=lang),
                     callback_data=f"sendgift_page:{offset - 5}",  # sendgift_page:OFFSET
                 ),
                 types.InlineKeyboardButton(
-                    "下一页",
+                    t("bot.hardcoded.gift.next", locale=lang),
                     callback_data=f"sendgift_page:{offset + 5}",  # sendgift_page:OFFSET
                 ),
             ]

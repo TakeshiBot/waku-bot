@@ -2,6 +2,7 @@ from pydantic_ai import ModelRetry, RunContext
 
 from kmua.logger import logger
 from kmua.plugins.agent import datatype, powermem_usage, quota
+from kmua.plugins.agent.localization import tr
 
 
 async def search_group_memory(
@@ -62,15 +63,14 @@ async def update_group_memory(
         A message confirming the memory was stored, or an error description.
     """
     if not ctx.deps.powermemory:
-        return "Group memory system is not available."
+        return tr("memory_unavailable")
     try:
         with powermem_usage.collect() as memory_calls:
             result = await ctx.deps.powermemory.add(
                 content,
                 infer=True,
                 user_id=f"group_{ctx.deps.chat_id}",
-                prompt="You are a helpful assistant that stores useful information about the group based on the following content. "
-                "Extract any notable facts, relationships, preferences, or significant details that would be worth remembering about the group and its members.",
+                prompt=tr("memory_system"),
             )
         logger.debug(
             f"update_group_memory: stored memory for group {ctx.deps.chat_id}, "
@@ -81,11 +81,11 @@ async def update_group_memory(
             f"update_group_memory: failed for group {ctx.deps.chat_id}: "
             f"{e.__class__.__name__}: {e}"
         )
-        raise ModelRetry(f"Failed to store memory: {e.__class__.__name__}: {e}")
+        raise ModelRetry(tr("memory_store_failed", p0=e.__class__.__name__, p1=e))
     # 计费发生在存储成功之后, 也不放在上面的 try 里: 结算失败不该被当成"没存进去"
     # 而让模型重试。
     await _settle_powermem(ctx, memory_calls)
-    return f"Memory stored: {content!r}"
+    return tr("tool_memory_stored_p0", p0=repr(content))
 
 
 async def _settle_powermem(

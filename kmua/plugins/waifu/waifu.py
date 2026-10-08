@@ -270,7 +270,7 @@ async def marry_waifu(client: PyrogramClient, query: pyrogram.types.CallbackQuer
             else:
                 await query.answer(
                     text=i18n.t(
-                        "bot.msg.waifu.waifu_already_married_other", locale=lang
+                        "bot.msg.waifu.already_married_other", locale=lang
                     ),
                     show_alert=True,
                     cache_time=10,

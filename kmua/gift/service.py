@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass
 
 from kmua import affection, common, database, gift
+from kmua.i18n import t
 from kmua.plugins.agent import state
 
 # Gift effects touch both the database and short-lived in-memory state, which cannot
@@ -22,17 +23,21 @@ class GiftUseResult:
     detail: str | None = None
 
 
-async def send_gift_to_bot(user_id: int, gift_db_id: int) -> GiftUseResult:
+async def send_gift_to_bot(
+    user_id: int, gift_db_id: int, locale: str = ""
+) -> GiftUseResult:
     """Consume one of a user's gifts and apply its effect.
 
     The caller owns the gift id indirectly through their authenticated user id. Keeping
     that check here means the panel and the callback cannot drift into different rules.
     """
     async with _gift_send_lock:
-        return await _send_gift_to_bot(user_id, gift_db_id)
+        return await _send_gift_to_bot(user_id, gift_db_id, locale=locale)
 
 
-async def _send_gift_to_bot(user_id: int, gift_db_id: int) -> GiftUseResult:
+async def _send_gift_to_bot(
+    user_id: int, gift_db_id: int, locale: str = ""
+) -> GiftUseResult:
     gift_item = await database.get_gift_by_db_id(gift_db_id)
     if gift_item is None:
         raise ValueError("Gift not found")
@@ -71,8 +76,9 @@ async def _send_gift_to_bot(user_id: int, gift_db_id: int) -> GiftUseResult:
         case gift.GiftID.FROST_FLOWER_WHISPER:
             memory = await common.memttlcache.get(f"agent_user_memory:{user_id}")
             affection_rank = await affection.get_affection_rank(user_id)
-            detail = (
-                f"当前对你的记忆:\n{memory or '无'}\n\n好感度排名: {affection_rank:.2%}"
+            detail = t("bot.hardcoded.gift.memory", locale=locale).format(
+                memory=memory or t("bot.hardcoded.gift.no_memory", locale=locale),
+                rank=affection_rank,
             )
         case gift.GiftID.DAWN_BELL_HERB:
             await common.memttlcache.delete(state.user_blocked_key(user_id))
@@ -89,7 +95,7 @@ async def _send_gift_to_bot(user_id: int, gift_db_id: int) -> GiftUseResult:
         await affection.update_user_affection(user_id=user_id, change=affection_change)
     await database.mark_gift_as_sent(gift_db_id)
     return GiftUseResult(
-        display_name=gift.get_display_name(gift_def.id),
-        rarity_name=gift.get_rarity_display_name(gift_item.rarity),
+        display_name=gift.get_display_name(gift_def.id, locale),
+        rarity_name=gift.get_rarity_display_name(gift_item.rarity, locale),
         detail=detail,
     )

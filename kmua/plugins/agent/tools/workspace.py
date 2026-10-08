@@ -16,6 +16,8 @@ from typing import Any
 
 from agentfs_sdk import AgentFS, AgentFSOptions
 
+from kmua.plugins.agent.localization import tr
+
 WORKSPACE_AGENTFS_DIR = Path(".agentfs") / "workspace"
 MAX_WORKSPACE_FILE_SIZE = 5 * 1024 * 1024
 _SESSION_CACHE_MAX = 32
@@ -108,7 +110,7 @@ def _normalize_workspace_path(path: str) -> str:
     if not path.startswith("/"):
         path = "/" + path
     if ".." in Path(path).parts:
-        raise ValueError(f"Path escapes the workspace: {path}")
+        raise ValueError(tr("tool_path_escapes_the_workspace_p0", p0=path))
     return path
 
 
@@ -120,7 +122,9 @@ async def write_file(session_key: str, path: str, content: str | bytes) -> None:
         len(content.encode("utf-8") if isinstance(content, str) else content)
         > MAX_WORKSPACE_FILE_SIZE
     ):
-        raise ValueError(f"Content exceeds the {MAX_WORKSPACE_FILE_SIZE} byte limit")
+        raise ValueError(
+            tr("tool_content_exceeds_the_p0_byte_limit", p0=MAX_WORKSPACE_FILE_SIZE)
+        )
     await agent.fs.write_file(path, content)
 
 
@@ -129,7 +133,9 @@ async def write_file_bytes(session_key: str, path: str, data: bytes) -> None:
     agent = await get_workspace_agentfs(session_key)
     path = _normalize_workspace_path(path)
     if len(data) > MAX_WORKSPACE_FILE_SIZE:
-        raise ValueError(f"Content exceeds the {MAX_WORKSPACE_FILE_SIZE} byte limit")
+        raise ValueError(
+            tr("tool_content_exceeds_the_p0_byte_limit", p0=MAX_WORKSPACE_FILE_SIZE)
+        )
     await agent.fs.write_file(path, data)
 
 
@@ -152,28 +158,44 @@ async def edit_file(
     if line is not None:
         lines = content.splitlines(keepends=True)
         if line < 1 or line > len(lines):
-            raise ValueError(f"line {line} out of range (file has {len(lines)} lines)")
+            raise ValueError(
+                tr(
+                    "tool_line_p0_out_of_range_file_has_p1_lines",
+                    p0=line,
+                    p1=len(lines),
+                )
+            )
         target = lines[line - 1]
         count = target.count(old_text)
         if count == 0:
-            raise ValueError(f"old_text not found on line {line}")
+            raise ValueError(tr("tool_old_text_not_found_on_line_p0", p0=line))
         if count > 1 and not replace_all:
             raise ValueError(
-                f"old_text matches {count} times on line {line}; make old_text unique or pass replace_all=True"
+                tr(
+                    "tool_old_text_matches_p0_times_on_line_p1_make_old_text_unique_or_pass_replace_all_true",
+                    p0=count,
+                    p1=line,
+                )
             )
         lines[line - 1] = target.replace(old_text, new_text, -1 if replace_all else 1)
         updated = "".join(lines)
     else:
         count = content.count(old_text)
         if count == 0:
-            raise ValueError(f"old_text not found in {path}")
+            raise ValueError(tr("tool_old_text_not_found_in_p0", p0=path))
         if count > 1 and not replace_all:
             raise ValueError(
-                f"old_text matches {count} times in {path}; make old_text unique or pass replace_all=True"
+                tr(
+                    "tool_old_text_matches_p0_times_in_p1_make_old_text_unique_or_pass_replace_all_true",
+                    p0=count,
+                    p1=path,
+                )
             )
         updated = content.replace(old_text, new_text, -1 if replace_all else 1)
     if len(updated.encode("utf-8")) > MAX_WORKSPACE_FILE_SIZE:
-        raise ValueError(f"Result exceeds the {MAX_WORKSPACE_FILE_SIZE} byte limit")
+        raise ValueError(
+            tr("tool_result_exceeds_the_p0_byte_limit", p0=MAX_WORKSPACE_FILE_SIZE)
+        )
     await agent.fs.write_file(path, updated)
 
 
@@ -200,12 +222,18 @@ async def read_file(
     end_idx = min(start_idx + max_lines, len(lines))
     result = []
     if start_idx > 0:
-        result.append(f"... ({start_idx} lines above)")
+        result.append(tr("tool_p0_lines_above", p0=start_idx))
     for i, line in enumerate(lines[start_idx:end_idx], start=start_line):
         result.append(f"{i:4d}: {line}")
     if end_idx < len(lines):
-        result.append(f"... ({len(lines) - end_idx} lines below)")
-    header = f"File: {path} (lines {start_line}-{end_idx} of {len(lines)})"
+        result.append(tr("tool_p0_lines_below", p0=len(lines) - end_idx))
+    header = tr(
+        "tool_file_p0_lines_p1_p2_of_p3",
+        p0=path,
+        p1=start_line,
+        p2=end_idx,
+        p3=len(lines),
+    )
     return f"{header}\n{'=' * len(header)}\n" + "\n".join(result)
 
 

@@ -18,6 +18,7 @@ from kmua.common.utils import is_explicit_reply
 from kmua.config import app_config
 from kmua.database import get_chat_by_id
 from kmua.logger import logger
+from kmua.plugins.agent.localization import tr
 
 from .. import datatype
 
@@ -36,9 +37,8 @@ class WebFetchResult:
 
 def _truncate(text: str) -> str:
     if len(text) > MAX_CONTENT_LENGTH:
-        return (
-            text[:MAX_CONTENT_LENGTH]
-            + f"\n\n[Content truncated at {MAX_CONTENT_LENGTH} characters]"
+        return text[:MAX_CONTENT_LENGTH] + tr(
+            "tool_content_truncated_at_p0_characters", p0=MAX_CONTENT_LENGTH
         )
     return text
 
@@ -95,7 +95,7 @@ async def _fetch_http(url: str) -> WebFetchResult:
         return WebFetchResult(
             success=False,
             url=url,
-            error="Fetch timed out",
+            error=tr("fetch_timeout"),
         )
     except Exception as e:
         logger.error(f"webfetch error for {url}: {e.__class__.__name__}: {e}")
@@ -130,19 +130,17 @@ async def _fetch_http(url: str) -> WebFetchResult:
         return WebFetchResult(
             success=False,
             url=url,
-            error="Page returned empty content",
+            error=tr("page_empty"),
         )
     return WebFetchResult(success=True, url=url, content=_truncate(text))
 
 
 async def _fetch_crawl_api(url: str) -> WebFetchResult:
     if not is_safe_web_url(url):
-        return WebFetchResult(
-            success=False, url=url, error="URL is not a public internet address"
-        )
+        return WebFetchResult(success=False, url=url, error=tr("url_not_public"))
     api_url = app_config.agent_crawl_api_url
     if not api_url:
-        raise ValueError("Crawl API URL is not configured")
+        raise ValueError(tr("tool_crawl_api_url_is_not_configured"))
     headers: dict[str, str] = {"Content-Type": "application/json"}
     if app_config.agent_crawl_api_token:
         headers["Authorization"] = f"Bearer {app_config.agent_crawl_api_token}"
@@ -168,13 +166,13 @@ async def _fetch_crawl_api(url: str) -> WebFetchResult:
                     return WebFetchResult(
                         success=False,
                         url=url,
-                        error="Crawl API timed out",
+                        error=tr("crawl_timeout"),
                     )
                 if resp.status in (401, 403):
                     return WebFetchResult(
                         success=False,
                         url=url,
-                        error=(f"Crawl API rejected the request (HTTP {resp.status})"),
+                        error=(tr("crawl_rejected", p0=resp.status)),
                     )
                 resp.raise_for_status()
                 data: dict[str, Any] = await resp.json()
@@ -182,10 +180,7 @@ async def _fetch_crawl_api(url: str) -> WebFetchResult:
         return WebFetchResult(
             success=False,
             url=url,
-            error=(
-                "Crawl API timed out after "
-                f"{app_config.agent_crawl_api_timeout}s (agent_crawl_api_timeout)"
-            ),
+            error=(tr("crawl_timeout_config", p0=app_config.agent_crawl_api_timeout)),
         )
     except (aiohttp.ClientConnectionError, aiohttp.ClientPayloadError) as e:
         return WebFetchResult(
@@ -200,7 +195,7 @@ async def _fetch_crawl_api(url: str) -> WebFetchResult:
         return WebFetchResult(
             success=False,
             url=url,
-            error=err or "Crawl API returned failure",
+            error=err or tr("tool_crawl_api_returned_failure"),
         )
 
     results = data.get("results") or []
@@ -208,7 +203,7 @@ async def _fetch_crawl_api(url: str) -> WebFetchResult:
         return WebFetchResult(
             success=False,
             url=url,
-            error="Crawl API returned no results",
+            error=tr("crawl_empty"),
         )
 
     md = results[0].get("markdown") or {}
@@ -217,7 +212,7 @@ async def _fetch_crawl_api(url: str) -> WebFetchResult:
         return WebFetchResult(
             success=False,
             url=url,
-            error="Page returned empty content",
+            error=tr("page_empty"),
         )
     return WebFetchResult(success=True, url=url, content=_truncate(text))
 
@@ -241,12 +236,16 @@ async def _crawl_api_error(api_url: str, error: Exception) -> str:
         status = None
 
     if status is None:
-        return (
-            f"Crawl API at {base} dropped the connection ({error.__class__.__name__})."
+        return tr(
+            "tool_crawl_api_at_p0_dropped_the_connection_p1",
+            p0=base,
+            p1=error.__class__.__name__,
         )
-    return (
-        f"Crawl API at {base} answered /health with HTTP {status} but dropped the "
-        f"crawl request ({error.__class__.__name__})"
+    return tr(
+        "tool_crawl_api_at_p0_answered_health_with_http_p1_but_dropped_the_crawl_request_p2",
+        p0=base,
+        p1=status,
+        p2=error.__class__.__name__,
     )
 
 
@@ -315,7 +314,7 @@ async def _fetch_telegram_message(
                 return WebFetchResult(
                     success=False,
                     url=url,
-                    error="This is a Telegram message link but you cannot access private group/channel messages from other chats for privacy reasons",
+                    error=tr("private_message_restricted"),
                 )
         else:
             current_chat_data = await get_chat_by_id(current_chat_id)
@@ -337,7 +336,7 @@ async def _fetch_telegram_message(
                     return WebFetchResult(
                         success=False,
                         url=url,
-                        error="Original message not found",
+                        error=tr("original_message_missing"),
                     )
 
                 if original_msg.link:
@@ -356,7 +355,7 @@ async def _fetch_telegram_message(
             return WebFetchResult(
                 success=False,
                 url=url,
-                error="Message not found or access denied",
+                error=tr("message_access_denied"),
             )
 
         return _format_telegram_message(message, url)
@@ -365,13 +364,13 @@ async def _fetch_telegram_message(
         return WebFetchResult(
             success=False,
             url=url,
-            error="Cannot access this chat - it may be private or you are not a member",
+            error=tr("chat_access_denied"),
         )
     except MessageIdsEmpty:
         return WebFetchResult(
             success=False,
             url=url,
-            error="Message not found",
+            error=tr("message_missing"),
         )
     except Exception as e:
         logger.warning(f"Failed to fetch Telegram message from {url}: {e}")
@@ -384,9 +383,9 @@ def _format_telegram_message(
     parts = []
 
     if is_comment:
-        parts.append("[This is a comment/reply message]")
+        parts.append(tr("tool_this_is_a_comment_reply_message"))
 
-    sender_name = "Unknown"
+    sender_name = tr("unknown")
     if message.from_user:
         sender_name = message.from_user.first_name or ""
         if message.from_user.last_name:
@@ -394,12 +393,12 @@ def _format_telegram_message(
         if message.from_user.username:
             sender_name += f" (@{message.from_user.username})"
     elif message.sender_chat:
-        sender_name = message.sender_chat.title or "Channel"
+        sender_name = message.sender_chat.title or tr("channel")
 
-    parts.append(f"From: {sender_name}")
+    parts.append(tr("web_sender", p0=sender_name))
 
     if message.date:
-        parts.append(f"Date: {message.date.isoformat()}")
+        parts.append(tr("web_date", p0=message.date.isoformat()))
 
     content_parts: list[str] = []
 
@@ -407,41 +406,52 @@ def _format_telegram_message(
         content_parts.append(message.text)
 
     if message.caption:
-        content_parts.append(f"[Caption]: {message.caption}")
+        content_parts.append(tr("tool_caption_p0", p0=message.caption))
 
     if message.photo:
-        content_parts.append("[Contains photo]")
+        content_parts.append(tr("tool_contains_photo"))
     elif message.video:
-        content_parts.append("[Contains video]")
+        content_parts.append(tr("tool_contains_video"))
     elif message.audio:
-        content_parts.append(f"[Contains audio: {message.audio.title or 'Unknown'}]")
+        content_parts.append(
+            tr("tool_contains_audio_p0", p0=message.audio.title or tr("unknown"))
+        )
     elif message.voice:
-        content_parts.append("[Contains voice message]")
+        content_parts.append(tr("tool_contains_voice_message"))
     elif message.document:
         content_parts.append(
-            f"[Contains document: {message.document.file_name or 'Unknown'}]"
+            tr(
+                "tool_contains_document_p0",
+                p0=message.document.file_name or tr("unknown"),
+            )
         )
     elif message.sticker:
-        content_parts.append(f"[Contains sticker: {message.sticker.emoji or ''}]")
+        content_parts.append(
+            tr("tool_contains_sticker_p0", p0=message.sticker.emoji or "")
+        )
     elif message.poll:
-        content_parts.append(f"[Contains poll: {message.poll.question}]")
+        content_parts.append(tr("tool_contains_poll_p0", p0=message.poll.question))
 
     if message.forward_from or message.forward_from_chat:
         if message.forward_from_chat:
-            fwd_name = message.forward_from_chat.title or "Unknown channel"
+            fwd_name = message.forward_from_chat.title or tr("tool_unknown_channel")
             if message.forward_from_message_id:
-                fwd_name += f" (message {message.forward_from_message_id})"
+                fwd_name += tr("tool_message_p0", p0=message.forward_from_message_id)
         else:
             fwd_name = (
-                message.forward_from.first_name if message.forward_from else "Unknown"
+                message.forward_from.first_name
+                if message.forward_from
+                else tr("unknown")
             )
-        parts.append(f"Forwarded from: {fwd_name}")
+        parts.append(tr("tool_forwarded_from_p0", p0=fwd_name))
 
     if is_explicit_reply(message) and message.reply_to_message:
-        parts.append(f"[This is a reply to message {message.reply_to_message.id}]")
+        parts.append(
+            tr("tool_this_is_a_reply_to_message_p0", p0=message.reply_to_message.id)
+        )
 
     if content_parts:
-        parts.append("\n--- Content ---\n" + "\n".join(content_parts))
+        parts.append(tr("tool_content") + "\n".join(content_parts))
 
     content = "\n".join(parts)
     return WebFetchResult(success=True, url=url, content=_truncate(content))
@@ -455,9 +465,9 @@ async def fetch_web_page(
     Internal helper backing the http(s):// branch of the agent's read tool.
     """
     if not url.startswith(("http://", "https://")):
-        raise ModelRetry("URL must start with http:// or https://")
+        raise ModelRetry(tr("tool_url_must_start_with_http_or_https"))
     if not is_safe_web_url(url):
-        raise ModelRetry("URL is not a public internet address")
+        raise ModelRetry(tr("url_not_public"))
 
     if _is_telegram_url(url):
         tg_result = await _fetch_telegram_message(ctx, url)
@@ -473,7 +483,7 @@ async def fetch_web_page(
         return WebFetchResult(
             success=False,
             url=url,
-            error="Fetch timed out",
+            error=tr("fetch_timeout"),
         )
     except Exception as e:
         logger.error(f"webfetch error for {url}: {e.__class__.__name__}: {e}")

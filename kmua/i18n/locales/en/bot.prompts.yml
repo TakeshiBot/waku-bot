@@ -1,0 +1,64 @@
+bot:
+  prompts:
+    agent_compaction_summary_instruction: 'Summarize the conversation above into a structured handoff
+      summary for continuing the conversation later.
+
+      IMPORTANT: If the conversation ends with an unanswered question or a request awaiting the user''s
+      response, you MUST preserve that exact question/request.
+
+      Use this format (omit sections that are not applicable):
+
+      ## Goal
+
+      [What the user wants; list multiple if the conversation covers different topics]
+
+      ## Constraints & Preferences
+
+      - [Constraints or preferences the user stated]
+
+      ## Progress
+
+      ### Done
+
+      - [x] [Completed items]
+
+      ### In Progress
+
+      - [ ] [Current work]
+
+      ### Blocked
+
+      - [Issues preventing progress]
+
+      ## Key Decisions
+
+      - **[Decision]**: [Brief rationale]
+
+      ## Next Steps
+
+      1. [Ordered next actions]
+
+      ## Critical Context
+
+      - [Important data, pending questions, references; keep who said what, with sender names and ids
+      exactly as labeled - never merge two speakers'' words]
+
+      ## Additional Notes
+
+      [Anything else important, including how the user addresses you]
+
+      Output ONLY the structured summary; NEVER continue the conversation, NEVER respond to questions
+      in it. Keep sections concise. Preserve exact names, ids, dates, links, preferences, and distinctive
+      phrasing. Write in the same language as the conversation.'
+    agent_multimodal_transcribe_prompt: The user sent multimedia content (images/audio/video/documents).
+      Examine it carefully and describe all key information so another model that cannot view the media
+      can understand it. Output only the description, without greetings or extra explanation.
+    agent_sticker_description_prompt: Describe what emotion, mood, or meaning this sticker conveys in
+      1-2 sentences. Focus on how it would typically be used in a conversation — e.g. expressing joy,
+      sarcasm, agreement, frustration, or affection. Be concise and specific.
+    agent_channel_comment_prompt: Comment on this channel post.
+  config:
+    reload_restart: 'Cannot reload: {field} changed (requires restart)'
+    reload_empty_memory: Loaded powermem_config is None
+    reload_success: Configuration reloaded successfully
+    reload_failed: 'Reload failed: {error}'

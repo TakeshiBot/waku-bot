@@ -5,6 +5,8 @@ from typing import Any, TypeVar
 import pydantic
 from dynaconf import Dynaconf
 
+from kmua.i18n import i18n
+
 
 class ProviderConfig(pydantic.BaseModel):
     """Named AI provider: base URL + API key pair."""
@@ -54,7 +56,7 @@ class _AppConfig(pydantic.BaseModel):
     use_ipv6: bool = False
     log_retention_days: int = 30
     log_level: str = "INFO"
-    lang: str = "zh-CN"
+    lang: str = "vi"
     fans_channel: str | int | None = None  # username or chat_id
     nickname: str = "kmua"
 
@@ -245,40 +247,10 @@ class _AppConfig(pydantic.BaseModel):
     agent_clamp_max_part_ratio: float = 0.4
     # Instruction for the in-place summary call (runs on the conversation's
     # own model and system prompt; only this wording is customizable).
-    agent_compaction_summary_instruction: str = (
-        "Summarize the conversation above into a structured handoff summary "
-        "for continuing the conversation later.\n"
-        "IMPORTANT: If the conversation ends with an unanswered question or a "
-        "request awaiting the user's response, you MUST preserve that exact "
-        "question/request.\n"
-        "Use this format (omit sections that are not applicable):\n"
-        "## Goal\n"
-        "[What the user wants; list multiple if the conversation covers "
-        "different topics]\n"
-        "## Constraints & Preferences\n"
-        "- [Constraints or preferences the user stated]\n"
-        "## Progress\n"
-        "### Done\n"
-        "- [x] [Completed items]\n"
-        "### In Progress\n"
-        "- [ ] [Current work]\n"
-        "### Blocked\n"
-        "- [Issues preventing progress]\n"
-        "## Key Decisions\n"
-        "- **[Decision]**: [Brief rationale]\n"
-        "## Next Steps\n"
-        "1. [Ordered next actions]\n"
-        "## Critical Context\n"
-        "- [Important data, pending questions, references; keep who said "
-        "what, with sender names and ids exactly as labeled - never merge "
-        "two speakers' words]\n"
-        "## Additional Notes\n"
-        "[Anything else important, including how the user addresses you]\n"
-        "Output ONLY the structured summary; NEVER continue the "
-        "conversation, NEVER respond to questions in it. Keep sections "
-        "concise. Preserve exact names, ids, dates, links, preferences, and "
-        "distinctive phrasing. Write in the same language as the "
-        "conversation."
+    agent_compaction_summary_instruction: str = pydantic.Field(
+        default_factory=lambda data: i18n.t(
+            "bot.prompts.agent_compaction_summary_instruction", locale=data.get("lang")
+        )
     )
     agent_multimodal: bool = True
     # Whether the struct model (channel comments, memory extraction) accepts
@@ -297,10 +269,10 @@ class _AppConfig(pydantic.BaseModel):
     # transcription, so later requests stay on the main model.
     agent_multimodal_mode: str = "route"
     # Instructions for the transcription run in transcribe mode.
-    agent_multimodal_transcribe_prompt: str = (
-        "用户发送了多媒体内容(图片/音频/视频/文档)。请仔细查看并转述其中"
-        "包含的所有关键信息, 供另一个无法查看媒体的模型理解。只输出转述"
-        "内容本身, 不要额外寒暄或解释。"
+    agent_multimodal_transcribe_prompt: str = pydantic.Field(
+        default_factory=lambda data: i18n.t(
+            "bot.prompts.agent_multimodal_transcribe_prompt", locale=data.get("lang")
+        )
     )
     agent_multimodal_inputs: list[str] = [
         "photo",
@@ -354,11 +326,10 @@ class _AppConfig(pydantic.BaseModel):
     agent_sticker_embed_dimensions: int = 1024
     # Description model spec. Falls back to agent_model when unset.
     agent_sticker_description_model: str | None = None
-    agent_sticker_description_prompt: str = (
-        "Describe what emotion, mood, or meaning this sticker conveys in 1-2 sentences. "
-        "Focus on how it would typically be used in a conversation — "
-        "e.g. expressing joy, sarcasm, agreement, frustration, or affection. "
-        "Be concise and specific."
+    agent_sticker_description_prompt: str = pydantic.Field(
+        default_factory=lambda data: i18n.t(
+            "bot.prompts.agent_sticker_description_prompt", locale=data.get("lang")
+        )
     )
     # Periodic sticker / reaction: force-inject the tool hint every N conversations.
     # 0 = disabled.
@@ -442,7 +413,11 @@ class _AppConfig(pydantic.BaseModel):
     # experimental, maybe removed in the future
     agent_whitelist_mode: bool = False
     agent_whitelist: list[int] = []
-    agent_channel_comment_prompt: str = "评论这条频道的帖子"
+    agent_channel_comment_prompt: str = pydantic.Field(
+        default_factory=lambda data: i18n.t(
+            "bot.prompts.agent_channel_comment_prompt", locale=data.get("lang")
+        )
+    )
 
     # Mask credentials (API keys, tokens, private keys) out of tool returns
     # and agent replies before they reach the model or the chat. User input
@@ -635,7 +610,9 @@ if app_config.agent and app_config.agent_powermem_config_path:
         with open(app_config.agent_powermem_config_path, encoding="utf-8") as f:
             app_config.agent_powermem_config = json.load(f)
         if app_config.agent_powermem_config is None:
-            raise ValueError("Loaded powermem_config is None")
+            raise ValueError(
+                i18n.t("bot.config.reload_empty_memory", locale=app_config.lang)
+            )
         if app_config.agent_powermem_custom_fact_extraction_prompt is not None:
             app_config.agent_powermem_config["custom_fact_extraction_prompt"] = (
                 app_config.agent_powermem_custom_fact_extraction_prompt
@@ -663,7 +640,7 @@ def _get_runtime_config() -> _InternalConfig:
 runtime_config = _get_runtime_config()
 
 
-def reload_config() -> tuple[bool, str, list[str]]:
+def reload_config(locale: str | None = None) -> tuple[bool, str, list[str]]:
     """Reload configuration from settings files.
 
     Returns:
@@ -687,14 +664,24 @@ def reload_config() -> tuple[bool, str, list[str]]:
         ]
         for field in critical_fields:
             if getattr(new_config, field) != getattr(app_config, field):
-                return False, f"Cannot reload: {field} changed (requires restart)", []
+                return (
+                    False,
+                    i18n.t("bot.config.reload_restart", locale=locale).format(
+                        field=field
+                    ),
+                    [],
+                )
 
         # Reload powermem config if path is set
         if new_config.agent and new_config.agent_powermem_config_path:
             with open(new_config.agent_powermem_config_path, encoding="utf-8") as f:
                 new_config.agent_powermem_config = json.load(f)
             if new_config.agent_powermem_config is None:
-                return False, "Loaded powermem_config is None", []
+                return (
+                    False,
+                    i18n.t("bot.config.reload_empty_memory", locale=locale),
+                    [],
+                )
             if new_config.agent_powermem_custom_fact_extraction_prompt is not None:
                 new_config.agent_powermem_config["custom_fact_extraction_prompt"] = (
                     new_config.agent_powermem_custom_fact_extraction_prompt
@@ -711,9 +698,13 @@ def reload_config() -> tuple[bool, str, list[str]]:
                 changed.append(field)
             setattr(app_config, field, new_val)
 
-        return True, "Configuration reloaded successfully", changed
+        return True, i18n.t("bot.config.reload_success", locale=locale), changed
     except Exception as e:
-        return False, f"Reload failed: {e}", []
+        return (
+            False,
+            i18n.t("bot.config.reload_failed", locale=locale).format(error=e),
+            [],
+        )
 
 
 __all__ = ["app_config", "reload_config"]

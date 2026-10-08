@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api, setReauthenticator, setSessionToken } from "@/api/client";
 import { ApiError } from "@/api/errors";
+import { setLocale } from "@/i18n";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -22,10 +23,12 @@ describe("api client", () => {
   beforeEach(() => {
     setSessionToken(null);
     setReauthenticator(null);
+    setLocale("vi");
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    setLocale("vi");
   });
 
   it("sends the session token as a bearer header", async () => {
@@ -37,6 +40,19 @@ describe("api client", () => {
 
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer token-abc");
+  });
+
+  it("sends the current presentation language even before authentication", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await api.get("/api/system");
+    setLocale("en-US");
+    await api.get("/api/system");
+    const headers = fetchMock.mock.calls.map(
+      (call) => (call[1] as RequestInit).headers as Record<string, string>,
+    );
+    expect(headers.map((value) => value["Accept-Language"])).toEqual(["vi", "en"]);
+    expect(headers[0]?.Authorization).toBeUndefined();
   });
 
   it("omits the body on a GET", async () => {

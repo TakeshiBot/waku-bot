@@ -55,8 +55,8 @@ _COMBINED_RE = re.compile(
 )
 
 _SOURCE_LABELS = {
-    "coolapk": "酷安",
-    "tieba": "贴吧",
+    "coolapk": "bot.hardcoded.link.coolapk",
+    "tieba": "bot.hardcoded.link.tieba",
 }
 
 
@@ -413,7 +413,11 @@ async def _download_images(urls: list[str]) -> list[bytes]:
 
 def _build_caption(post: link_parse.SocialPost, lang: str) -> str:
     lines: list[str] = []
-    source_label = _SOURCE_LABELS.get(post.source, post.source)
+    source_label = (
+        i18n.t(_SOURCE_LABELS[post.source], locale=lang)
+        if post.source in _SOURCE_LABELS
+        else post.source
+    )
     lines.append(f"<b>[{html_mod.escape(source_label)}]</b>")
     if post.title:
         lines.append(f"<b>{html_mod.escape(post.title)}</b>")
@@ -422,7 +426,9 @@ def _build_caption(post: link_parse.SocialPost, lang: str) -> str:
             f"<blockquote expandable=true>{html_mod.escape(link_parse.truncate(post.text, 500))}</blockquote>"
         )
     if post.video_url:
-        lines.append(f'🎬 <a href="{html_mod.escape(post.video_url)}">视频</a>')
+        lines.append(
+            f'🎬 <a href="{html_mod.escape(post.video_url)}">{html_mod.escape(i18n.t("bot.hardcoded.link.video", locale=lang))}</a>'
+        )
     lines.append(
         f'🔗 <a href="{html_mod.escape(post.url)}">{html_mod.escape(i18n.t("bot.msg.link_parse.view_original", locale=lang))}</a>'
     )

@@ -8,6 +8,7 @@ from kmua import database
 from kmua.webapp import auth
 from kmua.webapp.deps import client_key, resolve_roles
 from kmua.webapp.errors import ErrorCode, unauthorized
+from kmua.webapp.i18n import api_text
 from kmua.webapp.ratelimit import auth_limiter
 from kmua.webapp.schemas import AuthRequest, AuthResponse, SessionUserOut
 
@@ -23,7 +24,7 @@ async def authenticate(request: Request, payload: AuthRequest) -> AuthResponse:
     init_data = auth.verify_init_data(payload.init_data_raw)
 
     if init_data.user.is_bot:
-        raise unauthorized(ErrorCode.FORBIDDEN, "Bots cannot use the panel")
+        raise unauthorized(ErrorCode.FORBIDDEN, api_text("bot_panel"))
 
     user_data = await database.upsert_user(_as_pyrogram_user(init_data.user))
     token, expires_at = auth.issue_token(user_data.id)

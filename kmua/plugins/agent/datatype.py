@@ -7,47 +7,56 @@ from pydantic_ai import ModelMessage
 from pyrogram.client import Client as PyrogramClient
 from pyrogram.types import Message
 
+from kmua.plugins.agent.localization import tr
+
 if TYPE_CHECKING:
     from powermem import AsyncMemory
 
 
 class ChatMemoryy(BaseModel):
-    disposition: list[str] | str | None = Field(description="性格")
-    interests: list[str] | str | None = Field(description="兴趣爱好")
-    doings: list[str] | str | None = Field(description="正在做的事情")
-    works: list[str] | str | None = Field(description="工作/职业")
-    wishes: list[str] | str | None = Field(description="愿望/目标")
-    worries: list[str] | str | None = Field(description="担忧/烦恼")
-    skills: list[str] | str | None = Field(description="技能/专长")
-    attitudes_to_you: list[str] | str | None = Field(description="对你的态度")
-    experiences_with_you: list[str] | str | None = Field(description="与你的经历")
-    extra_info: list[str] | str | None = Field(description="其他补充信息, 若无可不填")
+    disposition: list[str] | str | None = Field(description=tr("personality"))
+    interests: list[str] | str | None = Field(description=tr("interests"))
+    doings: list[str] | str | None = Field(description=tr("activities"))
+    works: list[str] | str | None = Field(description=tr("occupation"))
+    wishes: list[str] | str | None = Field(description=tr("goals"))
+    worries: list[str] | str | None = Field(description=tr("worries"))
+    skills: list[str] | str | None = Field(description=tr("skills"))
+    attitudes_to_you: list[str] | str | None = Field(description=tr("attitude"))
+    experiences_with_you: list[str] | str | None = Field(
+        description=tr("shared_experiences")
+    )
+    extra_info: list[str] | str | None = Field(description=tr("extra_info_optional"))
 
     def to_text(self, is_group_chat: bool = False) -> str:
         parts = []
         if self.disposition:
-            parts.append(f"性格: {';'.join(self.disposition)}")
+            parts.append(tr("personality_value", p0=";".join(self.disposition)))
         if self.attitudes_to_you:
-            parts.append(f"对你的态度: {';'.join(self.attitudes_to_you)}")
+            parts.append(tr("attitude_value", p0=";".join(self.attitudes_to_you)))
 
         # 仅在私聊时输出完整信息
         if not is_group_chat:
             if self.interests:
-                parts.append(f"兴趣爱好: {';'.join(self.interests)}")
+                parts.append(tr("interests_value", p0=";".join(self.interests)))
             if self.doings:
-                parts.append(f"正在做的事情: {';'.join(self.doings)}")
+                parts.append(tr("activities_value", p0=";".join(self.doings)))
             if self.works:
-                parts.append(f"工作/职业: {';'.join(self.works)}")
+                parts.append(tr("occupation_value", p0=";".join(self.works)))
             if self.wishes:
-                parts.append(f"愿望/目标: {';'.join(self.wishes)}")
+                parts.append(tr("goals_value", p0=";".join(self.wishes)))
             if self.worries:
-                parts.append(f"担忧/烦恼: {';'.join(self.worries)}")
+                parts.append(tr("worries_value", p0=";".join(self.worries)))
             if self.skills:
-                parts.append(f"技能/专长: {';'.join(self.skills)}")
+                parts.append(tr("skills_value", p0=";".join(self.skills)))
             if self.experiences_with_you:
-                parts.append(f"与你的经历: {';'.join(self.experiences_with_you)}")
+                parts.append(
+                    tr(
+                        "shared_experiences_value",
+                        p0=";".join(self.experiences_with_you),
+                    )
+                )
             if self.extra_info:
-                parts.append(f"其他补充信息: {';'.join(self.extra_info)}")
+                parts.append(tr("extra_info_value", p0=";".join(self.extra_info)))
         return "\n".join(parts)
 
 
@@ -67,25 +76,19 @@ class AffectionChangeAmplitude(StrEnum):
 
 
 class UserMemoryResult(BaseModel):
-    disposition: str | None = Field(description="性格")
-    interests: str | None = Field(description="兴趣爱好")
-    doings: str | None = Field(description="正在做的事情")
-    works: str | None = Field(description="工作/职业")
-    wishes: str | None = Field(description="愿望/目标")
-    worries: str | None = Field(description="担忧/烦恼")
-    skills: str | None = Field(description="技能/专长")
-    attitudes_to_model: str | None = Field(
-        description="对聊天中的AI助手的态度, 若消息记录中没有AI助手的则保持不变"
-    )
-    experiences_with_model: str | None = Field(
-        description="与聊天中的AI助手的经历, 若消息记录中没有AI助手的则保持不变"
-    )
-    extra_info: str | None = Field(description="其他补充信息, 若无可不填")
-    affection_option: str = Field(
-        description="好感度变化选项, 枚举值 increase,decrease,no_change"
-    )
+    disposition: str | None = Field(description=tr("personality"))
+    interests: str | None = Field(description=tr("interests"))
+    doings: str | None = Field(description=tr("activities"))
+    works: str | None = Field(description=tr("occupation"))
+    wishes: str | None = Field(description=tr("goals"))
+    worries: str | None = Field(description=tr("worries"))
+    skills: str | None = Field(description=tr("skills"))
+    attitudes_to_model: str | None = Field(description=tr("attitude_model"))
+    experiences_with_model: str | None = Field(description=tr("experiences_model"))
+    extra_info: str | None = Field(description=tr("extra_info_optional"))
+    affection_option: str = Field(description=tr("affection_option"))
     affection_change_amplitude: str | None = Field(
-        description="好感度变化幅度, 枚举值 small,medium,large"
+        description=tr("affection_amplitude")
     )
 
     def get_memory(self) -> ChatMemoryy:
@@ -154,6 +157,7 @@ class ContextDeps:
     multimodal_model: Any | None = None
     history: list[ModelMessage] = field(default_factory=list)
     tools_called_this_turn: set[str] = field(default_factory=set)
+    locale: str = ""
 
 
 @dataclass
@@ -178,19 +182,17 @@ class ContextInfo:
         parts = []
         if self.user_data is not None:
             username = (
-                f"@{self.user_data.username}" if self.user_data.username else "无"
+                f"@{self.user_data.username}" if self.user_data.username else tr("none")
             )
-            parts.append(
-                f"用户信息: 姓名: {self.user_data.full_name}, 用户名: {username}"
-            )
+            parts.append(tr("user_profile", p0=self.user_data.full_name, p1=username))
         if self.memory_about_user is not None:
             memory_text = self.memory_about_user.to_text(
                 is_group_chat=self.is_group_chat
             )
             if memory_text:
-                parts.append(f"关于用户的记忆: ({memory_text})")
+                parts.append(tr("user_memory", p0=memory_text))
         if self.append_prompt:
-            parts.append(f"附加提示: {self.append_prompt}")
+            parts.append(tr("additional_prompt", p0=self.append_prompt))
         return "\n".join(parts)
 
 

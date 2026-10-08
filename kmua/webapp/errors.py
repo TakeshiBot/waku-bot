@@ -1,8 +1,7 @@
 """Error codes and exception handlers for the Mini App API.
 
-The API answers failures with a stable machine-readable ``code`` plus an English
-fallback ``message``. The frontend renders the user-facing text from the code, so
-adding a language never requires a backend change.
+The API answers failures with a stable machine-readable ``code`` plus a localized
+``message``. The frontend can also render its own translation from the code.
 """
 
 from typing import Any
@@ -13,6 +12,13 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from kmua.logger import logger
+from kmua.webapp.i18n import (
+    LocalizedMessage,
+    error_message,
+    known_reason,
+    request_locale,
+    validation_message,
+)
 
 
 class ErrorCode:
@@ -63,32 +69,38 @@ class ApiError(Exception):
     def __init__(
         self,
         code: str,
-        message: str = "",
+        message: str | LocalizedMessage = "",
         status_code: int = status.HTTP_400_BAD_REQUEST,
         details: dict[str, Any] | None = None,
     ) -> None:
-        super().__init__(message or code)
+        super().__init__(str(message or code))
         self.code = code
-        self.message = message or code
+        self.message = str(message or code)
+        self.localized_reason = known_reason(message)
         self.status_code = status_code
         self.details = details
 
-    def to_response(self) -> JSONResponse:
-        payload: dict[str, Any] = {"code": self.code, "message": self.message}
+    def to_response(self, locale: str = "") -> JSONResponse:
+        payload: dict[str, Any] = {
+            "code": self.code,
+            "message": self.localized_reason.render(locale)
+            if self.localized_reason is not None
+            else error_message(self.code, locale),
+        }
         if self.details:
             payload["details"] = self.details
         return JSONResponse(payload, status_code=self.status_code)
 
 
-def unauthorized(code: str, message: str = "") -> ApiError:
+def unauthorized(code: str, message: str | LocalizedMessage = "") -> ApiError:
     return ApiError(code, message, status.HTTP_401_UNAUTHORIZED)
 
 
-def forbidden(code: str, message: str = "") -> ApiError:
+def forbidden(code: str, message: str | LocalizedMessage = "") -> ApiError:
     return ApiError(code, message, status.HTTP_403_FORBIDDEN)
 
 
-def not_found(code: str, message: str = "") -> ApiError:
+def not_found(code: str, message: str | LocalizedMessage = "") -> ApiError:
     return ApiError(code, message, status.HTTP_404_NOT_FOUND)
 
 
@@ -106,7 +118,7 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(ApiError)
     async def _handle_api_error(request: Request, exc: ApiError) -> JSONResponse:
-        return exc.to_response()
+        return exc.to_response(request_locale(request))
 
     @app.exception_handler(RequestValidationError)
     async def _handle_validation_error(
@@ -118,14 +130,16 @@ def install_error_handlers(app: FastAPI) -> None:
             {
                 "loc": [str(part) for part in error.get("loc", ())],
                 "type": error.get("type", ""),
-                "msg": error.get("msg", ""),
+                "msg": validation_message(error, request_locale(request)),
             }
             for error in exc.errors()
         ]
         return JSONResponse(
             {
                 "code": ErrorCode.VALIDATION_FAILED,
-                "message": "Request validation failed",
+                "message": error_message(
+                    ErrorCode.VALIDATION_FAILED, request_locale(request)
+                ),
                 "details": {"fields": fields},
             },
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -136,7 +150,7 @@ def install_error_handlers(app: FastAPI) -> None:
         request: Request, exc: StarletteHTTPException
     ) -> JSONResponse:
         code = _STATUS_TO_CODE.get(exc.status_code, ErrorCode.INTERNAL_ERROR)
-        message = exc.detail if isinstance(exc.detail, str) else code
+        message = error_message(code, request_locale(request))
         return JSONResponse(
             {"code": code, "message": message}, status_code=exc.status_code
         )
@@ -148,6 +162,11 @@ def install_error_handlers(app: FastAPI) -> None:
             f"webapp: unhandled error on {request.method} {request.url.path}"
         )
         return JSONResponse(
-            {"code": ErrorCode.INTERNAL_ERROR, "message": "Internal server error"},
+            {
+                "code": ErrorCode.INTERNAL_ERROR,
+                "message": error_message(
+                    ErrorCode.INTERNAL_ERROR, request_locale(request)
+                ),
+            },
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )

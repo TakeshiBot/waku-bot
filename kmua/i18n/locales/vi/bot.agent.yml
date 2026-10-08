@@ -1,0 +1,578 @@
+bot:
+  agent_i18n:
+    busy: Mình đang trả lời nhiều tin nhắn, vui lòng chờ một chút...
+    channel_task: 'Loại nhiệm vụ: bình luận kênh'
+    channel_name: 'Tên kênh: {p0}'
+    channel_bio: 'Giới thiệu kênh: {p0}'
+    current_time: 'Thời gian hiện tại: {p0}'
+    task_description: 'Mô tả nhiệm vụ: {p0}'
+    comment_content: Nội dung bình luận
+    poll_question: Câu hỏi bình chọn
+    poll_options: Các lựa chọn bình chọn
+    poll_anonymous: Bình chọn có ẩn danh không
+    date_format: '%d/%m/%Y %H:%M:%S'
+    personality: Tính cách
+    interests: Sở thích
+    activities: Việc đang làm
+    occupation: Công việc/nghề nghiệp
+    goals: Mong muốn/mục tiêu
+    worries: Lo lắng/vấn đề
+    skills: Kỹ năng/chuyên môn
+    attitude: Thái độ với bạn
+    shared_experiences: Trải nghiệm cùng bạn
+    extra_info_optional: Thông tin bổ sung, có thể bỏ qua nếu không có
+    attitude_model: Thái độ với trợ lý AI trong cuộc trò chuyện; giữ nguyên nếu lịch sử không có trợ lý
+      AI
+    experiences_model: Trải nghiệm với trợ lý AI trong cuộc trò chuyện; giữ nguyên nếu lịch sử không có
+      trợ lý AI
+    affection_option: 'Thay đổi mức độ thiện cảm; các giá trị: increase,decrease,no_change'
+    affection_amplitude: 'Mức thay đổi thiện cảm; các giá trị: small,medium,large'
+    personality_value: 'Tính cách: {p0}'
+    attitude_value: 'Thái độ với bạn: {p0}'
+    none: Không có
+    user_profile: 'Thông tin người dùng: tên: {p0}, tên người dùng: {p1}'
+    additional_prompt: 'Chỉ dẫn bổ sung: {p0}'
+    interests_value: 'Sở thích: {p0}'
+    activities_value: 'Việc đang làm: {p0}'
+    occupation_value: 'Công việc/nghề nghiệp: {p0}'
+    goals_value: 'Mong muốn/mục tiêu: {p0}'
+    worries_value: 'Lo lắng/vấn đề: {p0}'
+    skills_value: 'Kỹ năng/chuyên môn: {p0}'
+    shared_experiences_value: 'Trải nghiệm cùng bạn: {p0}'
+    extra_info_value: 'Thông tin bổ sung: {p0}'
+    user_memory: 'Ghi nhớ về người dùng: ({p0})'
+    followup_check: '
+
+      Cuộc trò chuyện trước đó trong nhóm:
+
+      Người dùng: {p0}
+
+      Bot trả lời: {p1}
+
+
+      Tin nhắn mới từ một người dùng: {p2}
+
+
+      Xác định tin nhắn mới có bình luận, hỏi, bổ sung, phản bác hoặc thảo luận liên quan đến câu trả
+      lời của bot không.
+
+      Lưu ý:
+
+      - Tin nhắn từ người dùng khác cũng có thể liên quan.
+
+      - Chỉ coi là liên quan khi có mối liên hệ rõ ràng với chủ đề trước; nếu không chắc chắn, luôn coi
+      là không liên quan.
+
+      '
+    followup_context: '
+
+      Bối cảnh: vừa có người dùng trò chuyện với bạn trong nhóm:
+
+      Người dùng[{p0}]: {p1}
+
+      Bạn trả lời: {p2}
+
+      ---
+
+      Người dùng[{p3}] đang tiếp tục thảo luận chủ đề này. Hãy tham gia một cách tự nhiên.
+
+      '
+    is_relevant: Có liên quan không
+    relevance_reason: Giải thích căn cứ đánh giá
+    relevance_system: Bạn đánh giá mức độ liên quan của hội thoại. Xác định tin nhắn mới của người dùng
+      có tiếp nối cuộc trò chuyện trước hay không.
+    owner: Chủ nhóm
+    administrator: Quản trị viên
+    member: Thành viên
+    unavailable_content: Không thể xem nội dung này
+    unknown: Không rõ
+    human: Người dùng
+    service_message: Tin nhắn hệ thống
+    unknown_group: Nhóm không rõ
+    group_header: '# Trò chuyện nhóm - {p0}'
+    current_message_heading: '## Tin nhắn hiện tại
+
+      '
+    current_user: 'Người dùng hiện tại: {p0}'
+    message_content: 'Nội dung tin nhắn: {p0}'
+    message_id: 'ID tin nhắn: {p0}'
+    system: Hệ thống
+    anonymous_admin: Quản trị viên ẩn danh
+    group_info: 'Thông tin nhóm:'
+    history_heading: '## Lịch sử tin nhắn
+
+      '
+    reply_chain_hint: reply_chain_depth={p0} (dùng chat://history?reply_chain_of={p1} để lấy toàn bộ chuỗi
+      trả lời của tin nhắn này)
+    reply_heading: 'Tin nhắn mà người dùng hiện tại trả lời:'
+    reply_sender: '    Người gửi: {p0}'
+    reply_content: '    Nội dung tin nhắn: {p0}'
+    reply_id: '    ID tin nhắn: {p0}'
+    channel: Kênh
+    group_id: ID nhóm
+    username: Tên người dùng
+    description: Giới thiệu
+    member_count: Số thành viên
+    image_reference_previous: 'Số ảnh tin nhắn: ảnh {p0} (ảnh này đã xuất hiện trong hội thoại trước)'
+    image_reference: 'Số ảnh tin nhắn: ảnh {p0}'
+    reply_image_previous: '    Số ảnh tin nhắn: ảnh {p0} (ảnh này đã xuất hiện trong hội thoại trước)'
+    reply_image: '    Số ảnh tin nhắn: ảnh {p0}'
+    jev_question: Tin nhắn mới có bình luận, hỏi, bổ sung, phản bác hoặc thảo luận liên quan đến câu trả
+      lời của bot không?
+    jev_true: Tin nhắn mới có liên hệ rõ ràng với chủ đề trong câu trả lời của bot
+    jev_false: Tin nhắn mới không liên quan đến chủ đề trong câu trả lời của bot, hoặc không xác định
+      được mối liên hệ
+    group_memory_heading: 'Lịch sử tin nhắn nhóm:
+
+      '
+    memory_message: '{p0}({p1}) nói: {p2}'
+    memory_history_heading: 'Lịch sử trò chuyện của người dùng với AI (theo cuộc trò chuyện, thời gian
+      UTC):'
+    private_chat: Trò chuyện riêng
+    group_chat: Trò chuyện nhóm «{p0}»
+    media_photo: Ảnh
+    media_video: Video
+    media_audio: Âm thanh
+    media_voice: Tin nhắn thoại
+    media_document: Tài liệu
+    media_sticker: Nhãn dán
+    media_animation: Ảnh động
+    media_video_note: Tin nhắn video
+    media_live_photo: Ảnh trực tiếp
+    media_location: Vị trí
+    media_venue: Địa điểm
+    media_contact: Liên hệ
+    media_dice: Xúc xắc
+    media_game: Trò chơi
+    media_giveaway: Tặng quà
+    media_giveaway_winners: Kết quả tặng quà
+    media_story: Tin
+    media_invoice: Hóa đơn
+    media_paid: Nội dung trả phí
+    media_checklist: Danh sách kiểm tra
+    media_unsupported: Nội dung không được hỗ trợ
+    unsupported_media: '[Nội dung mô hình không thể xử lý: {p0}{p1}]'
+    current_message_label: '[Tin nhắn hiện tại|Người gửi:{p0}|ID tin nhắn:{p1}]'
+    describe_media: 'Hãy mô tả nội dung đa phương tiện này (loại: {p0}) và trình bày lại những thông tin
+      chính.'
+    media_generic: Nội dung đa phương tiện
+    unknown_channel: Kênh không rõ
+    media_transcription: '[Người dùng gửi nội dung đa phương tiện; mô hình mô tả như sau]:
+
+      {p0}'
+    unknown_user: Người dùng không rõ
+    current_message_marker: '## Tin nhắn hiện tại'
+    media_failed: '[Người dùng gửi nội dung đa phương tiện nhưng mô tả thất bại; đã bỏ qua]'
+    media_empty: '[Người dùng gửi nội dung đa phương tiện nhưng mô tả trống; đã bỏ qua]'
+    history_media_failed: '[Mô tả nội dung đa phương tiện trong lịch sử thất bại; đã bỏ qua]'
+    quoted_message_label: '[Tin nhắn được trích dẫn|Người gửi:{p0}|ID tin nhắn:{p1}]'
+    rss_digest_intro: 'Dưới đây là các mục mới từ nguồn RSS «{p0}». Hãy viết nhận xét theo giọng trò chuyện
+      nhóm cho một số mục:'
+    rss_digest_requirements: '
+
+      Yêu cầu: viết 1–2 câu nhận xét cho mỗi mục đáng chú ý và giải thích vì sao đáng đọc; có thể bỏ qua
+      các mục không đáng đề cập. Dùng ngôn ngữ {p0}, giọng tự nhiên, không lặp lại nguyên văn.'
+    rss_json_format: '
+
+      Định dạng đầu ra: một đối tượng JSON với summaries là mảng, mỗi mục có dạng {"entry_id": "<ID mục>",
+      "summary": "<nhận xét>"}. Chỉ xuất JSON.'
+    rss_broadcast_intro: 'Các mục mới từ nguồn RSS «{p0}»:'
+    rss_broadcast_requirements: '
+
+      Bạn là thành viên nhóm vừa thấy những nội dung này. Viết một tin nhắn 1–3 câu để thảo luận chung
+      về chúng (không liệt kê từng mục); đưa vào tiêu đề và liên kết của ít nhất một mục. Dùng ngôn ngữ
+      {p0}, giọng tự nhiên, không dùng ký hiệu danh sách.'
+    rss_entry_id: ID mục, phải là [entry_id] được cung cấp trong đầu vào
+    rss_summary: Nhận xét 1–2 câu theo giọng trò chuyện nhóm, giải thích vì sao mục này đáng đọc
+    rss_summaries: Danh sách các mục đáng nhận xét
+    rss_title: 'Tiêu đề: {p0}'
+    rss_link: 'Liên kết: {p0}'
+    rss_broadcast_title: '
+
+      - Tiêu đề: {p0}'
+    rss_broadcast_link: '  Liên kết: {p0}'
+    rss_content_summary: 'Tóm tắt nội dung: {p0}'
+    rss_broadcast_summary: '  Tóm tắt nội dung: {p0}'
+    rss_output_schema: 'Trả về danh sách nhận xét: summaries là mảng, mỗi mục có entry_id và summary'
+    sticker_added: Đã ghi nhớ nhãn dán này, mình có thể dùng nó sau.
+    sticker_reply_required: Hãy trả lời một tin nhắn có nhãn dán.
+    sticker_deleted: Mình sẽ không gửi nhãn dán này nữa (trừ khi người khác gửi lại...).
+    sticker_not_stored: Nhãn dán này chưa có trong kho.
+    stickers_cleared: Đã xóa bộ nhớ nhãn dán của nhóm ({p0} nhãn dán).
+    stickers_already_empty: Kho nhãn dán của nhóm đã trống.
+    update_user_memory: 'Dựa vào ghi nhớ hiện có và tin nhắn mới, cập nhật ghi nhớ về người dùng và xác
+      định thay đổi thiện cảm.
+
+      Ghi nhớ cũ: {p0}
+
+      Tin nhắn mới: {p1}'
+    summarize_user_memory: "Tóm tắt thông tin quan trọng về người dùng từ lịch sử dưới đây và xác định\
+      \ thay đổi thiện cảm. Lịch sử được nhóm theo cuộc trò chuyện và có thời gian; phân biệt cách người\
+      \ dùng thể hiện trong từng cuộc trò chuyện:\n {p0}"
+    question_answer: 'Người dùng trả lời câu hỏi «{p0}»: {p1}'
+    question_not_yours: Câu hỏi này không dành cho bạn.
+    question_expired: Câu trả lời này đã hết hạn.
+    invalid_option: Lựa chọn không hợp lệ.
+    send_failed: Gửi thất bại
+    send_succeeded: Gửi thành công
+    send_error: '{p0}, lỗi: {p1}'
+    send_info: '{p0}, thông tin: {p1}'
+    time_difference: 'Chênh lệch: {p0}
+
+      {p2} {p3} {p1}
+
+      Tổng: {p4} giây'
+    monday: Thứ Hai
+    tuesday: Thứ Ba
+    wednesday: Thứ Tư
+    thursday: Thứ Năm
+    friday: Thứ Sáu
+    saturday: Thứ Bảy
+    sunday: Chủ Nhật
+    readable_date_format: '%d/%m/%Y %H:%M:%S {p0}'
+    current_time_iso: 'Thời gian hiện tại (ISO): {p0}'
+    time_after: sau
+    time_before: trước
+    current_time_both: 'Thời gian hiện tại:
+
+      - Định dạng ISO: {p0}
+
+      - Định dạng dễ đọc: {p1}'
+    days: '{p0} ngày'
+    hours: '{p0} giờ'
+    minutes: '{p0} phút'
+    seconds: '{p0} giây'
+    time_failed: 'Không thể lấy thời gian: {p0}'
+    time_difference_failed: 'Không thể tính chênh lệch thời gian: {p0}'
+    context_unavailable: Không có ngữ cảnh tin nhắn.
+    question_send_failed: 'Không thể gửi câu hỏi: {p0}'
+    membership_check_failed: 'Không thể xác minh người dùng {p0} có trong nhóm hay không: {p1}'
+    history_selector: 'Lỗi: chọn đúng một bộ lọc: before=<id>, after=<id>, from_id=<a>&to_id=<b>, hoặc
+      reply_chain_of=<id>.'
+    history_empty: Không tìm thấy tin nhắn trong phạm vi đã chọn.
+    query_messages_empty: Không tìm thấy tin nhắn phù hợp truy vấn.
+    history_range_order: 'Lỗi: to_id phải >= from_id.'
+    history_range_limit: 'Lỗi: phạm vi vượt quá 200 tin nhắn; hãy thu hẹp from_id..to_id.'
+    history_reply_missing: 'Lỗi: không tìm thấy tin nhắn hoặc tin nhắn không có chuỗi trả lời.'
+    history_current_unknown: 'Lỗi: không thể lấy tin nhắn mới nhất vì không rõ ID tin nhắn hiện tại.'
+    memory_unavailable: Hệ thống ghi nhớ nhóm chưa sẵn sàng.
+    memory_store_failed: 'Không thể lưu ghi nhớ: {p0}: {p1}'
+    memory_system: Bạn là trợ lý lưu các thông tin hữu ích về nhóm từ nội dung dưới đây. Trích xuất những
+      sự kiện, mối quan hệ, sở thích hoặc chi tiết quan trọng đáng ghi nhớ về nhóm và các thành viên.
+    invalid_regex: 'Biểu thức chính quy không hợp lệ: {p0}'
+    edited_image_caption: 'Ảnh đã chỉnh sửa theo yêu cầu: {p0}'
+    image_generation_unconfigured: Dịch vụ tạo ảnh chưa được cấu hình.
+    current_context_unavailable: Không có ngữ cảnh tin nhắn hiện tại.
+    image_edit_unconfigured: Dịch vụ chỉnh sửa ảnh chưa được cấu hình.
+    image_edit_failed: 'Chỉnh sửa ảnh thất bại: {p0}'
+    generated_image_send_failed: 'Đã tạo ảnh nhưng không thể gửi: {p0}'
+    source_image_download_failed: Không thể tải ảnh gốc (hết thời gian chờ hoặc xảy ra lỗi).
+    image_not_found: Không tìm thấy ảnh trong tin nhắn hiện tại, tin được trả lời hoặc lịch sử hội thoại
+      gần đây. Hãy gửi ảnh cần chỉnh sửa.
+    edited_image_send_failed: 'Đã chỉnh sửa ảnh nhưng không thể gửi: {p0}'
+    sticker_memory_disabled: 'Lỗi: không thể gửi nhãn dán vì bộ nhớ nhãn dán đang tắt.'
+    stickers_group_only: 'Lỗi: nhãn dán chỉ khả dụng trong trò chuyện nhóm.'
+    stickers_insufficient: 'Lỗi: nhóm chưa lưu đủ nhãn dán (cần ít nhất 20).'
+    text_media_conflict: Không thể cung cấp cả text và media. Dùng caption để mô tả nội dung đa phương
+      tiện.
+    query_embedding_failed: Không thể tạo vector cho truy vấn.
+    sticker_no_match: Không tìm thấy nhãn dán phù hợp trong bộ nhớ của nhóm.
+    stickers_chat_disabled: 'Lỗi: tính năng gửi nhãn dán đang tắt trong cuộc trò chuyện này.'
+    sticker_availability_failed: 'Lỗi: không thể kiểm tra nhãn dán: {p0}'
+    poll_send_failed: 'Không thể gửi bình chọn: {p0}: {p1}'
+    sticker_send_failed: 'Không thể gửi nhãn dán: {p0}: {p1}'
+    anime_chat_disabled: Tính năng ảnh anime đang tắt trong cuộc trò chuyện này.
+    schedule_invalid: 'Định dạng schedule_time không hợp lệ. Dùng ISO 8601, ví dụ ''2025-06-04T15:00:00+08:00''.
+      Lỗi: {p0}'
+    requests_too_frequent: Bạn gửi yêu cầu quá nhanh. Hãy thử lại sau.
+    anime_fetch_failed: Không thể lấy ảnh anime.
+    operation_error: 'Đã xảy ra lỗi: {p0}'
+    scheduled: Đã lên lịch lúc {p0}
+    sticker_memory_unconfigured: Bộ nhớ nhãn dán chưa được cấu hình.
+    message_sent: Đã gửi tin nhắn.
+    media_sent: Đã gửi {p0}.
+    send_operation_failed: 'Không thể gửi: {p0}'
+    files_entry_limit: 'Lỗi: quá nhiều mục files (tối đa {p0}).'
+    command_empty: 'Lỗi: command không được để trống.'
+    command_timeout: 'Lỗi: lệnh quá thời gian chờ sau {p0}s. Kết quả một phần:
+
+      {p1}'
+    error: 'Lỗi: {p0}'
+    read_failed: 'Lỗi: không thể đọc {p0}: {p1}'
+    write_failed: 'Lỗi: không thể ghi {p0}: {p1}'
+    method_unknown: 'Lỗi: phương thức không rõ: {p0}'
+    error_context_unavailable: 'Lỗi: không có ngữ cảnh tin nhắn hiện tại.'
+    method_unknown_supported: 'Lỗi: phương thức không rõ: {p0}. Hỗ trợ: {p1}.'
+    schedule_fields_required: 'Lỗi: scheduleMessage cần text và schedule_time.'
+    block_duration_range: 'Lỗi: blockUser cần duration_minutes (1–10080).'
+    fields_unknown: 'Lỗi: trường không rõ cho {p0}: {p1}. Cho phép: {p2}.'
+    chat_id_fixed: 'Lỗi: chat_id luôn là cuộc trò chuyện hiện tại; không truyền trường này.'
+    document_content_conflict: 'Lỗi: sendDocument nhận document hoặc content, không nhận cả hai.'
+    document_content_required: 'Lỗi: sendDocument cần document hoặc content.'
+    fields_required: 'Lỗi: thiếu trường bắt buộc cho {p0}: {p1}.'
+    method_invalid_message: 'Lỗi: {p0} thất bại: MessageIdInvalid'
+    method_failed: 'Lỗi: {p0} thất bại: {p1}'
+    block_duration_integer: 'Lỗi: blockUser cần duration_minutes là số nguyên.'
+    reaction_wrong_chat: 'Lỗi: đích sendReaction không phải tin nhắn của cuộc trò chuyện này. Bỏ message_id
+      để phản ứng với tin nhắn đang trả lời.'
+    reaction_message_invalid: 'Lỗi: message_id không hợp lệ cho sendReaction: {p0}. Dùng ID tin nhắn Telegram
+      dương hoặc bỏ message_id để phản ứng với tin nhắn đang trả lời.'
+    parse_mode_invalid: 'Lỗi: parse_mode ''{p0}'' không hợp lệ. Cho phép: HTML, Markdown, MarkdownV2,
+      disabled, default.'
+    code_repository_uninitialized: 'Lỗi: kho mã nguồn chưa được khởi tạo.'
+    media_target_invalid: 'Lỗi: {p0} phải là URL http(s), tham chiếu tệp work:// hoặc tệp mã nguồn kmua://.'
+    download_failed: 'Lỗi: không thể tải {p0}: {p1}'
+    time_difference_required: 'Lỗi: thao tác ''difference'' cần cả time1 và time2.'
+    page_empty: Trang trả về nội dung trống.
+    url_not_public: URL không phải địa chỉ Internet công khai.
+    crawl_empty: API thu thập trang không trả về kết quả.
+    fetch_timeout: Lấy nội dung quá thời gian chờ.
+    crawl_timeout_config: API thu thập trang quá thời gian chờ sau {p0}s (agent_crawl_api_timeout).
+    message_access_denied: Không tìm thấy tin nhắn hoặc không có quyền truy cập.
+    chat_access_denied: Không thể truy cập cuộc trò chuyện này; có thể đây là cuộc trò chuyện riêng hoặc
+      bạn chưa tham gia.
+    message_missing: Không tìm thấy tin nhắn.
+    private_message_restricted: Đây là liên kết tin nhắn Telegram, nhưng không thể truy cập tin nhắn của
+      nhóm/kênh riêng từ cuộc trò chuyện khác để bảo vệ quyền riêng tư.
+    crawl_timeout: API thu thập trang quá thời gian chờ.
+    crawl_rejected: API thu thập trang từ chối yêu cầu (HTTP {p0}).
+    original_message_missing: Không tìm thấy tin nhắn gốc.
+    chat_target_unknown: 'Lỗi: đích chat:// không rõ {p0}; dùng /info hoặc /history.'
+    chat_info_missing: 'Lỗi: không tìm thấy thông tin cuộc trò chuyện.'
+    query_parameters_unknown: 'Lỗi: tham số truy vấn không rõ; hỗ trợ before=<id>, after=<id>, from_id=<a>&to_id=<b>,
+      reply_chain_of=<id>, count=N.'
+    query_parameters_invalid: 'Lỗi: tham số truy vấn không hợp lệ; before/after/from_id/to_id/count/reply_chain_of
+      phải là số nguyên.'
+    file_missing: 'Không tìm thấy tệp: {p0}'
+    media_download_failed: Không thể tải {p0}.
+    chat_media_target_invalid: Đích nội dung chat:// không hợp lệ {p0}; dùng chat://media/<message_id>.
+    chat_media_id_invalid: Đích nội dung chat:// không hợp lệ {p0}; cần ID tin nhắn.
+    message_no_media: Tin nhắn {p0} không có nội dung đa phương tiện để tải.
+    telegram_link_invalid: 'Không phải liên kết tin nhắn t.me: {p0}'
+    chat_message_no_media: Tin nhắn {p0} trong {p1} không có nội dung đa phương tiện để tải.
+    transcription_model_unavailable: Không có mô hình mô tả nội dung đa phương tiện.
+    chat_resolve_failed: Không thể tìm {p0} từ {p1}; cuộc trò chuyện có thể riêng tư hoặc bot chưa tham
+      gia.
+    target_unsupported: 'Đích không được hỗ trợ: {p0}. Dùng kmua:// (mã nguồn), work:// (không gian làm
+      việc), persist:// (tệp đã lưu), chat:// (cuộc trò chuyện hiện tại: info, history, media), memory://
+      (ghi nhớ), web:// (tìm kiếm web) hoặc http(s):// (web; liên kết tin nhắn t.me trả về nội dung tin
+      nhắn).'
+    codebase_disabled: 'Lỗi: truy cập mã nguồn đang tắt.'
+    workspace_disabled: 'Lỗi: truy cập không gian làm việc đang tắt.'
+    web_disabled: 'Lỗi: truy cập web đang tắt.'
+    websearch_disabled: 'Lỗi: tìm kiếm web đang tắt.'
+    chat_protocol_group_only: 'Lỗi: chat:// chỉ khả dụng trong trò chuyện nhóm.'
+    memory_chat_unavailable: 'Lỗi: ghi nhớ nhóm không khả dụng trong cuộc trò chuyện này.'
+    file_persisted: Đã lưu {p0} cho cuộc trò chuyện này (gửi dưới dạng tài liệu).
+    filename_invalid: 'Lỗi: name phải là tên đơn giản gồm 1–256 ký tự.'
+    content_empty: 'Lỗi: nội dung trống.'
+    file_size_limit: 'Lỗi: tệp vượt giới hạn {p0} byte.'
+    file_send_failed: 'Lỗi: không thể gửi tệp vào cuộc trò chuyện này.'
+    file_record_failed: 'Lỗi: không thể ghi nhận tệp; tài liệu đã gửi đã được xóa.'
+    persisted_file_missing: Không có tệp đã lưu tên {p0} trong cuộc trò chuyện này.
+    workspace_written_hint: Đã ghi {p0} byte vào {p1}. Dùng read để kiểm tra hoặc tg sendDocument để chia
+      sẻ.
+    workspace_edited: Đã chỉnh sửa {p0}. Dùng read để kiểm tra.
+    workspace_deleted: Đã xóa {p0}.
+    target_content_required: 'Lỗi: đích {p0} cần content.'
+    target_not_editable: 'Lỗi: {p0} chỉ đọc hoặc không thể chỉnh sửa; chỉ đích work:// cho phép sửa.'
+    search_empty: Không tìm thấy kết quả cho '{p0}'.
+    workspace_written: Đã ghi {p0} byte vào {p1}.
+    target_not_writable: 'Lỗi: {p0} chỉ đọc hoặc không thể ghi; chỉ work://, sandbox://, persist:// và
+      memory:// cho phép ghi.'
+    workspace_empty: Không gian làm việc trống tại {p0}.
+    memories_empty: Không tìm thấy ghi nhớ.
+    persisted_file_removed: Đã bỏ {p0} khỏi danh sách quản lý; tin nhắn trong cuộc trò chuyện được giữ
+      lại.
+    target_not_deletable: 'Lỗi: không thể xóa {p0}; chỉ work://, sandbox:// và persist:// cho phép xóa.'
+    persisted_files_empty: Không có tệp đã lưu cho cuộc trò chuyện này.
+    path_missing: 'Không tìm thấy đường dẫn: {p0}'
+    error_persisted_file_missing: 'Lỗi: không có tệp đã lưu tên {p0} trong cuộc trò chuyện này.'
+    tool_provide_at_least_2_options: Hãy cung cấp ít nhất 2 lựa chọn.
+    tool_provide_at_most_5_options: Chỉ cung cấp tối đa 5 lựa chọn.
+    tool_question_must_not_be_empty: Câu hỏi không được để trống.
+    tool_this_feature_is_not_available_in_this_chat: Tính năng này không khả dụng trong cuộc trò chuyện
+      này.
+    tool_user_p0_has_been_blocked_for_p1_minutes_requested_p2_min_reduced_by_affection_rank: Đã chặn người
+      dùng {p0} trong {p1} phút (yêu cầu {p2} phút, giảm theo mức thiện cảm).
+    tool_user_p0_is_currently_immune_to_being_blocked: Người dùng {p0} hiện được miễn chặn.
+    tool_user_p0_is_not_a_member_of_this_group_cannot_block: Người dùng {p0} không thuộc nhóm này nên
+      không thể chặn.
+    tool_this_tool_is_not_available_in_private_chats: Công cụ này không khả dụng trong trò chuyện riêng.
+    tool_chat_history_p0_messages: 'Lịch sử trò chuyện ({p0} tin nhắn):
+
+      '
+    tool_feature_is_not_available: Tính năng chưa sẵn sàng.
+    tool_error_searching_messages: Lỗi tìm kiếm tin nhắn.
+    tool_search_results_for_p0_p1_matches: '🔍 Kết quả tìm kiếm cho ''{p0}'' ({p1} kết quả):
+
+      '
+    tool_count_must_be_between_1_and_200_inclusive: Count phải từ 1 đến 200.
+    tool_memory_stored_p0: 'Đã lưu ghi nhớ: {p0}'
+    tool_file_p0_lines_p1_p2_of_p3: 'Tệp: {p0} (dòng {p1}–{p2} trên tổng {p3})'
+    tool_a_telegram_bot_with_ai_agent_capabilities: Bot Telegram có trợ lý AI.
+    tool_code_repository_not_initialized: Kho mã nguồn chưa được khởi tạo.
+    tool_p0_lines_above: '... ({p0} dòng phía trên)'
+    tool_p0_lines_below: '... ({p0} dòng phía dưới)'
+    tool_a_non_empty_prompt_is_required_to_generate_an_image: Cần yêu cầu không trống để tạo ảnh.
+    tool_image_generation_failed_p0: 'Tạo ảnh thất bại: {p0}'
+    tool_image_generated_successfully: Đã tạo ảnh thành công.
+    tool_a_non_empty_prompt_is_required_to_edit_an_image: Cần yêu cầu không trống để chỉnh sửa ảnh.
+    tool_image_edited_successfully_based_on_prompt_p0: 'Đã chỉnh sửa ảnh thành công theo yêu cầu: {p0}'
+    tool_generated_image_based_on_prompt_p0: 'Ảnh được tạo theo yêu cầu: {p0}'
+    tool_must_provide_either_schedule_time_or_send_immediately_true: Cần cung cấp schedule_time hoặc send_immediately=True.
+    tool_must_provide_either_text_or_media_media_type_media_url: Cần cung cấp text hoặc nội dung đa phương
+      tiện (media_type + media_url).
+    tool_media_type_is_required_when_providing_media_url: Cần media_type khi cung cấp media_url.
+    tool_media_url_is_required_when_providing_media_type: Cần media_url khi cung cấp media_type.
+    tool_question_is_required_for_poll: Bình chọn cần 'question'.
+    tool_options_must_have_at_least_2_items: '''options'' phải có ít nhất 2 mục.'
+    tool_options_must_have_at_most_10_items: '''options'' chỉ được có tối đa 10 mục.'
+    tool_schedule_time_must_be_in_the_future: schedule_time phải là thời điểm trong tương lai.
+    tool_command_exited_with_code_p0_p1: 'Lệnh kết thúc với mã {p0}:
+
+      {p1}'
+    tool_expected_a_work_reference_got_p0: Cần tham chiếu work://, nhận được {p0}.
+    tool_work_reference_has_no_file_name_p0: 'Tham chiếu work:// không có tên tệp: {p0}.'
+    tool_p0_sent_message_id_p1: Đã gửi {p0} (message_id={p1}).
+    tool_crawl_api_at_p0_answered_health_with_http_p1_but_dropped_the_crawl_request_p2: API thu thập tại
+      {p0} trả lời /health với HTTP {p1} nhưng ngắt yêu cầu thu thập ({p2}).
+    tool_crawl_api_at_p0_dropped_the_connection_p1: API thu thập tại {p0} ngắt kết nối ({p1}).
+    tool_content_truncated_at_p0_characters: '
+
+
+      [Nội dung bị cắt ở {p0} ký tự]'
+    tool_crawl_api_url_is_not_configured: URL API thu thập trang chưa được cấu hình.
+    tool_this_is_a_comment_reply_message: '[Đây là tin nhắn bình luận/trả lời]'
+    tool_caption_p0: '[Chú thích]: {p0}'
+    tool_contains_photo: '[Có ảnh]'
+    tool_forwarded_from_p0: 'Chuyển tiếp từ: {p0}'
+    tool_this_is_a_reply_to_message_p0: '[Đây là câu trả lời cho tin nhắn {p0}]'
+    tool_url_must_start_with_http_or_https: URL phải bắt đầu bằng http:// hoặc https://.
+    tool_contains_video: '[Có video]'
+    tool_unknown_channel: Kênh không rõ.
+    tool_message_p0: ' (tin nhắn {p0})'
+    tool_content: '
+
+      --- Nội dung ---
+
+      '
+    tool_crawl_api_returned_failure: API thu thập trang trả về lỗi.
+    tool_contains_audio_p0: '[Có âm thanh: {p0}]'
+    tool_contains_voice_message: '[Có tin nhắn thoại]'
+    tool_contains_document_p0: '[Có tài liệu: {p0}]'
+    tool_contains_sticker_p0: '[Có nhãn dán: {p0}]'
+    tool_contains_poll_p0: '[Có bình chọn: {p0}]'
+    tool_path_escapes_the_workspace_p0: 'Đường dẫn vượt ra ngoài không gian làm việc: {p0}.'
+    tool_content_exceeds_the_p0_byte_limit: Nội dung vượt giới hạn {p0} byte.
+    tool_result_exceeds_the_p0_byte_limit: Kết quả vượt giới hạn {p0} byte.
+    tool_line_p0_out_of_range_file_has_p1_lines: Dòng {p0} ngoài phạm vi (tệp có {p1} dòng).
+    tool_old_text_not_found_on_line_p0: Không tìm thấy old_text ở dòng {p0}.
+    tool_old_text_matches_p0_times_on_line_p1_make_old_text_unique_or_pass_replace_all_true: old_text
+      khớp {p0} lần ở dòng {p1}; hãy làm old_text duy nhất hoặc truyền replace_all=True.
+    tool_old_text_not_found_in_p0: Không tìm thấy old_text trong {p0}.
+    tool_old_text_matches_p0_times_in_p1_make_old_text_unique_or_pass_replace_all_true: old_text khớp
+      {p0} lần trong {p1}; hãy làm old_text duy nhất hoặc truyền replace_all=True.
+    tool_target_p0_is_not_readable: Không thể đọc đích {p0}.
+    tool_p0_contains_binary_content_p1_p2_the_bytes_were_not_decoded_as_text: '{p0} chứa nội dung nhị
+      phân ({p1}). {p2} Dữ liệu byte chưa được giải mã thành văn bản.'
+    tool_media_transcription_from_p0_p1_p2: '[Mô tả nội dung đa phương tiện từ {p0} ({p1})]:
+
+      {p2}'
+    tool_p0_from_p1_p2: '[{p0} từ {p1} ({p2})]'
+    tool_p0_caption_p1: '{p0}
+
+      [Chú thích]: {p1}'
+    tool_p0_paid_media_is_not_supported: '{p0}: nội dung trả phí không được hỗ trợ.'
+    tool_p0_the_message_has_no_downloadable_media: '{p0}: tin nhắn không có nội dung đa phương tiện để
+      tải.'
+    tool_p0_the_file_is_p1_bytes_over_the_p2_byte_download_limit: '{p0}: tệp có {p1} byte, vượt giới hạn
+      tải {p2} byte.'
+    tool_p0_the_message_contains_an_album_of_several_media_files_albums_are_not_supported: '{p0}: tin
+      nhắn chứa album nhiều tệp đa phương tiện; album không được hỗ trợ.'
+    tool_p0_the_file_is_over_the_p1_byte_download_limit: '{p0}: tệp vượt giới hạn tải {p1} byte.'
+    tool_message_p0_in_p1: tin nhắn {p0} trong {p1}
+    tool_the_media_bytes_were_unavailable_for_transcription: Không có dữ liệu đa phương tiện để mô tả.
+    tool_media_transcription_failed: Mô tả nội dung đa phương tiện thất bại.
+    tool_caption_p0_2: '
+
+      [Chú thích]: {p0}'
+    tool_p0_contains_binary_content_p1_the_current_model_cannot_inspect_this_media: '{p0} chứa nội dung
+      nhị phân ({p1}). Mô hình hiện tại không thể xem nội dung đa phương tiện này.'
+    tool_p0_is_p1_but_its_bytes_could_not_be_read: '{p0} có loại {p1}, nhưng không thể đọc dữ liệu byte.'
+    tool_send_document_returned_none: send_document trả về None.
+    tool_sent_message_has_no_document: Tin nhắn đã gửi không có tài liệu.
+    tool_path_escapes_the_sandbox_p0: 'Đường dẫn vượt ra ngoài sandbox: {p0}.'
+    tool_sandbox_paths_must_not_use_symlinks_p0: 'Đường dẫn sandbox:// không được dùng liên kết tượng
+      trưng: {p0}.'
+    tool_the_stored_file_id_is_invalid: ID tệp đã lưu không hợp lệ.
+    tool_download_failed_p0: 'Tải thất bại: {p0}'
+    tool_search_results_for_p0_p1: 'Kết quả tìm kiếm cho ''{p0}'' ({p1}):'
+    tool_max_lines_must_be_between_1_and_1500: max_lines phải từ 1 đến 1500.
+    tool_start_line_must_be_1: start_line phải >= 1.
+    tool_name_size_type: tên | kích thước | loại
+    tool_query_must_be_at_least_2_characters: Truy vấn phải có ít nhất 2 ký tự.
+    tool_max_results_must_be_between_1_and_50: max_results phải từ 1 đến 50.
+    tool_name_size_updated: tên | kích thước | cập nhật
+    tool_search_results_for_p0_p1_files: 'Kết quả tìm kiếm cho ''{p0}'' ({p1} tệp):'
+    tool_p0_p1_p2_matches: '
+
+      {p0}. {p1} ({p2} kết quả khớp)'
+    tool_p0_p1_p2_matches_shown: '
+
+      {p0}. {p1} ({p2} kết quả khớp được hiển thị)'
+    tool_line_p0_p1: '   Dòng {p0}: {p1}'
+    output_language: Trả lời bằng tiếng Việt theo mặc định; dùng ngôn ngữ khác khi người dùng yêu cầu
+      rõ ràng.
+    web_sender: 'Người gửi: {p0}'
+    web_date: 'Ngày: {p0}'
+    method_ok: '{p0} thành công.'
+    clear_sessions_confirm: Thao tác này xóa mọi hội thoại với trợ lý (lịch sử, câu hỏi đang chờ, trạng
+      thái chờ, dữ liệu tràn đã lưu) và không thể hoàn tác. Chạy /clear_sessions confirm để tiếp tục.
+    clear_sessions_done: Đã xóa {p0} lịch sử hội thoại, {p1} vị trí ngữ cảnh, {p2} câu hỏi đang chờ, {p3}
+      ID phiên, {p4} mục dữ liệu tràn, {p5} tin nhắn xếp hàng, {p6} không gian shell, {p7} cơ sở dữ liệu
+      không gian làm việc và {p8} tệp đã lưu (giữ lại tin nhắn trò chuyện).
+    model_remote_chat: cuộc trò chuyện <code>{p0}</code>
+    model_this_chat: cuộc trò chuyện này
+    model_header: <b>Mô hình tùy chỉnh hiện tại cho {p0}:</b>
+    model_usage: 'Cách dùng: <code>/model [@chat_id] [main|multimodal|small] [model_spec]</code>'
+    model_reset_hint: Bỏ model_spec để khôi phục mặc định chung.
+    model_target_hint: Bỏ @chat_id để áp dụng cho cuộc trò chuyện hiện tại.
+    model_both_set: 'Đã đặt mô hình chính và đa phương tiện cho {p0} thành <code>{p1}</code> (trước đó:
+      main=<code>{p2}</code>, multimodal=<code>{p3}</code>).'
+    model_main_set: 'Đã đặt mô hình chính cho {p0} thành <code>{p1}</code> (trước đó: <code>{p2}</code>).'
+    model_main_reset: 'Đã khôi phục mô hình chính cho {p0} về mặc định chung <code>{p1}</code> (trước
+      đó: <code>{p2}</code>).'
+    model_multimodal_set: 'Đã đặt mô hình đa phương tiện cho {p0} thành <code>{p1}</code> (trước đó: <code>{p2}</code>).'
+    model_multimodal_reset: 'Đã khôi phục mô hình đa phương tiện cho {p0} về mặc định chung <code>{p1}</code>
+      (trước đó: <code>{p2}</code>).'
+    model_small_set: 'Đã đặt mô hình nhỏ cho {p0} thành <code>{p1}</code> (trước đó: <code>{p2}</code>).'
+    model_small_reset: 'Đã khôi phục mô hình nhỏ cho {p0} về mặc định chung <code>{p1}</code> (trước đó:
+      <code>{p2}</code>).'
+    prompt_custom_active: Chỉ dẫn tùy chỉnh đang <b>hoạt động</b> trong cuộc trò chuyện này.
+    prompt_default_active: Cuộc trò chuyện này đang dùng chỉ dẫn <b>mặc định</b>.
+    prompt_usage: '{p0}
+
+
+      Cách dùng:
+
+      <code>/prompt &lt;text&gt;</code> — đặt chỉ dẫn tùy chỉnh
+
+      <code>/prompt reset</code> — khôi phục mặc định'
+    prompt_reset: Đã khôi phục chỉ dẫn mặc định cho cuộc trò chuyện này.
+    prompt_set: Đã đặt chỉ dẫn tùy chỉnh cho cuộc trò chuyện này.
+    model_global_default: '(mặc định chung: {p0})'
+    compaction_merge: '{p0}
+
+
+      Tích hợp các tin nhắn mới ở trên vào bản tóm tắt trong thẻ <previous-summary>: PHẢI giữ lại mọi
+      thông tin vẫn đúng; PHẢI bổ sung tiến triển, quyết định và bối cảnh mới; PHẢI chuyển các mục đã
+      hoàn thành ra khỏi Đang thực hiện; PHẢI cập nhật Các bước tiếp theo; có thể xóa thông tin không còn liên quan.
+      Giữ nguyên định dạng các phần.
+
+
+      <previous-summary>
+
+      {p1}
+
+      </previous-summary>'

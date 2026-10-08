@@ -108,27 +108,28 @@ async def inline_query_handler(client: Client, query: types.InlineQuery):
         )
         results.append(
             types.InlineQueryResultArticle(
-                title="魔裁 MEME",
-                description="魔法少女的魔女审判相关 MEME 生成",
+                title=i18n.t("bot.hardcoded.meme.title", locale=user_config.lang),
+                description=i18n.t(
+                    "bot.hardcoded.meme.description", locale=user_config.lang
+                ),
                 input_message_content=types.InputTextMessageContent(
-                    message_text="""
-魔裁 MEME 生成器, 用法:
-
-1. 安安说: ms anan [表情] [文本]
-示例: ms anan 无语 吾辈现在不想说话
-2. 辩论: ms trial [角色] ([类型] 文本...)
-示例: ms trial 希罗 [伪证] 我当时睡得可香了
-"""
+                    message_text=i18n.t(
+                        "bot.hardcoded.meme.help", locale=user_config.lang
+                    )
                 ),
                 reply_markup=types.InlineKeyboardMarkup(
                     [
                         [
                             types.InlineKeyboardButton(
-                                text="安安说",
+                                text=i18n.t(
+                                    "bot.hardcoded.meme.anan", locale=user_config.lang
+                                ),
                                 switch_inline_query_current_chat="ms anan ",
                             ),
                             types.InlineKeyboardButton(
-                                text="辩论",
+                                text=i18n.t(
+                                    "bot.hardcoded.meme.trial", locale=user_config.lang
+                                ),
                                 switch_inline_query_current_chat="ms trial ",
                             ),
                         ]
@@ -138,7 +139,7 @@ async def inline_query_handler(client: Client, query: types.InlineQuery):
         )
         await query.answer(
             results=results,
-            switch_pm_text=i18n.t("bot.inline.switch_pm_text"),
+            switch_pm_text=i18n.t("bot.inline.switch_pm_text", locale=user_config.lang),
             switch_pm_parameter="inline_query",
         )
         return
@@ -287,16 +288,19 @@ async def chosen_inline_result(client: Client, result: types.ChosenInlineResult)
         if data is None:
             await client.edit_inline_text(
                 inline_message_id=result.inline_message_id,
-                text="查询过期了呢, 请重新生成",
+                text=i18n.t("bot.hardcoded.meme.expired", locale=user_config.lang),
             )
             return
         match data["type"]:
             case "anan":
                 face = data.get("face", "无语")
-                text = data.get("text", "吾辈现在不想说话")
+                text = data.get(
+                    "text",
+                    i18n.t("bot.hardcoded.meme.default_text", locale=user_config.lang),
+                )
                 try:
                     image_bytes = await asyncio.to_thread(
-                        manomeme.draw_anan, text, face
+                        manomeme.draw_anan, text, face, user_config.lang
                     )
                     media = BytesIO(image_bytes)
                     media.name = "anan.png"
@@ -307,8 +311,11 @@ async def chosen_inline_result(client: Client, result: types.ChosenInlineResult)
                             [
                                 [
                                     types.InlineKeyboardButton(
-                                        text="安安说",
-                                        switch_inline_query_current_chat=f"ms anan {face} ",
+                                        text=i18n.t(
+                                            "bot.hardcoded.meme.anan",
+                                            locale=user_config.lang,
+                                        ),
+                                        switch_inline_query_current_chat=f"ms anan {manomeme.face_token(face)} ",
                                     )
                                 ]
                             ]
@@ -318,7 +325,9 @@ async def chosen_inline_result(client: Client, result: types.ChosenInlineResult)
                     logger.exception(f"Failed to edit inline media: {e}")
                     await client.edit_inline_text(
                         inline_message_id=result.inline_message_id,
-                        text="生成图片失败了呢, 请稍后再试",
+                        text=i18n.t(
+                            "bot.hardcoded.meme.failed", locale=user_config.lang
+                        ),
                     )
                 return
             case "trial":
@@ -327,12 +336,14 @@ async def chosen_inline_result(client: Client, result: types.ChosenInlineResult)
                 if not options:
                     await client.edit_inline_text(
                         inline_message_id=result.inline_message_id,
-                        text="没有有效的选项呢, 请重新生成",
+                        text=i18n.t(
+                            "bot.hardcoded.meme.no_options", locale=user_config.lang
+                        ),
                     )
                     return
                 try:
                     image_bytes = await asyncio.to_thread(
-                        manomeme.draw_trial, character, options
+                        manomeme.draw_trial, character, options, user_config.lang
                     )
                     media = BytesIO(image_bytes)
                     media.name = "trial.png"
@@ -344,6 +355,8 @@ async def chosen_inline_result(client: Client, result: types.ChosenInlineResult)
                     logger.exception(f"Failed to edit inline media: {e}")
                     await client.edit_inline_text(
                         inline_message_id=result.inline_message_id,
-                        text="生成图片失败了呢, 请稍后再试",
+                        text=i18n.t(
+                            "bot.hardcoded.meme.failed", locale=user_config.lang
+                        ),
                     )
                 return

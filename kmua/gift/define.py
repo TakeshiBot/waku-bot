@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 from typing import Any
 
+from kmua.i18n import t
+
 
 class GiftRarity(IntEnum):
     COMMON = 1
@@ -12,20 +14,22 @@ class GiftRarity(IntEnum):
 
 
 RARETY_DISPLAY_NAMES: dict[GiftRarity, str] = {
-    GiftRarity.COMMON: "凡芽",
-    GiftRarity.ENCHANTED: "灵植",
-    GiftRarity.RARE: "仪花",
-    GiftRarity.EPIC: "秘种",
-    GiftRarity.LEGENDARY: "禁华",
+    GiftRarity.COMMON: "bot.hardcoded.gift.rarity.common",
+    GiftRarity.ENCHANTED: "bot.hardcoded.gift.rarity.enchanted",
+    GiftRarity.RARE: "bot.hardcoded.gift.rarity.rare",
+    GiftRarity.EPIC: "bot.hardcoded.gift.rarity.epic",
+    GiftRarity.LEGENDARY: "bot.hardcoded.gift.rarity.legendary",
 }
 
 
-def get_rarity_display_name(rarity: int) -> str:
+def get_rarity_display_name(rarity: int, locale: str = "") -> str:
     try:
         rarity_enum = GiftRarity(rarity)
     except ValueError:
-        return "未知"
-    return RARETY_DISPLAY_NAMES.get(rarity_enum, "未知")
+        return t("bot.hardcoded.unknown", locale=locale)
+    return t(
+        RARETY_DISPLAY_NAMES.get(rarity_enum, "bot.hardcoded.unknown"), locale=locale
+    )
 
 
 class GiftID(StrEnum):
@@ -38,79 +42,96 @@ class GiftID(StrEnum):
 
 
 GIFT_DISPLAY_NAMES: dict[GiftID, str] = {
-    GiftID.SEVERED_GRASS_SILENCE: "默断之草",
-    GiftID.VOW_LOTUS_SEAL: "誓印之莲",
-    GiftID.AMARANTH_HEART_LAMP: "苋色心灯",
-    GiftID.FROST_FLOWER_WHISPER: "低语霜花",
-    GiftID.DAWN_BELL_HERB: "晓钟之草",
-    GiftID.OTHERWORLDLY_FLOWER: "异界之花",
+    GiftID.SEVERED_GRASS_SILENCE: "bot.hardcoded.gift.items.severed_grass_silence.name",
+    GiftID.VOW_LOTUS_SEAL: "bot.hardcoded.gift.items.vow_lotus_seal.name",
+    GiftID.AMARANTH_HEART_LAMP: "bot.hardcoded.gift.items.amaranth_heart_lamp.name",
+    GiftID.FROST_FLOWER_WHISPER: "bot.hardcoded.gift.items.frost_flower_whisper.name",
+    GiftID.DAWN_BELL_HERB: "bot.hardcoded.gift.items.dawn_bell_herb.name",
+    GiftID.OTHERWORLDLY_FLOWER: "bot.hardcoded.gift.items.otherworldly_flower.name",
 }
 
 
-def get_display_name(gift_id: GiftID) -> str:
-    return GIFT_DISPLAY_NAMES.get(gift_id, "Otherworldly Flower")
+def get_display_name(gift_id: GiftID, locale: str = "") -> str:
+    key = GIFT_DISPLAY_NAMES.get(
+        gift_id, GIFT_DISPLAY_NAMES[GiftID.OTHERWORLDLY_FLOWER]
+    )
+    return t(key, locale=locale)
 
 
 @dataclass(frozen=True)
 class Gift:
     id: GiftID
-    description: str
+    description_key: str
     price: int
     effects: dict[str, Any]
     consumable: bool = True
-    comment: str = ""
+    comment_key: str = ""
+
+    def get_description(self, locale: str = "") -> str:
+        return t(self.description_key, locale=locale)
+
+    def get_comment(self, locale: str = "") -> str:
+        return t(self.comment_key, locale=locale) if self.comment_key else ""
+
+    @property
+    def description(self) -> str:
+        return self.get_description()
+
+    @property
+    def comment(self) -> str:
+        return self.get_comment()
 
 
 ALL_GIFTS: dict[GiftID, Gift] = {
     GiftID.SEVERED_GRASS_SILENCE: Gift(
         id=GiftID.SEVERED_GRASS_SILENCE,
-        description="花色褪尽, 草根断离; 记忆并非被抹去, 只是再也无人能够指认它曾经存在",
+        description_key="bot.hardcoded.gift.items.severed_grass_silence.description",
         price=4721,
         effects={},
         consumable=True,
-        comment="清空记忆",
+        comment_key="bot.hardcoded.gift.items.severed_grass_silence.comment",
     ),
     GiftID.VOW_LOTUS_SEAL: Gift(
         id=GiftID.VOW_LOTUS_SEAL,
-        description="以莲为誓，心如止水；愿君安然，无惧风浪",
+        description_key="bot.hardcoded.gift.items.vow_lotus_seal.description",
         price=2473,
         effects={"duration": 7200, "passivation": 3.7},
         consumable=True,
-        comment="在一段时间内显著避免好感度变动",
+        comment_key="bot.hardcoded.gift.items.vow_lotus_seal.comment",
     ),
     GiftID.AMARANTH_HEART_LAMP: Gift(
         id=GiftID.AMARANTH_HEART_LAMP,
-        description="灯火未央，心之所向；苋色如霞，暖意绵长",
+        description_key="bot.hardcoded.gift.items.amaranth_heart_lamp.description",
         price=983,
         effects={"add_affection": 263, "duration": 1800},
         consumable=True,
-        comment="短暂地大幅提升好感度数值",
+        comment_key="bot.hardcoded.gift.items.amaranth_heart_lamp.comment",
     ),
     GiftID.FROST_FLOWER_WHISPER: Gift(
         id=GiftID.FROST_FLOWER_WHISPER,
-        description="花开静谧, 心亦无声; 洞悉万籁, 以观人心",
+        description_key="bot.hardcoded.gift.items.frost_flower_whisper.description",
         price=3701,
         effects={},
         consumable=True,
-        comment="查看当前对你的记忆",
+        comment_key="bot.hardcoded.gift.items.frost_flower_whisper.comment",
     ),
     GiftID.DAWN_BELL_HERB: Gift(
         id=GiftID.DAWN_BELL_HERB,
-        description="晓钟一响, 夜障皆消; 草叶拂霜, 晨光不灭",
+        description_key="bot.hardcoded.gift.items.dawn_bell_herb.description",
         price=4549,
         effects={"unblock": True, "immune_duration": 1800},
         consumable=True,
-        comment="解除被拉黑状态, 并在一段时间内免疫拉黑",
+        comment_key="bot.hardcoded.gift.items.dawn_bell_herb.comment",
     ),
 }
 
 OTHERWORLDLY_FLOWER = Gift(
     id=GiftID.OTHERWORLDLY_FLOWER,
-    description="本不应存在于此的花朵",
+    description_key="bot.hardcoded.gift.items.otherworldly_flower.description",
     price=9973,
     effects={},
     consumable=True,
-    comment="异常礼物, 不应出现",
+    comment_key="bot.hardcoded.gift.items.otherworldly_flower.comment",
 )
 
 

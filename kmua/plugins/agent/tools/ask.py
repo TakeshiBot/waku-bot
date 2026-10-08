@@ -9,6 +9,7 @@ from kmua import database
 from kmua.common import memstore
 from kmua.config import app_config
 from kmua.logger import logger
+from kmua.plugins.agent.localization import localized_message, tr
 
 from .. import datatype
 from ..whitelist import is_chat_allowed
@@ -51,15 +52,15 @@ async def ask_user(
         options: 2-5 short option labels for the user to choose from.
     """
     if not options or len(options) < 2:
-        raise ModelRetry("Provide at least 2 options.")
+        raise ModelRetry(tr("tool_provide_at_least_2_options"))
     if len(options) > 5:
-        raise ModelRetry("Provide at most 5 options.")
+        raise ModelRetry(tr("tool_provide_at_most_5_options"))
     if not question.strip():
-        raise ModelRetry("Question must not be empty.")
+        raise ModelRetry(tr("tool_question_must_not_be_empty"))
     if ctx.deps.message is None or ctx.deps.chat_id is None:
-        raise ModelRetry("Message context is unavailable.")
+        raise ModelRetry(tr("context_unavailable"))
     if not is_chat_allowed(ctx.deps.chat_id):
-        raise ModelRetry("This feature is not available in this chat.")
+        raise ModelRetry(tr("tool_this_feature_is_not_available_in_this_chat"))
 
     user_id = ctx.deps.user_id
     chat_id = ctx.deps.chat_id
@@ -85,7 +86,7 @@ async def ask_user(
         )
     except Exception as e:
         logger.error(f"ask_user: failed to send question: {e.__class__.__name__}: {e}")
-        raise ModelRetry(f"Failed to send question: {e.__class__.__name__}")
+        raise ModelRetry(tr("question_send_failed", p0=e.__class__.__name__))
 
     await memstore.set(
         _state_key(chat_id, user_id),
@@ -108,6 +109,7 @@ def set_run_callback(callback) -> None:
 @Client.on_callback_query(
     pyrogram.filters.regex(r"^agentask:(-?\d+):(-?\d+):(\d+)$"), group=0
 )
+@localized_message
 async def _on_ask_answer(client: Client, callback_query: CallbackQuery) -> None:
     if not app_config.agent:
         return
@@ -123,19 +125,19 @@ async def _on_ask_answer(client: Client, callback_query: CallbackQuery) -> None:
         return
     caller_id = callback_query.from_user.id if callback_query.from_user else None
     if caller_id != expected_user_id:
-        await callback_query.answer("这不是你的问题哦", show_alert=True)
+        await callback_query.answer(tr("question_not_yours"), show_alert=True)
         return
 
     ask_state = await get_ask_state(expected_chat_id, expected_user_id)
     if ask_state is None:
-        await callback_query.answer("这条回答已经过期了哦", show_alert=True)
+        await callback_query.answer(tr("question_expired"), show_alert=True)
         return
 
     try:
         opt_index = int(opt_id_str)
         answer = ask_state.options[opt_index]
     except (ValueError, IndexError):
-        await callback_query.answer("无效的选项", show_alert=True)
+        await callback_query.answer(tr("invalid_option"), show_alert=True)
         return
 
     await clear_ask_state(expected_chat_id, expected_user_id)
@@ -184,7 +186,14 @@ async def _on_ask_answer(client: Client, callback_query: CallbackQuery) -> None:
     if not user_data:
         return
 
-    answer_prompt = f"用户对问题「{ask_state.question}」的回答是: {answer}"
+    answer_locale = (
+        (await database.get_chat_config(expected_chat_id)).lang
+        if expected_chat_id < 0
+        else (await database.get_user_config(expected_user_id)).lang
+    )
+    answer_prompt = tr(
+        "question_answer", locale=answer_locale, p0=ask_state.question, p1=answer
+    )
     await _run_agent_for_ask(
         client=client,
         message=msg,

@@ -38,6 +38,7 @@ from sketchbook import (
 )
 
 from kmua.consts import MANOMEME_PATH
+from kmua.i18n import i18n, normalize_locale, t
 
 
 class Character(StrEnum):
@@ -49,11 +50,10 @@ class Character(StrEnum):
     @property
     def display(self) -> str:
         """Get the display string for the character"""
-        mapping = {
-            Character.EMA: "艾玛",
-            Character.HIRO: "希罗",
-        }
-        return mapping[self]
+        return self.get_display()
+
+    def get_display(self, locale: str = "") -> str:
+        return t(f"bot.hardcoded.meme.character.{self.value.lower()}", locale=locale)
 
 
 class Statement(StrEnum):
@@ -68,14 +68,10 @@ class Statement(StrEnum):
     @property
     def display(self) -> str:
         """Get the display string for the statement"""
-        mapping = {
-            Statement.AGREEMENT: "赞同",
-            Statement.DOUBT: "疑问",
-            Statement.PURJURY: "伪证",
-            Statement.REFUTATION: "反驳",
-            Statement.MAGIC: "魔法",
-        }
-        return mapping[self]
+        return self.get_display()
+
+    def get_display(self, locale: str = "") -> str:
+        return t(f"bot.hardcoded.meme.statement.{self.value.lower()}", locale=locale)
 
 
 class Option:
@@ -92,39 +88,29 @@ class Option:
         self.text = text
 
 
+# Legacy Chinese command aliases are part of the input protocol.
+STATEMENT_ALIASES = {
+    "赞同": Statement.AGREEMENT,
+    "疑问": Statement.DOUBT,
+    "伪证": Statement.PURJURY,
+    "反驳": Statement.REFUTATION,
+    "魔法": Statement.MAGIC,
+    **{statement.value.lower(): statement for statement in Statement},
+}
+
+
 def get_statement(statement: str) -> Statement:
-    """Convert a string statement type to a Statement enum
-
-    Args:
-        statement (str): The string representation of the statement type
-
-    Returns:
-        Statement: The corresponding Statement enum
-    """
-    mapping = {
-        "赞同": Statement.AGREEMENT,
-        "疑问": Statement.DOUBT,
-        "伪证": Statement.PURJURY,
-        "反驳": Statement.REFUTATION,
-        "魔法": Statement.MAGIC,
-    }
-    return mapping[statement]
+    return STATEMENT_ALIASES[statement.lower()]
 
 
 def get_character(character: str) -> Character:
-    """Convert a string character name to a Character enum
-
-    Args:
-        character (str): The string representation of the character name
-
-    Returns:
-        Character: The corresponding Character enum, defaults to EMA if not found.
-    """
     mapping = {
         "艾玛": Character.EMA,
         "希罗": Character.HIRO,
+        "ema": Character.EMA,
+        "hiro": Character.HIRO,
     }
-    return mapping.get(character, Character.EMA)
+    return mapping.get(character.lower(), Character.EMA)
 
 
 def anan_base_image(face: str | None = None) -> str:
@@ -142,7 +128,7 @@ def anan_base_image(face: str | None = None) -> str:
         return str(MANOMEME_PATH / f"anan/{face}.png")
 
 
-def draw_anan(text: str, face: str | None = None) -> bytes:
+def draw_anan(text: str, face: str | None = None, locale: str = "") -> bytes:
     """Draw the image of what Anan says
 
     Args:
@@ -154,7 +140,15 @@ def draw_anan(text: str, face: str | None = None) -> bytes:
     """
     drawer = TextFitDrawer(
         base_image=anan_base_image(face),
-        font=str(MANOMEME_PATH / "fonts/AaMingTianHuiYouHaoShiFaSheng-2.ttf"),
+        font=str(
+            MANOMEME_PATH
+            / "fonts"
+            / (
+                "AaMingTianHuiYouHaoShiFaSheng-2.ttf"
+                if normalize_locale(locale or i18n.default_locale).startswith("zh")
+                else "SourceHanSerifSC.otf"
+            )
+        ),
         overlay_image=str(MANOMEME_PATH / "anan/base_overlay.png"),
         region=DrawerRegion(100, 432, 100 + 319, 432 + 204),
     )
@@ -219,7 +213,7 @@ def get_option_coordinates(number: int) -> list[tuple[int, int]]:
         ]
 
 
-def draw_trial(character: Character, options: list[Option]):
+def draw_trial(character: Character, options: list[Option], locale: str = ""):
     """Draw the trial image for a character saying an option
 
     Args:
@@ -251,26 +245,32 @@ def draw_trial(character: Character, options: list[Option]):
     # Options, texts, and statements
     coordinates = get_option_coordinates(len(options))
     for option, (x, y) in zip(options, coordinates):
-        drawer = (
-            drawer.paste_image(
-                str(MANOMEME_PATH / "trial/option.png"),
-                region=DrawerRegion(x, y, x + 802, y + 216),
-                style=PasteStyle(keep_alpha=False),
-            )
-            .draw_text(
-                text=option.text,
-                region=DrawerRegion(x + 109, y + 32, x + 109 + 589, y + 32 + 150),
-                style=TextStyle(
-                    color=(39, 33, 30, 255),
-                    bracket_color=(39, 33, 30, 255),
-                    max_font_height=48,
-                ),
-            )
-            .paste_image(
-                get_statement_image(option.statement),
-                region=DrawerRegion(x + 21, y - 41, x + 21 + 146, y - 41 + 126),
-                style=PasteStyle(keep_alpha=False),
-            )
+        drawer = drawer.paste_image(
+            str(MANOMEME_PATH / "trial/option.png"),
+            region=DrawerRegion(x, y, x + 802, y + 216),
+            style=PasteStyle(keep_alpha=False),
+        ).draw_text(
+            text=option.text,
+            region=DrawerRegion(x + 109, y + 32, x + 109 + 589, y + 32 + 150),
+            style=TextStyle(
+                color=(39, 33, 30, 255),
+                bracket_color=(39, 33, 30, 255),
+                max_font_height=48,
+            ),
         )
+        region = DrawerRegion(x + 21, y - 41, x + 21 + 146, y - 41 + 126)
+        if normalize_locale(locale or i18n.default_locale).startswith("zh"):
+            drawer = drawer.paste_image(
+                get_statement_image(option.statement),
+                region=region,
+                style=PasteStyle(keep_alpha=False),
+            )
+        else:
+            # The original statement badges contain baked-in Chinese lettering.
+            drawer = drawer.draw_text(
+                text=option.statement.get_display(locale),
+                region=DrawerRegion(x + 21, y - 41, x + 241, y + 2),
+                style=TextStyle(color=(255, 246, 235, 255), max_font_height=28),
+            )
 
     return drawer.finish()

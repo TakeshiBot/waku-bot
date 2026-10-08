@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from kmua.enums import VerifyFailAction, VerifyMethod, VerifyTrigger
 from kmua.i18n import i18n
+from kmua.webapp.i18n import LocalizedValidationError, validation_text
 
 # Keys accepted by /t, matching plugins/title/utils.py exactly. A stricter set
 # than "any bool" so a typo cannot silently create a permission that is never read.
@@ -46,7 +47,9 @@ AGENT_CREDITS_MAX = 10**12
 def _valid_locale(value: str) -> str:
     available = i18n.get_available_locales()
     if value not in available:
-        raise ValueError(f"unsupported locale, expected one of {sorted(available)}")
+        raise LocalizedValidationError(
+            validation_text("locale", allowed=", ".join(sorted(available)))
+        )
     return value
 
 
@@ -189,7 +192,7 @@ class VerifyQuestionIn(ApiModel):
     @classmethod
     def _check_select(cls, value: str) -> str:
         if value not in {"all", "any"}:
-            raise ValueError("select must be 'all' or 'any'")
+            raise LocalizedValidationError(validation_text("select"))
         return value
 
     @field_validator("question")
@@ -197,7 +200,7 @@ class VerifyQuestionIn(ApiModel):
     def _strip_question(cls, value: str) -> str:
         stripped = value.strip()
         if not stripped:
-            raise ValueError("question must not be blank")
+            raise LocalizedValidationError(validation_text("question_blank"))
         return stripped
 
     @field_validator("options")
@@ -212,9 +215,9 @@ class VerifyQuestionIn(ApiModel):
                 continue
             cleaned.append(stripped)
         if len(cleaned) < 2:
-            raise ValueError("options must have at least 2 non-blank entries")
+            raise LocalizedValidationError(validation_text("options_required"))
         if any(len(option) > 100 for option in cleaned):
-            raise ValueError("option too long")
+            raise LocalizedValidationError(validation_text("option_long"))
         return cleaned
 
     @field_validator("answers")
@@ -229,14 +232,14 @@ class VerifyQuestionIn(ApiModel):
                 continue
             cleaned.append(stripped)
         if not cleaned:
-            raise ValueError("answers must have at least 1 non-blank entry")
+            raise LocalizedValidationError(validation_text("answers_required"))
         return cleaned
 
     @model_validator(mode="after")
     def _check_answers_in_options(self) -> VerifyQuestionIn:
         unknown = [a for a in self.answers if a not in self.options]
         if unknown:
-            raise ValueError(f"answers must be options, got: {unknown}")
+            raise LocalizedValidationError(validation_text("answers_options"))
         return self
 
 
@@ -331,8 +334,10 @@ class ChatConfigIn(ApiModel):
     @classmethod
     def _check_verify_strategy(cls, value: str) -> str:
         if value not in {m.value for m in VerifyTrigger}:
-            raise ValueError(
-                f"unsupported verify strategy, expected one of {[m.value for m in VerifyTrigger]}"
+            raise LocalizedValidationError(
+                validation_text(
+                    "verify_strategy", allowed=", ".join(m.value for m in VerifyTrigger)
+                )
             )
         return value
 
@@ -340,8 +345,10 @@ class ChatConfigIn(ApiModel):
     @classmethod
     def _check_verify_method(cls, value: str) -> str:
         if value not in {m.value for m in VerifyMethod}:
-            raise ValueError(
-                f"unsupported verify method, expected one of {[m.value for m in VerifyMethod]}"
+            raise LocalizedValidationError(
+                validation_text(
+                    "verify_method", allowed=", ".join(m.value for m in VerifyMethod)
+                )
             )
         return value
 
@@ -349,8 +356,11 @@ class ChatConfigIn(ApiModel):
     @classmethod
     def _check_verify_fail_action(cls, value: str) -> str:
         if value not in {m.value for m in VerifyFailAction}:
-            raise ValueError(
-                f"unsupported verify fail action, expected one of {[m.value for m in VerifyFailAction]}"
+            raise LocalizedValidationError(
+                validation_text(
+                    "verify_action",
+                    allowed=", ".join(m.value for m in VerifyFailAction),
+                )
             )
         return value
 
@@ -371,7 +381,7 @@ class TitlePermissionsIn(ApiModel):
     def _check_keys(cls, value: dict[str, bool]) -> dict[str, bool]:
         unknown = set(value) - TITLE_PERMISSION_KEYS
         if unknown:
-            raise ValueError(f"unknown permissions: {sorted(unknown)}")
+            raise LocalizedValidationError(validation_text("permissions"))
         return value
 
 

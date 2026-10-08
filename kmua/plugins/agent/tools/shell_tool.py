@@ -14,6 +14,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.tools import ToolDefinition
 
 from kmua.config import app_config
+from kmua.plugins.agent.localization import tr
 from kmua.services import sandbox
 
 from .. import datatype
@@ -49,10 +50,10 @@ def _split_alias(ref: str) -> tuple[str, str | None]:
 async def _normalize_work_ref(path: str) -> str:
     """Normalize a work:// reference to a workspace path starting with '/'."""
     if not path.startswith("work://"):
-        raise ValueError(f"Expected a work:// reference, got {path!r}")
+        raise ValueError(tr("tool_expected_a_work_reference_got_p0", p0=repr(path)))
     rest = "/" + path[len("work://") :].lstrip("/")
     if rest in ("", "/") or not rest.rsplit("/", 1)[-1]:
-        raise ValueError(f"work:// reference has no file name: {path}")
+        raise ValueError(tr("tool_work_reference_has_no_file_name_p0", p0=path))
     return rest
 
 
@@ -70,11 +71,11 @@ async def _stage_inputs(
         try:
             ws_path = await _normalize_work_ref(work_ref)
         except ValueError as e:
-            return f"Error: {e}"
+            return tr("error", p0=e)
         try:
             data = await workspace.read_file_bytes(session_key, ws_path)
         except Exception as e:
-            return f"Error: Cannot read {ref}: {e}"
+            return tr("read_failed", p0=ref, p1=e)
         name = alias or ws_path.rsplit("/", 1)[-1]
         dest = workdir / name
         # A leftover symlink pointing outside the sandbox must not be
@@ -84,7 +85,7 @@ async def _stage_inputs(
                 dest.unlink()
             dest.write_bytes(data)
         except Exception as e:
-            return f"Error: Cannot write {ref}: {e}"
+            return tr("write_failed", p0=ref, p1=e)
     return None
 
 
@@ -120,9 +121,9 @@ async def shell(
 
     stage_limit = app_config.agent_shell_max_stage_files
     if stage_limit > 0 and len(files) > stage_limit:
-        return f"Error: Too many files entries (max {stage_limit})."
+        return tr("files_entry_limit", p0=stage_limit)
     if not command or not command.strip():
-        return "Error: command must not be empty."
+        return tr("command_empty")
     if clean:
         await sandbox.clean_session(io_tools._session_key(ctx))
 
@@ -132,12 +133,15 @@ async def shell(
     async with _get_shell_semaphore():
         result = await sandbox.run_shell(io_tools._session_key(ctx), command, timeout)
     if result.timed_out:
-        return (
-            f"Error: Command timed out after {timeout or app_config.agent_shell_timeout}s. "
-            f"Partial output:\n{result.output}"
+        return tr(
+            "command_timeout",
+            p0=timeout or app_config.agent_shell_timeout,
+            p1=result.output,
         )
     if result.exit_code != 0:
-        return f"Command exited with code {result.exit_code}:\n{result.output}"
+        return tr(
+            "tool_command_exited_with_code_p0_p1", p0=result.exit_code, p1=result.output
+        )
     return result.output
 
 

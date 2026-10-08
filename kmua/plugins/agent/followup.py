@@ -11,6 +11,7 @@ from kmua.common.utils import GROUP_CHAT_TYPES, is_explicit_reply
 from kmua.config import app_config
 from kmua.logger import logger
 from kmua.plugins.agent import datatype, jev, provider, quota, state, trace
+from kmua.plugins.agent.localization import localized_message, tr
 from kmua.plugins.agent.prompt import build_ctx_info, get_input_prompt
 from kmua.plugins.agent.runner import (
     get_chat_model_override,
@@ -31,8 +32,8 @@ from .whitelist import is_chat_allowed
 
 
 class RelevanceCheck(BaseModel):
-    relevance: bool = Field(description="是否相关")
-    reason: str = Field(description="判断依据说明")
+    relevance: bool = Field(description=tr("is_relevant"))
+    reason: str = Field(description=tr("relevance_reason"))
 
 
 if small_model:
@@ -42,7 +43,7 @@ if small_model:
             app_config.agent_model_small_options
         ),
         output_type=RelevanceCheck,
-        system_prompt="你是一个对话相关性判断助手。判断用户的新消息是否是对之前对话的延续。",
+        system_prompt=tr("relevance_system"),
         capabilities=[trace.AgentTraceCapability()],
         retries=2,
     )
@@ -62,7 +63,7 @@ def _make_relevance_check_agent(
                 app_config.agent_model_small_options
             ),
             output_type=RelevanceCheck,
-            system_prompt="你是一个对话相关性判断助手。判断用户的新消息是否是对之前对话的延续。",
+            system_prompt=tr("relevance_system"),
             capabilities=[trace.AgentTraceCapability()],
             retries=2,
         )
@@ -144,6 +145,7 @@ follow_up_filter = pyrogram.filters.create(_follow_up_filter_func)
 
 
 @PyrogramClient.on_message(follow_up_filter, group=10)
+@localized_message(prefer_chat=True)
 async def handle_follow_up_message(
     client: PyrogramClient, message: pyrogram.types.Message
 ):
@@ -199,18 +201,12 @@ async def handle_follow_up_message(
     bot_full_output = (
         bot_reply.full_output if bot_reply.full_output else bot_reply.reply_text
     )
-    relevance_check_prompt = f"""
-在群聊场景中发生如下原始对话:
-用户: {bot_reply.original_user_message}
-Bot回复: {bot_full_output}
-
-现在收到了某用户发送的新消息: {message_text}
-
-判断这条新消息是否是对Bot回复的评论、疑问、补充、反驳或相关讨论.
-注意：
-- 即使是不同用户发送的消息也可能相关
-- 新消息与原先话题必须存在明显的关联性才算相关, 如果不能确定, 一律判定为不相关
-"""
+    relevance_check_prompt = tr(
+        "followup_check",
+        p0=bot_reply.original_user_message,
+        p1=bot_full_output,
+        p2=message_text,
+    )
     session: trace.TraceSession | None = None
     try:
         # 使用小模型超时控制防止相关性检查阻塞事件循环
@@ -310,13 +306,13 @@ Bot回复: {bot_full_output}
         bot_full_output = (
             bot_reply.full_output if bot_reply.full_output else bot_reply.reply_text
         )
-        addtional_instructions += f"""
-场景信息: 在群聊中刚才有用户与你进行了对话，内容如下:
-用户[{reply_to_user.full_name}]: {bot_reply.original_user_message}
-你的回复: {bot_full_output}
----
-现在又有用户[{user_data.full_name}]对这个话题继续讨论，请自然地参与对话。
-"""
+        addtional_instructions += tr(
+            "followup_context",
+            p0=reply_to_user.full_name,
+            p1=bot_reply.original_user_message,
+            p2=bot_full_output,
+            p3=user_data.full_name,
+        )
         await _run_registered(
             chat.id,
             user.id,
@@ -330,6 +326,7 @@ Bot回复: {bot_full_output}
                 user_prompt=follow_up_prompt,
                 history=history,
                 deps=datatype.ContextDeps(
+                    locale=chat_config.lang,
                     user_id=user.id,
                     chat_id=chat.id,
                     message=message,

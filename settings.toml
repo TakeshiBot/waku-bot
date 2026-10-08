@@ -7,7 +7,7 @@ api_hash = "452b0359b988148995f22ff0f4229750"
 use_ipv6 = false
 log_retention_days = 30
 log_level = "INFO"
-lang = "zh-CN"
+lang = "vi"
 
 # Telegram Mini App 管理面板.
 # webapp = false

@@ -7,8 +7,8 @@
 
 import { locale } from "@/i18n";
 
-export function formatNumber(value: number): string {
-  return new Intl.NumberFormat(locale.value).format(value);
+export function formatNumber(value: number, options: Intl.NumberFormatOptions = {}): string {
+  return new Intl.NumberFormat(locale.value, options).format(value);
 }
 
 /** Format a 0..1 ratio as a percentage, keeping small values legible. */
@@ -70,5 +70,5 @@ export function formatTokens(value: number): string {
       break;
     }
   }
-  return `${(value / scale).toFixed(1)}${suffix}`;
+  return `${formatNumber(value / scale, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}${suffix}`;
 }

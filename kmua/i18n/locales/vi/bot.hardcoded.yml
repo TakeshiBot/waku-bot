@@ -1,0 +1,285 @@
+{
+  "bot": {
+    "hardcoded": {
+      "gift": {
+        "rarity": {
+          "common": "Mầm thường",
+          "enchanted": "Cây linh",
+          "rare": "Hoa nghi lễ",
+          "epic": "Hạt bí ẩn",
+          "legendary": "Hoa cấm"
+        },
+        "items": {
+          "severed_grass_silence": {
+            "name": "Cỏ lặng đoạn tuyệt",
+            "description": "Sắc hoa phai hết, rễ cỏ đứt lìa; ký ức không bị xóa, chỉ còn không ai nhớ nó từng tồn tại.",
+            "comment": "Xóa ký ức"
+          },
+          "vow_lotus_seal": {
+            "name": "Sen ấn lời thề",
+            "description": "Lấy sen làm lời thề, lòng tĩnh như nước; mong bạn bình an, không sợ sóng gió.",
+            "comment": "Giảm mạnh biến động độ thiện cảm trong một khoảng thời gian"
+          },
+          "amaranth_heart_lamp": {
+            "name": "Đèn tâm sắc dền",
+            "description": "Ánh đèn chưa tắt, hướng theo lòng mình; sắc dền như ráng chiều, hơi ấm kéo dài.",
+            "comment": "Tăng mạnh độ thiện cảm trong thời gian ngắn"
+          },
+          "frost_flower_whisper": {
+            "name": "Hoa sương thì thầm",
+            "description": "Hoa nở tĩnh lặng, lòng cũng lặng im; nghe thấu vạn thanh để hiểu lòng người.",
+            "comment": "Xem ký ức hiện tại về bạn"
+          },
+          "dawn_bell_herb": {
+            "name": "Cỏ chuông bình minh",
+            "description": "Chuông sớm vang lên, bóng đêm tan biến; lá cỏ gạt sương, ánh mai không tắt.",
+            "comment": "Gỡ chặn và miễn bị chặn trong một khoảng thời gian"
+          },
+          "otherworldly_flower": {
+            "name": "Hoa dị giới",
+            "description": "Bông hoa lẽ ra không nên tồn tại ở đây",
+            "comment": "Quà bất thường, không nên xuất hiện"
+          }
+        },
+        "cannot_buy": "Hiện bạn chưa đủ xu để mua quà.",
+        "choose_buy": "Bạn muốn mua quà gì?",
+        "leave": "Rời đi",
+        "not_your_purchase": "Đây không phải yêu cầu mua của bạn.",
+        "user_missing": "Không tìm thấy dữ liệu người dùng.",
+        "insufficient": "Bạn không đủ xu để mua món quà này.",
+        "buy_again": "Mua thêm một món",
+        "cancelled_empty": "Đã hủy mua.\nHiện bạn chưa đủ xu để mua quà.",
+        "cancelled_choose": "Đã hủy mua. Bạn muốn chọn quà khác không?",
+        "confirm": "Xác nhận",
+        "cancel": "Hủy",
+        "unknown_action": "Thao tác không xác định.",
+        "inventory_empty": "Bạn chưa mua món quà nào.",
+        "choose_send": "Bạn muốn tặng quà gì cho mình? Nhấn nút số tương ứng để tặng.",
+        "previous": "Trang trước",
+        "next": "Trang sau",
+        "no_more": "Không còn trang nào nữa.",
+        "no_more_gifts": "Không còn quà nào nữa.",
+        "gift_missing": "Không tìm thấy quà.",
+        "not_your_gift": "Đây không phải quà của bạn.",
+        "already_sent": "Món quà này đã được tặng.",
+        "unknown_gift": "Món quà này không hợp lệ.",
+        "send_failed": "Không thể tặng quà.",
+        "sent_all": "Bạn đã tặng hết quà rồi.",
+        "choose_more": "Bạn muốn tặng thêm gì? Hiệu ứng của quà không nhất thiết cộng dồn.",
+        "bought": "Đã mua 1 × {name} ({rarity}).",
+        "send_success": "Đã tặng 1 × {name} ({rarity}).",
+        "repeat": "Mua thêm {name} không?\nGiá bằng {percent}% số dư của bạn.",
+        "confirm_purchase": "<b>{name}</b>\n<i>{description}</i>\n\nHiệu ứng: {comment}\n\nBạn có muốn mua 1 × {name}? Giá bằng {percent}% số dư của bạn.",
+        "inventory_row": "\n{index}. {name} ({rarity})",
+        "memory": "Ký ức hiện tại về bạn:\n{memory}\n\nXếp hạng độ thiện cảm: {rank:.2%}",
+        "no_memory": "Chưa có"
+      },
+      "unknown": "Không rõ",
+      "bottle": {
+        "mysterious": "Người bí ẩn",
+        "ban_usage": "Cách dùng: /banseapest <user_id> [số ngày]",
+        "ban_numbers": "ID người dùng và số ngày phải là số.",
+        "banned": "Bạn bị cấm sử dụng chai thư."
+      },
+      "link": {
+        "video": "Video",
+        "coolapk": "Coolapk",
+        "tieba": "Tieba"
+      },
+      "slash": {
+        "with_target": "{actor} {action} {target} {suffix} !",
+        "with_self": "{actor} {action} chính mình {suffix} !",
+        "passive_target": "{actor} bị {target} {action} !",
+        "passive_self": "{actor} tự {action} chính mình !",
+        "active_target": "{actor} {action} {target} !",
+        "active_self": "{actor} {action} chính mình !"
+      },
+      "meme": {
+        "title": "Meme phiên tòa phù thủy",
+        "description": "Tạo meme về phiên tòa phù thủy của các thiếu nữ phép thuật",
+        "anan": "Anan nói",
+        "trial": "Tranh luận",
+        "anan_prompt": "Hãy để Anan lên tiếng",
+        "anan_usage": "Cách dùng: ms anan [biểu cảm] [nội dung]",
+        "ema_title": "Tranh luận – Ema",
+        "hiro_title": "Tranh luận – Hiro",
+        "ema_description": "Bắt đầu xét mọi khả năng",
+        "hiro_description": "Cô gái bí ẩn khai man",
+        "ema_caption": "Chọn điểm bạn chú ý",
+        "hiro_caption": "Bắt đầu lời khai giả",
+        "generated_later": "Ảnh sẽ được tạo sau khi gửi",
+        "anan_writing": "Anan đang viết…",
+        "ema_busy": "{name} đang xét mọi khả năng…",
+        "hiro_busy": "{name} đang suy nghĩ…",
+        "expired": "Yêu cầu đã hết hạn. Hãy tạo lại.",
+        "failed": "Không thể tạo ảnh. Vui lòng thử lại sau.",
+        "no_options": "Không có lựa chọn hợp lệ. Hãy tạo lại.",
+        "default_text": "Giờ mình không muốn nói chuyện",
+        "anan_result": "Anan nói [{face}]",
+        "help": "Cách dùng trình tạo meme:\n\n1. Anan nói: ms anan [biểu cảm] [nội dung]\nVí dụ: ms anan speechless Giờ mình không muốn nói chuyện\n2. Tranh luận: ms trial [nhân vật] ([loại] nội dung...)\nVí dụ: ms trial Hiro [perjury] Lúc đó tôi đang ngủ rất ngon\n\nBiểu cảm: yandere, angry, shy, speechless, happy\nNhân vật: Ema, Hiro\nLoại: agreement, doubt, refutation, perjury, magic",
+        "face": {
+          "yandere": "Si mê",
+          "angry": "Tức giận",
+          "shy": "Ngại ngùng",
+          "speechless": "Cạn lời",
+          "happy": "Vui vẻ"
+        },
+        "statement": {
+          "agreement": "Đồng ý",
+          "doubt": "Nghi vấn",
+          "perjury": "Khai man",
+          "refutation": "Phản bác",
+          "magic": "Phép thuật"
+        },
+        "character": {
+          "ema": "Ema",
+          "hiro": "Hiro"
+        }
+      },
+      "lang": {
+        "choose_user": "Chọn ngôn ngữ bạn muốn sử dụng",
+        "choose_chat": "Chọn ngôn ngữ cho nhóm này"
+      },
+      "reload": {
+        "denied": "Bạn không có quyền thực hiện thao tác này.",
+        "changed": "Các trường đã thay đổi ({count}): {fields}",
+        "unchanged": "Không có trường nào thay đổi"
+      },
+      "status": {
+        "summary": "Người dùng: {users}\nCuộc trò chuyện: {chats}\nTrích dẫn: {quotes}\nLiên kết: {associations}\nChai thư: {bottles}\nThống kê độ thiện cảm: {affection}"
+      },
+      "ping": {
+        "pong": "Pong!",
+        "latency": "Pong! | {ms:.3f} ms"
+      },
+      "id": {
+        "chat_user": "ID cuộc trò chuyện: `{chat_id}`\nID người dùng của bạn: `{user_id}`",
+        "reply": "ID cuộc trò chuyện: `{chat_id}`\nID người được trả lời: `{target_id}`\nID người dùng của bạn: `{user_id}`"
+      },
+      "api": {
+        "INIT_DATA_MISSING": "Thiếu dữ liệu xác thực Telegram.",
+        "INIT_DATA_MALFORMED": "Dữ liệu xác thực Telegram sai định dạng.",
+        "INIT_DATA_INVALID": "Dữ liệu xác thực Telegram không hợp lệ.",
+        "INIT_DATA_EXPIRED": "Dữ liệu xác thực Telegram đã hết hạn. Hãy mở lại bảng điều khiển.",
+        "TOKEN_MISSING": "Thiếu mã phiên đăng nhập.",
+        "TOKEN_INVALID": "Mã phiên đăng nhập không hợp lệ.",
+        "TOKEN_EXPIRED": "Phiên đăng nhập đã hết hạn. Hãy mở lại bảng điều khiển.",
+        "FORBIDDEN": "Bạn không có quyền thực hiện thao tác này.",
+        "OWNER_REQUIRED": "Thao tác này cần quyền chủ sở hữu bot.",
+        "ADMIN_REQUIRED": "Thao tác này cần quyền quản trị bot.",
+        "CHAT_ADMIN_REQUIRED": "Thao tác này cần quyền quản trị bot trong nhóm.",
+        "USER_NOT_FOUND": "Không tìm thấy người dùng.",
+        "CHAT_NOT_FOUND": "Không tìm thấy nhóm.",
+        "QUOTE_NOT_FOUND": "Không tìm thấy trích dẫn.",
+        "NOT_FOUND": "Không tìm thấy tài nguyên.",
+        "VALIDATION_FAILED": "Dữ liệu yêu cầu không hợp lệ. Vui lòng kiểm tra nội dung nhập.",
+        "RATE_LIMITED": "Bạn gửi quá nhiều yêu cầu. Vui lòng thử lại sau.",
+        "COOLDOWN": "Vui lòng đợi hết thời gian chờ rồi thử lại.",
+        "CONFLICT": "Dữ liệu đã thay đổi hoặc thao tác bị xung đột. Hãy tải lại và thử tiếp.",
+        "FEATURE_DISABLED": "Tính năng này đã bị tắt.",
+        "NOT_MARRIED": "Bạn chưa kết hôn.",
+        "INSUFFICIENT_COINS": "Bạn không đủ xu.",
+        "GIFT_NOT_FOUND": "Không tìm thấy quà.",
+        "GIFT_ALREADY_SENT": "Món quà này đã được tặng.",
+        "TELEGRAM_ERROR": "Thao tác Telegram thất bại. Vui lòng thử lại sau.",
+        "INTERNAL_ERROR": "Máy chủ gặp lỗi. Vui lòng thử lại sau.",
+        "invalid_field": "Giá trị trường không hợp lệ."
+      },
+      "wordcloud": {
+        "no_text": "Không có nội dung văn bản để tạo đám mây từ."
+      },
+      "api_reasons": {
+        "init_empty": "Dữ liệu initData trống.",
+        "bot_token_missing": "Chưa cấu hình token của bot.",
+        "init_query": "initData không phải chuỗi truy vấn.",
+        "init_hash": "initData thiếu mã hash.",
+        "init_signature": "Chữ ký initData không khớp.",
+        "init_date": "initData thiếu thời điểm auth_date.",
+        "init_expired": "initData đã hết hạn. Hãy mở lại bảng điều khiển.",
+        "init_user_missing": "initData thiếu thông tin người dùng.",
+        "init_user_object": "Thông tin người dùng trong initData phải là một đối tượng.",
+        "init_user_fields": "Thông tin người dùng trong initData thiếu id hoặc first_name.",
+        "init_user_json": "Thông tin người dùng trong initData không phải JSON hợp lệ.",
+        "session_subject": "Danh tính trong phiên đăng nhập không hợp lệ.",
+        "session_expired": "Phiên đăng nhập đã hết hạn. Hãy mở lại bảng điều khiển.",
+        "session_invalid": "Token của phiên đăng nhập không hợp lệ.",
+        "authorization_missing": "Thiếu tiêu đề Authorization.",
+        "session_user_gone": "Người dùng của phiên đăng nhập không còn tồn tại.",
+        "admin_required": "Thao tác này cần quyền quản trị bot.",
+        "owner_required": "Thao tác này cần quyền chủ sở hữu bot.",
+        "group_id": "ID này không phải ID nhóm.",
+        "chat_missing": "Không tìm thấy nhóm.",
+        "chat_admin_required": "Thao tác này cần quyền quản trị bot trong nhóm.",
+        "chat_permissions_unverified": "Không thể xác minh quyền trong nhóm.",
+        "rate_limit": "Bạn gửi quá nhiều yêu cầu. Vui lòng chờ rồi thử lại.",
+        "user_missing": "Không tìm thấy người dùng.",
+        "editing_disabled": "Chức năng sửa người dùng đã bị tắt.",
+        "owner_record": "Chỉ chủ sở hữu bot mới được sửa hồ sơ của một chủ sở hữu.",
+        "user_gone": "Người dùng không còn tồn tại.",
+        "policy_missing": "Cuộc trò chuyện này chưa có chính sách.",
+        "quota_group_only": "Các trường hạn mức chỉ áp dụng cho nhóm, không áp dụng cho trò chuyện riêng.",
+        "run_missing": "Không tìm thấy lượt chạy AI.",
+        "run_event_missing": "Không tìm thấy sự kiện của lượt chạy AI.",
+        "bot_panel": "Bot không được sử dụng bảng điều khiển.",
+        "members_recent": "Danh sách thành viên vừa được đồng bộ. Vui lòng chờ rồi thử lại.",
+        "quote_missing": "Không tìm thấy trích dẫn.",
+        "rss_disabled": "RSS đã bị tắt.",
+        "chat_rss_disabled": "RSS chưa được bật cho cuộc trò chuyện này.",
+        "url_http": "URL phải dùng giao thức http hoặc https.",
+        "subscription_limit": "Đã đạt giới hạn số đăng ký RSS.",
+        "subscription_missing": "Không tìm thấy đăng ký RSS.",
+        "members_failed": "Không thể đọc danh sách thành viên. Bot có thể cần quyền quản trị.",
+        "subscribed": "Bạn đã đăng ký nguồn RSS này.",
+        "gift_missing": "Không tìm thấy quà.",
+        "coins_insufficient": "Bạn không đủ xu để mua món quà này.",
+        "avatar_recent": "Ảnh đại diện vừa được làm mới. Vui lòng chờ rồi thử lại.",
+        "target_invalid": "Đối tượng được chọn không hợp lệ.",
+        "target_upstream": "Bạn không được thay đổi quyền của quản trị viên đã cấp quyền cho bạn.",
+        "target_bot": "Đối tượng được chọn là bot.",
+        "target_not_in_chat": "Người dùng không có trong nhóm này.",
+        "already_set": "Trạng thái này đã được thiết lập.",
+        "gift_other": "Món quà này không thuộc về bạn.",
+        "gift_sent": "Món quà này đã được tặng.",
+        "gift_unknown": "Món quà không hợp lệ.",
+        "not_married": "Người dùng chưa kết hôn.",
+        "partner_missing": "Không tìm thấy người bạn đã kết hôn.",
+        "feed_unreachable": "Không thể truy cập nguồn RSS: {error_type}"
+      },
+      "api_validation": {
+        "required": "Trường này là bắt buộc.",
+        "integer": "Hãy nhập một số nguyên hợp lệ.",
+        "number": "Hãy nhập một số hợp lệ.",
+        "boolean": "Giá trị phải là đúng hoặc sai.",
+        "string": "Giá trị phải là văn bản.",
+        "list": "Giá trị phải là một danh sách.",
+        "object": "Giá trị phải là một đối tượng.",
+        "greater_than": "Giá trị phải lớn hơn {gt}.",
+        "greater_than_equal": "Giá trị phải lớn hơn hoặc bằng {ge}.",
+        "less_than": "Giá trị phải nhỏ hơn {lt}.",
+        "less_than_equal": "Giá trị phải nhỏ hơn hoặc bằng {le}.",
+        "multiple_of": "Giá trị phải là bội số của {multiple_of}.",
+        "string_too_short": "Hãy nhập ít nhất {min_length} ký tự.",
+        "string_too_long": "Không được nhập quá {max_length} ký tự.",
+        "too_short": "Danh sách phải có ít nhất {min_length} mục.",
+        "too_long": "Danh sách không được có quá {max_length} mục.",
+        "literal_error": "Hãy chọn một trong các giá trị: {expected}.",
+        "extra_forbidden": "Trường này không được hỗ trợ.",
+        "json": "Dữ liệu phải là JSON hợp lệ.",
+        "date": "Hãy nhập ngày hoặc thời điểm hợp lệ.",
+        "url": "Hãy nhập một URL hợp lệ.",
+        "url_scheme": "URL phải dùng một trong các giao thức: {expected_schemes}.",
+        "locale": "Ngôn ngữ không được hỗ trợ; hãy chọn một trong: {allowed}.",
+        "select": "Chế độ select phải là all hoặc any.",
+        "question_blank": "Câu hỏi không được để trống.",
+        "options_required": "Hãy cung cấp ít nhất 2 lựa chọn khác nhau và không để trống.",
+        "option_long": "Mỗi lựa chọn không được dài quá 100 ký tự.",
+        "answers_required": "Hãy cung cấp ít nhất 1 đáp án không để trống.",
+        "answers_options": "Mọi đáp án phải nằm trong danh sách lựa chọn.",
+        "verify_strategy": "Cách kích hoạt xác minh không được hỗ trợ; hãy chọn một trong: {allowed}.",
+        "verify_method": "Phương thức xác minh không được hỗ trợ; hãy chọn một trong: {allowed}.",
+        "verify_action": "Cách xử lý xác minh thất bại không được hỗ trợ; hãy chọn một trong: {allowed}.",
+        "permissions": "Một hoặc nhiều quyền không được hỗ trợ."
+      }
+    }
+  }
+}

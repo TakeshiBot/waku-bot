@@ -7,6 +7,7 @@
  */
 import { t } from "@/i18n";
 import { haptics } from "@/telegram";
+import { formatNumber } from "@/utils/format";
 
 const props = defineProps<{
   page: number;
@@ -39,7 +40,7 @@ function go(delta: number): void {
     </button>
 
     <span class="text-note text-hint tabular-nums">
-      {{ t("app.page", { page, total }) }}
+      {{ t("app.page", { page: formatNumber(page), total: formatNumber(total) }) }}
     </span>
 
     <button

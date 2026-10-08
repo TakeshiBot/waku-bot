@@ -12,6 +12,7 @@ from kmua import common, database, i18n
 from kmua.bot.client import client
 from kmua.config import app_config
 from kmua.logger import logger
+from kmua.plugins.agent.localization import tr
 from kmua.plugins.manyacg import manyacg
 
 from .. import datatype, sticker_memory, sticker_vec
@@ -24,13 +25,13 @@ class SendResult:
 
     def text(self) -> str:
         if self.success:
-            msg = "发送成功"
+            msg = tr("send_succeeded")
             if self.message:
-                msg = f"{msg}, 提示信息: {self.message}"
+                msg = tr("send_info", p0=msg, p1=self.message)
             return msg
-        msg = "发送失败"
+        msg = tr("send_failed")
         if self.message:
-            msg = f"{msg}, 错误信息: {self.message}"
+            msg = tr("send_error", p0=msg, p1=self.message)
         return msg
 
 
@@ -140,36 +141,34 @@ async def schedule_message(
         caption: Optional caption for media messages.
     """
     if ctx.deps.message is None or ctx.deps.chat_id is None:
-        return SendResult(
-            success=False, message="Message context is unavailable."
-        ).text()
+        return SendResult(success=False, message=tr("context_unavailable")).text()
     if not send_immediately and not schedule_time:
-        raise ModelRetry("Must provide either schedule_time or send_immediately=True")
+        raise ModelRetry(
+            tr("tool_must_provide_either_schedule_time_or_send_immediately_true")
+        )
 
     schedule_datetime: datetime.datetime | None = None
     if not send_immediately and schedule_time:
         try:
             schedule_datetime = _parse_schedule_time(schedule_time)
         except ValueError as e:
-            raise ModelRetry(
-                f"Invalid schedule_time format. Use ISO 8601, e.g. '2025-06-04T15:00:00+08:00'. Error: {e}"
-            )
+            raise ModelRetry(tr("schedule_invalid", p0=e))
         if schedule_datetime < datetime.datetime.now(datetime.UTC):
-            raise ModelRetry("schedule_time must be in the future.")
+            raise ModelRetry(tr("tool_schedule_time_must_be_in_the_future"))
 
     has_text = text is not None and text.strip()
     has_media = media_type is not None or media_url is not None
 
     if has_text and has_media:
-        raise ModelRetry(
-            "Cannot provide both text and media. Use caption for media description."
-        )
+        raise ModelRetry(tr("text_media_conflict"))
     if not has_text and not has_media:
-        raise ModelRetry("Must provide either text or media (media_type + media_url).")
+        raise ModelRetry(
+            tr("tool_must_provide_either_text_or_media_media_type_media_url")
+        )
     if has_media and not media_type:
-        raise ModelRetry("media_type is required when providing media_url.")
+        raise ModelRetry(tr("tool_media_type_is_required_when_providing_media_url"))
     if has_media and not media_url:
-        raise ModelRetry("media_url is required when providing media_type.")
+        raise ModelRetry(tr("tool_media_url_is_required_when_providing_media_type"))
 
     chat_id = ctx.deps.chat_id
 
@@ -178,7 +177,7 @@ async def schedule_message(
             if has_text:
                 assert text is not None
                 await ctx.deps.client.send_message(chat_id=chat_id, text=text)
-                return SendResult(success=True, message="Message sent.").text()
+                return SendResult(success=True, message=tr("message_sent")).text()
             else:
                 assert media_type is not None
                 assert media_url is not None
@@ -208,10 +207,14 @@ async def schedule_message(
                             document=media_url,
                             caption=caption,
                         )
-                return SendResult(success=True, message=f"{media_type} sent.").text()
+                return SendResult(
+                    success=True, message=tr("media_sent", p0=media_type)
+                ).text()
         except Exception as e:
             logger.error(f"Immediate send failed: {e.__class__.__name__}: {e}")
-            return SendResult(success=False, message=f"Failed to send: {e}").text()
+            return SendResult(
+                success=False, message=tr("send_operation_failed", p0=e)
+            ).text()
     else:
         assert schedule_datetime is not None
 
@@ -248,7 +251,7 @@ async def schedule_message(
             )
 
         return SendResult(
-            success=True, message=f"Scheduled for {schedule_datetime.isoformat()}"
+            success=True, message=tr("scheduled", p0=schedule_datetime.isoformat())
         ).text()
 
 
@@ -273,20 +276,16 @@ async def send_poll(
             e.g. "2025-06-04T15:00:00+08:00". If omitted, sends immediately.
     """
     if ctx.deps.message is None or ctx.deps.chat_id is None:
-        return SendResult(
-            success=False, message="Message context is unavailable."
-        ).text()
+        return SendResult(success=False, message=tr("context_unavailable")).text()
 
     schedule_datetime: datetime.datetime | None = None
     if schedule_time is not None:
         try:
             schedule_datetime = _parse_schedule_time(schedule_time)
         except ValueError as e:
-            raise ModelRetry(
-                f"Invalid schedule_time format. Use ISO 8601, e.g. '2025-06-04T15:00:00+08:00'. Error: {e}"
-            )
+            raise ModelRetry(tr("schedule_invalid", p0=e))
         if schedule_datetime < datetime.datetime.now(datetime.UTC):
-            raise ModelRetry("schedule_time must be in the future.")
+            raise ModelRetry(tr("tool_schedule_time_must_be_in_the_future"))
 
     reply_params = pyrogram.types.ReplyParameters(
         message_id=ctx.deps.message.id,
@@ -294,11 +293,11 @@ async def send_poll(
     chat_id = ctx.deps.chat_id
 
     if not question or not question.strip():
-        raise ModelRetry("'question' is required for poll.")
+        raise ModelRetry(tr("tool_question_is_required_for_poll"))
     if not options or len(options) < 2:
-        raise ModelRetry("'options' must have at least 2 items.")
+        raise ModelRetry(tr("tool_options_must_have_at_least_2_items"))
     if len(options) > 10:
-        raise ModelRetry("'options' must have at most 10 items.")
+        raise ModelRetry(tr("tool_options_must_have_at_most_10_items"))
 
     if schedule_datetime is not None:
         await _schedule_poll(
@@ -311,7 +310,7 @@ async def send_poll(
             chat_id,
         )
         return SendResult(
-            success=True, message=f"Scheduled for {schedule_datetime.isoformat()}"
+            success=True, message=tr("scheduled", p0=schedule_datetime.isoformat())
         ).text()
 
     try:
@@ -325,7 +324,7 @@ async def send_poll(
         )
     except Exception as e:
         logger.error(f"send_poll failed: {e.__class__.__name__}: {e}")
-        raise ModelRetry(f"Failed to send poll: {e.__class__.__name__}: {e}")
+        raise ModelRetry(tr("poll_send_failed", p0=e.__class__.__name__, p1=e))
 
     return SendResult(success=True).text()
 
@@ -364,22 +363,20 @@ async def send_sticker(
                "sad crying", "thumbs up approval".
     """
     if ctx.deps.chat_id is None or ctx.deps.message is None:
-        return SendResult(
-            success=False, message="Message context is unavailable."
-        ).text()
+        return SendResult(success=False, message=tr("context_unavailable")).text()
 
     if sticker_memory.embedder is None:
         return SendResult(
-            success=False, message="Sticker memory is not configured."
+            success=False, message=tr("sticker_memory_unconfigured")
         ).text()
 
     embedding = await sticker_memory.get_embedding(query)
     if embedding is None:
-        raise ModelRetry("Failed to embed query.")
+        raise ModelRetry(tr("query_embedding_failed"))
 
     results = await sticker_vec.search(ctx.deps.chat_id, embedding, k=1)
     if not results:
-        raise ModelRetry("No matching sticker found in this group's sticker memory.")
+        raise ModelRetry(tr("sticker_no_match"))
 
     file_id, description, distance = results[0]
     logger.debug(
@@ -395,7 +392,7 @@ async def send_sticker(
         )
     except Exception as e:
         logger.error(f"send_sticker send error: {e.__class__.__name__}: {e}")
-        raise ModelRetry(f"Failed to send sticker: {e.__class__.__name__}: {e}")
+        raise ModelRetry(tr("sticker_send_failed", p0=e.__class__.__name__, p1=e))
     # Mark as already called this turn so prepare_periodic_sticker suppresses
     # the "MUST call" hint for any further steps within the same agent run.
     ctx.deps.tools_called_this_turn.add("send_sticker")
@@ -468,22 +465,20 @@ async def send_anime_photo(
     """
     if ctx.deps.message is None or ctx.deps.message.id is None:
         return AnimePhotoResult(
-            success=False, message="Current message context is unavailable."
+            success=False, message=tr("current_context_unavailable")
         )
     if (
         ctx.deps.chat_id is not None
         and ctx.deps.chat_id != ctx.deps.user_id
         and not (await database.get_chat_config(ctx.deps.chat_id)).setu_enabled
     ):
-        return AnimePhotoResult(
-            success=False, message="Anime photo feature is disabled in this chat."
-        )
+        return AnimePhotoResult(success=False, message=tr("anime_chat_disabled"))
     try:
         ratekey = f"anime_photo_rate_limit:{ctx.deps.chat_id}:{ctx.deps.user_id}"
         if await common.memttlcache.get(ratekey, 0) > 3:
             return AnimePhotoResult(
                 success=False,
-                message="You are sending requests too frequently. Please try again later.",
+                message=tr("requests_too_frequent"),
             )
         current_count = await common.memttlcache.get(ratekey, 0)
         await common.memttlcache.set(ratekey, current_count + 1, ttl=10)
@@ -496,9 +491,7 @@ async def send_anime_photo(
                 break
             fetched.append(item)
         if not fetched:
-            return AnimePhotoResult(
-                success=False, message="Failed to fetch anime artwork."
-            )
+            return AnimePhotoResult(success=False, message=tr("anime_fetch_failed"))
 
         if len(fetched) == 1:
             artwork, picture = fetched[0]
@@ -550,7 +543,7 @@ async def send_anime_photo(
         logger.error(f"send_anime_photo error: {e.__class__.__name__}:{e}")
         return AnimePhotoResult(
             success=False,
-            message=f"Error occurred: {e.__class__.__name__}",
+            message=tr("operation_error", p0=e.__class__.__name__),
         )
 
 
@@ -613,22 +606,22 @@ async def _send_sticker_checked(
 ) -> str:
     """Send a sticker after the availability checks."""
     if not app_config.agent_sticker_memory or sticker_memory.embedder is None:
-        return "Error: Sticker sending is not available (sticker memory is disabled)."
+        return tr("sticker_memory_disabled")
     if ctx.deps.chat_id is None or ctx.deps.chat_id >= -100:
-        return "Error: Stickers are only available in group chats."
+        return tr("stickers_group_only")
     try:
         sticker_count = await sticker_vec.count(ctx.deps.chat_id)
         if not (
             await database.get_chat_config(ctx.deps.chat_id)
         ).sticker_memory_enabled:
-            return "Error: Sticker sending is disabled for this chat."
+            return tr("stickers_chat_disabled")
     except Exception as e:
         logger.warning(
             f"Failed to check sticker count for chat {ctx.deps.chat_id}: {e}"
         )
-        return f"Error: Failed to check sticker availability: {e}"
+        return tr("sticker_availability_failed", p0=e)
     if sticker_count < 20:
-        return "Error: Not enough stickers stored in this chat yet (need at least 20)."
+        return tr("stickers_insufficient")
     return await send_sticker(ctx, query)
 
 

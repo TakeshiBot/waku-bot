@@ -21,6 +21,7 @@ from kmua.logger import logger
 from kmua.webapp import audit
 from kmua.webapp.deps import RequireAdmin, RequireOwner, client_key
 from kmua.webapp.errors import ApiError, ErrorCode, forbidden, not_found
+from kmua.webapp.i18n import api_text
 from kmua.webapp.metrics import runtime_metrics
 from kmua.webapp.ratelimit import write_limiter
 from kmua.webapp.sanitize import config_snapshot
@@ -109,7 +110,7 @@ async def reload_runtime_config(
     """
     write_limiter.check(client_key(request, user.id))
 
-    success, message, changed = reload_config()
+    success, message, changed = reload_config(locale=user.data.user_config.lang)
     audit.record(
         action="config.reload",
         actor_id=user.id,
@@ -140,7 +141,7 @@ async def list_chats(
 async def read_chat(user: RequireAdmin, chat_id: int) -> ChatDetailOut:
     chat = await database.get_chat_by_id(chat_id)
     if chat is None:
-        raise not_found(ErrorCode.CHAT_NOT_FOUND, "Chat not found")
+        raise not_found(ErrorCode.CHAT_NOT_FOUND, api_text("chat_missing"))
     return ChatDetailOut(
         id=chat.id,
         title=chat.title,
@@ -167,7 +168,7 @@ async def leave_chat(
 
     chat = await database.get_chat_by_id(chat_id)
     if chat is None:
-        raise not_found(ErrorCode.CHAT_NOT_FOUND, "Chat not found")
+        raise not_found(ErrorCode.CHAT_NOT_FOUND, api_text("chat_missing"))
 
     left = True
     try:
@@ -196,7 +197,7 @@ async def block_user(
     write_limiter.check(client_key(request, user.id))
     target = await database.get_user_by_id(user_id)
     if target is None:
-        raise not_found(ErrorCode.USER_NOT_FOUND, "User not found")
+        raise not_found(ErrorCode.USER_NOT_FOUND, api_text("user_missing"))
     await database.set_user_blocked(user_id, True)
     audit.record(
         action="user.block",
@@ -215,7 +216,7 @@ async def unblock_user(
     write_limiter.check(client_key(request, user.id))
     target = await database.get_user_by_id(user_id)
     if target is None:
-        raise not_found(ErrorCode.USER_NOT_FOUND, "User not found")
+        raise not_found(ErrorCode.USER_NOT_FOUND, api_text("user_missing"))
     await database.set_user_blocked(user_id, False)
     audit.record(
         action="user.unblock",
@@ -237,7 +238,7 @@ async def block_chat(
     write_limiter.check(client_key(request, user.id))
     chat = await database.get_chat_by_id(chat_id)
     if chat is None:
-        raise not_found(ErrorCode.CHAT_NOT_FOUND, "Chat not found")
+        raise not_found(ErrorCode.CHAT_NOT_FOUND, api_text("chat_missing"))
     await database.set_chat_blocked(chat_id, True)
     left = True
     try:
@@ -263,7 +264,7 @@ async def unblock_chat(
     write_limiter.check(client_key(request, user.id))
     chat = await database.get_chat_by_id(chat_id)
     if chat is None:
-        raise not_found(ErrorCode.CHAT_NOT_FOUND, "Chat not found")
+        raise not_found(ErrorCode.CHAT_NOT_FOUND, api_text("chat_missing"))
     await database.set_chat_blocked(chat_id, False)
     audit.record(
         action="chat.unblock",
@@ -305,7 +306,7 @@ async def list_users(
 async def read_user(user: RequireAdmin, user_id: int) -> AdminUserDetailOut:
     target = await database.get_user_by_id(user_id)
     if target is None:
-        raise not_found(ErrorCode.USER_NOT_FOUND, "User not found")
+        raise not_found(ErrorCode.USER_NOT_FOUND, api_text("user_missing"))
     return await _user_detail(target)
 
 
@@ -376,12 +377,12 @@ async def update_user(
     the UI can say exactly what was refused.
     """
     if not app_config.webapp_admin_edit_user:
-        raise forbidden(ErrorCode.FEATURE_DISABLED, "User editing is disabled")
+        raise forbidden(ErrorCode.FEATURE_DISABLED, api_text("editing_disabled"))
     write_limiter.check(client_key(request, user.id))
 
     target = await database.get_user_by_id(user_id)
     if target is None:
-        raise not_found(ErrorCode.USER_NOT_FOUND, "User not found")
+        raise not_found(ErrorCode.USER_NOT_FOUND, api_text("user_missing"))
 
     submitted = payload.model_dump(exclude_unset=True)
     if not submitted:
@@ -397,9 +398,7 @@ async def update_user(
     # or to locking out the operator.
     target_is_owner = target.id in app_config.owners
     if target_is_owner and not user.is_owner:
-        raise forbidden(
-            ErrorCode.OWNER_REQUIRED, "Only an owner can edit an owner's record"
-        )
+        raise forbidden(ErrorCode.OWNER_REQUIRED, api_text("owner_record"))
 
     for field, value in submitted.items():
         # An explicit `null` survives exclude_unset, but no field here treats
@@ -437,7 +436,7 @@ async def update_user(
 
     refreshed = await database.get_user_by_id(user_id)
     if refreshed is None:
-        raise not_found(ErrorCode.USER_NOT_FOUND, "User disappeared")
+        raise not_found(ErrorCode.USER_NOT_FOUND, api_text("user_gone"))
 
     return AdminUserPatchOut(
         changed=[FieldChangeOut(**change.as_dict()) for change in changed],
@@ -566,7 +565,7 @@ async def read_chat_policy(
     """One chat's policy for the detail view, with the gating modes."""
     found = await database.get_chat_policy_row(chat_id)
     if found is None:
-        raise not_found(ErrorCode.NOT_FOUND, "Chat has no policy")
+        raise not_found(ErrorCode.NOT_FOUND, api_text("policy_missing"))
     row, live_title = found
     return ChatPolicyDetailOut(
         agent_whitelist_mode=app_config.agent_whitelist_mode,
@@ -610,7 +609,7 @@ async def write_chat_policy(
     ):
         raise ApiError(
             ErrorCode.VALIDATION_FAILED,
-            "Quota fields apply to group chats only, not private chats",
+            api_text("quota_group_only"),
         )
 
     current = await database.get_chat_policy(chat_id)
@@ -678,7 +677,7 @@ async def delete_chat_policy_entry(
 
     removed = await database.delete_chat_policy(chat_id)
     if not removed:
-        raise not_found(ErrorCode.NOT_FOUND, "Chat has no policy")
+        raise not_found(ErrorCode.NOT_FOUND, api_text("policy_missing"))
 
     audit.record(
         action="chat.policy.delete",

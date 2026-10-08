@@ -87,7 +87,9 @@ describe("ChatPolicyDetailView unmount", () => {
     // Queue a numeric edit: this arms the 800ms debounce.
     wrapper.findAllComponents({ name: "NumberField" })[0]!.vm.$emit("update:modelValue", 7);
     // Remove before the debounce fires, so the edit is still queued at unmount.
-    const removeRow = wrapper.findAll("button").find((button) => button.text().includes("移除"));
+    const removeRow = wrapper
+      .findAll("button")
+      .find((button) => button.text().includes(t("chatPolicy.remove")));
     expect(removeRow).toBeDefined();
     await removeRow!.trigger("click");
     await vi.advanceTimersByTimeAsync(0);

@@ -313,7 +313,7 @@ def _truncate(text: str, limit: int) -> str:
 
 def build_rich_blocks(
     article: WechatArticle,
-    lang: str = "zh-CN",
+    lang: str = "",
     photo_refs: list[Any] | None = None,
 ) -> list[Any]:
     """Build structured MTProto rich-message blocks (raw PageBlock list).
@@ -462,7 +462,7 @@ def build_rich_blocks(
     return blocks
 
 
-def build_media_caption(article: WechatArticle, lang: str = "zh-CN") -> str:
+def build_media_caption(article: WechatArticle, lang: str = "") -> str:
     """Short caption for a media group (shown above the images).
 
     Pure function; Telegram's caption limit is 1024 characters.

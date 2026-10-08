@@ -22,8 +22,11 @@ lang_markup = pyrogram.types.InlineKeyboardMarkup(
 
 @Client.on_message(pyrogram.filters.command("lang") & pyrogram.filters.private, group=0)
 async def change_user_lang(client: Client, message: pyrogram.types.Message):
+    if not message.from_user:
+        return
+    lang = (await database.get_user_config(message.from_user.id)).lang
     await message.reply(
-        text="Choose the language you want to use",
+        text=i18n.t("bot.hardcoded.lang.choose_user", locale=lang),
         reply_markup=lang_markup,
     )
 
@@ -41,8 +44,9 @@ async def change_group_lang(client: Client, message: pyrogram.types.Message):
             text=i18n.t("bot.msg.no_permission_group", locale=lang),
         )
         return
+    lang = (await database.get_chat_config(chat.id)).lang
     await message.reply(
-        text="Choose the language this chat want to use",
+        text=i18n.t("bot.hardcoded.lang.choose_chat", locale=lang),
         reply_markup=lang_markup,
     )
 

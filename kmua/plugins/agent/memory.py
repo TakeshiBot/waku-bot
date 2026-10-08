@@ -11,6 +11,7 @@ from kmua.common.utils import GROUP_CHAT_TYPES
 from kmua.config import app_config
 from kmua.logger import logger
 from kmua.plugins.agent import quota, state
+from kmua.plugins.agent.localization import localized_message, tr
 from kmua.plugins.agent.user_memory import update_user_memory
 
 from . import powermem_usage
@@ -37,7 +38,7 @@ _group_memory_inflight_chats: set[int] = set()
 
 
 _GROUP_MEMORY_MAX_CHARS = 2000
-_GROUP_MEMORY_PREFIX = "群聊消息记录:\n"
+_GROUP_MEMORY_PREFIX_KEY = "group_memory_heading"
 
 
 @dataclass
@@ -68,17 +69,23 @@ class GroupMessage:
 
 def _group_memory_chunks(messages: list[GroupMessage]) -> list[str]:
     """Split a group batch into provider-safe, lossless text chunks."""
-    budget = _GROUP_MEMORY_MAX_CHARS - len(_GROUP_MEMORY_PREFIX)
+    prefix = tr(_GROUP_MEMORY_PREFIX_KEY)
+    budget = _GROUP_MEMORY_MAX_CHARS - len(prefix)
     chunks: list[str] = []
     current: list[str] = []
     current_size = 0
     for message in messages:
-        line = f"{message.sender_name}({message.sender_id})说: {message.text}"
+        line = tr(
+            "memory_message",
+            p0=message.sender_name,
+            p1=message.sender_id,
+            p2=message.text,
+        )
         while line:
             separator = 1 if current else 0
             capacity = budget - current_size - separator
             if capacity <= 0:
-                chunks.append(_GROUP_MEMORY_PREFIX + "\n".join(current))
+                chunks.append(prefix + "\n".join(current))
                 current = []
                 current_size = 0
                 continue
@@ -86,11 +93,11 @@ def _group_memory_chunks(messages: list[GroupMessage]) -> list[str]:
             current.append(piece)
             current_size += separator + len(piece)
             if line:
-                chunks.append(_GROUP_MEMORY_PREFIX + "\n".join(current))
+                chunks.append(prefix + "\n".join(current))
                 current = []
                 current_size = 0
     if current:
-        chunks.append(_GROUP_MEMORY_PREFIX + "\n".join(current))
+        chunks.append(prefix + "\n".join(current))
     return chunks
 
 
@@ -155,10 +162,14 @@ def format_user_messages(messages: list[AgentMessage]) -> str:
     grouped: dict[int, list[AgentMessage]] = {}
     for msg in messages:
         grouped.setdefault(msg.chat_id, []).append(msg)
-    parts: list[str] = ["用户与 AI 的聊天记录(按聊天分组, 时间为 UTC):"]
+    parts: list[str] = [tr("memory_history_heading")]
     for msgs in grouped.values():
         first = msgs[0]
-        header = "私聊" if not first.is_group else f"群聊「{first.chat_name}」"
+        header = (
+            tr("private_chat")
+            if not first.is_group
+            else tr("group_chat", p0=first.chat_name)
+        )
         parts.append(f"[{header}]")
         for msg in msgs:
             text = msg.text.replace("\n", " ")
@@ -167,6 +178,7 @@ def format_user_messages(messages: list[AgentMessage]) -> str:
 
 
 @Client.on_message(base_memory_filter, group=_MEMORY_HANDLER_GROUP)
+@localized_message(prefer_chat=True)
 async def record_memory(client: Client, message: pyrogram.types.Message):
     if not app_config.agent or not app_config.agent_cross_group_memory:
         return
@@ -217,6 +229,7 @@ async def record_memory(client: Client, message: pyrogram.types.Message):
 
 
 @Client.on_message(agent_memory_filter, group=_AGENT_MEMORY_HANDLER_GROUP)
+@localized_message(prefer_chat=True)
 async def record_agent_memory(client: Client, message: pyrogram.types.Message):
     if not app_config.agent:
         return
@@ -275,6 +288,7 @@ async def record_agent_memory(client: Client, message: pyrogram.types.Message):
 
 
 @Client.on_message(group_memory_filter, group=_GROUP_MEMORY_HANDLER_GROUP)
+@localized_message(prefer_chat=True)
 async def record_group_memory(client: Client, message: pyrogram.types.Message):
     if not app_config.agent or not app_config.agent_group_memory:
         return

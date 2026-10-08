@@ -26,6 +26,7 @@ import jwt
 
 from kmua.config import app_config
 from kmua.webapp.errors import ErrorCode, unauthorized
+from kmua.webapp.i18n import api_text
 
 _JWT_ALGORITHM = "HS256"
 _JWT_ISSUER = "kmua"
@@ -124,18 +125,16 @@ def verify_init_data(
     malformed, or `auth_date` is older than the configured TTL.
     """
     if not init_data_raw or not init_data_raw.strip():
-        raise unauthorized(ErrorCode.INIT_DATA_MISSING, "initData is empty")
+        raise unauthorized(ErrorCode.INIT_DATA_MISSING, api_text("init_empty"))
 
     token = bot_token if bot_token is not None else app_config.token
     if not token:
-        raise unauthorized(ErrorCode.INIT_DATA_INVALID, "Bot token is not configured")
+        raise unauthorized(ErrorCode.INIT_DATA_INVALID, api_text("bot_token_missing"))
 
     try:
         pairs = parse_qsl(init_data_raw, strict_parsing=True, keep_blank_values=True)
     except ValueError as e:
-        raise unauthorized(
-            ErrorCode.INIT_DATA_MALFORMED, "initData is not a query string"
-        ) from e
+        raise unauthorized(ErrorCode.INIT_DATA_MALFORMED, api_text("init_query")) from e
 
     received_hash: str | None = None
     payload_pairs: list[tuple[str, str]] = []
@@ -148,7 +147,7 @@ def verify_init_data(
         payload_pairs.append((key, value))
 
     if not received_hash:
-        raise unauthorized(ErrorCode.INIT_DATA_MALFORMED, "initData has no hash")
+        raise unauthorized(ErrorCode.INIT_DATA_MALFORMED, api_text("init_hash"))
 
     expected = hmac.new(
         _secret_key(token),
@@ -156,20 +155,20 @@ def verify_init_data(
         hashlib.sha256,
     ).hexdigest()
     if not hmac.compare_digest(expected, received_hash):
-        raise unauthorized(ErrorCode.INIT_DATA_INVALID, "initData signature mismatch")
+        raise unauthorized(ErrorCode.INIT_DATA_INVALID, api_text("init_signature"))
 
     fields = dict(payload_pairs)
 
     raw_auth_date = fields.get("auth_date")
     if not raw_auth_date or not raw_auth_date.isdigit():
-        raise unauthorized(ErrorCode.INIT_DATA_MALFORMED, "initData has no auth_date")
+        raise unauthorized(ErrorCode.INIT_DATA_MALFORMED, api_text("init_date"))
     auth_date = int(raw_auth_date)
 
     max_age = app_config.webapp_initdata_ttl if ttl is None else ttl
     if max_age > 0:
         current = time.time() if now is None else now
         if current - auth_date > max_age:
-            raise unauthorized(ErrorCode.INIT_DATA_EXPIRED, "initData has expired")
+            raise unauthorized(ErrorCode.INIT_DATA_EXPIRED, api_text("init_expired"))
 
     user = _parse_user(fields.get("user"))
 
@@ -185,24 +184,20 @@ def verify_init_data(
 
 def _parse_user(raw_user: str | None) -> InitDataUser:
     if not raw_user:
-        raise unauthorized(ErrorCode.INIT_DATA_MALFORMED, "initData has no user")
+        raise unauthorized(ErrorCode.INIT_DATA_MALFORMED, api_text("init_user_missing"))
     try:
         data: Any = json.loads(raw_user)
     except json.JSONDecodeError as e:
         raise unauthorized(
-            ErrorCode.INIT_DATA_MALFORMED, "initData user is not valid JSON"
+            ErrorCode.INIT_DATA_MALFORMED, api_text("init_user_json")
         ) from e
     if not isinstance(data, dict):
-        raise unauthorized(
-            ErrorCode.INIT_DATA_MALFORMED, "initData user is not an object"
-        )
+        raise unauthorized(ErrorCode.INIT_DATA_MALFORMED, api_text("init_user_object"))
 
     user_id = data.get("id")
     first_name = data.get("first_name")
     if not isinstance(user_id, int) or not isinstance(first_name, str):
-        raise unauthorized(
-            ErrorCode.INIT_DATA_MALFORMED, "initData user is missing id or first_name"
-        )
+        raise unauthorized(ErrorCode.INIT_DATA_MALFORMED, api_text("init_user_fields"))
 
     return InitDataUser(
         id=user_id,
@@ -247,20 +242,20 @@ def decode_token(token: str) -> int:
             options={"require": ["exp", "iat", "sub", "iss"]},
         )
     except jwt.ExpiredSignatureError as e:
-        raise unauthorized(ErrorCode.TOKEN_EXPIRED, "Session has expired") from e
+        raise unauthorized(ErrorCode.TOKEN_EXPIRED, api_text("session_expired")) from e
     except jwt.InvalidTokenError as e:
-        raise unauthorized(ErrorCode.TOKEN_INVALID, "Session token is invalid") from e
+        raise unauthorized(ErrorCode.TOKEN_INVALID, api_text("session_invalid")) from e
 
     # `sub` is required above, so it is present - but `decode` returns an untyped
     # dict, and a token could carry any JSON value there. Narrow to `str` before
     # converting rather than letting `int()` decide what it accepts.
     subject = payload.get("sub")
     if not isinstance(subject, str):
-        raise unauthorized(ErrorCode.TOKEN_INVALID, "Session subject is invalid")
+        raise unauthorized(ErrorCode.TOKEN_INVALID, api_text("session_subject"))
     try:
         return int(subject)
     except ValueError as e:
-        raise unauthorized(ErrorCode.TOKEN_INVALID, "Session subject is invalid") from e
+        raise unauthorized(ErrorCode.TOKEN_INVALID, api_text("session_subject")) from e
 
 
 def parse_start_param_chat_id(start_param: str | None) -> int | None:

@@ -1,7 +1,7 @@
 /**
  * Minimal i18n.
  *
- * Two locales, flat JSON, dot-path lookup with `{placeholder}` interpolation. A
+ * Three locales, JSON catalogues, dot-path lookup with `{placeholder}` interpolation. A
  * library would add a dependency and a plugin lifecycle for what fits here in
  * forty lines - and error text is keyed by the backend's error codes, so the
  * lookup shape is fixed anyway.
@@ -11,19 +11,29 @@ import { computed, ref } from "vue";
 
 import en from "./en.json";
 import zhCN from "./zh-CN.json";
+import vi from "./vi.json";
 
 type Messages = Record<string, unknown>;
 
 const CATALOGUES: Record<string, Messages> = {
+  vi,
   "zh-CN": zhCN,
   en,
 };
 
-const FALLBACK_LOCALE = "zh-CN";
+export const DEFAULT_LOCALE = "vi";
+const FALLBACK_LOCALE = DEFAULT_LOCALE;
 
 const currentLocale = ref(FALLBACK_LOCALE);
 
 export const locale = computed(() => currentLocale.value);
+
+/** Keep accessibility metadata in sync, including before Vue mounts. */
+function syncDocumentLocale(): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = currentLocale.value;
+  document.title = t("app.name");
+}
 
 /**
  * Point the UI at a locale.
@@ -33,19 +43,17 @@ export const locale = computed(() => currentLocale.value);
  * to `zh-CN` because it is far closer than English.
  */
 export function setLocale(value: string): void {
-  if (value in CATALOGUES) {
-    currentLocale.value = value;
-    return;
-  }
-  if (value.startsWith("zh")) {
+  const language = value.trim().replace(/_/g, "-").toLowerCase().split("-")[0];
+  if (language === "vi") {
+    currentLocale.value = "vi";
+  } else if (language === "zh") {
     currentLocale.value = "zh-CN";
-    return;
-  }
-  if (value.startsWith("en")) {
+  } else if (language === "en") {
     currentLocale.value = "en";
-    return;
+  } else {
+    currentLocale.value = FALLBACK_LOCALE;
   }
-  currentLocale.value = FALLBACK_LOCALE;
+  syncDocumentLocale();
 }
 
 function lookup(catalogue: Messages, path: string): string | undefined {
@@ -93,3 +101,5 @@ export function tError(code: string): string {
 export function useI18n() {
   return { t, tError, tOptional, locale, setLocale };
 }
+
+syncDocumentLocale();

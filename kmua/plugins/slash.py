@@ -8,8 +8,9 @@ from pyrogram.enums import MessageEntityType, ParseMode
 from pyrogram.types import LinkPreviewOptions, Message
 
 from kmua import common, database
-from kmua.common.utils import is_explicit_reply
+from kmua.common.utils import GROUP_CHAT_TYPES, is_explicit_reply
 from kmua.config import app_config
+from kmua.i18n import t
 
 
 def _strip_trigger_prefix(text: str) -> str:
@@ -48,6 +49,10 @@ async def slash(client: Client, message: Message):
     this_user = message.sender_chat or message.from_user
     if not this_user or not this_user.id:
         return
+    if message.chat and message.chat.type in GROUP_CHAT_TYPES:
+        lang = (await database.get_chat_config(message.chat.id)).lang
+    else:
+        lang = (await database.get_user_config(this_user.id)).lang
     this_mention = await common.mention_html(this_user)
     replied_user = None
     replied_mention = ""
@@ -68,34 +73,21 @@ async def slash(client: Client, message: Message):
     if not cmd1:
         return
     if not is_one_cmd:
-        # TODO: i18n
         cmd2 = html.escape(" ".join(message.text.split(" ")[1:]))
-        text = (
-            (
-                f"{replied_mention} {cmd1} {this_mention} {cmd2} !"
-                if replied_user
-                else f"{this_mention} {cmd1}自己{cmd2} !"
-            )
-            if is_reverse
-            else (
-                f"{this_mention} {cmd1} {replied_mention} {cmd2} !"
-                if replied_user
-                else f"{this_mention} {cmd1}自己{cmd2} !"
-            )
+        actor = replied_mention if is_reverse and replied_user else this_mention
+        target = this_mention if is_reverse and replied_user else replied_mention
+        key = "with_target" if replied_user else "with_self"
+        text = t(f"bot.hardcoded.slash.{key}", locale=lang).format(
+            actor=actor, target=target, action=cmd1, suffix=cmd2
         )
     else:
-        text = (
-            (
-                f"{this_mention} 被 {replied_mention} {cmd1}了 !"
-                if replied_user
-                else f"{this_mention} 被自己{cmd1}了 !"
-            )
+        key = (
+            ("passive_target" if replied_user else "passive_self")
             if is_reverse
-            else (
-                f"{this_mention} {cmd1}了 {replied_mention} !"
-                if replied_user
-                else f"{this_mention} {cmd1}了自己 !"
-            )
+            else ("active_target" if replied_user else "active_self")
+        )
+        text = t(f"bot.hardcoded.slash.{key}", locale=lang).format(
+            actor=this_mention, target=replied_mention, action=cmd1
         )
     # 在中英文之间加空格
     text = re.sub(r"([a-zA-Z0-9])([\u4e00-\u9fa5])", r"\1 \2", text)

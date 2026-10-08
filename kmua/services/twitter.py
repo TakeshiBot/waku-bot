@@ -156,7 +156,7 @@ def truncate(text: str, limit: int) -> str:
     return text[: limit - 1].rstrip() + "…"
 
 
-def build_tweet_text(tweet: TweetData, lang: str = "zh-CN") -> str:
+def build_tweet_text(tweet: TweetData, lang: str = "") -> str:
     """Rich HTML body for a media-less tweet (author, text, quote, link).
 
     Pure function. Every dynamic value is escaped for Telegram's HTML mode.

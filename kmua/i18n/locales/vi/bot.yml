@@ -1,0 +1,730 @@
+bot:
+  msg:
+    bottle:
+      no_content: Hãy cho nội dung vào chai nhé~
+      text_too_lang: Nội dung quá dài, không cho vào chai được!
+      text_too_long: Nội dung quá dài, không cho vào chai được!
+      not_enough_coins: Bạn không còn chai để sử dụng.
+      not_enough_coins_to_pick: Bạn đợi rất lâu bên bờ biển nhưng biển chẳng gửi lại gì~
+      throw_success: Bạn đã thả chai này ra biển 🌊🍾
+      throw_failed: Bạn định thả chai ra biển, nhưng gặp lỗi mất rồi.
+      no_bottles: Bạn tìm mãi bên bờ biển nhưng không thấy chai nào~
+      unsupported_media: Bạn nhặt được một chai nhưng không đọc được nội dung bên trong.
+      unsupported_media_throw: Biển không hỗ trợ loại nội dung trong chai này~
+      not_your_bottle: Chai này không phải của bạn!
+      throw_back_success: Bạn đã thả chai trở lại biển 🌊🍾
+      report_failed: Gặp lỗi khi gửi báo cáo.
+      report_success: Cảm ơn bạn đã báo cáo~
+      destroy_failed: Không thể hủy chai.
+      destroy_success: Bạn đã hủy chai này.
+      not_found: Không tìm thấy chai này.
+      seek_result: '{sender} đã thả chai này ra biển lúc {created_at}.'
+      seek_result_admin: |-
+        {sender} đã thả chai này ra biển lúc {created_at}.
+        ID người gửi: <code>{sender_id}</code>
+      pick_disabled_in_chat: Nhóm này không cho phép nhặt chai.
+      pick_failed: Bạn đi dọc bờ biển khá lâu nhưng gặp lỗi khi nhặt chai.
+      reply_prompt: Chọn cách bạn muốn trả lời.
+      reply_waiting: Hãy trả lời trực tiếp tin nhắn chứa chai này.
+      reply_sent: Đã gửi lời hồi âm 💌
+      reply_failed: Không gửi được lời hồi âm...
+      reply_received_anonymous: |-
+        Có người hồi âm chai của bạn 💌
+
+        {content}
+      reply_received: |-
+        Có người hồi âm chai của bạn 💌
+
+        Từ: {sender}
+
+        {content}
+      reply_received_anonymous_header: Có người hồi âm chai của bạn 💌
+      reply_received_header: '{sender} đã hồi âm chai của bạn 💌'
+      reply_bottle_preview: |-
+        Chai của bạn:
+        {preview}
+      bottle_preview_media: '[Nội dung đa phương tiện]'
+      reply_cancelled: Đã hủy trả lời.
+      no_reply_content: Nội dung trả lời không được để trống.
+      reply_text_too_long: Nội dung trả lời quá dài!
+      bottle_destroyed: Đã hủy chai.
+      bottle_kept: Đã thả chai trở lại biển.
+      reply_too_fast: Bạn trả lời quá nhanh, hãy đợi một chút nhé~
+      reply_bottle_not_found: Chai này đã biến mất giữa biển.
+      reply_sender_not_found: Không tìm thấy chủ nhân của chai.
+      ban_success: Đã chặn người dùng {user_id} và xóa {count} chai.
+      ban_no_permission: Bạn không có quyền sử dụng lệnh này.
+    quote:
+      probability_usage: Xác suất tự gửi trích dẫn phải là số thập phân nhỏ hơn 1. Đặt số âm để tắt lệnh
+        /qrand.
+      probability_invalid: Vui lòng nhập một số hợp lệ (//▲//)
+      reply_to_required: Hãy trả lời một tin nhắn.
+      topic_not_supported: Tính năng này chỉ hoạt động trong chủ đề chính.
+      origin_not_found: Không xác định được người gửi tin nhắn này...
+      get_link_failed: Không lấy được liên kết tin nhắn. Có thể đây không phải là siêu nhóm.
+      already_exists: Trích dẫn này đã được lưu!
+      text_not_available: Không thể tạo ảnh từ tin nhắn không có văn bản hoặc có văn bản quá dài.
+      chat_no_quote: Nhóm này chưa có trích dẫn nào.
+      not_found: Tin nhắn này chưa được lưu trong trích dẫn của nhóm.
+      only_delete_self: Bạn chỉ có thể xóa trích dẫn của chính mình.
+      only_delete_or_group: Bạn chỉ có thể xóa trích dẫn của mình hoặc của nhóm này.
+      deleted: Đã xóa trích dẫn.
+      user_all_deleted: Đã xóa tất cả trích dẫn của bạn!
+      user_no_quote: Bạn chưa có trích dẫn nào.
+      page_invalid: Không còn trang nào nữa.
+      user_quote_list_head: |
+        Trích dẫn của bạn: tổng cộng {count}, trang {page}/{max_page}
+        Nhấn vào số để xóa trích dẫn tương ứng.
+      no_text: (không có văn bản)
+      invalid_link: Hãy cung cấp liên kết tin nhắn hợp lệ cho trích dẫn.
+      only_delete_self_or_admin_in_group: Bạn chỉ có thể xóa trích dẫn của mình hoặc trong nhóm bạn quản
+        lý.
+      created:
+      - Xem ai đang nói chuyện thú vị nào!
+      - Đã lưu!
+    verify:
+      wrong_prefix: |
+        Trả lời sai rồi
+      challenge_math_easy: |-
+        Xác minh: {a} + {b} = ?
+        Số lần còn lại: {attempts}/{max}
+      challenge_math_hard: |-
+        Hãy trả lời:
+        {question}
+        Số lần còn lại: {attempts}/{max}
+      challenge_emoji: |-
+        Nhấn vào biểu tượng này: {emoji}
+        Số lần còn lại: {attempts}/{max}
+      challenge_sticker: Trả lời tin nhắn này bằng một nhãn dán bất kỳ để hoàn tất xác minh.
+      challenge_qa: |-
+        Trả lời câu hỏi:
+        {question}
+        Số lần còn lại: {attempts}/{max}
+        (nhấn nút bên dưới để chọn đáp án)
+      challenge_qa_multi: |-
+        Chọn tất cả đáp án đúng:
+        {question}
+        Số lần còn lại: {attempts}/{max}
+        (có thể chọn nhiều đáp án, rồi nhấn xác nhận)
+      wrong_alert: Trả lời sai rồi, còn {attempts}/{max} lần thử.
+      success: '{user} đã xác minh thành công, chào mừng bạn!'
+      failed_prefix: '{user} không vượt qua xác minh'
+      timeout_prefix: '{user} hết thời gian xác minh'
+      action_kick: ', đã bị xóa khỏi nhóm'
+      action_ban: ', đã bị cấm'
+      action_unrestrict: ', đã được cho phép tham gia'
+      timeout_hint: Hãy hoàn tất xác minh trong {timeout} giây.
+      admin_banned: '{user} đã bị quản trị viên cấm.'
+      test_not_enabled: Nhóm này chưa bật xác minh thành viên mới.
+      test_user_not_found: Không tìm thấy người dùng.
+      test_verify_failed: 'Không khởi động được xác minh: không thể hạn chế thành viên này.'
+      expired: Phiên xác minh này đã hết hiệu lực.
+      math_hard:
+        calculus:
+          derivative: Cho $f(x) = {a}x^{n}$, tính $f'({x})$.
+          integral: $\int_0^1 {coef}x^{n}\,dx$
+          limit: $\lim_{{x\to 0}}\frac{{\sin({k}x)}}{{x}}$
+        linear_algebra:
+          invertible_criterion:
+            question: Cho A là ma trận thực {n}×{n}. Điều kiện tương đương với "A khả nghịch" là
+            answers:
+            - det(A) ≠ 0
+            - Tồn tại ma trận vuông B sao cho AB = BA = I
+            - Các vectơ cột của A độc lập tuyến tính
+            - 0 không phải giá trị riêng của A
+            wrong:
+            - det(A) = 0
+            - Mọi phần tử của A đều khác 0
+            - A là ma trận đối xứng
+            - Hạng của A bằng 1
+          rank_nullity: Cho A là ma trận {n}×{n}, rank(A) = {rank}. Tính dim null(A).
+          det_scale: Cho A là ma trận {n}×{n}. Tính $\det({c}A)$.
+          diagonalizable:
+            question: Cho A là ma trận {n}×{n}. A chéo hóa được khi và chỉ khi
+            answers:
+            - A có n vectơ riêng độc lập tuyến tính
+            - Bội hình học của mỗi giá trị riêng bằng bội đại số của nó
+            wrong:
+            - A có n giá trị riêng kể cả bội số
+            - A khả nghịch
+            - rank(A) = n
+            - Đa thức đặc trưng của A không có nghiệm bội
+          trace_eigen:
+            question: Vết tr(A) của ma trận vuông A bằng
+            answers:
+            - Tổng các giá trị riêng
+            - Tổng các phần tử trên đường chéo chính
+            wrong:
+            - Tích các giá trị riêng
+            - Tổng tất cả phần tử
+            - Định thức
+            - Hiệu các giá trị riêng
+          symmetric_eigen:
+          - question: Mọi giá trị riêng của ma trận thực đối xứng A đều là
+            answer: Số thực
+            wrong:
+            - Số thuần ảo
+            - Số không âm
+            - Các số khác nhau
+          - question: Ma trận thực đối xứng A có thể chéo hóa trực giao, tức tồn tại ma trận trực giao
+              Q sao cho $Q^T A Q$ là
+            answer: Ma trận đường chéo
+            wrong:
+            - Ma trận tam giác
+            - Ma trận đơn vị
+            - Ma trận không
+          transpose_inverse:
+          - question: Cho A khả nghịch. $(A^T)^{-1}$ bằng
+            answer: (A⁻¹)ᵀ
+            wrong:
+            - A⁻¹
+            - Aᵀ
+            - A
+          - question: Cho A và B khả nghịch. $(AB)^{-1}$ bằng
+            answer: B⁻¹A⁻¹
+            wrong:
+            - A⁻¹B⁻¹
+            - A⁻¹
+            - AB
+          null_space_domain:
+          - question: Không gian nghiệm của ma trận thực A kích thước m×n là không gian con của
+            answer: Rⁿ
+            wrong:
+            - Rᵐ
+            - R
+            - Không thuộc không gian nào
+          - question: Không gian cột của ma trận thực A kích thước m×n là không gian con của
+            answer: Rᵐ
+            wrong:
+            - Rⁿ
+            - R
+            - Không thuộc không gian nào
+          positive_definite:
+          - question: Ma trận thực đối xứng A xác định dương khi và chỉ khi các giá trị riêng của nó
+            answer: Đều lớn hơn 0
+            wrong:
+            - Đều không âm
+            - Đều nhỏ hơn 0
+            - Đôi một khác nhau
+          - question: Ma trận thực đối xứng A nửa xác định dương khi và chỉ khi các giá trị riêng của
+              nó
+            answer: Đều không âm
+            wrong:
+            - Đều lớn hơn 0
+            - Đều nhỏ hơn 0
+            - Đôi một khác nhau
+          - question: Ma trận thực đối xứng A xác định âm khi và chỉ khi các giá trị riêng của nó
+            answer: Đều nhỏ hơn 0
+            wrong:
+            - Đều không âm
+            - Đều lớn hơn 0
+            - Đôi một khác nhau
+        probability:
+          uniform_e: Cho $X \sim U({a}, {b})$. Tính $E[X]$.
+          uniform_var: Cho $X \sim U(0, {b})$. Tính $Var(X)$.
+          exp_e: Cho $X \sim Exp({lam})$. Tính $E[X]$.
+          normal_prob: Cho $X \sim N({mu}, {sigma2})$. Tính $P(X \le {mu})$.
+          binomial_e: Cho $X \sim B({n}, {p})$. Tính $E[X]$.
+          poisson_var: Cho $X \sim Poisson({lam})$. Tính $Var(X)$.
+          var_scale: Cho $X \sim U(0, 6)$. Tính $Var({c}X)$.
+          monty_hall: 'Bài toán Monty Hall: có {n} cánh cửa. Sau khi người dẫn chương trình mở một cửa
+            không có phần thưởng, xác suất trúng thưởng khi đổi cửa là'
+          max_two_uniform: Cho $X_1, \ldots, X_{k} \sim U(0,1)$ độc lập. Tính $E[\max(X_1, \ldots, X_{k})]$.
+          chebyshev: Cho $E[X]={mu}$, $Var(X)={var}$. Dùng bất đẳng thức Chebyshev để tìm cận trên của
+            $P(|X-{mu}| \ge {bound})$.
+          sum_expectation: Cho $X \sim U({a},{b})$, $Y \sim Exp({lam})$ độc lập. Tính $E[X+Y]$.
+          second_moment: Cho $X \sim U(0, {b})$. Tính $E[X^2]$.
+      default_questions:
+      - question: Tóc của Hatsune Miku có màu gì?
+        options:
+        - Xanh lá
+        - Xanh dương
+        - Hồng
+        - Màu hành lá
+        answers:
+        - Xanh lá
+        - Màu hành lá
+        select: any
+      - question: Ai là bạn đồng hành của Nhà Lữ Hành trong Genshin Impact?
+        options:
+        - Paimon
+        - Dodoco
+        - Nahida
+        - Ronova
+        answers:
+        - Paimon
+      - question: Tháng nào là bất tận?
+        options:
+        - Tháng Tám
+        - Tháng Tư
+        - Tháng Băng
+        - Tháng Sương
+        answers:
+        - Tháng Tám
+    waifu:
+      disabled: Nhóm này không cho phép dùng tính năng waifu.
+      not_found: Bạn chưa có waifu vì bot chưa ghi nhận được thành viên nào khác.
+      retry: Bạn chưa nhận được waifu, hãy thử lại nhé~
+      got: '{user}, bạn đã nhận waifu hôm nay rồi! Waifu của bạn hôm nay là {waifu}!'
+      normal: '{user}, waifu của bạn hôm nay là {waifu}!'
+      got_nouser: Bạn đã nhận waifu hôm nay rồi! Waifu của bạn hôm nay là {waifu}!
+      normal_nouser: Waifu của bạn hôm nay là {waifu}!
+      married: '{user}, bạn và {waifu} đã kết hôn rồi~'
+      remove_not_found: Không tìm thấy người dùng, có thể họ đã bị xóa.
+      remove: Bạn có chắc muốn xóa người dùng này?
+      removed: Đã xóa người dùng này. Họ từng là waifu của {user}.
+      marry_not_real: ＞﹏＜ Đây không phải người dùng thực. Không thể kết hôn với quản trị viên ẩn danh
+        hoặc danh tính kênh.
+      marry_self: (。・ω・。) Rồi sẽ có người từ phương xa đến bên bạn.
+      marry_not_user: (￣ε(#￣) Đừng xen vào chuyện của người khác nhé.
+      already_married: Bạn đã kết hôn với người này rồi!
+      already_married_other: （＞_＜；）Người này đã kết hôn với người khác. Chúc bạn sớm tìm được người phù
+        hợp.
+      user_already_married_other: ∑( O || Bạn đã có waifu rồi, đừng theo đuổi người khác nữa!
+      marry_ask: '{waifu}, bạn có đồng ý kết hôn với {user} không?'
+      marry_success: Chúc mừng {user} và {waifu} đã kết hôn~
+      marry_refused: (´。＿。｀) Bạn đã từ chối lời cầu hôn. Có những người, một khi bỏ lỡ, sẽ không quay
+        lại...
+      marry_cancel: Bạn đã hủy lời cầu hôn.
+      no_participate: Hôm nay chưa có ai trong nhóm nhận waifu.
+      graph_caption: Sơ đồ quan hệ trong nhóm, gồm {count} người tham gia.
+      divorce_not_married: Nhưng... bạn chưa kết hôn mà qwq
+      divorce_not_found: Không tìm thấy waifu của bạn!
+      divorce_success: <i>Mong một ngày bạn được đoàn tụ với người thương.</i>
+      divorce_notify: '{user} đã kết thúc mối quan hệ với bạn QAQ...'
+      divorce_confirm: Bạn có chắc muốn ly hôn với {waifu}?
+      info: |
+        Nhắc tên khi được chọn: {mention}
+        Đã kết hôn: {married}
+        ID waifu đã kết hôn: {married_waifu_id}
+      change_married: Bạn đã kết hôn rồi nên không thể đổi waifu.
+      change_not_enough_coins: Tiếc quá, đổi waifu không thành công.
+      change_not_enough_coins_scumbag: Tham quá nhé, hôm nay bạn không còn waifu khác đâu!
+      change_failed: Không thành công, hãy thử lại sau nhé.
+      change_same: Waifu hôm nay của bạn vẫn là người ấy~
+    private_start: |
+      Meo~
+      Bạn có thể dùng /lang để đổi ngôn ngữ của bot.
+    group_start: |
+      Chào cả nhóm~
+      Dùng /lang để đổi ngôn ngữ của bot trong nhóm này.
+    lang_changed: Đã đổi ngôn ngữ thành {lang}.
+    no_permission_group: Bạn không có quyền quản lý bot trong nhóm này.
+    group_config: Nhấn nút để thay đổi cài đặt nhóm.
+    chat_panel: Nhấn nút để cấu hình nhóm trong bảng quản trị.
+    panel_unavailable: Bảng quản trị chưa được bật.
+    unknown_operation: Thao tác không xác định.
+    group_config_saved: Đã lưu cài đặt nhóm~
+    refresh_failed: Làm mới thất bại, hãy thử lại sau.
+    refresh_success: Làm mới thành công!
+    refreshing_avatar: Đang làm mới ảnh đại diện của bạn...
+    cleanning: kmua đang dọn phòng...
+    sync_members_cd: Đừng dùng quá thường xuyên, hãy thử lại sau nhé.
+    sync_members_done: Đồng bộ hoàn tất! Đã dọn {count} thành viên.
+    sync_members_error: Đồng bộ thất bại. Hãy cấp quyền quản trị viên cho bot rồi thử lại.
+    sync_members_start: Đang duyệt danh sách thành viên nhóm...
+    b23_converted: '{real_url}'
+    b23_converted_group: |
+      {real_url}
+      Đã chuyển đổi liên kết b23 do {from_user} gửi.
+    title:
+      set_self: Được rồi, danh hiệu của bạn giờ là {title}.
+      set_other: '{user} đã đặt danh hiệu {title} cho {target}!'
+      set_permissions: Nhấn nút để thay đổi quyền mà lệnh /t cấp cho thành viên.
+      deleted: Đã xóa danh hiệu của bạn.
+      errors:
+        generic: Thao tác thất bại.
+        admin_required: Bot không đủ quyền hoặc đang cố thay đổi danh hiệu do quản trị viên khác đặt.
+        creator: Bot không thể thay đổi danh hiệu của chủ nhóm.
+        rank_invalid: Danh hiệu quá dài!
+        user_id_invalid: Bot không thể đổi danh hiệu của chính mình hoặc của danh tính kênh.
+        no_chat_or_user: Không tìm thấy người dùng hoặc nhóm tương ứng...
+        right_forbidden: |
+          Quyền này không khả dụng trong nhóm. Hãy dùng /sett để thay đổi.
+          (Ví dụ: quyền quản lý chủ đề chỉ khả dụng trong nhóm đã bật chủ đề.)
+    ip:
+      no_ip_provided: Hãy cung cấp IP hoặc tên miền cần tra cứu.
+      querying: 'Đang tra cứu: {ip}'
+      query_failed: 'Tra cứu thất bại: {error_type}: {error}'
+      query_failed_reason: 'Tra cứu thất bại: {message}'
+      query_target: 'Địa chỉ tra cứu: <code>{url}</code>'
+      resolved_address: 'Địa chỉ phân giải: <code>{query}</code>'
+      location: 'Khu vực: <code>{country} - {region} - {city}</code>'
+      coordinates: 'Tọa độ: <code>{lat},{lon}</code>'
+      isp: 'Nhà cung cấp mạng: <code>{isp}</code>'
+      organization: 'Tổ chức: <code>{org}</code>'
+      as_number: <a href="https://bgp.he.net/{as_link}">{as_number}</a>
+      mobile_ip: IP này có thể là <b>IP mạng di động</b>.
+      proxy_ip: IP này có thể là <b>IP proxy</b>.
+      hosting_ip: IP này có thể là <b>IP trung tâm dữ liệu</b>.
+    help: |
+      <blockquote expandable="true">
+      /start - Bắt đầu | Mở menu
+      /help - Xem hướng dẫn này
+      /config - Thay đổi cài đặt bot trong nhóm
+      /waifu - Nhận waifu hôm nay
+      /waifu_graph - Sơ đồ quan hệ waifu
+      /q - Lưu trích dẫn
+      /d - Xóa trích dẫn | Quản lý trích dẫn nhóm
+      /qrand - Trích dẫn ngẫu nhiên
+      /qp - Đặt xác suất tự gửi trích dẫn
+      /t - Nhận danh hiệu | Tặng danh hiệu
+      /td - Xóa danh hiệu của bạn
+      /sett - Thay đổi quyền mà lệnh /t cấp
+      /setu - Gửi ảnh gợi cảm (/ω＼*)
+      /greet - Đặt lời chào thành viên mới
+      /id - Xem ID cuộc trò chuyện
+      /ip - Tra cứu IP hoặc tên miền
+      /wordcloud - Tạo đám mây từ trong lịch sử trò chuyện
+      /botpromote - Bổ nhiệm quản trị viên của bot trong nhóm (có quyền tương đương chủ nhóm đối với bot)
+      /botdemote - Gỡ quyền quản trị viên của bot trong nhóm
+      /syncmembers - Đồng bộ thành viên nhóm
+      /f5avatar - Làm mới ảnh đại diện
+      /forget - Xóa lịch sử trò chuyện với bot
+      /quota - Xem hạn mức sử dụng AI
+      /throwbottle - Thả chai ra biển
+      /pickbottle - Nhặt chai trôi dạt
+      /buygift - Mua quà
+      /gift - Tặng quà cho bot
+      /rss - Quản lý đăng ký RSS
+      </blockquote>
+      Dùng "/" hoặc "\" với người khác để thi triển phép thuật.
+    help_inline: |
+      Nhập @{me_username} trong bất kỳ cuộc trò chuyện nào để dùng chế độ Inline.
+
+      Các tham số được hỗ trợ:
+
+      q [từ khóa] - Tìm trích dẫn
+      ms - Tạo meme theo trò chơi
+    manyacg:
+      artwork_pictures_count: Tác phẩm này có {count} ảnh.
+      seefull: ->Nhấn để xem
+      chat_setu_disabled: Nhóm này không cho phép ảnh gợi cảm.
+      setu_cd: Nhanh quá! Hãy đợi một chút.
+      setu_error: Không thành công, hãy thử lại sau nhé.
+    greeting:
+      usage: |
+        Cách dùng: /greet &lt;thao tác&gt; [tham số]
+        Các thao tác: set, remove, show
+        - set &lt;lời chào&gt;:
+          Đặt lời chào của nhóm. Có thể dùng các biến:
+          ${user} - Tên người dùng của thành viên mới
+          ${chat} - Tên nhóm
+          Hỗ trợ HTML.
+        - remove:
+          Xóa lời chào của nhóm.
+        - show:
+          Xem lời chào hiện tại.
+      set_usage: |
+        Cách dùng: /greet set &lt;lời chào&gt;
+        Các biến được hỗ trợ:
+        ${user} - Tên người dùng của thành viên mới
+        ${chat} - Tên nhóm
+        Hỗ trợ HTML.
+      too_long: Lời chào quá dài!
+      set_success: Đã đặt lời chào của nhóm!
+      remove_success: Đã xóa lời chào của nhóm.
+      not_set: Nhóm này chưa đặt lời chào.
+      template_error: Lỗi phân tích mẫu lời chào. Hãy kiểm tra lại cú pháp.
+    botadmin:
+      invalid_user: |
+        Người dùng không hợp lệ. Hãy cung cấp ID hợp lệ hoặc trả lời một tin nhắn.
+        (Không thể bổ nhiệm danh tính kênh, quản trị viên ẩn danh hoặc chính bạn làm quản trị viên của bot.)
+      user_not_found: Không tìm thấy người dùng.
+      user_is_bot: Không thể dùng lệnh này với bot!
+      user_not_in_chat: Có vẻ người này chưa có trong nhóm. Hãy nhờ họ gửi một tin nhắn~
+      success: Đã đặt trạng thái quản trị viên bot của {user} trong nhóm thành {status}.
+      target_is_upstream: Bạn không thể dùng lệnh này với người đã cấp quyền cho mình.
+      already_set: Trạng thái người dùng không thay đổi.
+    agent:
+      waiting: Đang chờ phản hồi, hãy đợi một chút...
+      need_join_channel: Hãy tham gia {channel} trước khi trò chuyện với bot.
+      forgot: Vừa có chuyện gì nhỉ? Bot quên mất rồi...
+      summary_prompt: Tóm tắt cuộc trò chuyện.
+      errors:
+        model_http_400: Nội dung này quá nhạy cảm, bot không thể thực hiện! (400)
+        model_http: Không thành công, hãy thử lại sau (HTTP {code}).
+        too_fast: Nhanh quá! Hãy đợi một chút.
+        interrupted: Phản hồi bị gián đoạn ({error}).
+      quota:
+        calls_today: 'Sử dụng AI hôm nay: {used} lượt / {tokens} token'
+        free_line: 'Hạn mức miễn phí: {used}/{limit} token'
+        credits_line: 'Số dư token: {credits}'
+        chat_line: 'Nhóm này: đã dùng {used}/{limit} token hôm nay, số dư {credits}'
+        status_unlimited: 'Sử dụng AI hôm nay: {used} lượt / {tokens} token; không giới hạn sử dụng'
+        status_none: Nhóm này chưa được cấp hạn mức AI. Hãy liên hệ quản trị viên của bot.
+        exhausted: |
+          Bạn đã dùng hết token AI miễn phí hôm nay.
+          Hạn mức sẽ được đặt lại vào ngày mai.
+        exhausted_group: Nhóm này hiện không còn hạn mức AI. Hãy liên hệ quản trị viên của bot.
+    wordcloud:
+      generating: Đang tạo đám mây từ, hãy đợi một chút...
+      generated: Đám mây từ trong lịch sử trò chuyện gần đây.
+    randmyavatar:
+      service_unavailable: Dịch vụ manyacg hoặc aniobjcut chưa được bật.
+      processing: Đang đổi ảnh đại diện...
+      fetch_failed: Không lấy được ảnh, hãy thử lại sau.
+      success: |-
+        Đổi ảnh đại diện thành công!
+        Tác phẩm: <a href='{url}'>{title}</a>
+      failed: 'Đổi ảnh đại diện thất bại: {error}'
+    infographic:
+      usage: |
+        Cách dùng: /infographic &lt;cú pháp infographic&gt;
+        Hoặc trả lời một tin nhắn bằng /infographic
+
+        Ví dụ:
+        <code>/infographic infographic list-row-simple-horizontal-arrow
+        data
+          title Lộ trình sản phẩm
+          lists
+            - label Nghiên cứu
+              value 80</code>
+      cooldown: Nhanh quá! Hãy thử lại sau.
+      rendered: 'Đã kết xuất! Thời gian: {time}ms'
+      timeout: Kết xuất quá thời gian chờ, hãy thử lại sau.
+      error: 'Kết xuất thất bại: {error}'
+    rss:
+      usage: |
+        <code>/rss sub &lt;url&gt;</code> để đăng ký nguồn RSS/Atom
+        <code>/rss list</code> để xem danh sách đăng ký
+        <code>/rss unsub &lt;số thứ tự&gt;</code> để hủy đăng ký
+        <code>/rss pause &lt;số thứ tự&gt;</code> để tạm dừng gửi tin
+        <code>/rss resume &lt;số thứ tự&gt;</code> để tiếp tục gửi tin
+        <code>/rss interval &lt;số thứ tự&gt; &lt;phút&gt;</code> để đặt chu kỳ kiểm tra; bỏ qua số phút để dùng mặc định chung
+        <code>/rss testpush &lt;số thứ tự&gt;</code> để gửi thử ngay
+        <code>/rss digest on|off</code> để bật/tắt tóm tắt AI khi gửi RSS
+        <code>/rss broadcast on|off</code> để bật/tắt phát tin AI khi có bài mới
+      disabled: Tính năng đăng ký RSS đã bị tắt.
+      not_allowed: Nhóm này chưa được phép đăng ký RSS; hãy nhờ chủ bot bật trong bảng quản trị.
+      invalid_url: 'URL không hợp lệ: phải bắt đầu bằng http:// hoặc https://'
+      fetch_failed: 'Không lấy được nguồn tin này: {error}'
+      added: 'Đã đăng ký: {title}'
+      already_subscribed: Nguồn tin này đã có trong danh sách đăng ký.
+      limit_reached: Đã đạt giới hạn đăng ký ({limit}).
+      empty: Chưa có đăng ký nào. Thử /rss sub &lt;URL nguồn tin&gt;
+      removed: 'Đã hủy đăng ký: {title}'
+      paused: 'Đã tạm dừng: {title}'
+      resumed: 'Đã tiếp tục: {title}'
+      open_panel: Mở bảng quản trị
+      invalid_index: Số thứ tự không hợp lệ.
+      interval_set: Đã đặt chu kỳ kiểm tra thành {minutes} phút.
+      interval_reset: Đã đặt lại chu kỳ kiểm tra theo mặc định chung.
+      interval_invalid: Chu kỳ phải nằm trong khoảng {min} đến {max} phút.
+      too_many_requests: Quá nhiều yêu cầu, hãy chậm lại ({error}).
+      testpush_done: Đã gửi {count} tin nhắn.
+      digest_on: Đã bật tóm tắt AI khi gửi RSS.
+      digest_off: Đã tắt tóm tắt AI khi gửi RSS.
+      broadcast_on: Đã bật phát tin AI khi có bài RSS mới.
+      broadcast_off: Đã tắt phát tin AI khi có bài RSS mới.
+      toggle_failed: Hiện không thể lưu cài đặt AI cho RSS của nhóm này.
+      interval_mark: ' · mỗi {minutes} phút'
+      paused_mark: ' (tạm dừng)'
+      error_mark: ' (lỗi gửi tin)'
+      untitled: Không có tiêu đề
+    wechat:
+      read_original: Đọc bài gốc
+      expand: Mở rộng bài viết
+    link_parse:
+      view_original: Xem bản gốc
+    twitter:
+      view_original: Xem bản gốc
+    reply:
+      default:
+      - Meo meo?
+    loading:
+    - Đang chờ một chút...
+    - Cô gái đang hao tổn tuổi thọ...
+    - Đang meo meo meo...
+    - Có bạn tri kỷ thì chân trời cũng gần.
+    - Đang vẽ ảnh gợi cảm...
+    - Cứ ngồi xuống và thư giãn nhé.
+    - Có thể cần một chút thời gian...
+    - Có thể cần thêm chút thời gian...
+    - Có thể cần thêm vài giây...
+    - Có thể cần vài thế kỷ...
+    - Đừng tắt máy tính.
+    - Đừng tắt điện thoại.
+    - Đang lên giường...
+    - Đang nằm ôm nhau...
+    - Đang ngủ trên giường...
+    - Đang gửi ảnh gợi cảm...
+    - Cô gái đang giả làm dân đường phố...
+    - Cô gái đang nghịch ngợm...
+    - Cô gái đang quay gacha...
+    - Cô gái đang cập nhật Steam...
+    - Cô gái đang viết bug...
+    - Cô gái đang sửa bug...
+    - Cô gái đang ăn McDonald's...
+    - Cô gái đang gặp bạn ngoài đời...
+    - Cô gái đang ôm...
+    - Cô gái đang âu yếm...
+    - Cô gái đang xoa đầu...
+    - Cô gái đang làm chuyện riêng...
+    - Cô gái đang meo meo...
+    - Cô gái đang xem anime...
+    - Đang tải...
+    - Cô gái đã bỏ nhà đi...
+    - Cô gái đang ngủ...
+    - Cô gái đang thức khuya...
+    - Cô gái đang đạt ALL PERFECT...
+    - Cô gái đang đạt FULL COMBO...
+    - Cô gái đang hóng gió quạt...
+    - Cô gái đang thả tim...
+    - Đang cosplay cô gái mèo...
+    - Cô gái đang chơi Genshin...
+    - Đang tải hết tốc lực...
+    - Đang QAQ...
+    - Đang qwq...
+    - Đang ovo...
+    - Cô gái đang đọc tên món ăn...
+    - Cô gái đang khóc hu hu...
+    - Cô gái đang xem trang ủng hộ...
+    - Cô gái đang xoay quanh bạn...
+    - Cô gái đang chăm cây...
+  button:
+    bottle:
+      throw_back: Thả lại biển
+      destroy: Hủy chai
+      report: Báo cáo
+      seek: Tìm nguồn gốc
+      reply: Trả lời
+      reply_anonymous: Trả lời ẩn danh
+      reply_public: Trả lời công khai
+      cancel_reply: Hủy
+      destroy_bottle_after_reply: Hủy chai
+      keep_bottle_after_reply: Thả lại biển
+    back: Quay lại
+    repo: Mã nguồn
+    docs: Tài liệu
+    user_data: Dữ liệu của tôi
+    user_quote: Quản lý trích dẫn
+    user_waifu: Quản lý waifu
+    start_noop: Meo meo meo
+    pm_me: Nhắn riêng
+    page_prev: Trang trước
+    page_next: Trang sau
+    panel: Bảng quản trị
+    chat_panel: Mở bảng quản trị
+    chat_config:
+      waifu: Waifu hằng ngày
+      delete_events: Xóa thông báo sự kiện
+      quote_pin_message: Ghim tin nhắn được trích dẫn
+      ai_reply: Trả lời bằng AI
+      ai_reply_other_bots_enabled: Trả lời bot khác
+      setu_enabled: Ảnh gợi cảm ngẫu nhiên
+      unpin_channel_pin_enabled: Bỏ ghim bài đăng từ kênh
+      convert_b23_enabled: Chuyển đổi liên kết b23
+      parse_artwork_enabled: Phân tích liên kết tác phẩm
+      pick_bottle_enabled: Nhặt chai
+      ai_comment: Bình luận bằng AI
+      group_memory_enabled: Bộ nhớ nhóm
+      verify: Xác minh thành viên mới
+      save: Lưu
+    waifu:
+      remove: Xóa (quản trị viên)
+      marry: Kết hôn!
+      remove_confirm: Xóa
+      remove_cancel: Hủy
+      agree_marry_waifu: Đồng ý!
+      refuse_marry_waifu: Từ chối...
+      cancel_marry_waifu: Hủy (?)
+      divorce: Ly hôn
+      divorce_confirm: Ly hôn
+      divorce_cancel: Hủy
+      mention_enabled: Đừng nhắc tên tôi
+      mention_disabled: Nhắc tên tôi khi được chọn
+      change: Đổi waifu
+    title_permissions:
+      can_change_info: Thay đổi thông tin
+      can_manage_tags: Quản lý nhãn
+      can_delete_messages: Xóa tin nhắn
+      can_edit_messages: Sửa tin nhắn
+      can_restrict_members: Hạn chế thành viên
+      can_invite_users: Mời thành viên
+      can_promote_members: Bổ nhiệm quản trị viên
+      can_post_stories: Đăng story
+      can_edit_stories: Sửa story
+      can_delete_stories: Xóa story
+      can_manage_video_chats: Quản lý cuộc trò chuyện video
+      can_manage_topics: Quản lý chủ đề
+      can_pin_messages: Ghim tin nhắn
+    manyacg:
+      detail: Chi tiết
+      original: Bản gốc
+    agent:
+      clear_history: Xóa lịch sử
+    verify:
+      approve: Cho phép
+      ban: Cấm
+      submit: Xác nhận
+      selected: (đã chọn)
+  cmd:
+    start: Meo một tiếng | Mở menu
+    waifu: Waifu hôm nay!
+    waifu_graph: Sơ đồ quan hệ waifu
+    q: Lưu trích dẫn
+    d: Xóa trích dẫn
+    qrand: Trích dẫn ngẫu nhiên
+    qp: Đặt xác suất tự gửi trích dẫn
+    t: Nhận danh hiệu | Tặng danh hiệu
+    td: Xóa danh hiệu của bạn
+    sett: Đặt quyền được cấp bởi lệnh /t
+    id: Xem ID cuộc trò chuyện
+    ip: Tra cứu IP hoặc tên miền
+    setu: Gửi ảnh gợi cảm
+    throwbottle: Thả chai ra biển
+    pickbottle: Nhặt chai trôi dạt
+    wordcloud: Tạo đám mây từ trong lịch sử trò chuyện
+    config: Thay đổi cài đặt nhóm
+    panel: Cấu hình nhóm trong bảng quản trị
+    greet: Đặt lời chào thành viên mới
+    forget: Xóa lịch sử trò chuyện của bạn với bot
+    quota: Xem hạn mức sử dụng AI
+    f5avatar: Làm mới ảnh đại diện
+    buygift: Mua quà
+    gift: Tặng quà cho bot
+    syncmembers: Đồng bộ thành viên nhóm
+    botpromote: Bổ nhiệm quản trị viên của bot
+    botdemote: Gỡ quyền quản trị viên của bot
+    help: Trợ giúp | Các tính năng khác
+    randmyavatar: Đổi ảnh đại diện của bot ngay
+    reload: Tải lại cấu hình
+    infographic: Kết xuất infographic
+    rss: Quản lý đăng ký RSS
+  inline:
+    switch_pm_text: Tìm hiểu thêm
+    resolve_error: Không thể lấy thông tin nhóm...
+    resolve_button_noop: Đang chờ...
+    chat_quotes_title: Tìm trích dẫn trong nhóm này
+    chat_quotes_description: Hoặc nhập q [từ khóa] để tìm trích dẫn bạn có quyền xem.
+    chat_quotes_quering: Đang lấy thông tin nhóm...
+    chat_quotes_button_noop: Đang chờ...
+    chat_quotes_success: Nhấn nút bên dưới để tìm trích dẫn trong nhóm.
+    chat_quotes_button: 🔍
+    quotes_title: Tìm trích dẫn
+    quotes_description: Nhập q [từ khóa] để tìm trích dẫn bạn có quyền xem.
+    quotes_message: Nhấn nút bên dưới để tìm trích dẫn.
+    quotes_button: 🔍
+    pick_bottle_title: Nhặt chai
+    pick_bottle_description: Nhặt một chai trôi dạt ngoài biển
+    pick_bottle_quering: Đang ra bờ biển...
+    chat_quotes_error: Không thể lấy thông tin nhóm...
+log:
+  initing: Đang khởi tạo bot...
+  welcome: |
+    Bot đã đăng nhập: {name} (@{username}, id={id})
+  inited: Khởi tạo hoàn tất
+  db_initing: Đang khởi tạo cơ sở dữ liệu...
+  getting_me: Đang lấy thông tin bot...
+  setting_commands: Đang thiết lập lệnh của bot...
+  commands_cached: Danh sách lệnh không thay đổi, bỏ qua thiết lập
+  commands_updated: Đã cập nhật và lưu đệm lệnh của bot
+  db_closing: Đang đóng cơ sở dữ liệu...
+  stopping: Đang dừng...
+  exit: Đã thoát
+  avatar_change_enabled: 'Đã bật tự đổi ảnh đại diện, chu kỳ: {interval} giờ'
+  avatar_change_disabled: Dịch vụ manyacg hoặc aniobjcut chưa bật, bỏ qua đổi ảnh đại diện
+  avatar_changing: Đang đổi ảnh đại diện của bot...
+  avatar_changed: 'Đổi ảnh đại diện thành công, tác phẩm: {title} ({url})'
+  avatar_change_failed: 'Đổi ảnh đại diện thất bại: {error}'

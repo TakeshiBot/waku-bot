@@ -3,7 +3,9 @@ import uuid
 from pyrogram import types
 from pyrogram.client import Client
 
+from kmua import database
 from kmua.common.memory_store import memttlcache
+from kmua.i18n import t
 
 from . import drawer as manodrawer
 from . import utils
@@ -14,12 +16,13 @@ async def handle_manomeme(
     query: types.InlineQuery,
     datas: list[str],
 ):
+    lang = (await database.get_user_config(query.from_user)).lang
     if not datas:
         await query.answer(
             results=[
-                utils.result_anan_tips,
-                utils.result_trial_ema_tips,
-                utils.result_trial_hiro_tips,
+                utils.result_anan_tips(lang),
+                utils.result_trial_tips(manodrawer.Character.EMA, lang),
+                utils.result_trial_tips(manodrawer.Character.HIRO, lang),
             ],
         )
         return
@@ -29,13 +32,13 @@ async def handle_manomeme(
             # anan 表情 文本
             if len(datas) < 3:
                 await query.answer(
-                    results=[utils.result_anan_tips],
+                    results=[utils.result_anan_tips(lang)],
                 )
                 return
-            face = datas[1]
-            if face not in utils.anan_faces:
+            face = utils.resolve_face(datas[1])
+            if face is None:
                 await query.answer(
-                    results=[utils.result_anan_tips],
+                    results=[utils.result_anan_tips(lang)],
                 )
                 return
             text = " ".join(datas[2:])
@@ -51,14 +54,20 @@ async def handle_manomeme(
             await query.answer(
                 results=[
                     types.InlineQueryResultArticle(
-                        title=f"安安说 [{face}]",
-                        description="将在发送后生成",
+                        title=t("bot.hardcoded.meme.anan_result", locale=lang).format(
+                            face=utils.face_display(face, lang)
+                        ),
+                        description=t(
+                            "bot.hardcoded.meme.generated_later", locale=lang
+                        ),
                         id=f"ms_{dataid}",
                         input_message_content=types.InputTextMessageContent(
-                            message_text="安安正在写字...",
+                            message_text=t(
+                                "bot.hardcoded.meme.anan_writing", locale=lang
+                            ),
                         ),
                         thumb_url="https://kmua.unv.app/assets/manosaba/anan_example.webp",
-                        reply_markup=utils.markup_anan_tips,
+                        reply_markup=utils.markup_anan_tips(lang),
                     )
                 ]
             )
@@ -69,8 +78,8 @@ async def handle_manomeme(
             if len(datas) < 2:
                 await query.answer(
                     results=[
-                        utils.result_trial_ema_tips,
-                        utils.result_trial_hiro_tips,
+                        utils.result_trial_tips(manodrawer.Character.EMA, lang),
+                        utils.result_trial_tips(manodrawer.Character.HIRO, lang),
                     ],
                 )
                 return
@@ -78,9 +87,9 @@ async def handle_manomeme(
             if len(datas) < 4:
                 await query.answer(
                     results=[
-                        utils.result_trial_ema_tips
+                        utils.result_trial_tips(manodrawer.Character.EMA, lang)
                         if character == manodrawer.Character.EMA
-                        else utils.result_trial_hiro_tips,
+                        else utils.result_trial_tips(manodrawer.Character.HIRO, lang),
                     ],
                 )
                 return
@@ -88,8 +97,8 @@ async def handle_manomeme(
             if not options:
                 await query.answer(
                     results=[
-                        utils.result_trial_ema_tips,
-                        utils.result_trial_hiro_tips,
+                        utils.result_trial_tips(manodrawer.Character.EMA, lang),
+                        utils.result_trial_tips(manodrawer.Character.HIRO, lang),
                     ],
                 )
                 return
@@ -106,22 +115,30 @@ async def handle_manomeme(
             dataid = uuid.uuid4().hex
             await memttlcache.set(f"manomeme_inline:{dataid}", data, 300)
             is_hiro = character == manodrawer.Character.HIRO
-            title_char = "艾玛" if not is_hiro else "希罗"
+            title_char = character.get_display(lang)
             await query.answer(
                 results=[
                     types.InlineQueryResultArticle(
-                        title=f"{title_char} [{'|'.join([opt.statement.display for opt in options])}]",
-                        description="将在发送后生成",
+                        title=f"{title_char} [{'|'.join([opt.statement.get_display(lang) for opt in options])}]",
+                        description=t(
+                            "bot.hardcoded.meme.generated_later", locale=lang
+                        ),
                         id=f"ms_{dataid}",
                         input_message_content=types.InputTextMessageContent(
-                            message_text=f"{title_char} 正在穷举..."
+                            message_text=t(
+                                "bot.hardcoded.meme.ema_busy", locale=lang
+                            ).format(name=title_char)
                             if not is_hiro
-                            else f"{title_char} 正在思考...",
+                            else t("bot.hardcoded.meme.hiro_busy", locale=lang).format(
+                                name=title_char
+                            ),
                         ),
                         reply_markup=(
-                            utils.markup_trial_ema_tips
+                            utils.markup_trial_tips(manodrawer.Character.EMA, lang)
                             if not is_hiro
-                            else utils.markup_trial_hiro_tips
+                            else utils.markup_trial_tips(
+                                manodrawer.Character.HIRO, lang
+                            )
                         ),
                         thumb_url=f"https://kmua.unv.app/assets/manosaba/{'emadog' if not is_hiro else 'hirocat'}.webp",
                     )

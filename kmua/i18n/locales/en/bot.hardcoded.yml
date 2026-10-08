@@ -1,0 +1,285 @@
+{
+  "bot": {
+    "hardcoded": {
+      "gift": {
+        "rarity": {
+          "common": "Common sprout",
+          "enchanted": "Enchanted plant",
+          "rare": "Ritual flower",
+          "epic": "Secret seed",
+          "legendary": "Forbidden bloom"
+        },
+        "items": {
+          "severed_grass_silence": {
+            "name": "Grass of severed silence",
+            "description": "Petals fade and roots break; memory is not erased, but no one can recall that it ever existed.",
+            "comment": "Clear memory"
+          },
+          "vow_lotus_seal": {
+            "name": "Lotus of the vow seal",
+            "description": "With the lotus as a vow and a heart as still as water, may you be safe through every storm.",
+            "comment": "Greatly reduce affection changes for a while"
+          },
+          "amaranth_heart_lamp": {
+            "name": "Amaranth heart lamp",
+            "description": "The lamp still glows where the heart leads; amaranth hues like sunset carry lasting warmth.",
+            "comment": "Temporarily increase affection greatly"
+          },
+          "frost_flower_whisper": {
+            "name": "Whispering frost flower",
+            "description": "Flowers bloom in silence, and the heart is quiet; listen to every sound to understand another heart.",
+            "comment": "View the current memory about you"
+          },
+          "dawn_bell_herb": {
+            "name": "Dawn bell herb",
+            "description": "The dawn bell rings and darkness fades; grass brushes off the frost as morning light endures.",
+            "comment": "Remove the block and prevent blocking for a while"
+          },
+          "otherworldly_flower": {
+            "name": "Otherworldly flower",
+            "description": "A flower that should not exist here",
+            "comment": "An anomalous gift that should not appear"
+          }
+        },
+        "cannot_buy": "You cannot afford any gifts right now.",
+        "choose_buy": "What would you like to buy?",
+        "leave": "Leave",
+        "not_your_purchase": "This purchase request is not yours.",
+        "user_missing": "User data was not found.",
+        "insufficient": "You do not have enough coins for this gift.",
+        "buy_again": "Buy another",
+        "cancelled_empty": "Purchase cancelled.\nYou cannot afford any gifts right now.",
+        "cancelled_choose": "Purchase cancelled. Would you like something else?",
+        "confirm": "Confirm",
+        "cancel": "Cancel",
+        "unknown_action": "Unknown action.",
+        "inventory_empty": "You have not bought any gifts yet.",
+        "choose_send": "What would you like to give me? Tap a numbered button to send it.",
+        "previous": "Previous",
+        "next": "Next",
+        "no_more": "There are no more pages.",
+        "no_more_gifts": "There are no more gifts.",
+        "gift_missing": "Gift not found.",
+        "not_your_gift": "This gift is not yours.",
+        "already_sent": "This gift has already been sent.",
+        "unknown_gift": "This gift is not valid.",
+        "send_failed": "Failed to send the gift.",
+        "sent_all": "All your gifts have been sent.",
+        "choose_more": "Would you like to send more? Gift effects may not stack.",
+        "bought": "Bought 1 × {name} ({rarity}).",
+        "send_success": "Sent 1 × {name} ({rarity}).",
+        "repeat": "Buy another {name}?\nIt will cost {percent}% of your balance.",
+        "confirm_purchase": "<b>{name}</b>\n<i>{description}</i>\n\nEffect: {comment}\n\nBuy 1 × {name}? It will cost {percent}% of your balance.",
+        "inventory_row": "\n{index}. {name} ({rarity})",
+        "memory": "Current memory about you:\n{memory}\n\nAffection rank: {rank:.2%}",
+        "no_memory": "None"
+      },
+      "unknown": "Unknown",
+      "bottle": {
+        "mysterious": "Mysterious person",
+        "ban_usage": "Usage: /banseapest <user_id> [days]",
+        "ban_numbers": "User ID and days must be numbers.",
+        "banned": "You are banned from using message bottles."
+      },
+      "link": {
+        "video": "Video",
+        "coolapk": "Coolapk",
+        "tieba": "Tieba"
+      },
+      "slash": {
+        "with_target": "{actor} {action} {target} {suffix} !",
+        "with_self": "{actor} {action} themselves {suffix} !",
+        "passive_target": "{actor} was {action} by {target} !",
+        "passive_self": "{actor} was {action} by themselves !",
+        "active_target": "{actor} {action} {target} !",
+        "active_self": "{actor} {action} themselves !"
+      },
+      "meme": {
+        "title": "Witch trial memes",
+        "description": "Generate Magical Girl Witch Trial memes",
+        "anan": "Anan says",
+        "trial": "Debate",
+        "anan_prompt": "Let Anan speak",
+        "anan_usage": "Usage: ms anan [expression] [text]",
+        "ema_title": "Debate – Ema",
+        "hiro_title": "Debate – Hiro",
+        "ema_description": "Explore every possibility",
+        "hiro_description": "The mysterious perjurer",
+        "ema_caption": "Choose what catches your attention",
+        "hiro_caption": "Begin your false testimony",
+        "generated_later": "The image will be generated after sending",
+        "anan_writing": "Anan is writing…",
+        "ema_busy": "{name} is exploring every possibility…",
+        "hiro_busy": "{name} is thinking…",
+        "expired": "This request has expired. Please generate it again.",
+        "failed": "Failed to generate the image. Please try again later.",
+        "no_options": "There are no valid options. Please generate again.",
+        "default_text": "I do not want to talk right now",
+        "anan_result": "Anan says [{face}]",
+        "help": "Meme generator usage:\n\n1. Anan says: ms anan [expression] [text]\nExample: ms anan speechless I do not want to talk right now\n2. Debate: ms trial [character] ([type] text...)\nExample: ms trial Hiro [perjury] I was sleeping soundly then\n\nExpressions: yandere, angry, shy, speechless, happy\nCharacters: Ema, Hiro\nTypes: agreement, doubt, refutation, perjury, magic",
+        "face": {
+          "yandere": "Yandere",
+          "angry": "Angry",
+          "shy": "Shy",
+          "speechless": "Speechless",
+          "happy": "Happy"
+        },
+        "statement": {
+          "agreement": "Agreement",
+          "doubt": "Doubt",
+          "perjury": "Perjury",
+          "refutation": "Refutation",
+          "magic": "Magic"
+        },
+        "character": {
+          "ema": "Ema",
+          "hiro": "Hiro"
+        }
+      },
+      "lang": {
+        "choose_user": "Choose the language you want to use",
+        "choose_chat": "Choose the language for this chat"
+      },
+      "reload": {
+        "denied": "Permission denied",
+        "changed": "Changed fields ({count}): {fields}",
+        "unchanged": "No fields changed"
+      },
+      "status": {
+        "summary": "Users: {users}\nChats: {chats}\nQuotes: {quotes}\nAssociations: {associations}\nBottles: {bottles}\nAffection statistics: {affection}"
+      },
+      "ping": {
+        "pong": "Pong!",
+        "latency": "Pong! | {ms:.3f} ms"
+      },
+      "id": {
+        "chat_user": "This chat ID: `{chat_id}`\nYour user ID: `{user_id}`",
+        "reply": "This chat ID: `{chat_id}`\nReplied user ID: `{target_id}`\nYour user ID: `{user_id}`"
+      },
+      "api": {
+        "INIT_DATA_MISSING": "Telegram authentication data is missing.",
+        "INIT_DATA_MALFORMED": "Telegram authentication data is malformed.",
+        "INIT_DATA_INVALID": "Telegram authentication data is invalid.",
+        "INIT_DATA_EXPIRED": "Telegram authentication data has expired. Please reopen the panel.",
+        "TOKEN_MISSING": "The session token is missing.",
+        "TOKEN_INVALID": "The session token is invalid.",
+        "TOKEN_EXPIRED": "Your session has expired. Please reopen the panel.",
+        "FORBIDDEN": "You do not have permission to perform this action.",
+        "OWNER_REQUIRED": "Bot owner rights are required.",
+        "ADMIN_REQUIRED": "Bot admin rights are required.",
+        "CHAT_ADMIN_REQUIRED": "Bot admin rights in this chat are required.",
+        "USER_NOT_FOUND": "User not found.",
+        "CHAT_NOT_FOUND": "Chat not found.",
+        "QUOTE_NOT_FOUND": "Quote not found.",
+        "NOT_FOUND": "Resource not found.",
+        "VALIDATION_FAILED": "Request validation failed. Please check your input.",
+        "RATE_LIMITED": "Too many requests. Please try again later.",
+        "COOLDOWN": "Please wait for the cooldown to end before trying again.",
+        "CONFLICT": "The data changed or the action conflicts with the current state. Refresh and try again.",
+        "FEATURE_DISABLED": "This feature is disabled.",
+        "NOT_MARRIED": "You are not married.",
+        "INSUFFICIENT_COINS": "You do not have enough coins.",
+        "GIFT_NOT_FOUND": "Gift not found.",
+        "GIFT_ALREADY_SENT": "This gift has already been sent.",
+        "TELEGRAM_ERROR": "The Telegram operation failed. Please try again later.",
+        "INTERNAL_ERROR": "Internal server error. Please try again later.",
+        "invalid_field": "Invalid field value."
+      },
+      "wordcloud": {
+        "no_text": "There is no text to generate a word cloud."
+      },
+      "api_reasons": {
+        "init_empty": "initData is empty",
+        "bot_token_missing": "Bot token is not configured",
+        "init_query": "initData is not a query string",
+        "init_hash": "initData has no hash",
+        "init_signature": "initData signature mismatch",
+        "init_date": "initData has no auth_date",
+        "init_expired": "initData has expired",
+        "init_user_missing": "initData has no user",
+        "init_user_object": "initData user is not an object",
+        "init_user_fields": "initData user is missing id or first_name",
+        "init_user_json": "initData user is not valid JSON",
+        "session_subject": "Session subject is invalid",
+        "session_expired": "Session has expired",
+        "session_invalid": "Session token is invalid",
+        "authorization_missing": "Authorization header is missing",
+        "session_user_gone": "Session user no longer exists",
+        "admin_required": "Bot admin rights are required",
+        "owner_required": "Bot owner rights are required",
+        "group_id": "Not a group chat id",
+        "chat_missing": "Chat not found",
+        "chat_admin_required": "Bot admin rights in this chat are required",
+        "chat_permissions_unverified": "Could not verify chat permissions",
+        "rate_limit": "Too many requests, slow down",
+        "user_missing": "User not found",
+        "editing_disabled": "User editing is disabled",
+        "owner_record": "Only an owner can edit an owner's record",
+        "user_gone": "User disappeared",
+        "policy_missing": "Chat has no policy",
+        "quota_group_only": "Quota fields apply to group chats only, not private chats",
+        "run_missing": "Agent run not found",
+        "run_event_missing": "Agent run event not found",
+        "bot_panel": "Bots cannot use the panel",
+        "members_recent": "Members were synced recently",
+        "quote_missing": "Quote not found",
+        "rss_disabled": "RSS is disabled",
+        "chat_rss_disabled": "RSS is not enabled for this chat",
+        "url_http": "URL must be http(s)",
+        "subscription_limit": "Subscription limit reached",
+        "subscription_missing": "Subscription not found",
+        "members_failed": "Could not read the member list, the bot may need admin rights",
+        "subscribed": "Already subscribed",
+        "gift_missing": "Gift not found",
+        "coins_insufficient": "Not enough coins",
+        "avatar_recent": "Avatar was refreshed recently",
+        "target_invalid": "Invalid target",
+        "target_upstream": "Cannot act on the admin who promoted you",
+        "target_bot": "Target is a bot",
+        "target_not_in_chat": "User is not in this chat",
+        "already_set": "Already in that state",
+        "gift_other": "This is not your gift",
+        "gift_sent": "Gift was already sent",
+        "gift_unknown": "Unknown gift",
+        "not_married": "User is not married",
+        "partner_missing": "Married partner not found",
+        "feed_unreachable": "Feed unreachable: {error_type}"
+      },
+      "api_validation": {
+        "required": "This field is required.",
+        "integer": "Enter a valid integer.",
+        "number": "Enter a valid number.",
+        "boolean": "Enter a valid boolean value.",
+        "string": "Enter a text value.",
+        "list": "Enter a list.",
+        "object": "Enter an object.",
+        "greater_than": "The value must be greater than {gt}.",
+        "greater_than_equal": "The value must be at least {ge}.",
+        "less_than": "The value must be less than {lt}.",
+        "less_than_equal": "The value must be at most {le}.",
+        "multiple_of": "The value must be a multiple of {multiple_of}.",
+        "string_too_short": "Enter at least {min_length} characters.",
+        "string_too_long": "Enter no more than {max_length} characters.",
+        "too_short": "The list must contain at least {min_length} items.",
+        "too_long": "The list must contain no more than {max_length} items.",
+        "literal_error": "Choose one of: {expected}.",
+        "extra_forbidden": "This field is not supported.",
+        "json": "Enter valid JSON.",
+        "date": "Enter a valid date or timestamp.",
+        "url": "Enter a valid URL.",
+        "url_scheme": "Use a URL with one of these schemes: {expected_schemes}.",
+        "locale": "Unsupported language; choose one of {allowed}.",
+        "select": "select must be all or any.",
+        "question_blank": "The question must not be blank.",
+        "options_required": "Provide at least 2 distinct, non-blank options.",
+        "option_long": "An option must not exceed 100 characters.",
+        "answers_required": "Provide at least 1 non-blank answer.",
+        "answers_options": "Every answer must match an available option.",
+        "verify_strategy": "Unsupported verification strategy; choose one of {allowed}.",
+        "verify_method": "Unsupported verification method; choose one of {allowed}.",
+        "verify_action": "Unsupported failure action; choose one of {allowed}.",
+        "permissions": "One or more permissions are not supported."
+      }
+    }
+  }
+}

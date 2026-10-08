@@ -8,6 +8,8 @@ from typing import Literal
 
 from pydantic_ai import RunContext
 
+from kmua.plugins.agent.localization import tr
+
 from .. import datatype
 
 # Any IANA timezone name is accepted; "local" and "UTC" are special-cased.
@@ -54,23 +56,23 @@ async def _now(
 
         iso_str = target_time.isoformat()
         weekdays = [
-            "星期一",
-            "星期二",
-            "星期三",
-            "星期四",
-            "星期五",
-            "星期六",
-            "星期日",
+            tr("monday"),
+            tr("tuesday"),
+            tr("wednesday"),
+            tr("thursday"),
+            tr("friday"),
+            tr("saturday"),
+            tr("sunday"),
         ]
         weekday = weekdays[target_time.weekday()]
-        readable_str = target_time.strftime(f"%Y年%m月%d日 %H:%M:%S {weekday}")
+        readable_str = target_time.strftime(tr("readable_date_format", p0=weekday))
 
         if format_type == "iso":
-            message = f"当前时间 (ISO): {iso_str}"
+            message = tr("current_time_iso", p0=iso_str)
         elif format_type == "readable":
-            message = f"当前时间: {readable_str}"
+            message = tr("current_time", p0=readable_str)
         else:
-            message = f"当前时间:\n- ISO格式: {iso_str}\n- 易读格式: {readable_str}"
+            message = tr("current_time_both", p0=iso_str, p1=readable_str)
 
         return _NowResult(
             success=True,
@@ -80,7 +82,7 @@ async def _now(
             timezone=str(tz_info) if tz_info else "Unknown",
         )
     except Exception as e:
-        return _NowResult(success=False, message=f"获取时间失败: {e}")
+        return _NowResult(success=False, message=tr("time_failed", p0=e))
 
 
 async def _difference(time1: str, time2: str) -> _DifferenceResult:
@@ -101,23 +103,28 @@ async def _difference(time1: str, time2: str) -> _DifferenceResult:
         seconds = int(total_seconds % 60)
         parts = []
         if days > 0:
-            parts.append(f"{days}天")
+            parts.append(tr("days", p0=days))
         if hours > 0:
-            parts.append(f"{hours}小时")
+            parts.append(tr("hours", p0=hours))
         if minutes > 0:
-            parts.append(f"{minutes}分钟")
+            parts.append(tr("minutes", p0=minutes))
         if seconds > 0 or not parts:
-            parts.append(f"{seconds}秒")
-        time_diff_str = "".join(parts)
-        direction = "之后" if diff.total_seconds() >= 0 else "之前"
-        message = (
-            f"时间差: {time_diff_str}\n"
-            f"{time1} 是 {time2} 的{direction}\n"
-            f"总计: {abs(diff.total_seconds()):.0f} 秒"
+            parts.append(tr("seconds", p0=seconds))
+        time_diff_str = " ".join(parts)
+        direction = tr("time_after") if diff.total_seconds() >= 0 else tr("time_before")
+        message = tr(
+            "time_difference",
+            p0=time_diff_str,
+            p1=time1,
+            p2=time2,
+            p3=direction,
+            p4=format(abs(diff.total_seconds()), ".0f"),
         )
         return _DifferenceResult(success=True, message=message)
     except Exception as e:
-        return _DifferenceResult(success=False, message=f"计算时间差失败: {e}")
+        return _DifferenceResult(
+            success=False, message=tr("time_difference_failed", p0=e)
+        )
 
 
 async def time_info(
@@ -143,13 +150,13 @@ async def time_info(
     if operation == "now":
         result = await _now(timezone_name, format_type)
         if not result.success:
-            return f"Error: {result.message}"
+            return tr("error", p0=result.message)
         return result.message
     if time1 is None or time2 is None:
-        return "Error: operation 'difference' requires both time1 and time2."
+        return tr("time_difference_required")
     result = await _difference(time1, time2)
     if not result.success:
-        return f"Error: {result.message}"
+        return tr("error", p0=result.message)
     return result.message
 
 

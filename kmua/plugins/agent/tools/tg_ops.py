@@ -17,6 +17,7 @@ from pydantic_ai import RunContext
 
 from kmua.common.safe_http import DEFAULT_MAX_BYTES, UnsafeUrlError, safe_download_bytes
 from kmua.logger import logger
+from kmua.plugins.agent.localization import tr
 
 from .. import datatype
 from . import block, code_repo, io, send_ops, workspace
@@ -112,22 +113,22 @@ async def _call_kmua_extension(
         text = params.get("text")
         schedule_time = params.get("schedule_time")
         if not text or not schedule_time:
-            return "Error: scheduleMessage requires text and schedule_time."
+            return tr("schedule_fields_required")
         return await send_ops.schedule_message(ctx, str(schedule_time), text=str(text))
     if method == "blockUser":
         try:
             duration = int(params.get("duration_minutes") or 0)
         except (TypeError, ValueError):
-            return "Error: blockUser requires duration_minutes (integer)."
+            return tr("block_duration_integer")
         if duration <= 0:
-            return "Error: blockUser requires duration_minutes (1-10080)."
+            return tr("block_duration_range")
         return await block.block_user(
             ctx,
             duration,
             ctx.deps.user_id,
             str(params.get("reason") or ""),
         )
-    return f"Error: Unknown method: {method}"
+    return tr("method_unknown", p0=method)
 
 
 def _as_message_id(value: Any) -> int | None:
@@ -152,24 +153,28 @@ async def _convert_params(
     unknown = set(params) - allowed - {"chat_id"}
     if unknown:
         return None, (
-            f"Error: Unknown field(s) for {method}: {', '.join(sorted(unknown))}. "
-            f"Allowed: {', '.join(sorted(allowed))}."
+            tr(
+                "fields_unknown",
+                p0=method,
+                p1=", ".join(sorted(unknown)),
+                p2=", ".join(sorted(allowed)),
+            )
         )
     if "chat_id" in params:
-        return None, "Error: chat_id is always the current chat; do not pass it."
+        return None, tr("chat_id_fixed")
     if method == "sendDocument" and "content" in params and "document" in params:
-        return None, "Error: sendDocument takes either document or content, not both."
+        return None, tr("document_content_conflict")
     if (
         method == "sendDocument"
         and "content" not in params
         and "document" not in params
     ):
-        return None, "Error: sendDocument requires document or content."
+        return None, tr("document_content_required")
     missing = required - set(params)
     if missing:
         return (
             None,
-            f"Error: Missing required field(s) for {method}: {', '.join(sorted(missing))}.",
+            tr("fields_required", p0=method, p1=", ".join(sorted(missing))),
         )
     kwargs: dict[str, Any] = {}
     for key, value in params.items():
@@ -191,17 +196,11 @@ async def _convert_params(
                 if normalized in mapping:
                     kwargs[key] = mapping[normalized]
                 else:
-                    return None, (
-                        f"Error: Invalid parse_mode '{value}'. "
-                        "Allowed: HTML, Markdown, MarkdownV2, disabled, default."
-                    )
+                    return None, (tr("parse_mode_invalid", p0=value))
             elif isinstance(value, pyrogram.enums.ParseMode):
                 kwargs[key] = value
             else:
-                return None, (
-                    f"Error: Invalid parse_mode '{value}'. "
-                    "Allowed: HTML, Markdown, MarkdownV2, disabled, default."
-                )
+                return None, (tr("parse_mode_invalid", p0=value))
             continue
         if key == "reply_to_message_id":
             kwargs["reply_parameters"] = pyrogram.types.ReplyParameters(
@@ -213,11 +212,7 @@ async def _convert_params(
                 continue
             target = _as_message_id(value)
             if target is None:
-                return None, (
-                    f"Error: Invalid message_id for sendReaction: {value!r}. "
-                    "Use a positive Telegram message id, or omit message_id to "
-                    "react to the message being answered."
-                )
+                return None, (tr("reaction_message_invalid", p0=repr(value)))
             kwargs[key] = target
         elif key == "disable_web_page_preview":
             kwargs["link_preview_options"] = pyrogram.types.LinkPreviewOptions(
@@ -242,12 +237,12 @@ async def _convert_params(
             try:
                 agent = await code_repo.get_code_agentfs()
                 if agent is None:
-                    return None, "Error: Code repository not initialized."
+                    return None, tr("code_repository_uninitialized")
                 raw = await agent.fs.read_file(rest)
                 if isinstance(raw, str):
                     raw = raw.encode("utf-8")
             except Exception as e:
-                return None, f"Error: {e}"
+                return None, tr("error", p0=e)
             kwargs[key] = _named_media(method, value, raw)
         elif (
             key in _MEDIA_FIELDS
@@ -259,7 +254,7 @@ async def _convert_params(
             try:
                 raw = await workspace.read_file_bytes(_session_key(ctx), rest)
             except Exception as e:
-                return None, f"Error: {e}"
+                return None, tr("error", p0=e)
             kwargs[key] = _named_media(method, value, raw)
         elif (
             key in _MEDIA_FIELDS
@@ -271,7 +266,7 @@ async def _convert_params(
             try:
                 raw = await io.read_bytes(value, ctx)
             except Exception as e:
-                return None, f"Error: {e}"
+                return None, tr("error", p0=e)
             kwargs[key] = _named_media(method, value, raw)
         elif (
             key in _MEDIA_FIELDS
@@ -285,18 +280,15 @@ async def _convert_params(
             try:
                 raw = await safe_download_bytes(value, max_bytes=DEFAULT_MAX_BYTES)
             except UnsafeUrlError as e:
-                return None, f"Error: {e}"
+                return None, tr("error", p0=e)
             except Exception as e:
                 return (
                     None,
-                    f"Error: Failed to download {key}: {e.__class__.__name__}",
+                    tr("download_failed", p0=key, p1=e.__class__.__name__),
                 )
             kwargs[key] = _named_media(method, value, raw)
         elif key in _MEDIA_FIELDS:
-            return None, (
-                f"Error: {key} must be an http(s) URL, a work:// file reference "
-                "or a kmua:// codebase file."
-            )
+            return None, (tr("media_target_invalid", p0=key))
         else:
             kwargs[key] = value
     if method == "sendReaction" and "message_id" not in kwargs:
@@ -374,12 +366,12 @@ async def tg(
     Example: tg("sendPoll", {"question": "Lunch?", "options": ["noodles", "rice"]})
     """
     if ctx.deps.message is None or ctx.deps.message.id is None:
-        return "Error: Current message context is unavailable."
+        return tr("error_context_unavailable")
 
     if method in _KMUA_EXTENSIONS:
         return await _call_kmua_extension(ctx, method, params)
     if method not in _METHODS:
-        return f"Error: Unknown method: {method}. Supported: {_method_list()}."
+        return tr("method_unknown_supported", p0=method, p1=_method_list())
 
     kwargs, error = await _convert_params(ctx, method, params)
     if error:
@@ -393,18 +385,15 @@ async def tg(
     except pyrogram.errors.MessageIdInvalid:
         logger.error(f"tg {method} error: target message not in this chat")
         if method == "sendReaction":
-            return (
-                "Error: sendReaction target is not a message of this chat. "
-                "Omit message_id to react to the message being answered."
-            )
-        return f"Error: {method} failed: MessageIdInvalid"
+            return tr("reaction_wrong_chat")
+        return tr("method_invalid_message", p0=method)
     except Exception as e:
         logger.error(f"tg {method} error: {e.__class__.__name__}: {e}")
-        return f"Error: {method} failed: {e.__class__.__name__}"
+        return tr("method_failed", p0=method, p1=e.__class__.__name__)
     message_id = getattr(result, "message_id", None)
     if message_id is not None:
-        return f"{method} sent (message_id={message_id})."
-    return f"{method} OK."
+        return tr("tool_p0_sent_message_id_p1", p0=method, p1=message_id)
+    return tr("method_ok", p0=method)
 
 
 __all__ = ["tg"]

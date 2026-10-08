@@ -16,6 +16,7 @@ from collections import deque
 from fastapi import status
 
 from kmua.webapp.errors import ApiError, ErrorCode
+from kmua.webapp.i18n import api_text
 
 
 class SlidingWindowLimiter:
@@ -66,7 +67,7 @@ class SlidingWindowLimiter:
             retry_after = max(0.0, self.window - (current - hits[0]))
             raise ApiError(
                 ErrorCode.RATE_LIMITED,
-                "Too many requests, slow down",
+                api_text("rate_limit"),
                 status.HTTP_429_TOO_MANY_REQUESTS,
                 details={"retry_after": round(retry_after, 1)},
             )

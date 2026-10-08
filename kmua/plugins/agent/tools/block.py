@@ -4,6 +4,7 @@ from pyrogram.enums import ChatMemberStatus
 from kmua import common
 from kmua.affection import get_affection_rank
 from kmua.logger import logger
+from kmua.plugins.agent.localization import tr
 
 from .. import datatype, state
 
@@ -51,13 +52,16 @@ async def block_user(
                 ctx.deps.client, ctx.deps.chat_id, user_id
             )
             if member.status in (ChatMemberStatus.LEFT, ChatMemberStatus.BANNED):
-                return f"User {user_id} is not a member of this group, cannot block."
+                return tr(
+                    "tool_user_p0_is_not_a_member_of_this_group_cannot_block",
+                    p0=user_id,
+                )
         except Exception as e:
             logger.warning(f"Failed to check membership for user {user_id}: {e}")
-            return f"Cannot verify if user {user_id} is in this group: {e.__class__.__name__}"
+            return tr("membership_check_failed", p0=user_id, p1=e.__class__.__name__)
 
     if await common.memttlcache.get(state.user_block_immune_key(target_id)):
-        return f"User {target_id} is currently immune to being blocked."
+        return tr("tool_user_p0_is_currently_immune_to_being_blocked", p0=target_id)
 
     affection_rank = await get_affection_rank(target_id)
     effective_minutes = _calculate_block_duration(duration_minutes, affection_rank)
@@ -73,9 +77,11 @@ async def block_user(
         f"reason: {reason!r})"
     )
 
-    return (
-        f"User {target_id} has been blocked for {effective_minutes} minutes "
-        f"(requested {duration_minutes} min, reduced by affection rank)."
+    return tr(
+        "tool_user_p0_has_been_blocked_for_p1_minutes_requested_p2_min_reduced_by_affection_rank",
+        p0=target_id,
+        p1=effective_minutes,
+        p2=duration_minutes,
     )
 
 

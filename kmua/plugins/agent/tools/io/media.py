@@ -14,6 +14,7 @@ from pydantic_ai import BinaryContent, RunContext, ToolReturn
 
 from kmua.config import app_config
 from kmua.logger import logger
+from kmua.plugins.agent.localization import tr
 
 from ... import provider, quota
 from .. import datatype
@@ -165,17 +166,23 @@ def _tg_media_size(message: Any) -> int | None:
 async def _download_tg_bytes(client: Any, message: Any, what: str) -> bytes:
     """Download one message's media with the configured timeout and cap."""
     if getattr(message, "paid_media", None):
-        raise ValueError(f"{what}: paid media is not supported.")
+        raise ValueError(tr("tool_p0_paid_media_is_not_supported", p0=what))
     size = _tg_media_size(message)
     if size is None:
         # A truthy message.media is not enough: web-page previews count as
         # media but carry no downloadable file.
-        raise _NoMediaError(f"{what}: the message has no downloadable media.")
+        raise _NoMediaError(
+            tr("tool_p0_the_message_has_no_downloadable_media", p0=what)
+        )
     max_bytes = app_config.agent_download_max_bytes
     if size > max_bytes:
         raise ValueError(
-            f"{what}: the file is {size} bytes, over the {max_bytes} "
-            f"byte download limit."
+            tr(
+                "tool_p0_the_file_is_p1_bytes_over_the_p2_byte_download_limit",
+                p0=what,
+                p1=size,
+                p2=max_bytes,
+            )
         )
     timeout = app_config.agent_download_timeout or None
     media = await asyncio.wait_for(
@@ -183,15 +190,21 @@ async def _download_tg_bytes(client: Any, message: Any, what: str) -> bytes:
     )
     if isinstance(media, builtins.list):
         raise ValueError(
-            f"{what}: the message contains an album of several media files; "
-            f"albums are not supported."
+            tr(
+                "tool_p0_the_message_contains_an_album_of_several_media_files_albums_are_not_supported",
+                p0=what,
+            )
         )
     if not isinstance(media, BytesIO):
-        raise ValueError(f"Failed to download {what}.")
+        raise ValueError(tr("media_download_failed", p0=what))
     data = media.getvalue()
     if len(data) > max_bytes:
         raise ValueError(
-            f"{what}: the file is over the {max_bytes} byte download limit."
+            tr(
+                "tool_p0_the_file_is_over_the_p1_byte_download_limit",
+                p0=what,
+                p1=max_bytes,
+            )
         )
     return data
 
@@ -201,17 +214,13 @@ async def _get_chat_media_message(
 ) -> Any:
     """Resolve chat://media/<message_id> within the current chat."""
     if not rest.startswith("/media/"):
-        raise ValueError(
-            f"Invalid chat:// media target {rest!r}; use chat://media/<message_id>"
-        )
+        raise ValueError(tr("chat_media_target_invalid", p0=repr(rest)))
     msg_id_str = rest.removeprefix("/media/")
     if not msg_id_str.isdigit():
-        raise ValueError(
-            f"Invalid chat:// media target {rest!r}; expected a message id."
-        )
+        raise ValueError(tr("chat_media_id_invalid", p0=repr(rest)))
     message = await ctx.deps.client.get_messages(ctx.deps.chat_id, int(msg_id_str))
     if message is None or not message.media:
-        raise _NoMediaError(f"Message {msg_id_str} has no downloadable media.")
+        raise _NoMediaError(tr("message_no_media", p0=msg_id_str))
     return message
 
 
@@ -240,20 +249,15 @@ async def _get_tme_message(ctx: RunContext[datatype.ContextDeps], url: str) -> A
     """Resolve a public t.me message link to its Telegram message."""
     parts = _tme_message_parts(url)
     if parts is None:
-        raise ValueError(f"Not a t.me message link: {url}")
+        raise ValueError(tr("telegram_link_invalid", p0=url))
     chat_ref, msg_id_str = parts
     try:
         chat = await ctx.deps.client.get_chat(chat_ref)
     except Exception:
-        raise ValueError(
-            f"Cannot resolve {chat_ref!r} from {url}; the chat may be private or "
-            f"the bot may not be a member."
-        ) from None
+        raise ValueError(tr("chat_resolve_failed", p0=repr(chat_ref), p1=url)) from None
     message = await ctx.deps.client.get_messages(chat.id, int(msg_id_str))
     if message is None or not message.media:
-        raise _NoMediaError(
-            f"Message {msg_id_str} in {chat_ref} has no downloadable media."
-        )
+        raise _NoMediaError(tr("chat_message_no_media", p0=msg_id_str, p1=chat_ref))
     return message
 
 
@@ -262,7 +266,9 @@ async def _download_tme_media(ctx: RunContext[datatype.ContextDeps], url: str) -
     message = await _get_tme_message(ctx, url)
     chat_ref, msg_id_str = _tme_message_parts(url) or ("chat", "?")
     return await _download_tg_bytes(
-        ctx.deps.client, message, f"message {msg_id_str} in {chat_ref}"
+        ctx.deps.client,
+        message,
+        tr("tool_message_p0_in_p1", p0=msg_id_str, p1=chat_ref),
     )
 
 
@@ -354,9 +360,11 @@ def _read_transcription_model(
 
 
 def _binary_read_guidance(label: str, media_type: str, reason: str) -> str:
-    return (
-        f"{label} contains binary content ({media_type}). {reason} "
-        "The bytes were not decoded as text."
+    return tr(
+        "tool_p0_contains_binary_content_p1_p2_the_bytes_were_not_decoded_as_text",
+        p0=label,
+        p1=media_type,
+        p2=reason,
     )
 
 
@@ -370,14 +378,16 @@ async def _transcribe_media_tool_return(
     """Turn a read-side binary payload into text for transcribe-mode runs."""
     if data is None:
         return _binary_read_guidance(
-            label, media_type, "The media bytes were unavailable for transcription."
+            label,
+            media_type,
+            tr("tool_the_media_bytes_were_unavailable_for_transcription"),
         )
     model = _read_transcription_model(ctx)
     if model is None:
         return _binary_read_guidance(
             label,
             media_type,
-            "No multimodal transcription model is available.",
+            tr("transcription_model_unavailable"),
         )
     from ...prompt import transcribe_binary_content
 
@@ -389,8 +399,15 @@ async def _transcribe_media_tool_return(
         logger.error(f"read media transcription failed: {e.__class__.__name__} - {e}")
         description = None
     if not description:
-        return _binary_read_guidance(label, media_type, "Media transcription failed.")
-    return f"[Media transcription from {label} ({media_type})]:\n{description}"
+        return _binary_read_guidance(
+            label, media_type, tr("tool_media_transcription_failed")
+        )
+    return tr(
+        "tool_media_transcription_from_p0_p1_p2",
+        p0=label,
+        p1=media_type,
+        p2=description,
+    )
 
 
 def _media_tool_return(
@@ -404,16 +421,21 @@ def _media_tool_return(
     if not _run_model_accepts_media(ctx, media_type):
         return ToolReturn(
             return_value=(
-                f"{label} contains binary content ({media_type}). The current model "
-                f"cannot inspect this media."
+                tr(
+                    "tool_p0_contains_binary_content_p1_the_current_model_cannot_inspect_this_media",
+                    p0=label,
+                    p1=media_type,
+                )
             )
         )
     if data is None:
         return ToolReturn(
-            return_value=f"{label} is {media_type}, but its bytes could not be read."
+            return_value=tr(
+                "tool_p0_is_p1_but_its_bytes_could_not_be_read", p0=label, p1=media_type
+            )
         )
     kind = "Image" if media_type.startswith("image/") else "Media"
-    text = f"[{kind} from {label} ({media_type})]"
+    text = tr("tool_p0_from_p1_p2", p0=kind, p1=label, p2=media_type)
     return ToolReturn(
         return_value=text,
         content=[text, BinaryContent(data=data, media_type=media_type)],
@@ -478,7 +500,7 @@ async def _native_media_return(
             data=data,
         )
         if caption:
-            result += f"\n[Caption]: {caption}"
+            result += tr("tool_caption_p0_2", p0=caption)
         return result
     if not _run_model_accepts_media(ctx, media_type):
         return _media_tool_return(ctx, label=label, media_type=media_type, data=None)
@@ -486,9 +508,11 @@ async def _native_media_return(
         data = await _download_tg_bytes(ctx.deps.client, message, what)
     result = _media_tool_return(ctx, label=label, media_type=media_type, data=data)
     if caption and result.content:
-        result.return_value = f"{result.return_value}\n[Caption]: {caption}"
+        result.return_value = tr(
+            "tool_p0_caption_p1", p0=result.return_value, p1=caption
+        )
         result.content = [
-            f"{result.content[0]}\n[Caption]: {caption}",
+            tr("tool_p0_caption_p1", p0=result.content[0], p1=caption),
             *result.content[1:],
         ]
     return result

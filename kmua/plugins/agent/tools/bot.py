@@ -11,6 +11,7 @@ from pyrogram.raw.types.input_message_id import InputMessageID as _RawInputMessa
 from kmua import common, database
 from kmua.common.tgmethod import HistoryMessage
 from kmua.logger import logger
+from kmua.plugins.agent.localization import tr
 from kmua.services import btts
 
 from .. import datatype
@@ -65,12 +66,12 @@ async def get_history_messages(
     user_id = ctx.deps.user_id
 
     if chat_id == user_id:
-        return "This tool is not available in private chats."
+        return tr("tool_this_tool_is_not_available_in_private_chats")
 
     if count is None:
         count = 50
     if count <= 0 or count > 200:
-        raise ModelRetry("Count must be between 1 and 200, inclusive.")
+        raise ModelRetry(tr("tool_count_must_be_between_1_and_200_inclusive"))
 
     selectors = [
         s for s in (before, after, from_id, to_id, reply_chain_of) if s is not None
@@ -80,10 +81,7 @@ async def get_history_messages(
         or (from_id is None) != (to_id is None)
         or (reply_chain_of is not None and len(selectors) != 1)
     ):
-        return (
-            "Error: pick exactly one selector: before=<id>, after=<id>, "
-            "from_id=<a>&to_id=<b>, or reply_chain_of=<id>."
-        )
+        return tr("history_selector")
 
     if before is not None:
         start_id = max(1, before - count)
@@ -93,28 +91,28 @@ async def get_history_messages(
         end_id = after + 1 + count
     elif from_id is not None and to_id is not None:
         if to_id < from_id:
-            return "Error: to_id must be >= from_id."
+            return tr("history_range_order")
         if to_id - from_id + 1 > 200:
-            return "Error: the requested range exceeds 200 messages; use a narrower from_id..to_id."
+            return tr("history_range_limit")
         start_id, end_id = from_id, to_id + 1
     elif reply_chain_of is not None:
         chain_ids = await _fetch_reply_chain_ids(ctx, reply_chain_of)
         if chain_ids is None:
-            return "Error: message not found or has no reply chain."
+            return tr("history_reply_missing")
         msgs = await _fetch_history_messages(chat_id, chain_ids)
         if not msgs:
-            return "No messages found in the specified range."
+            return tr("history_empty")
         return await _format_history(msgs)
     else:
         current_id = ctx.deps.message.id
         if current_id is None:
-            return "Error: cannot fetch latest messages; the current message ID is unknown."
+            return tr("history_current_unknown")
         start_id = max(1, current_id - count + 1)
         end_id = current_id + 1
 
     msgs = await _fetch_history_messages(chat_id, list(range(start_id, end_id)))
     if not msgs:
-        return "No messages found in the specified range."
+        return tr("history_empty")
     return await _format_history(msgs)
 
 
@@ -181,7 +179,7 @@ async def _fetch_history_messages(
 
 
 async def _format_history(msgs: list[HistoryMessage]) -> str:
-    lines = [f"Chat History ({len(msgs)} messages):\n"]
+    lines = [tr("tool_chat_history_p0_messages", p0=len(msgs))]
 
     for msg in msgs:
         if not msg.user_id:
@@ -220,9 +218,9 @@ async def search_messages(
     """
 
     if not btts.btts_client:
-        return "Feature is not available."
+        return tr("tool_feature_is_not_available")
     if count <= 0 or count > 200:
-        raise ModelRetry("Count must be between 1 and 200, inclusive.")
+        raise ModelRetry(tr("tool_count_must_be_between_1_and_200_inclusive"))
     chat_id = int(str(ctx.deps.chat_id).removeprefix("-100"))
     resp, err = await btts.btts_client.search(
         query=query,
@@ -233,12 +231,14 @@ async def search_messages(
     )
     if err != "" or resp is None:
         logger.error(f"Error searching messages: {err}")
-        return "Error searching messages"
+        return tr("tool_error_searching_messages")
     results = resp.results
     if not results.hits:
-        return "No messages found matching the query."
+        return tr("query_messages_empty")
 
-    lines = [f"🔍 Search Results for '{query}' ({len(results.hits)} matches):\n"]
+    lines = [
+        tr("tool_search_results_for_p0_p1_matches", p0=query, p1=len(results.hits))
+    ]
 
     for i, hit in enumerate(results.hits, 1):
         if hit.chat_id != chat_id:
@@ -262,6 +262,6 @@ async def search_messages(
         lines.append("")
 
     if len(lines) == 1:  # Only header, no results
-        return "No messages found matching the query."
+        return tr("query_messages_empty")
 
     return "\n".join(lines)

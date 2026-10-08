@@ -47,7 +47,7 @@ const affection = computed<DefinitionItem[]>(() => {
   if (data.min_bucket !== undefined && data.max_bucket !== undefined) {
     items.push({
       label: t("admin.affectionRange"),
-      value: `${data.min_bucket} … ${data.max_bucket}`,
+      value: `${formatNumber(data.min_bucket)} … ${formatNumber(data.max_bucket)}`,
       mono: true,
     });
   }
@@ -70,7 +70,9 @@ const runtime = computed<DefinitionItem[]>(() => {
   const data = stats.data.value?.runtime;
   if (!data) return [];
   const ms = (value: number | null): string =>
-    value === null ? t("app.none") : `${value.toFixed(1)} ms`;
+    value === null
+      ? t("app.none")
+      : `${formatNumber(value, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ms`;
   return [
     { label: t("admin.uptime"), value: `${formatNumber(data.uptime_seconds)} s` },
     {

@@ -263,14 +263,16 @@ function open(runId: number): void {
     <TextField
       v-model="form.draft.value.since"
       :label="t('agentRuns.filters.since')"
-      placeholder="2026-09-01 00:00"
+      :placeholder="t('agentRuns.filters.sincePlaceholder')"
+      :hint="t('agentRuns.filters.dateFormatHint')"
       :maxlength="20"
       :changed="form.changedFields.value.includes('since')"
     />
     <TextField
       v-model="form.draft.value.until"
       :label="t('agentRuns.filters.until')"
-      placeholder="2026-09-30"
+      :placeholder="t('agentRuns.filters.untilPlaceholder')"
+      :hint="t('agentRuns.filters.dateFormatHint')"
       :maxlength="20"
       :changed="form.changedFields.value.includes('until')"
     />

@@ -32,7 +32,7 @@ import { useNotice } from "@/composables/useNotice";
 import { t, tOptional } from "@/i18n";
 import { tError } from "@/i18n";
 import { haptics } from "@/telegram";
-import { localeName } from "@/utils/locale";
+import { languageOptions } from "@/utils/locale";
 import { TOGGLES_WITH_HINTS, TOGGLE_GROUPS, type ChatToggleKey } from "./config-layout";
 
 const props = defineProps<{ chatId: number }>();
@@ -68,7 +68,7 @@ const EMPTY_CONFIG: ChatConfigInput = {
   verify_max_attempts: 3,
   verify_timeout_seconds: 120,
   verify_fail_action: "kick",
-  lang: "zh-CN",
+  lang: "vi",
 };
 
 const form = useDirtyState<ChatConfigInput & Record<string, unknown>>({ ...EMPTY_CONFIG });
@@ -86,31 +86,26 @@ const chat = useAsyncData(async (signal) => {
 
 const locales = useAsyncData(async (signal) => (await systemInfo(signal)).available_locales);
 
-const localeOptions = computed(() =>
-  (locales.data.value ?? [form.draft.value.lang]).map((value) => ({
-    value,
-    text: localeName(value),
-  })),
-);
+const localeOptions = computed(() => languageOptions(locales.data.value, form.draft.value.lang));
 
-const strategyOptions = [
+const strategyOptions = computed(() => [
   { value: "all", text: t("verify.strategy.all") },
   { value: "first_message", text: t("verify.strategy.first_message") },
-];
+]);
 
-const methodOptions = [
+const methodOptions = computed(() => [
   { value: "math_easy", text: t("verify.method.math_easy") },
   { value: "math_hard", text: t("verify.method.math_hard") },
   { value: "emoji", text: t("verify.method.emoji") },
   { value: "sticker", text: t("verify.method.sticker") },
   { value: "custom_qa", text: t("verify.method.custom_qa") },
-];
+]);
 
-const failActionOptions = [
+const failActionOptions = computed(() => [
   { value: "kick", text: t("verify.failAction.kick") },
   { value: "ban", text: t("verify.failAction.ban") },
   { value: "unrestrict", text: t("verify.failAction.unrestrict") },
-];
+]);
 
 /** The greeting is nullable in the API but a textarea needs a string. */
 const greeting = computed({

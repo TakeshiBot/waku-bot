@@ -11,6 +11,7 @@ from pydantic_ai import RunContext
 from kmua.common.safe_http import UnsafeUrlError, safe_download_bytes
 from kmua.config import app_config
 from kmua.logger import logger
+from kmua.plugins.agent.localization import tr
 
 from .. import code_repo, datatype, workspace
 from .media import _download_chat_media, _download_tme_media, _tme_message_parts
@@ -29,7 +30,7 @@ def _safe_sandbox_path(rel: str) -> Path:
     """Resolve a sandbox-relative path, rejecting escapes."""
     p = Path(rel.lstrip("/"))
     if p.is_absolute() or ".." in p.parts:
-        raise ValueError(f"Path escapes the sandbox: {rel}")
+        raise ValueError(tr("tool_path_escapes_the_sandbox_p0", p0=rel))
     return p
 
 
@@ -49,7 +50,7 @@ def _sandbox_target(session_key: str, rel: str) -> Path:
     for part in rel_path.parts:
         probe = probe / part
         if probe.is_symlink():
-            raise ValueError(f"sandbox:// paths must not use symlinks: {rel}")
+            raise ValueError(tr("tool_sandbox_paths_must_not_use_symlinks_p0", p0=rel))
     return root / rel_path
 
 
@@ -67,7 +68,7 @@ async def read_bytes(path: str, ctx: RunContext[datatype.ContextDeps]) -> bytes:
     if protocol == "kmua://":
         agent = await code_repo.get_code_agentfs()
         if agent is None:
-            raise ValueError("Code repository not initialized")
+            raise ValueError(tr("tool_code_repository_not_initialized"))
         raw = await agent.fs.read_file(rest, encoding=None)
         if isinstance(raw, str):
             raw = raw.encode("utf-8")
@@ -86,8 +87,8 @@ async def read_bytes(path: str, ctx: RunContext[datatype.ContextDeps]) -> bytes:
                 rest, max_bytes=app_config.agent_download_max_bytes
             )
         except (UnsafeUrlError, Exception) as e:
-            raise ValueError(f"Download failed: {e}") from None
-    raise ValueError(f"Target {path} is not readable.")
+            raise ValueError(tr("tool_download_failed_p0", p0=e)) from None
+    raise ValueError(tr("tool_target_p0_is_not_readable", p0=path))
 
 
 async def _write_persisted(
@@ -101,14 +102,12 @@ async def _write_persisted(
     """
     name = name.lstrip("/")
     if not name or "/" in name or len(name) > 256:
-        return "Error: name must be a plain name of 1-256 characters."
+        return tr("filename_invalid")
     data = content.encode("utf-8") if isinstance(content, str) else content
     if not data:
-        return "Error: The content is empty."
+        return tr("content_empty")
     if len(data) > workspace.MAX_WORKSPACE_FILE_SIZE:
-        return (
-            f"Error: File exceeds the {workspace.MAX_WORKSPACE_FILE_SIZE} byte limit."
-        )
+        return tr("file_size_limit", p0=workspace.MAX_WORKSPACE_FILE_SIZE)
     client = ctx.deps.client
 
     try:
@@ -120,9 +119,9 @@ async def _write_persisted(
         )
     except Exception as e:
         logger.error(f"persist write failed for {name!r}: {e}")
-        return "Error: Failed to send the file to this chat."
-    assert sent is not None, "send_document returned None"
-    assert sent.document is not None, "sent message has no document"
+        return tr("file_send_failed")
+    assert sent is not None, tr("tool_send_document_returned_none")
+    assert sent.document is not None, tr("tool_sent_message_has_no_document")
     doc = sent.document
     from kmua.database import persistent_file as pf_db
 
@@ -146,11 +145,11 @@ async def _write_persisted(
             await client.delete_messages(ctx.deps.chat_id, sent.id)
         except Exception:
             pass
-        return "Error: Failed to record the file; the sent document was removed."
+        return tr("file_record_failed")
     logger.info(
         f"agent persisted file {name!r} to chat {ctx.deps.chat_id} (message {sent.id})"
     )
-    return f"Persisted {name} for this chat (sent as a document)."
+    return tr("file_persisted", p0=name)
 
 
 async def _download_persisted(
@@ -162,7 +161,7 @@ async def _download_persisted(
     name = name.lstrip("/")
     record = await pf_db.get_persistent_file(ctx.deps.chat_id, name)
     if record is None:
-        raise ValueError(f"No persisted file named {name!r} in this chat.")
+        raise ValueError(tr("persisted_file_missing", p0=repr(name)))
     from pyrogram.file_id import FileId
 
     timeout = app_config.agent_download_timeout or None
@@ -170,7 +169,7 @@ async def _download_persisted(
     async def _collect():
         file_id = FileId.decode(record.file_id)
         if file_id is None:
-            raise ValueError("The stored file id is invalid.")
+            raise ValueError(tr("tool_the_stored_file_id_is_invalid"))
         chunks = [chunk async for chunk in ctx.deps.client.get_file(file_id)]
         return b"".join(chunks)
 

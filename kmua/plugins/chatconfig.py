@@ -12,7 +12,7 @@ class ChatConfigMarkup:
     def __init__(
         self,
         chat_config: ChatConfig,
-        lang: str = "zh-CN",
+        lang: str = "",
         chat_id: int | None = None,
     ):
         self.chat_config = chat_config

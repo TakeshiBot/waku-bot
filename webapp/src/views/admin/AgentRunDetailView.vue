@@ -125,8 +125,10 @@ function isMessageEvent(row: (typeof events.value)[number]): boolean {
 function eventHint(row: (typeof events.value)[number]): string {
   const parts: string[] = [];
   if (row.name) parts.push(row.name);
-  if (row.payload_chars !== null) parts.push(`${formatNumber(row.payload_chars)} chars`);
-  if (row.status !== "ok") parts.push(row.status);
+  if (row.payload_chars !== null) {
+    parts.push(t("agentRuns.detail.charCount", { count: formatNumber(row.payload_chars) }));
+  }
+  if (row.status !== "ok") parts.push(t(`agentRuns.status.${row.status}`));
   return parts.join(" · ");
 }
 
@@ -137,7 +139,14 @@ function summaryItems(data: NonNullable<typeof run.value>): DefinitionItem[] {
     { label: t("agentRuns.columns.status"), value: t(`agentRuns.status.${data.status}`) },
   ];
   if (data.reject_reason) {
-    rows.push({ label: t("agentRuns.reject.label"), value: data.reject_reason, mono: true });
+    rows.push({
+      label: t("agentRuns.reject.label"),
+      value:
+        data.reject_reason === "quota" || data.reject_reason === "whitelist"
+          ? t(`agentRuns.reject.${data.reject_reason}`)
+          : data.reject_reason,
+      mono: true,
+    });
   }
   if (data.session_id) {
     rows.push({ label: t("agentRuns.columns.sessionId"), value: data.session_id, mono: true });

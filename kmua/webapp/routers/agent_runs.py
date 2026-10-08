@@ -25,6 +25,7 @@ from fastapi import APIRouter, Path, Query
 from kmua.database import agent_trace as store
 from kmua.webapp.deps import RequireOwner
 from kmua.webapp.errors import ErrorCode, not_found
+from kmua.webapp.i18n import api_text
 from kmua.webapp.schemas import (
     AgentRunDetailOut,
     AgentRunEventDetailOut,
@@ -125,7 +126,7 @@ async def list_agent_runs(
 async def read_agent_run(user: RequireOwner, run_id: int) -> AgentRunDetailOut:
     run = await store.get_run(run_id)
     if run is None:
-        raise not_found(ErrorCode.NOT_FOUND, "Agent run not found")
+        raise not_found(ErrorCode.NOT_FOUND, api_text("run_missing"))
     events = await store.list_run_events(run_id)
     return agent_run_detail_out(run, events)
 
@@ -139,5 +140,5 @@ async def read_agent_run_event(
     """One step in full: the payload as it is stored."""
     event = await store.get_run_event(run_id, seq)
     if event is None:
-        raise not_found(ErrorCode.NOT_FOUND, "Agent run event not found")
+        raise not_found(ErrorCode.NOT_FOUND, api_text("run_event_missing"))
     return agent_run_event_detail_out(event)

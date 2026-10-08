@@ -39,6 +39,7 @@ from pydantic_ai_harness.compaction import (
 from kmua.config import app_config
 from kmua.logger import logger
 from kmua.plugins.agent import trace
+from kmua.plugins.agent.localization import configured_prompt, tr
 
 
 def find_deferred_tool_call_index(
@@ -196,18 +197,9 @@ class InPlaceSummarizingCompaction(SummarizingCompaction):
     ) -> str:
         if self.agent is None:
             raise RuntimeError("InPlaceSummarizingCompaction requires the main agent")
-        instruction = app_config.agent_compaction_summary_instruction
+        instruction = configured_prompt("agent_compaction_summary_instruction")
         if previous_summary is not None:
-            instruction = (
-                f"{instruction}\n\n"
-                "Incorporate the new messages above into the existing summary "
-                "in <previous-summary> tags: MUST preserve all still-true "
-                "information, MUST add new progress, decisions, and context, "
-                "MUST move completed items out of In Progress, MUST update "
-                "Next Steps, and MAY remove anything no longer relevant. "
-                "Keep the same section format.\n\n"
-                f"<previous-summary>\n{previous_summary}\n</previous-summary>"
-            )
+            instruction = tr("compaction_merge", p0=instruction, p1=previous_summary)
         # The summary run shares the conversation's usage object (`iter(usage=...)`
         # accumulates into it), so its own tokens are the difference around the call.
         usage_before = _usage_snapshot(ctx.usage)

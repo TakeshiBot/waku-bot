@@ -6,11 +6,14 @@
  * "1000.0k", which reads as both the wrong magnitude and the wrong unit.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { setLocale } from "@/i18n";
 
 import { formatTokens } from "./format";
 
 describe("formatTokens", () => {
+  beforeEach(() => setLocale("en"));
+  afterEach(() => setLocale("vi"));
   it("keeps small counts exact", () => {
     expect(formatTokens(0)).toBe("0");
     expect(formatTokens(999)).toBe("999");
@@ -35,5 +38,12 @@ describe("formatTokens", () => {
   it("keeps the sign on a debt balance", () => {
     expect(formatTokens(-1_500)).toBe("-1.5k");
     expect(formatTokens(-999_999)).toBe("-1.0M");
+  });
+
+  it("formats compact decimal counts in Vietnamese", () => {
+    setLocale("vi-VN");
+    expect(formatTokens(1_500)).toBe("1,5k");
+    expect(formatTokens(-1_500)).toBe("-1,5k");
+    expect(formatTokens(999_950)).toBe("1,0M");
   });
 });

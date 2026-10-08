@@ -11,6 +11,7 @@ from kmua.common import memttlcache
 from kmua.common.utils import is_explicit_reply
 from kmua.config import app_config
 from kmua.logger import logger
+from kmua.plugins.agent.localization import tr
 from kmua.services import image_gen
 
 from .. import datatype, state
@@ -102,17 +103,17 @@ async def _generate_image(
     if not image_gen.image_gen_client:
         return ToolReturn(
             return_value=ImageOperationResult(
-                success=False, message="Image generation service is not configured."
+                success=False, message=tr("image_generation_unconfigured")
             )
         )
     gen_client = image_gen.image_gen_client
 
     if not prompt or not prompt.strip():
-        raise ModelRetry("A non-empty prompt is required to generate an image.")
+        raise ModelRetry(tr("tool_a_non_empty_prompt_is_required_to_generate_an_image"))
     if ctx.deps.message is None or ctx.deps.chat_id is None:
         return ToolReturn(
             return_value=ImageOperationResult(
-                success=False, message="Current message context is unavailable."
+                success=False, message=tr("current_context_unavailable")
             )
         )
     await ctx.deps.client.send_chat_action(
@@ -121,7 +122,7 @@ async def _generate_image(
     )
     result = await gen_client.generate(prompt=prompt, size=size)
     if not result.success or not result.data:
-        raise ModelRetry(f"Image generation failed: {result.error}")
+        raise ModelRetry(tr("tool_image_generation_failed_p0", p0=result.error))
     try:
         await ctx.deps.client.send_photo(
             chat_id=ctx.deps.chat_id,
@@ -135,13 +136,13 @@ async def _generate_image(
         return ToolReturn(
             return_value=ImageOperationResult(
                 success=False,
-                message=f"Image was generated but could not be sent: {e.__class__.__name__}",
+                message=tr("generated_image_send_failed", p0=e.__class__.__name__),
             )
         )
     return ToolReturn(
-        return_value="Image generated successfully.",
+        return_value=tr("tool_image_generated_successfully"),
         content=[
-            f"Generated image based on prompt: {prompt!r}",
+            tr("tool_generated_image_based_on_prompt_p0", p0=repr(prompt)),
             BinaryContent(data=result.data, media_type="image/png"),
         ],
     )
@@ -162,16 +163,16 @@ async def _edit_image(
     if not image_gen.image_edit_client:
         return ToolReturn(
             return_value=ImageOperationResult(
-                success=False, message="Image editing service is not configured."
+                success=False, message=tr("image_edit_unconfigured")
             )
         )
     edit_client = image_gen.image_edit_client
     if not prompt or not prompt.strip():
-        raise ModelRetry("A non-empty prompt is required to edit an image.")
+        raise ModelRetry(tr("tool_a_non_empty_prompt_is_required_to_edit_an_image"))
     if ctx.deps.message is None or ctx.deps.chat_id is None:
         return ToolReturn(
             return_value=ImageOperationResult(
-                success=False, message="Current message context is unavailable."
+                success=False, message=tr("current_context_unavailable")
             )
         )
     image_bytes: bytes | None = None
@@ -214,7 +215,7 @@ async def _edit_image(
             return ToolReturn(
                 return_value=ImageOperationResult(
                     success=False,
-                    message="Failed to download source image (timeout or error).",
+                    message=tr("source_image_download_failed"),
                 )
             )
         image_bytes = file_obj.getvalue()
@@ -224,11 +225,7 @@ async def _edit_image(
             return ToolReturn(
                 return_value=ImageOperationResult(
                     success=False,
-                    message=(
-                        "No image found in the current message, the message being "
-                        "replied to, or the recent conversation history. "
-                        "Please send an image to edit."
-                    ),
+                    message=(tr("image_not_found")),
                 )
             )
         image_bytes, mime_type = history_image
@@ -248,7 +245,7 @@ async def _edit_image(
         return ToolReturn(
             return_value=ImageOperationResult(
                 success=False,
-                message=f"Image editing failed: {result.error}",
+                message=tr("image_edit_failed", p0=result.error),
             )
         )
     try:
@@ -264,7 +261,7 @@ async def _edit_image(
         return ToolReturn(
             return_value=ImageOperationResult(
                 success=False,
-                message=f"Image was edited but could not be sent: {e.__class__.__name__}",
+                message=tr("edited_image_send_failed", p0=e.__class__.__name__),
             )
         )
     if sent and sent.photo:
@@ -274,9 +271,11 @@ async def _edit_image(
             ttl=app_config.cachettl_agent_history,
         )
     return ToolReturn(
-        return_value=f"Image edited successfully based on prompt: {prompt!r}",
+        return_value=tr(
+            "tool_image_edited_successfully_based_on_prompt_p0", p0=repr(prompt)
+        ),
         content=[
-            f"Edited image based on prompt: {prompt!r}",
+            tr("edited_image_caption", p0=repr(prompt)),
             BinaryContent(data=result.data, media_type="image/png"),
         ],
     )

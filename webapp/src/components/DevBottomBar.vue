@@ -21,18 +21,20 @@ import {
   secondaryButtonHandler,
   secondaryButtonState,
 } from "@/telegram/button-mirror";
+import { t } from "@/i18n";
 </script>
 
 <template>
   <div class="border-line bg-surface fixed inset-x-0 bottom-0 z-50 border-t" data-dev-bottom-bar>
     <p class="text-hint px-related pt-1 text-center font-mono text-[11px]">
-      dev · Telegram 原生按钮模拟
+      {{ t("dev.nativeButtons") }}
     </p>
 
     <div class="flex items-center gap-tight p-tight">
       <button
         v-if="backButtonVisible"
         type="button"
+        :aria-label="t('app.back')"
         class="border-line shrink-0 border px-3 py-2 text-sub"
         @click="backButtonHandler?.()"
       >
@@ -65,7 +67,7 @@ import {
         v-if="!mainButtonState.visible && !secondaryButtonState.visible"
         class="text-hint flex-1 px-2 py-2 text-center text-note"
       >
-        无待保存更改
+        {{ t("dev.noChanges") }}
       </span>
     </div>
   </div>

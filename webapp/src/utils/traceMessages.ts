@@ -9,6 +9,9 @@
  * including the parts this file does not know about.
  */
 
+import { t } from "@/i18n";
+import { formatNumber } from "./format";
+
 /** The fields of a serialized message this renderer reads. */
 interface TraceMessage {
   kind?: unknown;
@@ -56,7 +59,7 @@ function contentText(content: unknown): string {
     if (marker.kind === "binary") {
       const type = typeof marker.media_type === "string" ? marker.media_type : "?";
       const size = typeof marker.size === "number" ? marker.size : 0;
-      return `[media: ${type}, ${size} bytes]`;
+      return t("agentRuns.detail.media", { type, size: formatNumber(size) });
     }
     return stringify(content);
   }

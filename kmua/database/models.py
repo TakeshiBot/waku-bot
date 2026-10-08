@@ -29,7 +29,7 @@ class Base(DeclarativeBase):
 
 @dataclass
 class UserConfig:
-    lang: str = "zh-CN"
+    lang: str = "vi"
     affection: int = 0
     coins: int = 144 * 16
 
@@ -38,7 +38,7 @@ class UserConfig:
         if data is None:
             return cls()
         return cls(
-            lang=data.get("lang", "zh-CN"),
+            lang=data.get("lang", "vi"),
             coins=data.get("coins", 144 * 16),
             affection=data.get("affection", 0),
         )
@@ -79,7 +79,7 @@ class ChatConfig:
     verify_questions: list[dict] = field(
         default_factory=list
     )  # [{"question": str, "options": [str], "answers": [str]}]
-    lang: str = "zh-CN"
+    lang: str = "vi"
 
     @classmethod
     def from_dict(cls, data: dict | None) -> "ChatConfig":
@@ -114,7 +114,7 @@ class ChatConfig:
             verify_timeout_seconds=data.get("verify_timeout_seconds", 120),
             verify_fail_action=data.get("verify_fail_action", "kick"),
             verify_questions=data.get("verify_questions") or [],
-            lang=data.get("lang", "zh-CN"),
+            lang=data.get("lang", "vi"),
         )
 
     def to_dict(self) -> dict:

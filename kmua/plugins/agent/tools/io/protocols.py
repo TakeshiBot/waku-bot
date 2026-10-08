@@ -11,6 +11,7 @@ from pydantic_ai import RunContext
 
 from kmua.config import app_config
 from kmua.logger import logger
+from kmua.plugins.agent.localization import tr
 
 from .. import code_repo, datatype
 
@@ -38,12 +39,7 @@ def _split_target(path: str) -> tuple[str, str]:
             return proto, rest
     if path.startswith(("http://", "https://")):
         return "http", path
-    raise ValueError(
-        f"Unsupported target: {path}. Use kmua:// (codebase), work:// "
-        f"(workspace), persist:// (persisted files), chat:// (current chat: "
-        f"info, history, media), memory:// (memory), web:// (web search) or "
-        f"http(s):// (web; t.me message links return the message content)."
-    )
+    raise ValueError(tr("target_unsupported", p0=path))
 
 
 def _is_group_chat(deps: datatype.ContextDeps) -> bool:
@@ -97,15 +93,15 @@ async def _memory_enabled(ctx: RunContext[datatype.ContextDeps]) -> bool:
 def _require(protocol: str, deps: datatype.ContextDeps) -> str | None:
     """Return an error message when a protocol is disabled, else None."""
     if protocol == "kmua://" and not app_config.agent_code_awareness:
-        return "Error: Codebase access is disabled."
+        return tr("codebase_disabled")
     if protocol == "work://" and not app_config.agent_workspace_enabled:
-        return "Error: Workspace access is disabled."
+        return tr("workspace_disabled")
     if protocol == "http" and not _web_fetch_enabled():
-        return "Error: Web access is disabled."
+        return tr("web_disabled")
     if protocol == "web://" and not _web_search_enabled():
-        return "Error: Web search is disabled."
+        return tr("websearch_disabled")
     if protocol == "chat://" and not _is_group_chat(deps):
-        return "Error: chat:// is only available in group chats."
+        return tr("chat_protocol_group_only")
     if protocol == "memory://" and not deps.powermemory:
-        return "Error: Group memory is not available in this chat."
+        return tr("memory_chat_unavailable")
     return None

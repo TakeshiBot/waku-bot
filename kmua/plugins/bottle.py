@@ -52,7 +52,7 @@ async def throw_bottle(client: Client, message: types.Message):
         return
     if message.chat.id is None:
         return
-    lang = "zh-CN"
+    lang = ""
     chat_type = message.chat.type
     if chat_type == enums.ChatType.PRIVATE:
         if message.from_user is None:
@@ -158,7 +158,7 @@ async def pick_bottle(client: Client, message: types.Message):
         return
     if message.chat.id is None:
         return
-    lang = "zh-CN"
+    lang = ""
     chat_type = message.chat.type
     if chat_type == enums.ChatType.PRIVATE:
         if message.from_user is None:
@@ -178,7 +178,7 @@ async def pick_bottle(client: Client, message: types.Message):
     if not user or not user.id:
         return
     if await memttlcache.get(f"{_BOTTLE_BAN_PREFIX}{user.id}"):
-        await message.reply_text(i18n.t("bot.msg.bottle.banned", locale=lang))
+        await message.reply_text(i18n.t("bot.hardcoded.bottle.banned", locale=lang))
         return
     bot_username = client.me.username if client.me else None
     if bot_username is None:
@@ -644,7 +644,10 @@ async def handle_bottle_reply_message(client: Client, message: types.Message):
     else:
         replier = await database.get_user_by_id(user_id)
         replier_name = (
-            replier.full_name if replier else message.from_user.first_name or "神秘人"
+            replier.full_name
+            if replier
+            else message.from_user.first_name
+            or i18n.t("bot.hardcoded.bottle.mysterious", locale=sender_lang)
         )
         if replier and replier.username:
             replier_display = (
@@ -919,27 +922,30 @@ async def ban_sea_pest(client: Client, message: types.Message):
     user = message.from_user
     if not user or not user.id:
         return
+    lang = (await database.get_user_config(user.id)).lang
     db_user = await database.get_user_by_id(user.id)
     if not db_user or not db_user.is_bot_global_admin:
         await message.reply_text(
-            i18n.t("bot.msg.bottle.ban_no_permission", locale="zh-CN")
+            i18n.t("bot.msg.bottle.ban_no_permission", locale=lang)
         )
         return
     if not message.command or len(message.command) < 2:
-        await message.reply_text("用法: /banseapest <user_id> [天数]")
+        await message.reply_text(i18n.t("bot.hardcoded.bottle.ban_usage", locale=lang))
         return
     try:
         target_user_id = int(message.command[1])
         days = int(message.command[2]) if len(message.command) > 2 else 97
     except ValueError:
-        await message.reply_text("用户ID和天数必须是数字")
+        await message.reply_text(
+            i18n.t("bot.hardcoded.bottle.ban_numbers", locale=lang)
+        )
         return
     count = await database.delete_bottles_by_sender(target_user_id)
     await memttlcache.set(
         f"{_BOTTLE_BAN_PREFIX}{target_user_id}", True, ttl=days * 86400
     )
     await message.reply_text(
-        i18n.t("bot.msg.bottle.ban_success", locale="zh-CN").format(
+        i18n.t("bot.msg.bottle.ban_success", locale=lang).format(
             user_id=target_user_id, count=count
         )
     )

@@ -6,7 +6,7 @@ from kmua import i18n
 
 
 def _permission_button(
-    permission: str, enabled: bool, lang: str = "zh-CN"
+    permission: str, enabled: bool, lang: str = ""
 ) -> InlineKeyboardButton:
     return InlineKeyboardButton(
         i18n.t(f"bot.button.title_permissions.{permission}", locale=lang)
@@ -16,7 +16,7 @@ def _permission_button(
 
 
 class TitlePermissionsMarkup:
-    def __init__(self, permissions: dict[str, bool] = {}, lang: str = "zh-CN") -> None:
+    def __init__(self, permissions: dict[str, bool] = {}, lang: str = "") -> None:
         self.lang = lang
         if isinstance(permissions, str):
             permissions = json.loads(permissions)

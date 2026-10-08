@@ -12,6 +12,8 @@
  */
 
 const DISPLAY_NAMES: Record<string, string> = {
+  vi: "Tiếng Việt",
+  "vi-VN": "Tiếng Việt",
   "zh-CN": "简体中文",
   "zh-Hant": "繁體中文",
   en: "English",
@@ -23,5 +25,13 @@ const DISPLAY_NAMES: Record<string, string> = {
 
 /** The name to show for a locale tag. */
 export function localeName(tag: string): string {
+  if (tag.trim().replace(/_/g, "-").split("-")[0]?.toLowerCase() === "vi") return "Tiếng Việt";
   return DISPLAY_NAMES[tag] ?? tag;
+}
+
+/** Keep a saved regional alias selectable even when the server lists canonical tags. */
+export function languageOptions(available: readonly string[] | null, current: string) {
+  const tags = [...(available ?? [])];
+  if (!tags.includes(current)) tags.push(current);
+  return tags.map((value) => ({ value, text: localeName(value) }));
 }
