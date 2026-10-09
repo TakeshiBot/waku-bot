@@ -15,7 +15,11 @@ Thông tin tác giả, giấy phép và nguồn upstream được giữ để gh
 Khi nâng cấp bản đang chạy, sao lưu `settings.toml`, cơ sở dữ liệu, file phiên
 Telegram và các thư mục `data/`, `logs/` trước khi thay container. Đối chiếu
 đường dẫn database và tên phiên trong cấu hình với dữ liệu có sẵn để tiếp tục
-sử dụng đúng dữ liệu của bản cũ. Dừng project Compose cũ bằng
+sử dụng đúng dữ liệu của bản cũ. Bản mẫu mới dùng `data/waku.db` và tên phiên
+`waku`. Nếu đã có database/phiên mang tên cũ, giữ các giá trị cũ trong cấu hình
+riêng để tiếp tục dùng dữ liệu đó. `settings.toml` và các file env được Git bỏ qua;
+repository chỉ chứa cấu hình mẫu `settings.ex.toml` không có token/API key riêng.
+Dừng project Compose cũ bằng
 `docker compose down --remove-orphans` trước khi chạy bản mới; xem
 [hướng dẫn nâng cấp](self-host.md).
 

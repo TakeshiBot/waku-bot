@@ -14,5 +14,18 @@ logs/
 webapp/node_modules/
 webapp/dist/
 kmua/webapp/dist/
-# Local browser development credentials and signed test launch data must not ship.
-webapp/.env.local
+# Local credentials and signed test launch data must not ship in images.
+.env
+.env.*
+*.env
+*.env.*
+**/.env
+**/.env.*
+**/*.env
+**/*.env.*
+.envrc
+**/.envrc*
+*.session
+*.session-*
+**/*.session
+**/*.session-*

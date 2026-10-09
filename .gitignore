@@ -5,7 +5,11 @@ tmp/
 logs/
 .idea
 .vscode
-settings.dev*
+# Local runtime settings. Only sanitized examples belong in the repository.
+settings*.toml
+!settings.ex.toml
+!settings.example.toml
+!settings.sample.toml
 data/**
 .secret*
 pgload/
@@ -24,8 +28,27 @@ webapp/dist/
 webapp/.vite/
 webapp/*.tsbuildinfo
 kmua/webapp/dist/
-# Holds a signed initData payload generated from the bot token for local dev.
-webapp/.env.local
+# Environment files can contain API keys, bot tokens and signed initData.
+.env
+.env.*
+*.env
+*.env.*
+.envrc
+.envrc.*
+env/
+# Keep sanitized environment templates available for fresh checkouts.
+!.env.example
+!.env.sample
+!.env.template
+!.env.dist
+!*.env.example
+!*.env.sample
+!*.env.template
+!*.env.dist
+!.envrc.example
+# Telegram session files contain authentication data.
+*.session
+*.session-*
 
 # Working notes: design plans, local dev scratch. Not user documentation, so they
 # stay out of the repo and out of the docs site.

@@ -44,13 +44,13 @@ class _AppConfig(pydantic.BaseModel):
     # base config
     token: str
     owners: list[int]
-    db_url: str = "sqlite+aiosqlite:///./data/kmua.db"
+    db_url: str = "sqlite+aiosqlite:///./data/waku.db"
     # APScheduler job store database URL (sync)
     # If not set, uses db_url with async driver replaced by sync driver
     # Allows separating job storage from main database
     jobstore_db_url: str | None = None
     pg_pgroonga: bool = False
-    session_name: str = "kmua"
+    session_name: str = "waku"
     api_id: int = 1025907
     api_hash: str = "452b0359b988148995f22ff0f4229750"
     use_ipv6: bool = False

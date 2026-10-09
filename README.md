@@ -23,7 +23,15 @@ hãy đọc lịch sử commit và sao lưu cấu hình, cơ sở dữ liệu, d
 
 ## Chạy bot
 
-Điền `token` và `owners` trong [settings.toml](settings.toml), rồi chạy từ thư mục dự án:
+Tạo cấu hình riêng từ [settings.ex.toml](settings.ex.toml):
+
+```bash
+cp settings.ex.toml settings.toml
+```
+
+Điền `token` và `owners` trong `settings.toml`, rồi chạy từ thư mục dự án.
+File cấu hình riêng và các file env được Git bỏ qua; chỉ đưa các bản mẫu đã loại
+bỏ thông tin riêng lên repository.
 
 ```bash
 docker compose up -d --build

@@ -173,7 +173,7 @@ def test_config_prompt_defaults_follow_language_and_preserve_custom(lang):
 def test_shipped_settings_and_dev_payload_default_to_vi():
     import tomllib
 
-    settings = tomllib.loads((ROOT / "settings.toml").read_text(encoding="utf-8"))
+    settings = tomllib.loads((ROOT / "settings.ex.toml").read_text(encoding="utf-8"))
     assert settings["lang"] == "vi"
     tree = ast.parse((ROOT / "scripts/dev_init_data.py").read_text(encoding="utf-8"))
     defaults = [

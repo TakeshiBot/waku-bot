@@ -13,7 +13,8 @@ git clone https://github.com/TakeshiBot/waku-bot.git
 cd waku-bot
 ```
 
-Sửa `settings.toml`: điền token của bot vào `token` và ID Telegram của quản trị
+Tạo cấu hình riêng bằng `cp settings.ex.toml settings.toml`, rồi sửa
+`settings.toml`: điền token của bot vào `token` và ID Telegram của quản trị
 viên vào danh sách `owners`. Các tùy chọn AI, RSS và Mini App có thể cấu hình
 theo nhu cầu.
 
@@ -59,7 +60,8 @@ cd waku-bot
 uv sync --frozen
 ```
 
-Sửa `settings.toml` như hướng dẫn ở trên, rồi chạy:
+Tạo `settings.toml` từ `settings.ex.toml` nếu chưa có, điền cấu hình như hướng dẫn
+ở trên, rồi chạy:
 
 ```bash
 uv run --no-sync python -m kmua
