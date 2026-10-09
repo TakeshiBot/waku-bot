@@ -29,7 +29,7 @@ async def handle_manomeme(
     meme_type = datas[0]
     match meme_type:
         case "anan":
-            # anan 表情 文本
+            # anan face text.
             if len(datas) < 3:
                 await query.answer(
                     results=[utils.result_anan_tips(lang)],
@@ -73,8 +73,8 @@ async def handle_manomeme(
             )
             return
         case "trial":
-            # trial 角色 (statement text)...
-            # 可以用中文或英文中括号
+            # trial character (statement text)...
+            # Both full-width and ASCII square brackets are supported.
             if len(datas) < 2:
                 await query.answer(
                     results=[

@@ -38,7 +38,7 @@ function syncDocumentLocale(): void {
 /**
  * Point the UI at a locale.
  *
- * kmua ships locales the panel does not (Martian, zh-Hant and friends), so an
+ * waku ships locales the panel does not (Martian, zh-Hant and friends), so an
  * unknown value falls back rather than emptying the interface. `zh-Hant` is mapped
  * to `zh-CN` because it is far closer than English.
  */

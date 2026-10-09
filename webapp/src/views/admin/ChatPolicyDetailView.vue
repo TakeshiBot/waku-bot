@@ -84,10 +84,10 @@ const dailyDraft = ref(0);
 const creditsDraft = ref(0);
 type QuotaField = "agent_quota_daily_tokens" | "agent_credits";
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
-/** 待提交的字段 → 值; 两个输入框各改一次都要提交, 所以按字段收。 */
+/** Queued field/value pairs; retain changes from both input boxes by field. */
 const queued = new Map<QuotaField, number>();
 
-/** 数字字段防抖提交: NumberField 每次按键都会发 update, 直接写会把 "123" 打成三次 PUT。 */
+/** Debounce numeric fields: NumberField updates per keystroke, so typing "123" should not send three PUTs. */
 function queueSave(field: QuotaField, value: number): void {
   if (field === "agent_quota_daily_tokens") dailyDraft.value = value;
   else creditsDraft.value = value;
@@ -99,7 +99,7 @@ function queueSave(field: QuotaField, value: number): void {
   }, 800);
 }
 
-/** 提交排队的数字修改; 有别的写在飞就等它落地再来一次。 */
+/** Submit queued numeric changes; wait for any pending write before retrying. */
 async function flushSave(): Promise<void> {
   if (queued.size === 0) return;
   if (pending.value !== null || saving.value) {
@@ -116,7 +116,7 @@ async function flushSave(): Promise<void> {
     await setChatPolicy(props.chatId, Object.fromEntries(writes));
     const data = detail.data.value;
     if (data) {
-      // 用量区块显示的就是这两个值, 不一起更新的话同一屏会自相矛盾。
+      // Update both values together so the usage section stays consistent.
       for (const [field, value] of writes) {
         if (field === "agent_quota_daily_tokens") {
           data.item.policy.agent_quota_daily_tokens = value;
@@ -130,7 +130,7 @@ async function flushSave(): Promise<void> {
   } catch (error) {
     notifyError(isApiError(error) ? tError(error.code) : t("app.loadFailed"));
     haptics.error();
-    detail.reload(); // 写失败时把草稿拉回服务端的值
+    detail.reload(); // Restore the server value after a failed write.
   } finally {
     saving.value = false;
   }
@@ -139,8 +139,8 @@ async function flushSave(): Promise<void> {
 onBeforeUnmount(() => {
   if (saveTimer !== null) clearTimeout(saveTimer);
   saveTimer = null;
-  // 行已经被删掉了, 排队中的数字改动没有可写的地方; 丢掉它也就不会让 flushSave 卡在
-  // pending === "remove" 上把重试定时器一直挂下去。
+  // The row is deleted, so discard queued numeric changes; otherwise flushSave could remain stuck at
+  // pending === "remove" and keep rearming the retry timer.
   if (pending.value === "remove") {
     queued.clear();
     return;
@@ -148,7 +148,7 @@ onBeforeUnmount(() => {
   void flushSave();
 });
 
-// 载入/重载后把草稿对齐到服务端的值。
+// Align the draft with server values after loading or reloading.
 watch(
   () => detail.data.value,
   (data) => {
@@ -235,7 +235,7 @@ async function remove(): Promise<void> {
       </SettingsRow>
     </SettingsSection>
 
-    <!-- 私聊没有群账户, 额度字段后端一律拒绝。 -->
+    <!-- Private chats have no group account; the backend rejects all group quota fields. -->
     <SettingsSection
       v-if="props.chatId < 0"
       :label="t('chatPolicy.quota')"

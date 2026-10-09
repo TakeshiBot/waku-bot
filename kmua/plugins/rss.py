@@ -294,7 +294,7 @@ async def _rss_interval(
 async def _rss_agent_toggle(
     message: _T.Message, lang: str, command: list[str], field: str
 ) -> None:
-    """/rss digest on|off` 与 `/rss broadcast on|off` 的共用实现.
+    """Shared implementation of /rss digest on|off and /rss broadcast on|off.
 
     Reads the current ChatConfig, flips the given field, and writes it back
     (update_chat_config refreshes the memttlcache, so the change takes effect

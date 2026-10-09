@@ -53,9 +53,9 @@ if app_config.db_url.startswith("sqlite"):
 
 
 def _get_jobstore_db_url() -> str:
-    """获取 APScheduler job store 的数据库 URL
+    """Get the APScheduler job store database URL.
 
-    优先使用配置的 jobstore_db_url，否则使用本地 SQLite 文件。
+    Prefer the configured jobstore_db_url; otherwise use a local SQLite file.
 
     The job store is queried with synchronous SQLAlchemy from the event loop
     on every scheduler wakeup. Deriving it from db_url used to put those
@@ -237,7 +237,7 @@ def migrate_db() -> None:
 
 async def manage_quote_text_index() -> None:
     """
-    根据 pg_pgroonga 配置切换 PGroonga 或 pg_trgm 索引。
+    Choose PGroonga or pg_trgm indexes according to pg_pgroonga.
     """
     if not runtime_config.db_is_postgres:
         return
@@ -260,7 +260,7 @@ async def manage_quote_text_index() -> None:
         has_gin_idx = check_gin_idx.scalar() is not None
 
         if app_config.pg_pgroonga:
-            # 使用 PGroonga
+            # Use PGroonga.
             if has_gin_idx:
                 logger.info("Removing pg_trgm index for quotes.text...")
                 await conn.execute(
@@ -269,11 +269,11 @@ async def manage_quote_text_index() -> None:
 
             if not has_pgroonga_idx:
                 logger.info("Creating PGroonga extension and index for quotes.text...")
-                # 创建 PGroonga 扩展
+                # Create the PGroonga extension.
                 await conn.execute(
                     sqlalchemy.text("CREATE EXTENSION IF NOT EXISTS pgroonga")
                 )
-                # 创建 PGroonga 索引
+                # Create the PGroonga index.
                 await conn.execute(
                     sqlalchemy.text(
                         "CREATE INDEX idx_quotes_text_pgroonga ON quotes USING pgroonga (text pgroonga_varchar_full_text_search_ops)"

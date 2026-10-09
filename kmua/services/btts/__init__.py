@@ -67,7 +67,7 @@ class _BTTSClient:
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
-                "User-Agent": "BTTSClient/kmua",
+                "User-Agent": "BTTSClient/waku",
             },
             base_url=self.base_url,
         )

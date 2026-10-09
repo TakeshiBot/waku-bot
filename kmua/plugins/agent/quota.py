@@ -1,18 +1,18 @@
-"""每次 agent 调用的额度, 按 token 用量计费。
+"""Quota for each agent call, billed by token usage.
 
-扣费顺序固定: 发言者免费额度 → 群免费额度 → 发言者余额 → 群余额。
+Fixed billing order: speaker's free tokens, group's free tokens, speaker's credits, group's credits.
 
-**时机**: token 用量只有 run 跑完才知道, 所以入口只做预检 (`can_start`: 任一位付款方还有
-额度就放行), 扣减发生在 run 成功后 (`settle`: 按实际用量依次扣)。一次 run 因此可能花掉超过
-剩余额度的量 —— 超出部分如实记账, 余额扣成负数(欠费), 下一次调用的预检就会拒绝, 直到运维补发。
-代价是"预检通过"不再保证"付得起"; 收益是计量单位与真实成本一致。
+Timing: usage is known only after completion. can_start performs preflight, allowing a run if any payer has
+quota left; settle charges actual usage after success. A run may therefore consume more than
+the remaining quota. Record excess as debt and reject the next preflight until an operator grants credit.
+Preflight approval cannot guarantee full affordability, but accounting now reflects the actual cost.
 
-账户只有一个身份概念 —— 说话的那个人, 和所在的会话。匿名管理与频道身份两者都没有自己的
-账户(`sender_chat` 是频道或者就是本群), 于是它们只能花群账户的额度 —— 群没被分配额度就拒绝,
-这是可控的: 运维在面板给这个群配额度池、余额, 或直接标记豁免。
+Accounts represent the speaker and conversation. Anonymous admins and channel identities have no personal
+account (sender_chat is a channel or the group itself); they must use allocated group quota or be rejected.
+Operators control this in the panel through group allocations, credits or exemption.
 
-只覆盖对话 agent(用户触发的 wake / ask 回调 / follow-up); bot 自己跑起来的辅助 agent 没有
-可计费的发言人, 不在额度内。
+This covers conversational agents (user-triggered wake, ask callbacks and follow-up); bot-initiated helper
+agents have no billable speaker and are outside this quota.
 """
 
 from __future__ import annotations
@@ -35,21 +35,21 @@ from kmua.plugins.agent import state as agent_state
 SCOPE_USER = database.SCOPE_USER
 SCOPE_CHAT = database.SCOPE_CHAT
 
-# 匿名管理/服务账号没有自己的账户(见 kmua/enums.py::ChatID), 消息只记在群账上。
+# Anonymous admins/service accounts have no personal account (see kmua/enums.py::ChatID); charge the group.
 PSEUDO_USER_IDS = frozenset(
     (int(ChatID.ANONYMOUS_ADMIN), int(ChatID.SERVICE_CHAT), int(ChatID.FAKE_CHANNEL))
 )
 
-# 群聊里额度用尽提示的最小间隔, 免得被刷屏; 也是"已用尽"标记的存活时间。
+# Minimum interval between group quota notices, also used as the exhausted-marker TTL.
 _NOTICE_TTL_SECONDS = 60
 
 
 @dataclass(frozen=True)
 class Subject:
-    """一次调用的付款账户组合。
+    """The payer accounts for one call.
 
-    `user_id` 为 None 表示说话的人没有自己的账户(匿名管理、频道身份、服务账号);
-    `chat_id` 在私聊里就是用户本人, 所以 `accounts()` 不会为它单开一个账户。
+    user_id=None means the speaker has no personal account (anonymous admin, channel or service account).
+    In private chats chat_id is the user, so accounts() does not create a separate conversation account.
     """
 
     user_id: int | None
@@ -57,7 +57,7 @@ class Subject:
     in_group: bool
 
     def accounts(self) -> list[tuple[str, int]]:
-        """按扣费顺序排列的账户: 先发言者, 后所在群。"""
+        """Accounts in billing order: speaker first, then the group."""
         accounts: list[tuple[str, int]] = []
         if self.user_id is not None:
             accounts.append((SCOPE_USER, self.user_id))
@@ -67,13 +67,13 @@ class Subject:
 
     @property
     def cache_key(self) -> str:
-        """用尽标记与提示节流用的稳定键。"""
+        """Stable key for exhausted markers and notice throttling."""
         return f"{self.chat_id or 0}:{self.user_id or 0}"
 
 
 @dataclass(frozen=True)
 class AccountState:
-    """一个账户的只读快照, token 单位。"""
+    """A read-only account snapshot measured in tokens."""
 
     scope: str
     scope_id: int
@@ -92,13 +92,13 @@ class AccountState:
 
     @property
     def exhausted(self) -> bool:
-        """欠费的余额(`credits <= 0`)与用完的免费额度都意味着下一次会被拒绝。"""
+        """Nonpositive credits and exhausted free tokens cause the next call to be rejected."""
         return self.free_left == 0 and self.credits <= 0
 
 
 @dataclass(frozen=True)
 class QuotaState:
-    """一次调用的额度快照; 账户顺序与 `Subject.accounts()` 一致。"""
+    """A call's quota snapshot, with account order matching Subject.accounts()."""
 
     accounts: list[AccountState]
     exempt: bool
@@ -119,7 +119,7 @@ class QuotaState:
 
 
 def subject_for_chat(user_id: int | None, chat: pyrogram.types.Chat | None) -> Subject:
-    """从(发言者 id, 会话)构造: 调用方已经知道发言者是谁时用这个。"""
+    """Construct from (speaker ID, conversation) when the caller already knows the speaker."""
     if chat is None or chat.id is None:
         return Subject(user_id=user_id, chat_id=None, in_group=False)
     in_group = chat.type not in (
@@ -130,10 +130,10 @@ def subject_for_chat(user_id: int | None, chat: pyrogram.types.Chat | None) -> S
 
 
 def subject_of(message: pyrogram.types.Message) -> Subject:
-    """从消息推导付款账户。
+    """Derive payer accounts from a message.
 
-    发言者口径跟 `middlewares/before.py` 一致: `sender_chat` 优先 —— 匿名管理与频道
-    消息都走这里, 它们没有个人账户, 于是只记群账。
+    Match middlewares/before.py: sender_chat takes priority for anonymous admins and channel
+    messages, which have no personal account and are recorded only against the group.
     """
     chat = message.chat
     user_id: int | None = None
@@ -145,7 +145,7 @@ def subject_of(message: pyrogram.types.Message) -> Subject:
 
 
 async def _plan(subject: Subject) -> tuple[list[database.ChargeAccount], bool]:
-    """本次调用的付款账户(含各自免费上限, token)与是否豁免。"""
+    """Payer accounts with their free-token limits and the call's exemption status."""
     exempt = False
     accounts: list[database.ChargeAccount] = []
     if subject.user_id is not None:
@@ -174,7 +174,7 @@ async def _plan(subject: Subject) -> tuple[list[database.ChargeAccount], bool]:
 
 
 async def get_state(subject: Subject) -> QuotaState:
-    """完整只读状态(每个账户的用量/额度/余额 + 豁免), 供 /quota 与拒绝提示使用。"""
+    """Full read-only usage/quota/credits and exemption state for /quota and rejection notices."""
     accounts, exempt = await _plan(subject)
     day = database.utc_day()
     states: list[AccountState] = []
@@ -198,14 +198,14 @@ async def get_state(subject: Subject) -> QuotaState:
 
 
 async def can_start(subject: Subject) -> bool:
-    """入口预检: 任一位付款方还有免费额度或正余额就放行。
+    """Preflight permits the call if any payer has free tokens or a positive credit balance.
 
-    不扣任何东西 —— 这一次会花多少要等跑完才知道。所以预检只回答"还付得起吗",
-    真正的把关在下一次: 一旦这次把额度花光(甚至花成欠费), 预检就会开始拒绝。
+    Do not charge during preflight; actual cost is known after completion. This checks current affordability;
+    if this call exhausts quota or incurs debt, subsequent preflight checks reject calls.
 
-    每次都查库而不是缓存"已用尽": 缓存的拒绝会在运维补发额度后继续挡住用户最多一个
-    TTL, 而这里省下的只是每账户一次点查 —— 相对 agent 随后要做的取历史、下载媒体、
-    调模型, 不值一提。刷屏防护由 `notify_exhausted` 的提示节流负责, 它不会掩盖状态。
+    Read the DB every time instead of caching rejection, which could block newly credited users for a full
+    TTL. One lookup per account is cheap compared with fetching history, downloading media and
+    calling the model. notify_exhausted throttles notices without masking account state.
     """
     accounts, exempt = await _plan(subject)
     return exempt or await _has_capacity(accounts)
@@ -215,7 +215,7 @@ async def _has_capacity(accounts: list[database.ChargeAccount]) -> bool:
     day = database.utc_day()
     for account in accounts:
         if account.free_limit is None:
-            # 该账户的免费部分不限额(agent_quota_free_daily_tokens = 0)
+            # This account has unlimited free usage (agent_quota_free_daily_tokens = 0).
             return True
         _, free_used, _, _ = await database.get_usage(
             account.scope, account.scope_id, day
@@ -228,13 +228,13 @@ async def _has_capacity(accounts: list[database.ChargeAccount]) -> bool:
 
 
 async def settle(subject: Subject, usage: RunUsage | None) -> None:
-    """按本次 run 的实际 token 用量结算。
+    """Settle the run's actual token usage.
 
-    用量记到本次调用涉及的每个账户上(含被群池或别人的余额付款的那一次), 面板因此
-    能看到群的真实消耗; 扣减则由 `database.charge_tokens` 按固定顺序完成, 且与记账
-    同属一个事务。
-    豁免只免扣费, 不免统计 —— 不记的话 /quota 与面板就看不到 owner、全局管理员和
-    豁免群实际花掉的 token。
+    Record usage for every account involved, including calls paid by a group pool or another balance, so the panel
+    shows actual group consumption. database.charge_tokens applies deductions in the fixed order within
+    the same transaction as accounting.
+    Exemption skips billing, not usage statistics; /quota and the panel must still show token usage for owners,
+    global administrators and exempt groups.
     """
     accounts, exempt = await _plan(subject)
     day = database.utc_day()
@@ -256,7 +256,7 @@ def _notice_key(subject: Subject) -> str:
 async def notify_exhausted(
     message: pyrogram.types.Message, subject: Subject, state: QuotaState, lang: str
 ) -> None:
-    """告诉用户额度用完了。群聊里同一账号 60 秒最多一条, 私聊每次都提示。"""
+    """Notify exhaustion: at most once per account every 60 seconds in groups, on every call in private chats."""
     if subject.in_group:
         key = _notice_key(subject)
         if await memttlcache.get(key):
@@ -277,10 +277,10 @@ _TOKEN_UNITS: tuple[tuple[int, str], ...] = (
 
 
 def fmt_tokens(value: int) -> str:
-    """把 token 数压成人类可读的短形式; 面板和 bot 文案共用同一套口径。
+    """Format tokens compactly and consistently for panel and bot messages.
 
-    取整到一位小数后再定单位, 所以临界值会进位到更大的单位。不到一千的数字原样
-    显示, 小额额度才看得出自己到底是多少。
+    Round to one decimal before choosing the unit so boundary values roll up. Show numbers below one thousand
+    in full so small quotas remain precise.
     """
     if abs(value) < _TOKEN_UNITS[0][0]:
         return str(value)
@@ -300,7 +300,7 @@ def exhausted_text(state: QuotaState, lang: str) -> str:
 
 
 def status_text(state: QuotaState, lang: str) -> str:
-    """群账户不限额也要列出: 群里的用户只能从这里看到本群还剩多少。"""
+    """Show unlimited group accounts too: this is where members can see the group's remaining quota."""
     lines: list[str] = []
     user = state.user
     if user is not None:

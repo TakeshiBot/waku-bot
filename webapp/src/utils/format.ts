@@ -2,10 +2,19 @@
  * Number, date and value formatting.
  *
  * `Intl` covers everything needed here, so no date library. The locale comes from
- * the panel's own locale state, which follows the user's kmua language setting.
+ * the panel's own locale state, which follows the user's waku language setting.
  */
 
 import { locale } from "@/i18n";
+
+export const BOT_TIME_ZONE = "Asia/Ho_Chi_Minh";
+
+/** Database timestamps without an offset are UTC; never interpret them in the browser zone. */
+function timestampDate(iso: string): Date {
+  const value = iso.trim();
+  const naive = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(value);
+  return new Date(naive ? `${value.replace(" ", "T")}Z` : value);
+}
 
 export function formatNumber(value: number, options: Intl.NumberFormatOptions = {}): string {
   return new Intl.NumberFormat(locale.value, options).format(value);
@@ -19,23 +28,27 @@ export function formatPercent(value: number, maximumFractionDigits = 2): string 
   }).format(value);
 }
 
-/** Format an ISO timestamp as a short local date and time. */
+/** Format an ISO timestamp as a short date and time in the bot's UTC+7 timezone. */
 export function formatDateTime(iso: string): string {
   if (!iso) return "-";
-  const date = new Date(iso);
+  const date = timestampDate(iso);
   if (Number.isNaN(date.getTime())) return "-";
   return new Intl.DateTimeFormat(locale.value, {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone: BOT_TIME_ZONE,
   }).format(date);
 }
 
 /** Format an ISO timestamp as a date only. */
 export function formatDate(iso: string): string {
   if (!iso) return "-";
-  const date = new Date(iso);
+  const date = timestampDate(iso);
   if (Number.isNaN(date.getTime())) return "-";
-  return new Intl.DateTimeFormat(locale.value, { dateStyle: "medium" }).format(date);
+  return new Intl.DateTimeFormat(locale.value, {
+    dateStyle: "medium",
+    timeZone: BOT_TIME_ZONE,
+  }).format(date);
 }
 
 /** Collapse whitespace and cut to length, for list previews. */

@@ -23,10 +23,15 @@ jobs:
     name: Build and Publish Docker Image
     runs-on: ubuntu-latest
     env:
-      TZ: Asia/Shanghai
+      TZ: Asia/Ho_Chi_Minh
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Normalize image repository
+        id: image
+        shell: bash
+        run: echo "repository=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
       # - name: OCI meta
       #   id: meta
@@ -37,7 +42,7 @@ jobs:
       #       type=ref,event=branch
       #       type=sha
       #     labels: |
-      #       org.opencontainers.image.title=kmua-bot
+      #       org.opencontainers.image.title=waku-bot
       #       org.opencontainers.image.description=${{ github.event.head_commit.message }}
 
       - name: Set up Docker Buildx
@@ -61,8 +66,8 @@ jobs:
           # tags: ${{ steps.meta.outputs.tags }}
           # labels: ${{ steps.meta.outputs.labels }}
           tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ${{ steps.image.outputs.repository }}:${{ github.ref_name }}
+            ${{ steps.image.outputs.repository }}:${{ github.sha }}
           platforms: linux/amd64
           cache-from: type=gha
           cache-to: type=gha,mode=max

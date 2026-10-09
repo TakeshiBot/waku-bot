@@ -13,6 +13,7 @@ from kmua.common.tgmethod import HistoryMessage
 from kmua.logger import logger
 from kmua.plugins.agent.localization import tr
 from kmua.services import btts
+from kmua.timezone import BOT_TIMEZONE, as_bot_time
 
 from .. import datatype
 
@@ -189,7 +190,7 @@ async def _format_history(msgs: list[HistoryMessage]) -> str:
         username = user.full_name if user is not None else f"User_{msg.user_id}"
 
         time_str = (
-            msg.time.strftime("%Y-%m-%d %H:%M:%S")
+            as_bot_time(msg.time, naive_timezone=None).strftime("%Y-%m-%d %H:%M:%S %z")
             if msg.time
             else "????-??-?? ??:??:??"
         )
@@ -252,8 +253,8 @@ async def search_messages(
         username = user.full_name if user is not None else f"User_{hit.user_id}"
 
         time_str = datetime.datetime.fromtimestamp(
-            hit.timestamp, datetime.UTC
-        ).strftime("%Y-%m-%d %H:%M:%S")
+            hit.timestamp, BOT_TIMEZONE
+        ).strftime("%Y-%m-%d %H:%M:%S %z")
 
         message_text = hit.message
 

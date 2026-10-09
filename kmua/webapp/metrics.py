@@ -138,7 +138,7 @@ class RuntimeMetrics:
             else None
         )
         max_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        # Linux reports KiB; macOS reports bytes. kmua is deployed on Linux, keep a
+        # Linux reports KiB; macOS reports bytes. waku is deployed on Linux, keep a
         # conservative normalization for local development.
         max_rss_bytes = max_rss * 1024
         return RuntimeSnapshot(

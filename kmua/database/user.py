@@ -15,7 +15,7 @@ from kmua.database import pagination
 from .db import with_session, with_tx
 from .models import UserChatAssociation, UserConfig, UserData
 
-# 本地内存缓存：记录已同步到 DB 的用户快照，避免每条消息触发重复 upsert
+# Cache synchronized user snapshots to avoid repeated upserts for each message.
 # key: user_id, value: (username, full_name, is_bot, is_real_user)
 _upsert_user_cache: dict[int, tuple] = {}
 
@@ -73,7 +73,7 @@ async def upsert_user(
     if full_name is None:
         raise ValueError("user.full_name must not be None")
 
-    # 检查缓存：如果数据没有变化，直接从 DB 读取并返回，避免触发写事务
+    # Check the cache; read unchanged data from the DB without opening a write transaction.
     cache_data = (username, full_name, is_bot, is_real_user)
     if _upsert_user_cache.get(user.id) == cache_data:
         cached = await session.get(UserData, user.id)

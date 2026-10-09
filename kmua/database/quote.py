@@ -12,20 +12,20 @@ from kmua.database.models import ChatData, Quote, UserChatAssociation, UserData
 
 def _build_text_search_condition(query: str) -> sqlalchemy.ColumnElement[bool]:
     """
-    根据数据库类型和配置构建文本搜索条件。
+    Build text-search conditions for the database type and configuration.
 
-    对于 PostgreSQL:
-    - 如果启用了 PGroonga (pg_pgroonga=true)，使用 &@~ 操作符进行全文搜索
-    - 否则使用 pg_trgm 的 ilike
+    For PostgreSQL:
+    - Use the &@~ full-text operator when PGroonga is enabled (pg_pgroonga=true).
+    - Otherwise use ilike with pg_trgm.
 
-    对于其他数据库:
-    - 使用标准的 ilike
+    For other databases:
+    - Use standard ilike.
     """
     if runtime_config.db_is_postgres and app_config.pg_pgroonga:
-        # PGroonga 全文搜索操作符 &@~
+        # PGroonga full-text operator &@~.
         return Quote.text.op("&@~")(query)
     else:
-        # 标准 ILIKE 查询（SQLite, MySQL, PostgreSQL with pg_trgm）
+        # Standard ILIKE query (SQLite, MySQL, PostgreSQL with pg_trgm).
         return Quote.text.ilike(f"%{query}%")
 
 

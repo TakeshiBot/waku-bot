@@ -131,12 +131,17 @@ describe("locale selection and display", () => {
     );
     const date = "2026-10-09T10:30:00Z";
     expect(formatDate(date)).toBe(
-      new Intl.DateTimeFormat("vi", { dateStyle: "medium" }).format(new Date(date)),
+      new Intl.DateTimeFormat("vi", {
+        dateStyle: "medium",
+        timeZone: "Asia/Ho_Chi_Minh",
+      }).format(new Date(date)),
     );
     expect(formatDateTime(date)).toBe(
-      new Intl.DateTimeFormat("vi", { dateStyle: "short", timeStyle: "short" }).format(
-        new Date(date),
-      ),
+      new Intl.DateTimeFormat("vi", {
+        dateStyle: "short",
+        timeStyle: "short",
+        timeZone: "Asia/Ho_Chi_Minh",
+      }).format(new Date(date)),
     );
     expect(localeName("vi")).toBe("Tiếng Việt");
     expect(localeName("vi-VN")).toBe("Tiếng Việt");

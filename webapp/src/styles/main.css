@@ -7,7 +7,7 @@
   panel follows the user's own client theme instead of imposing one. That is what
   makes it read as part of Telegram rather than a website in a WebView.
 
-  There is exactly one colour of our own - kmua ink green, sampled from the bot
+  There is exactly one colour of our own - waku ink green, sampled from the bot
   avatar - and it appears in three places only: an engaged toggle, the current
   route, and the primary button. Not behind icons, not as a card wash, not as a
   gradient.

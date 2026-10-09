@@ -1,4 +1,3 @@
-import datetime
 import mimetypes
 
 import pyrogram
@@ -15,6 +14,7 @@ from kmua.plugins.agent.localization import configured_prompt, localized_message
 from kmua.plugins.agent.output import TypingKeepAlive, reply_output
 from kmua.plugins.agent.prompt import get_input_prompt
 from kmua.plugins.agent.runner import get_chat_prompt_override
+from kmua.timezone import bot_now
 
 from . import provider, quota, trace
 from .agent import struct_model
@@ -270,7 +270,7 @@ async def comment_channel_message(client: Client, message: pyrogram.types.Messag
         tr("channel_task"),
         tr("channel_name", p0=channel.title),
         tr("channel_bio", p0=channel.bio or channel.description),
-        tr("current_time", p0=datetime.datetime.now().strftime(tr("date_format"))),
+        tr("current_time", p0=bot_now().strftime(tr("date_format")) + " +07:00"),
         tr("task_description", p0=configured_prompt("agent_channel_comment_prompt")),
     ]
     instructions += "\n\n" + "\n".join(ctx_parts) + "\n\n" + tr("output_language")
@@ -297,10 +297,10 @@ async def comment_channel_message(client: Client, message: pyrogram.types.Messag
                 user_prompt=prompts,
             )
             output = result.output
-            # 这次模型调用和普通回合一样花 token, 按发言身份结算: 频道身份没有个人账户,
-            # 于是记在群账上(与匿名管理、频道消息同一条规则)。
+            # Charge this model call like a normal turn. Channel identities have
+            # no personal account, so charge the group like anonymous admins.
             await quota.settle(subject, result.usage)
-            # 记录与后续动作(评论/投票发送)无关: 那一步失败不代表这次模型调用失败。
+            # Record model success independently of subsequent comment/poll delivery.
             trace.mark_trace(
                 session,
                 usage=result.usage,

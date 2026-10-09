@@ -9,13 +9,13 @@ from kmua.logger import logger
 
 FFMPEG = shutil.which("ffmpeg")
 
-# 最大 WEBM 文件大小 (10MB) - 超过此大小将跳过处理以避免阻塞
+# Maximum WEBM size (10 MB); skip larger files to avoid blocking.
 MAX_WEBM_SIZE = 10 * 1024 * 1024
-# WEBM 处理超时 (秒)
+# WEBM processing timeout (seconds).
 WEBM_PROCESS_TIMEOUT = 10
 
-# "是不是群聊"一律用它判定: Telegram 对开启了话题的超级群返回 ChatType.FORUM,
-# pyrogram 自己的 filters.group 也是这三个。
+# Use this for all group checks: Telegram returns ChatType.FORUM for topic-enabled supergroups.
+# Pyrogram's filters.group also includes these three types.
 GROUP_CHAT_TYPES = frozenset(
     {
         pyrogram.enums.ChatType.GROUP,
@@ -98,7 +98,7 @@ async def webm_first_frame(webm_bytes: bytes) -> bytes | None:
     if FFMPEG is None:
         return None
 
-    # 检查文件大小，避免处理过大文件
+    # Check the size to avoid processing oversized files.
     if len(webm_bytes) > MAX_WEBM_SIZE:
         logger.debug(f"WEBM file too large ({len(webm_bytes)} bytes), skipping")
         return None
@@ -118,7 +118,7 @@ async def webm_first_frame(webm_bytes: bytes) -> bytes | None:
             stderr=asyncio.subprocess.DEVNULL,
         )
 
-        # 使用 wait_for 添加超时控制
+        # Enforce a timeout with wait_for.
         try:
             stdout, _ = await asyncio.wait_for(
                 proc.communicate(input=webm_bytes), timeout=WEBM_PROCESS_TIMEOUT
@@ -127,7 +127,7 @@ async def webm_first_frame(webm_bytes: bytes) -> bytes | None:
             logger.warning(
                 f"ffmpeg frame extraction timed out after {WEBM_PROCESS_TIMEOUT}s"
             )
-            # 终止超时进程
+            # Terminate the timed-out process.
             try:
                 proc.kill()
                 await proc.wait()

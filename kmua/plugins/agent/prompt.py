@@ -242,7 +242,7 @@ async def get_input_prompt(
     and deep reply-chain media cannot swap in the multimodal model.
 
     Group chats always use input_format.build_group_prompt; include_nearby only
-    decides whether the 历史消息 section is assembled. Private chats and channel
+    decides whether the history section is assembled. Private chats and channel
     comments keep the inline format. The third element maps
     file_unique_id -> image_number for media this turn delivered (empty on the
     legacy path), feeding the coverage cursor so repeated media is referenced,
@@ -274,7 +274,7 @@ async def get_input_prompt(
             return tr("unknown_user")
         return tr("unknown_channel")
 
-    # 只取当前消息自身的媒体，不含被回复消息的媒体
+    # Use media from the current message only, excluding the replied-to message.
     def get_media_and_message(
         m: pyrogram.types.Message,
     ) -> tuple[pyrogram.enums.MessageMediaType | None, pyrogram.types.Message | None]:
@@ -445,8 +445,8 @@ async def get_input_prompt(
                             and document.file_size <= 10 * 1024 * 1024
                         ):
                             mime_type = document.mime_type
-                            # .txt tg 返回的是 'text/plain; charset=utf-8'
-                            # markdown 返回的却是 'text/markdown'...
+                            # Telegram returns 'text/plain; charset=utf-8' for .txt files;
+                            # Markdown files instead use 'text/markdown'.
                             if not mime_type:
                                 thetype, _ = mimetypes.guess_type(
                                     document.file_name or ""
@@ -536,7 +536,7 @@ async def get_input_prompt(
     user_prompt: list[UserContent] = []
     seen_msg_ids: set[int] = set()
 
-    # 处理回复消息链；话题群组里的自动回复不算用户回复
+    # Process reply chains; topic-group automatic replies do not count as user replies.
     reply_chain: list[pyrogram.types.Message] = []
     current = message
     while len(reply_chain) < 10:
@@ -551,17 +551,17 @@ async def get_input_prompt(
         current = reply
     reply_chain.reverse()
 
-    # 检测回复链是否是 bot 与用户交替对话的历史记录（已存在于 message history 中）：
-    # 奇数位置为 bot、偶数位置为用户的成对交替，短链遍历完、长链连续满足 6 层即成立；
-    # 成立时只保留最后一条（用户直接回复的 bot 消息），避免与 message history 重复。
+    # Detect alternating bot/user reply chains already included in message history:
+    # odd positions are bot messages and even positions are user messages; inspect all short chains or six levels.
+    # Keep only the last bot message directly replied to by the user to avoid duplicating message history.
     _HISTORY_CHAIN_CHECK_DEPTH = 6
     bot_id = client.me.id if client.me else None
     if bot_id is not None and len(reply_chain) >= 2:
         is_history_chain = True
         check_depth = 0
         for i in range(len(reply_chain) - 1, 0, -2):
-            bot_msg = reply_chain[i]  # 较新，应为 bot 发送
-            user_msg = reply_chain[i - 1]  # 较旧，应为用户发送
+            bot_msg = reply_chain[i]  # Newer message, expected from the bot.
+            user_msg = reply_chain[i - 1]  # Older message, expected from the user.
             bot_msg_is_bot = (
                 bot_msg.from_user is not None and bot_msg.from_user.id == bot_id
             )
@@ -577,7 +577,7 @@ async def get_input_prompt(
         if is_history_chain:
             reply_chain = reply_chain[-1:]
 
-    # 回复链只在最后一条（当前消息直接回复的）中包含媒体
+    # Include media only in the final reply-chain message, directly replied to by the current message.
     if reply_chain:
         last_idx = len(reply_chain) - 1
         for idx, reply_msg in enumerate(reply_chain):
@@ -748,7 +748,7 @@ async def _run_transcription(
             result = await asyncio.wait_for(coro, timeout=float(timeout))
         else:
             result = await coro
-        # 转写是为主回合服务的独立模型调用, 不计入主回合的 usage: 按同一位付款方结算。
+        # Transcription is a separate model call supporting the main turn; settle it against the same payer.
         await quota.settle(subject, result.usage)
         trace.mark_trace(session, usage=result.usage, output=str(result.output))
         return result

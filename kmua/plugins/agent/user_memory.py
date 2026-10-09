@@ -31,12 +31,12 @@ async def update_user_memory(
     subject: quota.Subject,
 ):
     if not await quota.can_start(subject):
-        # 没额度就不更新记忆, 静默跳过: 这是后台工作, 不需要打扰用户。
+        # Silently skip memory updates without quota; this background work should not disturb users.
         logger.debug(f"Skip updating memory for user {user_id}: no quota")
         return
     lock = await _get_user_memory_lock(user_id)
     async with lock:
-        # 防止 spammer 刷记忆
+        # Prevent spammers from repeatedly triggering memory updates.
         throttle_key = f"user_memory_update_throttle:{user_id}"
         if await memttlcache.get(throttle_key):
             logger.debug(
@@ -50,7 +50,7 @@ async def update_user_memory(
         if old_memory and isinstance(old_memory, datatype.ChatMemoryy):
             message_text = tr("update_user_memory", p0=old_memory, p1=message_text)
 
-        # 使用超时控制防止模型调用阻塞事件循环
+        # Enforce a model-call timeout to avoid stalling the event loop.
         session = await trace.start_trace("memory", user_id=user_id)
         try:
             timeout = app_config.agent_model_timeout
@@ -65,14 +65,14 @@ async def update_user_memory(
                 except TimeoutError as e:
                     trace.mark_trace(session, status="timeout", error=e)
                     logger.warning(f"update_user_memory timed out for user {user_id}")
-                    return  # 超时后静默返回，不影响主流程
+                    return  # Return silently after timeout without interrupting the main flow.
             else:
                 memory_result = await coro
 
-            # 这一次模型调用照常花 token, 按触发它的那条消息结算 —— 记忆是这次调用
-            # 的产物, 不记的话这段开销在任何地方都看不见。
+            # Bill this model call against the triggering message; the memory it produces
+            # would otherwise incur an invisible cost.
             await quota.settle(subject, memory_result.usage)
-            # 记录只覆盖这次模型调用: 之后的记忆合并与好感度更新都不是它的一部分。
+            # Account for this model call only; later memory merges and affection updates are separate.
             trace.mark_trace(
                 session, usage=memory_result.usage, output=str(memory_result.output)
             )
@@ -100,7 +100,7 @@ async def update_user_memory(
             logger.exception(f"Error updating user affection: {e}")
         new_memory = result.get_memory()
         if old_memory:
-            # 合并记忆列表, 每个字段去重, 且限制长度为 3
+            # Merge memory lists, deduplicating each field and limiting it to three entries.
             for field in datatype.ChatMemoryy.model_fields:
                 old_value = getattr(old_memory, field, [])
                 new_value = getattr(new_memory, field, [])

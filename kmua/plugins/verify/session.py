@@ -1,4 +1,4 @@
-"""验证会话的生命周期: 注册表、持久化、sweep 与 Telegram 动作。"""
+"""Verification session lifecycle: registry, persistence, sweeps and Telegram actions."""
 
 from __future__ import annotations
 
@@ -37,11 +37,11 @@ from kmua.plugins.verify.challenge import (
 
 RESULT_MESSAGE_TTL = 30
 
-# 贴纸验证失败时删除用户窗口期消息的上限。
+# Maximum messages deleted from the verification window after sticker verification fails.
 MAX_WINDOW_MESSAGE_DELETE = 300
 
-# --------------------------------------------------------------------------- 会话注册表
-# DB 为准, 内存为 O(1) 查询缓存: session_id -> session, (chat_id, user_id) -> session_id
+# --------------------------------------------------------------------------- Session registry.
+# The DB is authoritative; in-memory O(1) cache maps session_id to session and (chat_id, user_id) to session_id.
 
 _sessions: dict[int, VerificationSession] = {}
 _by_user: dict[tuple[int, int], int] = {}
@@ -93,7 +93,7 @@ async def capture_restore_permissions(
     chat_id: int,
     user_id: int,
 ) -> ChatPermissions | None:
-    """捕获成员已有的自定义限制; 普通成员返回 None, 验证后全放开。"""
+    """Capture existing custom restrictions; normal members return None and are fully unrestricted after verification."""
     try:
         member = await bot.get_chat_member(chat_id, user_id)
     except Exception as e:
@@ -105,7 +105,7 @@ async def capture_restore_permissions(
 
 
 async def _cleanup_session(session_row: VerificationSession) -> None:
-    """删 DB 行并移出注册表。"""
+    """Delete the DB row and remove it from the registry."""
     try:
         await database.delete_verification_session(session_row.id)
     except Exception as e:
@@ -114,7 +114,7 @@ async def _cleanup_session(session_row: VerificationSession) -> None:
 
 
 async def _delete_message_later(chat_id: int, message_id: int) -> None:
-    """延迟删除结果提示消息; 失败静默。"""
+    """Delete the result notice after a delay, ignoring failures."""
     await asyncio.sleep(RESULT_MESSAGE_TTL)
     try:
         await client.delete_messages(chat_id, message_id)
@@ -123,13 +123,13 @@ async def _delete_message_later(chat_id: int, message_id: int) -> None:
 
 
 def _schedule_result_delete(chat_id: int, message_id: int | None) -> None:
-    """结果提示消息过 TTL 后自动删除。"""
+    """Automatically delete result notices after their TTL."""
     if message_id is not None:
         common.spawn(_delete_message_later(chat_id, message_id))
 
 
 async def _user_mention(user: User | Chat | int) -> str:
-    """目标用户/频道的 HTML mention; 获取失败时退化为 id 链接。"""
+    """HTML mention for the user/channel; fall back to an ID link if lookup fails."""
     try:
         if isinstance(user, int):
             fetched = await client.get_users(user)
@@ -143,7 +143,7 @@ async def _user_mention(user: User | Chat | int) -> str:
 
 
 async def _delete_user_messages_in_window(session_row: VerificationSession) -> None:
-    """删除用户从入群到验证失败期间发送的消息(贴纸方式无限制, 失败兜底)。"""
+    """Delete the user's messages from joining until verification failure, guarding the unrestricted sticker method."""
     created_at = session_row.created_at
     if created_at is None:
         return
@@ -179,7 +179,7 @@ async def _delete_user_messages_in_window(session_row: VerificationSession) -> N
 
 
 async def _chat_config(chat_id: int) -> ChatConfig | None:
-    """读群配置; 聊天已删返回 None。"""
+    """Read group configuration; return None for deleted chats."""
     try:
         return await database.get_chat_config(chat_id)
     except ValueError:
@@ -187,7 +187,7 @@ async def _chat_config(chat_id: int) -> ChatConfig | None:
 
 
 def _is_expired(session_row: VerificationSession) -> bool:
-    """SQLite 读回的 naive UTC 补时区后再比较。"""
+    """Attach UTC to naive SQLite timestamps before comparison."""
     expires_at = session_row.expires_at
     if expires_at is None:
         return False
@@ -214,11 +214,11 @@ async def restore_member_permissions(
         )
 
 
-# --------------------------------------------------------------------------- 生命周期
+# --------------------------------------------------------------------------- Lifecycle.
 
 
 async def load_active_sessions() -> None:
-    """启动时把 DB 会话灌入注册表。"""
+    """Load DB sessions into the registry at startup."""
     try:
         sessions = await database.get_all_verification_sessions()
     except Exception as e:
@@ -231,7 +231,7 @@ async def load_active_sessions() -> None:
 
 
 async def verify_sweep() -> None:
-    """超时/群停用/聊天删除的周期兜底; 单条失败不中断其余。"""
+    """Periodically handle timeouts, disabled verification and deleted chats; one failure does not stop the rest."""
     try:
         sessions = await database.get_all_verification_sessions()
     except Exception as e:
@@ -241,7 +241,7 @@ async def verify_sweep() -> None:
         try:
             config = await _chat_config(session_row.chat_id)
             if config is None:
-                # 聊天已删, 静默清理
+                # Silently clean up the deleted chat.
                 await _cleanup_session(session_row)
                 continue
             if not config.verify_enabled:
@@ -254,7 +254,7 @@ async def verify_sweep() -> None:
 
 
 async def handle_user_left(chat_id: int, user_id: int) -> None:
-    """用户退群/被 ban: 删 DB 行并移出注册表。"""
+    """On leaving or banning, delete the DB row and remove the session from the registry."""
     try:
         await database.delete_verification_sessions_for_user(chat_id, user_id)
     except Exception as e:
@@ -267,7 +267,7 @@ async def handle_user_left(chat_id: int, user_id: int) -> None:
 
 
 def _to_rich_html(text: str) -> str:
-    """rich 消息的 html 模式不保留换行, 显式转为 <br>。"""
+    """Rich-message HTML does not preserve newlines; convert them explicitly to <br>."""
     return text.replace("\n", "<br>")
 
 
@@ -279,7 +279,7 @@ async def _send_challenge(
     lang: str,
     user_mention: str = "",
 ) -> Message:
-    """发送 challenge 消息; 失败向上抛由调用方处理。"""
+    """Send the challenge and propagate failures for the caller to handle."""
     text = build_challenge_text(
         config,
         session_row.method,
@@ -290,7 +290,7 @@ async def _send_challenge(
         user_mention=user_mention,
     )
     if session_row.method == "math_hard":
-        # rich 消息: <tg-math> 公式走 html 模式, 换行显式转 <br>
+        # Rich messages: <tg-math> uses HTML mode; convert newlines explicitly to <br>.
         return await bot.send_rich_message(
             chat_id,
             InputRichMessage(html=_to_rich_html(text)),
@@ -307,7 +307,7 @@ async def _edit_challenge_message(
     text: str,
     markup: InlineKeyboardMarkup | None,
 ) -> None:
-    """编辑 challenge 消息; math_hard 是 rich 消息, 用 EditMessage.rich_message。"""
+    """Edit the challenge; math_hard is rich text and uses EditMessage.rich_message."""
     if session_row.challenge_message_id is None:
         return
     if session_row.method == "math_hard":
@@ -341,7 +341,7 @@ async def _edit_challenge_message(
 
 
 async def _fail_session(session_row: VerificationSession, reason: str) -> None:
-    """验证失败(超时/次数耗尽): 删 challenge, 按群配置动作处理用户, 发通知。"""
+    """On timeout or exhausted attempts, delete the challenge, apply the configured member action and notify."""
     config = await _chat_config(session_row.chat_id)
     if config is None:
         await _cleanup_session(session_row)
@@ -358,11 +358,11 @@ async def _fail_session(session_row: VerificationSession, reason: str) -> None:
             logger.debug(f"verify: failed to delete challenge {session_row.id}: {e}")
 
     if session_row.method == "sticker":
-        # 贴纸方式不限制发言, 失败时删除用户窗口期消息兜底
+        # Sticker verification permits speech; on failure remove messages sent during the verification window.
         await _delete_user_messages_in_window(session_row)
 
     if action == "kick":
-        # ban + unban: 移出但不拉黑, 可重新加群再验证
+        # ban + unban removes without blacklisting; rejoining permits another verification.
         try:
             await client.ban_chat_member(session_row.chat_id, session_row.user_id)
         except RPCError as e:
@@ -393,7 +393,7 @@ async def _fail_session(session_row: VerificationSession, reason: str) -> None:
 
 
 async def _cancel_session(session_row: VerificationSession) -> None:
-    """群停用验证: 解除验证施加的限制, 删 challenge, 清会话。"""
+    """When group verification is disabled, remove verification restrictions, delete the challenge and clear the session."""
     await restore_member_permissions(client, session_row)
     if session_row.challenge_message_id is not None:
         try:
@@ -406,7 +406,7 @@ async def _cancel_session(session_row: VerificationSession) -> None:
 
 
 async def _succeed_session(session_row: VerificationSession, lang: str) -> None:
-    """验证通过(或管理员放行): 改成功文案, 解除限制, 清会话。"""
+    """On success or administrator approval, update the notice, remove restrictions and clear the session."""
     if session_row.challenge_message_id is not None:
         try:
             await _edit_challenge_message(
@@ -429,7 +429,7 @@ async def _succeed_session(session_row: VerificationSession, lang: str) -> None:
 
 
 async def _admin_ban_session(session_row: VerificationSession, lang: str) -> None:
-    """管理员手动封禁(恒为永久拉黑)。"""
+    """Administrator ban action, always permanent."""
     if session_row.challenge_message_id is not None:
         try:
             await _edit_challenge_message(
@@ -450,7 +450,7 @@ async def _admin_ban_session(session_row: VerificationSession, lang: str) -> Non
     await _cleanup_session(session_row)
 
 
-# --------------------------------------------------------------------------- 内部工具
+# --------------------------------------------------------------------------- Internal helpers.
 
 
 async def _wrong_answer(
@@ -460,7 +460,7 @@ async def _wrong_answer(
     *,
     edit_message: Message | None = None,
 ) -> None:
-    """答错: 扣次数; 耗尽则失败, 否则换新题并刷新文案。"""
+    """On a wrong answer, consume an attempt; fail if exhausted, otherwise create a new question and update the notice."""
     session_row.attempts_left -= 1
     if session_row.attempts_left <= 0:
         await _fail_session(session_row, "failed")

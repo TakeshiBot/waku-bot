@@ -27,7 +27,7 @@ async def observe_telegram_update(client, update, users, chats) -> None:
 
 
 def _chat_id(peer) -> int | None:
-    """Convert raw Telegram group peers to the IDs stored by kmua."""
+    """Convert raw Telegram group peers to the IDs stored by waku."""
     channel_id = getattr(peer, "channel_id", None)
     if isinstance(channel_id, int):
         return -100_000_000_0000 - channel_id

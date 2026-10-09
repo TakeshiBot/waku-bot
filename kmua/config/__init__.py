@@ -58,7 +58,7 @@ class _AppConfig(pydantic.BaseModel):
     log_level: str = "INFO"
     lang: str = "vi"
     fans_channel: str | int | None = None  # username or chat_id
-    nickname: str = "kmua"
+    nickname: str = "waku"
 
     # health check server for container monitoring
     #
@@ -188,15 +188,15 @@ class _AppConfig(pydantic.BaseModel):
     agent: bool = False
     agent_group_context_nearby_message_count: int = 0
     agent_follow_up: bool = True
-    # 实验性: 接话判断改用 jev(System One 决策模型, 只输出概率不生成文本)。
-    # 值为 "provider/model" 形式的 spec, provider 的 url 指向 System One 基址:
+    # Experimental: use jev (System One decision model, probabilities only) for follow-up detection.
+    # A "provider/model" spec; the provider URL points to the System One base URL:
     #   agent_followup_jev_model = "typesafe/jev-latest"
     #   [agent_providers.typesafe]
     #   url = "https://api.typesafe.ai/v1"
     #   key = "..."
-    # 留空则仍用 agent_model_small, per-chat 小模型覆盖只对该路径生效。
+    # Empty uses agent_model_small; per-chat small-model overrides apply only to that path.
     agent_followup_jev_model: str | None = None
-    # jev 相关性概率阈值(0-1): noul 达到该值才认为新消息在延续话题, 越接近 1 越保守。
+    # jev relevance threshold (0-1): noul must reach this value for a continuation; higher is stricter.
     agent_followup_jev_threshold: float = pydantic.Field(default=0.5, ge=0.0, le=1.0)
     agent_cross_group_memory: bool = False
     agent_group_memory: bool = True
@@ -281,9 +281,9 @@ class _AppConfig(pydantic.BaseModel):
     ]
     # Max multimodal items (images/video/binary) across user_prompt + history sent to model.
     # Oldest history items are stripped first when the total exceeds this limit.
-    # 0 = no limit. 大部分'原生多模态'的模型无此限制
+    # 0 = no limit. Most native multimodal models have no such limit.
     agent_multimodal_max_items: int = 0
-    # 每次 user prompt 中最多发送的多模态内容, 0 = no limit
+    # Maximum multimodal items in each user prompt; 0 = no limit.
     agent_multimodal_input_count: int = 2
     agent_extra_tools: list[str] = ["websearch", "webfetch"]
     # crawl4ai API server for JS-rendered pages (e.g. docker run crawl4ai)
@@ -315,12 +315,12 @@ class _AppConfig(pydantic.BaseModel):
     # Sticker semantic memory
     agent_sticker_memory: bool = False
     agent_sticker_memory_sample_rate: float = 0.5
-    # 入库冷启动: 采样率随聊天已存贴纸数在此目标以下线性放大到 1.0, 加快冷启动群的库填充
-    # None 或 <=0 关闭该行为 (恒用 agent_sticker_memory_sample_rate, 且不设工具显示的库存门槛)
+    # Cold start: increase the sample rate linearly up to 1.0 below this stored-sticker target.
+    # None or <=0 disables this adjustment and the tool's stock threshold; use the base sample rate.
     agent_sticker_warmup_count: int | None = 30
     agent_sticker_db_path: str = "data/sticker_vec.db"
     agent_sticker_ttl: int = 86400 * 7
-    agent_sticker_min_keep_count: int = 100  # 少于此数量时不逐出过期贴纸
+    agent_sticker_min_keep_count: int = 100  # Keep expired stickers below this stock count.
     # Embedding model spec: "provider/model". Falls back to agent_model provider.
     agent_sticker_embed_model: str = "default/text-embedding-3-small"
     agent_sticker_embed_dimensions: int = 1024
@@ -441,10 +441,10 @@ class _AppConfig(pydantic.BaseModel):
     agent_usage_request_limit: int | None = None
     agent_usage_tool_calls_limit: int = 0
     agent_usage_total_tokens_limit: int = 0
-    # 每个用户每天的免费 agent 用量, 单位是 token (输入 + 输出), 跨群共享, 按 UTC 日重置。
+    # Daily free agent tokens (input + output) per user, shared across groups, reset by UTC date.
     agent_quota_free_daily_tokens: int = 100_000
-    # 每个群每天的免费 agent 用量, 单位是 token, 按 UTC 日重置, 群内共享: 成员的个人免费
-    # 额度用尽后从群额度扣。群策略里自己设了正数就按群里的; 0 = 没有全局默认, 群不分配额度。
+    # Daily free tokens per group, shared within the group and reset by UTC date.
+    # Used after personal free tokens. A positive group override wins; 0 means no global allocation.
     agent_quota_chat_free_daily_tokens: int = 0
     # Record every agent run and its steps (model requests and responses, tool
     # calls and results) and expose them read-only in the panel. Off means no
@@ -493,13 +493,13 @@ class _AppConfig(pydantic.BaseModel):
     coin_add_chance_on_message: float = 0.02
     coin_add_chance_for_quote_user: float = 0.7
     coin_add_chance_for_user_make_quote: float = 0.5
-    coin_add_on_randquote_max_pb: float = 0.4  # 防止某些群组设置过高的主动引用概率
+    coin_add_on_randquote_max_pb: float = 0.4  # Cap excessive proactive-quote probabilities.
     coin_add_chance_on_randquote: float = 0.5
     coin_add_chance_on_slash: float = 0.05
     coin_add_chance_on_be_slash: float = 0.05
-    # 日常奖励间隔
+    # Interval between daily rewards.
     coin_daily_add_interval: int = 86400
-    # 每次奖励的数量
+    # Amount per reward.
     coin_daily_add_count: int = 144 * 16
 
     # RSS subscription push.
@@ -549,7 +549,7 @@ def _resolve_settings_files() -> list[str]:
     interpreter stack building a frame info per frame (source files included) for
     each candidate name. On a cold container that costs seconds of source reads,
     and the result is a directory guess this project already knows: the package
-    root (`/kmua` in the image, the checkout when running from source) and the
+    root (`/app` in the image, the checkout when running from source) and the
     working directory, each optionally with a `config/` subdirectory.
     """
     roots = [Path(__file__).resolve().parent.parent.parent, Path.cwd()]

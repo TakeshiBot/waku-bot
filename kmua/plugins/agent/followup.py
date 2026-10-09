@@ -103,7 +103,7 @@ async def _follow_up_filter_func(
         or message.outgoing
         or message.service
         or message.automatic_forward
-        or is_explicit_reply(message)  # 已经是用户主动回复的消息，不处理
+        or is_explicit_reply(message)  # Skip messages already explicitly replied to by the user.
         or (
             user.id
             in (
@@ -114,7 +114,7 @@ async def _follow_up_filter_func(
         )
     ):
         return False
-    # 检查是否有 @ 提及（如果有则说明是主动提及，不需要 follow-up 处理）
+    # Explicit @ mentions do not need follow-up processing.
     if message.entities:
         has_mention = any(
             entity.type == pyrogram.enums.MessageEntityType.MENTION
@@ -181,7 +181,7 @@ async def handle_follow_up_message(
         return
     subject = quota.subject_of(message)
     if not await quota.can_start(subject):
-        # 额度没了就不做相关性判断: 那本身就是一次模型调用。
+        # Skip relevance checks without quota; the check itself makes a model call.
         await trace.note_rejection(
             "followup",
             chat_id=chat.id,
@@ -197,7 +197,7 @@ async def handle_follow_up_message(
     if not reply_to_user:
         return
     message_text = message.text or message.caption
-    # 使用 full_output（模型的完整输出）而不是 reply_text（可能只是最后一条消息）
+    # Use full_output (the complete model output), since reply_text may contain only the final message.
     bot_full_output = (
         bot_reply.full_output if bot_reply.full_output else bot_reply.reply_text
     )
@@ -209,11 +209,11 @@ async def handle_follow_up_message(
     )
     session: trace.TraceSession | None = None
     try:
-        # 使用小模型超时控制防止相关性检查阻塞事件循环
+        # Apply the small-model timeout so relevance checks cannot stall the event loop.
         timeout = app_config.agent_small_model_timeout
         jev_model_spec = app_config.agent_followup_jev_model
         if jev_model_spec:
-            # 实验性: jev 只输出概率不生成文本, 因而不走 pydantic-ai。
+            # Experimental: jev returns probabilities, not text, so bypass pydantic-ai.
             coro = jev.check_relevance(
                 relevance_check_prompt,
                 spec=jev_model_spec,
@@ -249,8 +249,8 @@ async def handle_follow_up_message(
         else:
             relevance_result = await coro
 
-        # 相关性判断本身就是一次模型调用, 跑完即刻按它的用量结算; 判为不相关也记 ——
-        # token 已经花掉了, 不记的话这段开销在面板上就看不见。
+        # Settle the relevance-check model call immediately, including results judged irrelevant;
+        # its tokens have already been spent and must appear in the panel.
         await quota.settle(subject, relevance_result.usage)
         trace.mark_trace(
             session,
@@ -302,7 +302,7 @@ async def handle_follow_up_message(
             client, message, include_nearby=0, ctx=None
         )
         addtional_instructions = ctx_info.to_text() if ctx_info else ""
-        # 使用 full_output（模型的完整输出）而不是 reply_text
+        # Use full_output (the complete model output) rather than reply_text.
         bot_full_output = (
             bot_reply.full_output if bot_reply.full_output else bot_reply.reply_text
         )

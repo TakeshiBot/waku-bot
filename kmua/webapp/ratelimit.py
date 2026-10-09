@@ -1,6 +1,6 @@
 """In-process rate limiting.
 
-A fixed-capacity sliding window per key, held in memory. kmua runs as a single
+A fixed-capacity sliding window per key, held in memory. waku runs as a single
 process, so there is nothing to coordinate across replicas; if that ever changes
 this is the one module to swap for a Redis-backed counter.
 

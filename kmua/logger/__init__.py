@@ -1,10 +1,11 @@
 import logging
 import sys
-from datetime import timedelta
+from datetime import time, timedelta, timezone
 
 from loguru import logger
 
 from kmua.config import app_config
+from kmua.timezone import BOT_TIMEZONE, BOT_TIMEZONE_NAME
 
 
 class InterceptHandler(logging.Handler):
@@ -18,9 +19,22 @@ class InterceptHandler(logging.Handler):
 
 logger.remove()
 
+
+def _use_bot_timezone(record):
+    """Keep log timestamps in UTC+7, including native Windows deployments."""
+    converted = record["time"].astimezone(BOT_TIMEZONE)
+    # Loguru's Z/ZZ formatter requests utcoffset(None), unsupported by ZoneInfo.
+    # Use the offset at this instant and retain the Loguru datetime subclass.
+    record["time"] = converted.replace(
+        tzinfo=timezone(converted.utcoffset(), BOT_TIMEZONE_NAME)
+    )
+
+
+logger.configure(patcher=_use_bot_timezone)
+
 logger.add(
-    "logs/kmua.log",
-    rotation="04:00",
+    "logs/waku.log",
+    rotation=time(4, tzinfo=BOT_TIMEZONE),
     enqueue=True,
     encoding="utf-8",
     level="TRACE",

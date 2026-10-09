@@ -43,7 +43,7 @@ def create_app(*, panel_enabled: bool | None = None) -> FastAPI:
     enabled = app_config.webapp if panel_enabled is None else panel_enabled
 
     app = FastAPI(
-        title="kmua panel",
+        title="waku panel",
         version="1",
         lifespan=_lifespan,
         # The panel is the only consumer and it is typed by hand; a public schema

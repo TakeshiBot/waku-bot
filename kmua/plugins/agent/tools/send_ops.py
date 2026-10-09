@@ -14,6 +14,7 @@ from kmua.config import app_config
 from kmua.logger import logger
 from kmua.plugins.agent.localization import tr
 from kmua.plugins.manyacg import manyacg
+from kmua.timezone import BOT_TIMEZONE
 
 from .. import datatype, sticker_memory, sticker_vec
 
@@ -108,11 +109,11 @@ async def _scheduled_poll_job(
 
 
 def _parse_schedule_time(schedule_time: str) -> datetime.datetime:
-    """Parse an ISO 8601 schedule time; a timezone-less value means local
+    """Parse an ISO 8601 schedule time; a timezone-less value means UTC+7 bot
     time, so the comparison with the aware clock never mismatches."""
     parsed = datetime.datetime.fromisoformat(schedule_time)
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=datetime.datetime.now().astimezone().tzinfo)
+        parsed = parsed.replace(tzinfo=BOT_TIMEZONE)
     return parsed
 
 
@@ -131,7 +132,8 @@ async def schedule_message(
 
     Args:
         schedule_time: ISO 8601 datetime string for scheduled delivery,
-            e.g. "2025-06-04T15:00:00+08:00". Must be in the future.
+            e.g. "2025-06-04T15:00:00+07:00". Must be in the future.
+            A timezone-less value uses Asia/Ho_Chi_Minh (UTC+7).
         send_immediately: If True, send the message immediately.
         text: The message text to send (for text messages). Either text or media
             must be provided, but not both.
@@ -273,7 +275,8 @@ async def send_poll(
         is_anonymous: Whether the poll is anonymous.
         allows_multiple_answers: Whether users can select multiple answers.
         schedule_time: Optional ISO 8601 datetime string to schedule delivery,
-            e.g. "2025-06-04T15:00:00+08:00". If omitted, sends immediately.
+            e.g. "2025-06-04T15:00:00+07:00". If omitted, sends immediately.
+            A timezone-less value uses Asia/Ho_Chi_Minh (UTC+7).
     """
     if ctx.deps.message is None or ctx.deps.chat_id is None:
         return SendResult(success=False, message=tr("context_unavailable")).text()
@@ -457,7 +460,7 @@ async def _fetch_anime_artwork(keyword: str = "") -> tuple[dict, dict] | None:
 async def send_anime_photo(
     ctx: RunContext[datatype.ContextDeps], keyword: str = "", count: int = 1
 ) -> AnimePhotoResult:
-    """Get and send anime photos (or called it setu/涩图).
+    """Get and send anime photos (also called setu).
 
     Args:
         keyword: Optional keyword to search for specific anime photos.

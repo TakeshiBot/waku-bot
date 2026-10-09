@@ -31,7 +31,7 @@ async def buy_gift(client: Client, message: types.Message):
                         gift.get_display_name(g.id, lang),
                         callback_data=f"buygift:{user.id}:{g.id}:req",
                     )
-                    for g in affordable_gifts  # [TODO] 分个页, 等以后礼物类型多了的时候
+                    for g in affordable_gifts  # [TODO] Add pagination when more gift types are introduced.
                 ],
                 [
                     types.InlineKeyboardButton(
@@ -203,7 +203,7 @@ async def send_gift(client: Client, message: types.Message):
             rarity=gift.get_rarity_display_name(g.rarity, lang),
             name=gift.get_display_name(gift.GiftID(g.gift_id), lang),
         )
-    # 每行5个按钮, 第2行分页
+    # Five buttons per row; pagination is on the second row.
     buttons = [
         [
             types.InlineKeyboardButton(
@@ -274,7 +274,7 @@ async def handle_send_gift_page_callback(
             rarity=gift.get_rarity_display_name(g.rarity, lang),
             name=gift.get_display_name(gift.GiftID(g.gift_id), lang),
         )
-    # 每行5个按钮, 第2行分页
+    # Five buttons per row; pagination is on the second row.
     buttons = [
         [
             types.InlineKeyboardButton(

@@ -112,7 +112,7 @@ export interface VerifyQuestion {
   question: string;
   options: string[];
   answers: string[];
-  /** 多正确答案的判定模式: all = 全选, any = 任选其一即可。 */
+  /** Multiple-answer mode: all = select every correct answer; any = choose any correct answer.。 */
   select: string;
 }
 

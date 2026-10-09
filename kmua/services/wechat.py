@@ -12,7 +12,7 @@ import html as html_mod
 import io
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -22,6 +22,7 @@ from PIL import Image
 
 from kmua import common
 from kmua.common.download import download_capped
+from kmua.timezone import BOT_TIMEZONE, as_bot_time
 
 # Parsed articles are cached per URL: WeChat pages are multi-megabyte and
 # several people may share the same link; 1h keeps repeats cheap while still
@@ -251,14 +252,21 @@ def parse_article_html(raw_html: str, url: str) -> WechatArticle:
     time_nodes = doc.xpath('//*[@id="publish_time"]/text()')
     if time_nodes and (t := time_nodes[0].strip()):
         try:
-            published_at = datetime.strptime(t, "%Y-%m-%d %H:%M")
+            # WeChat's unqualified publication text is China Standard Time.
+            published_at = (
+                datetime.strptime(t, "%Y-%m-%d %H:%M")
+                .replace(tzinfo=timezone(timedelta(hours=8)))
+                .astimezone(BOT_TIMEZONE)
+            )
         except ValueError:
             published_at = None
     if published_at is None:
         ct_match = re.search(r"var ct = \"?(\d{10})\"?", raw_html)
         if ct_match:
             try:
-                published_at = datetime.fromtimestamp(int(ct_match.group(1)))
+                published_at = datetime.fromtimestamp(
+                    int(ct_match.group(1)), BOT_TIMEZONE
+                )
             except (ValueError, OSError):
                 published_at = None
 
@@ -360,7 +368,7 @@ def build_rich_blocks(
     if article.author:
         meta.append(article.author)
     if article.published_at:
-        meta.append(article.published_at.strftime("%Y-%m-%d"))
+        meta.append(as_bot_time(article.published_at).strftime("%Y-%m-%d"))
     if meta:
         blocks.append(_RParagraph(text=text("👤 " + " · ".join(meta))))
     blocks.append(_RDivider())
@@ -476,7 +484,9 @@ def build_media_caption(article: WechatArticle, lang: str = "") -> str:
     if article.author:
         meta.append(html_mod.escape(article.author))
     if article.published_at:
-        meta.append(html_mod.escape(article.published_at.strftime("%Y-%m-%d")))
+        meta.append(
+            html_mod.escape(as_bot_time(article.published_at).strftime("%Y-%m-%d"))
+        )
     if meta:
         lines.append("👤 " + " · ".join(meta))
     if article.paragraphs:

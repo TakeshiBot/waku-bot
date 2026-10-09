@@ -182,7 +182,7 @@ async def run_agent(
         message_id=message.id,
         streaming=app_config.agent_streaming,
     )
-    # 额度闸门: 只预检, 不扣费(用量跑完才知道), 扣减在 impl 里按实际用量完成。
+    # Quota gate only checks preflight; impl charges actual usage after completion.
     if not is_chat_allowed(chat_id):
         trace.finish_trace(session, status="rejected", reject_reason="whitelist")
         await _stop_typing_keepalive(typing_keepalive)
@@ -405,7 +405,7 @@ async def _run_agent_impl(
                                 await streaming_output.finalize()
                             elif output:
                                 await reply_output(client, message, output)
-                        # 下面的收尾动作可能失败并跳出, 所以先结算, 免得答案已发出却不计费。
+                        # Settle before fallible cleanup so a sent answer is still billed if cleanup fails.
                         await quota.settle(subject, agent_run.usage)
                         trace.mark_trace(
                             session,
@@ -508,7 +508,7 @@ async def _run_agent_impl(
                     elif not replied and output:
                         await reply_output(client, message, output)
                         full_output_parts.append(output)
-                    # 结算排在收尾动作之前: 收尾失败不该让这次调用免费。
+                    # Settle before cleanup; cleanup failure must not make the call free.
                     await quota.settle(subject, agent_run.usage)
                     trace.mark_trace(
                         session,

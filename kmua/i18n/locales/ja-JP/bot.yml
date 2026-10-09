@@ -10,7 +10,7 @@ bot:
     refresh_failed: 更新に失敗しました、時間をおいて再試行してくださいにゃ
     refresh_success: 更新成功にゃ！
     refreshing_avatar: アバターを更新中にゃ…
-    cleanning: kmuaがルームをお掃除中だよ〜
+    cleanning: wakuがルームをお掃除中だよ〜
     sync_members_cd: あまり連続で使わないでにゃ、少し待ってからもう一度ね
     sync_members_done: 同期完了！{count}人をお掃除したにゃ〜
     b23_converted: "{real_url}"

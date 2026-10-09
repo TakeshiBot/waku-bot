@@ -17,6 +17,7 @@ import httpx
 from kmua import common
 from kmua.config import app_config
 from kmua.logger import logger
+from kmua.timezone import BOT_TIMEZONE
 
 # Fetched tweets are cached per tweet id for 30 minutes. Tweets can be
 # edited/deleted, so keep the stale window short; media file ids are cached
@@ -185,7 +186,9 @@ def build_tweet_text(tweet: TweetData, lang: str = "") -> str:
 
         meta.append(
             html_mod.escape(
-                datetime.fromtimestamp(tweet.created_timestamp).strftime("%Y-%m-%d")
+                datetime.fromtimestamp(tweet.created_timestamp, BOT_TIMEZONE).strftime(
+                    "%Y-%m-%d"
+                )
             )
         )
     meta.append(

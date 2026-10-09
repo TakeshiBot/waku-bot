@@ -89,7 +89,7 @@ async def slash(client: Client, message: Message):
         text = t(f"bot.hardcoded.slash.{key}", locale=lang).format(
             actor=this_mention, target=replied_mention, action=cmd1
         )
-    # 在中英文之间加空格
+    # Insert spaces between Chinese and English text.
     text = re.sub(r"([a-zA-Z0-9])([\u4e00-\u9fa5])", r"\1 \2", text)
     text = re.sub(r"([\u4e00-\u9fa5])([a-zA-Z0-9])", r"\1 \2", text)
     await message.reply_text(

@@ -46,8 +46,8 @@ bottle_reply_filter = filters.create(_bottle_reply_filter)
 
 @Client.on_message(filters.command(["bottle", "throwbottle"]), group=0)
 async def throw_bottle(client: Client, message: types.Message):
-    # 在命令后直接跟文本内容作为瓶中信
-    # 或者用命令回复一条消息, 将该消息内容作为瓶中信
+    # Use text following the command as the message in a bottle.
+    # Alternatively, reply to a message to use its content as the bottle message.
     if message.chat is None:
         return
     if message.chat.id is None:
@@ -100,7 +100,7 @@ async def throw_bottle(client: Client, message: types.Message):
                     i18n.t("bot.msg.bottle.unsupported_media_throw", locale=lang)
                 )
                 return
-    # 异或非
+    # XNOR.
     if (file_id is None) != (media_type is None):
         file_id = None
         media_type = None
@@ -339,7 +339,7 @@ async def handle_throw_back_callback(
     )
 
 
-# 举报
+# Report.
 @Client.on_callback_query(filters.regex(r"^report_bottle"), group=0)
 async def handle_report_bottle_callback(
     client: Client, callback_query: types.CallbackQuery
@@ -369,7 +369,7 @@ async def handle_report_bottle_callback(
     )
 
 
-# 销毁
+# Destroy.
 @Client.on_callback_query(filters.regex(r"^destroy_bottle"), group=0)
 async def handle_destroy_bottle_callback(
     client: Client, callback_query: types.CallbackQuery

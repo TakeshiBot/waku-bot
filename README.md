@@ -1,20 +1,51 @@
 <div align="center">
-<img src="https://t.me/i/userpic/320/kmuav2bot.jpg" alt="kmua" width="240">
+<img src="docs/docs/images/miyaneko.jpg" alt="Linh vật mèo của waku" width="240">
 
-# kmua bot
+# waku bot
 
-干啥啥不行，喵喵第一名
+Bot Telegram đa chức năng, có trợ lý AI và bảng quản trị Mini App.
 </div>
 
-分支名中的 v2 仅代表设计理念上的第二代, 不作 major version 语义.
+Tiếng Việt là ngôn ngữ mặc định. Bot hỗ trợ quản lý nhóm, xác minh thành viên,
+RSS, quote, quà tặng, meme và AI agent.
 
-本项目随时可能会出现 breaking change, 更新前请查阅 commit history 并做好备份.
+Tên nhánh `v2` chỉ thể hiện thế hệ thiết kế thứ hai, không mang ý nghĩa phiên bản
+major theo Semantic Versioning. Dự án có thể có thay đổi không tương thích;
+hãy đọc lịch sử commit và sao lưu cấu hình, cơ sở dữ liệu, dữ liệu phiên trước khi cập nhật.
 
-## [文档](https://kmua.unv.app)
+## Tài liệu
 
-demo: [@kmuav2bot](https://t.me/kmuav2bot)
+- [Giới thiệu](docs/docs/index.md)
+- [Triển khai](docs/docs/self-host.md)
+- [Bảng quản trị Mini App](docs/docs/webapp.md)
+- [Quốc tế hóa và tiếng Việt](docs/docs/i18n.md)
+- [Đổi tên dự án và múi giờ](docs/docs/branding-timezone.md)
 
-## Contributors
+## Chạy bot
+
+Điền `token` và `owners` trong [settings.toml](settings.toml), rồi chạy từ thư mục dự án:
+
+```bash
+docker compose up -d --build
+docker compose logs -f waku
+```
+
+Docker Compose build image `waku-bot:local` từ source hiện tại. Hướng dẫn chạy trực
+tiếp bằng Python 3.13 và các điều kiện triển khai nằm trong tài liệu triển khai.
+
+Múi giờ mặc định là `Asia/Ho_Chi_Minh` (UTC+7). Ngôn ngữ mặc định là `vi`; dữ liệu
+ngôn ngữ đã lưu của người dùng và nhóm được giữ lại, có thể đổi bằng `/lang`.
+Tên hiển thị của bot là `waku`; tên repository và phân phối Python là `waku-bot`.
+Namespace Python `kmua` và lệnh `python -m kmua` được giữ để các import và
+entrypoint tiếp tục hoạt động.
+
+## Giấy phép và nguồn gốc
+
+Source được phát hành theo [GNU AGPL v3](LICENSE). Dự án phát triển từ
+[source upstream của Krau](https://github.com/krau/kmua-bot); giữ nguyên ghi nhận
+tác giả và những người đóng góp bên dưới.
+
+## Người đóng góp
 
 <!-- readme: contributors -start -->
 <table>
@@ -31,21 +62,21 @@ demo: [@kmuav2bot](https://t.me/kmuav2bot)
                 <a href="https://github.com/mokurin000">
                     <img src="https://avatars.githubusercontent.com/u/34085039?v=4" width="100;" alt="mokurin000"/>
                     <br />
-                    <sub><b>莯凛</b></sub>
+                    <sub><b>mokurin000</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/tjsky">
                     <img src="https://avatars.githubusercontent.com/u/7272911?v=4" width="100;" alt="tjsky"/>
                     <br />
-                    <sub><b>去年夏天</b></sub>
+                    <sub><b>tjsky</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/NyanWhite">
                     <img src="https://avatars.githubusercontent.com/u/51278093?v=4" width="100;" alt="NyanWhite"/>
                     <br />
-                    <sub><b>喵白</b></sub>
+                    <sub><b>NyanWhite</b></sub>
                 </a>
             </td>
             <td align="center">
@@ -96,10 +127,10 @@ demo: [@kmuav2bot](https://t.me/kmuav2bot)
                 <a href="https://github.com/AHCorn">
                     <img src="https://avatars.githubusercontent.com/u/42889600?v=4" width="100;" alt="AHCorn"/>
                     <br />
-                    <sub><b>安和</b></sub>
+                    <sub><b>AHCorn</b></sub>
                 </a>
             </td>
 		</tr>
-	<tbody>
+	</tbody>
 </table>
 <!-- readme: contributors -end -->

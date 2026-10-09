@@ -23,7 +23,7 @@ from kmua.services.manyacg import (
 from . import utils
 
 httpx_client = httpx.AsyncClient(
-    base_url=app_config.manyacg_api_url, timeout=30, headers={"User-Agent": "KMUA Bot"}
+    base_url=app_config.manyacg_api_url, timeout=30, headers={"User-Agent": "WAKU Bot"}
 )
 
 

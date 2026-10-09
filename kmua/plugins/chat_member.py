@@ -107,7 +107,7 @@ async def sync_chat_members(client: Client, message: Message):
         f"sync_members:{chat.id}", True, app_config.cachettl_sync_members
     )
     await message.reply_text(i18n.t("bot.msg.sync_members_start", locale=lang))
-    # 在数据库中删除已经不在群组中的用户
+    # Remove users who have left the group from the database.
     try:
         result = await ops.sync_chat_members(chat.id)
     except Exception as e:

@@ -24,22 +24,22 @@ from kmua.webapp.server import server as webapp_server
 
 def _get_commands_hash(commands_dict: dict[str, list[BotCommand]]) -> str:
     """
-    计算命令列表的哈希值，用于检测命令是否发生变化
+    Hash the command list to detect changes.
     """
-    # 将命令转换为可序列化的格式
+    # Convert commands to a serializable format.
     serializable = {}
     for scope, commands in commands_dict.items():
         serializable[scope] = [
             {"command": cmd.command, "description": cmd.description} for cmd in commands
         ]
-    # 计算 hash
+    # Compute the hash.
     content = json.dumps(serializable, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(content.encode()).hexdigest()
 
 
 def _load_cached_hash() -> str | None:
     """
-    从文件加载缓存的命令哈希值
+    Load the cached command hash from disk.
     """
     try:
         commands_hash_file = app_config.workdir / ".commands_hash"
@@ -52,7 +52,7 @@ def _load_cached_hash() -> str | None:
 
 def _save_commands_hash(commands_hash: str) -> None:
     """
-    保存命令哈希值到文件
+    Save the command hash to disk.
     """
     try:
         commands_hash_file = app_config.workdir / ".commands_hash"
@@ -64,7 +64,7 @@ def _save_commands_hash(commands_hash: str) -> None:
 
 async def _should_update_commands(commands_dict: dict[str, list[BotCommand]]) -> bool:
     """
-    检查是否需要更新命令
+    Check whether commands need updating.
     """
     current_hash = _get_commands_hash(commands_dict)
     cached_hash = _load_cached_hash()
@@ -136,7 +136,7 @@ async def init_bot(client: Client = client):
         )
     )
 
-    # 准备所有命令列表
+    # Prepare all command lists.
     common_commands = [
         BotCommand(
             "start",
@@ -196,7 +196,7 @@ async def init_bot(client: Client = client):
         BotCommand("reload", i18n.t("bot.cmd.reload", locale=app_config.lang)),
     ]
 
-    # 构建命令字典用于检查
+    # Build the command map for comparison.
     commands_dict = {
         "all_group_chats": common_commands + group_common_commands,
         "all_chat_administrators": common_commands
@@ -204,13 +204,13 @@ async def init_bot(client: Client = client):
         + group_admin_commands,
         "all_private_chats": common_commands + private_commands,
     }
-    # 为每个 owner 添加命令
+    # Add commands for each owner.
     for owner_id in app_config.owners:
         commands_dict[f"chat_{owner_id}"] = (
             common_commands + private_commands + owner_commands
         )
 
-    # 检查是否需要更新命令
+    # Check whether commands need updating.
     if await _should_update_commands(commands_dict):
         logger.debug(i18n.t("log.setting_commands", locale=app_config.lang))
         await client.delete_bot_commands()
@@ -226,13 +226,13 @@ async def init_bot(client: Client = client):
             common_commands + private_commands,
             scope=pyrogram.types.BotCommandScopeAllPrivateChats(),
         )
-        # 为每个 owner 注册 owner 专属命令
+        # Register owner-only commands for each owner.
         for owner_id in app_config.owners:
             await client.set_bot_commands(
                 common_commands + private_commands + owner_commands,
                 scope=pyrogram.types.BotCommandScopeChat(owner_id),
             )
-        # 保存命令哈希值
+        # Save the command hash.
         current_hash = _get_commands_hash(commands_dict)
         _save_commands_hash(current_hash)
         logger.debug("Bot commands set and cached")
@@ -246,7 +246,7 @@ async def init_bot(client: Client = client):
         await sticker_vec.init(embed_dims)
         logger.debug("Sticker vector DB initialized")
 
-    # 添加定时更换 bot 头像任务
+    # Schedule periodic bot avatar changes.
     if app_config.avatar_change_enabled:
         logger.info(
             i18n.t("log.avatar_change_enabled", locale=app_config.lang).format(
@@ -269,7 +269,7 @@ async def init_bot(client: Client = client):
             minutes=1,
         )
 
-    # 新成员验证: 重启后恢复进行中的会话; 周期 sweep 处理超时/停用/聊天删除
+    # Member verification: restore active sessions after restart; sweep expired, disabled or deleted chats.
     await verify_plugin.load_active_sessions()
     common.jobqueue.add_interval_job(
         "verify_sweep", verify_plugin.verify_sweep, seconds=30

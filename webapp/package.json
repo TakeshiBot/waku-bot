@@ -1,9 +1,9 @@
 {
-  "name": "kmua-webapp",
+  "name": "waku-webapp",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Telegram Mini App management panel for kmua-bot",
+  "description": "Telegram Mini App management panel for waku-bot",
   "license": "AGPL-3.0",
   "packageManager": "pnpm@11.3.0",
   "engines": {

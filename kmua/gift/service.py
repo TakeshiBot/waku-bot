@@ -10,7 +10,7 @@ from kmua.i18n import t
 from kmua.plugins.agent import state
 
 # Gift effects touch both the database and short-lived in-memory state, which cannot
-# share one transaction. kmua runs as one process, so a narrow process-local lock keeps
+# share one transaction. waku runs as one process, so a narrow process-local lock keeps
 # a double tap or parallel HTTP request from applying an effect twice while retaining
 # the existing order: a failed effect does not consume the gift.
 _gift_send_lock = asyncio.Lock()

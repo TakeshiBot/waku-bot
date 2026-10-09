@@ -1,7 +1,7 @@
-"""新成员验证会话存储。
+"""New-member verification session storage.
 
-会话由 `kmua.plugins.verify.verify` 插件创建、作答、删除; 本模块只负责持久化。
-表无 FK(同 `chat_policy` 先例): sweep 兜底清理孤儿行, 聊天被删不级联。
+`kmua.plugins.verify.verify` creates, answers and deletes sessions; this module handles persistence.
+No foreign keys, following chat_policy: sweeps remove orphans; chat deletion does not cascade.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from kmua.database.models import VerificationMember, VerificationSession
 async def create_verification_session(
     session_row: VerificationSession, session: AsyncSession | None = None
 ) -> VerificationSession:
-    """持久化一条新会话, 返回带自增 id 的对象。"""
+    """Persist a new session and return the object with its generated ID."""
     assert session is not None
     session.add(session_row)
     await session.flush()
@@ -30,9 +30,9 @@ async def create_verification_session(
 async def update_verification_session(
     session_row: VerificationSession, session: AsyncSession | None = None
 ) -> None:
-    """持久化会话的修改(payload/attempts_left/challenge_message_id)。
+    """Persist session changes (payload/attempts_left/challenge_message_id).
 
-    `session_row` 通常是上个事务的游离对象, 用 merge 保证修改被检出并写入。
+    `session_row` is usually detached from the previous transaction; merge detects and persists changes.
     """
     assert session is not None
     await session.merge(session_row)
@@ -62,7 +62,7 @@ async def delete_verification_session(
 async def delete_verification_sessions_for_user(
     chat_id: int, user_id: int, session: AsyncSession | None = None
 ) -> None:
-    """删除某群某用户的全部会话(用户退群/被移除时调用)。"""
+    """Delete all sessions for a group member when they leave or are removed."""
     assert session is not None
     stmt = delete(VerificationSession).where(
         VerificationSession.chat_id == chat_id,
@@ -76,19 +76,19 @@ async def delete_verification_sessions_for_user(
 async def mark_user_verified(
     chat_id: int, user_id: int, session: AsyncSession | None = None
 ) -> None:
-    """记录用户在该群已通过验证(first_message 策略用); 重复记录静默合并。"""
+    """Record successful verification for the first_message policy; silently merge duplicate records."""
     assert session is not None
     await session.merge(VerificationMember(chat_id=chat_id, user_id=user_id))
     await session.flush()
 
 
-_VERIFIED_CACHE_TTL = 300.0  # 已验证标记只增不删, 缓存安全
+_VERIFIED_CACHE_TTL = 300.0  # Verification markers only grow, making this cache safe.
 _VERIFIED_CACHE_MAX = 100_000
 _verified_cache: dict[str, tuple[float, bool]] = {}
 
 
 def _verified_cache_get(key: str) -> bool | None:
-    """读缓存; 返回 None 表示未命中或已过期"""
+    """Read the cache; None means missing or expired."""
     entry = _verified_cache.get(key)
     if entry is None:
         return None
@@ -111,7 +111,7 @@ def _verified_cache_set(key: str, value: bool) -> None:
 async def is_user_verified(
     chat_id: int, user_id: int, session: AsyncSession | None = None
 ) -> bool:
-    """已验证标记(进程内 TTL 缓存); 未验证不缓存, 保证新用户立刻触发验证。"""
+    """Cache verified markers with an in-process TTL; do not cache unverified users so new users verify immediately."""
     assert session is not None
     cache_key = f"verified:{chat_id}:{user_id}"
     cached = _verified_cache_get(cache_key)
@@ -128,7 +128,7 @@ async def is_user_verified(
 async def get_all_verification_sessions(
     session: AsyncSession | None = None,
 ) -> list[VerificationSession]:
-    """全表读取, sweep 与启动恢复用。"""
+    """Read the full table for sweeps and startup recovery."""
     assert session is not None
     result = await session.execute(select(VerificationSession))
     return list(result.scalars().all())

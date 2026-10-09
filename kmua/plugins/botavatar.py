@@ -14,24 +14,24 @@ from kmua.logger import logger
 @Client.on_message(filters.command("randmyavatar"), group=0)
 async def randmyavatar_command(client: Client, message: Message):
     """
-    管理员命令：立刻更换 bot 头像
+    Admin command: change the bot avatar immediately.
     """
     user = message.from_user
     if user is None:
         return
 
-    # 权限检查
+    # Check permissions.
     db_user = await database.get_user_by_id(user.id)
     if db_user and not db_user.is_bot_global_admin and user.id not in app_config.owners:
         return
     elif not db_user and user.id not in app_config.owners:
         return
 
-    # 获取用户语言
+    # Resolve the user's language.
     user_config = await database.get_user_config(user.id)
     lang = user_config.lang
 
-    # 检查服务是否可用
+    # Check service availability.
     from kmua.services import aniobjcut, manyacg
 
     if not manyacg.manyacg_client or not aniobjcut.aniobjcut_client:
@@ -40,13 +40,13 @@ async def randmyavatar_command(client: Client, message: Message):
         )
         return
 
-    # 发送处理中的消息
+    # Send the progress message.
     status_msg = await message.reply_text(
         i18n.t("bot.msg.randmyavatar.processing", locale=lang)
     )
 
     try:
-        # 获取随机图片
+        # Fetch a random image.
         resp = await manyacg.manyacg_client.random_artwork(limit=1, r18=0)
         if resp.status != 200 or not resp.data:
             await status_msg.edit_text(
@@ -57,20 +57,20 @@ async def randmyavatar_command(client: Client, message: Message):
         artwork = resp.data[0]
         picture = artwork.pictures[random.randint(0, len(artwork.pictures) - 1)]
 
-        # 下载图片
+        # Download the image.
         async with httpx.AsyncClient(timeout=30) as http_client:
             fileresp = await http_client.get(
                 f"{app_config.manyacg_api_url}/picture/file/{picture.id}",
             )
             fileresp.raise_for_status()
 
-        # 裁切为头像
+        # Crop the avatar.
         avatar = await aniobjcut.aniobjcut_client.cut_avatar(fileresp.content)
 
-        # 更新头像
+        # Update the avatar.
         await client.set_profile_photo(InputChatPhotoStatic(io.BytesIO(avatar)))
 
-        # 成功消息
+        # Success message.
         await status_msg.edit_text(
             i18n.t("bot.msg.randmyavatar.success", locale=lang).format(
                 title=artwork.title, url=artwork.source_url

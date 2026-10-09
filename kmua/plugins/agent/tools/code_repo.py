@@ -469,7 +469,7 @@ async def get_repository_info() -> dict[str, Any]:
     await count_entries("/")
 
     return {
-        "project_name": "kmua-bot",
+        "project_name": "waku-bot",
         "description": tr("tool_a_telegram_bot_with_ai_agent_capabilities"),
         "virtual_files": file_count,
         "virtual_directories": dir_count,

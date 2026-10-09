@@ -2,7 +2,7 @@
 
 The API mirrors the Telegram Bot API: `method` is a Bot API method name and
 `params` uses the Bot API field names. Only a whitelist of sending/expressive
-methods is exposed, plus kmua-specific extensions. chat_id is always the
+methods is exposed, plus bot-specific extensions. chat_id is always the
 current chat and cannot be overridden.
 """
 
@@ -356,7 +356,7 @@ async def tg(
 
     Media fields accept a public http(s) URL, a work:// file reference from this chat's workspace, or a kmua:// codebase file.
 
-    kmua extensions:
+    Bot extensions:
     - scheduleMessage: text, schedule_time (ISO 8601, must be in the future).
     - blockUser: duration_minutes (1-10080), reason (optional).
 

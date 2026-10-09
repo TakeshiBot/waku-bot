@@ -185,7 +185,7 @@ class VerifyQuestionIn(ApiModel):
     question: str = Field(min_length=1, max_length=200)
     options: list[str] = Field(min_length=2, max_length=6)
     answers: list[str] = Field(min_length=1, max_length=6)
-    # 多正确答案的判定模式: all = 全选, any = 任选其一即可
+    # Multiple-answer mode: all = select every correct answer; any = choose any correct answer.
     select: str = "all"
 
     @field_validator("select")
@@ -251,7 +251,7 @@ class VerifyQuestionOut(ApiModel):
     question: str
     options: list[str]
     answers: list[str]
-    select: str = "all"  # 旧数据无此字段, 默认全选
+    select: str = "all"  # Legacy data lacks this field; default to selecting all correct answers.
 
 
 class VerifyQuestionsOut(ApiModel):
@@ -477,17 +477,17 @@ class AdminChatOut(ApiModel):
 
 
 class AgentUsageOut(ApiModel):
-    """一个额度账户的当日快照, 单位全部是 token (输入 + 输出)。账户用 `scope` +
-    `scope_id` 标识: "user" 是发言者(用户/频道), "chat" 是会话(群)。
+    """A daily quota snapshot measured in tokens (input + output). Accounts are identified by `scope` +
+    `scope_id`: "user" is the speaker (user/channel), "chat" is the conversation (group).
 
-    `credits` 可以为负: 单次 run 的用量是跑完才知道的, 用超的部分记成欠费。
+    `credits` may be negative: usage is known after the run, and overspending is recorded as debt.
     """
 
     scope: str
     scope_id: int
     requests_today: int
     free_used_tokens_today: int
-    free_limit_tokens: int | None  # None = 该账户免费部分不限额; 群账户 0 = 未分配
+    free_limit_tokens: int | None  # None = unlimited free usage for this account; 0 for a group means unallocated.
     credits: int
     input_tokens_today: int
     output_tokens_today: int
@@ -516,7 +516,7 @@ class AdminUserDetailOut(AdminUserOut):
     chats: list[ChatBriefOut]
     quote_count: int
     gift_count: int
-    # 只有详情端点会填: 列表页没有读这些数据, 用 None 表示"未读", 而不是假装为 0。
+    # Only the detail endpoint fills this; list responses use None for unread data rather than a false zero.
     agent_quota: AgentUsageOut | None = None
 
 
@@ -695,7 +695,7 @@ class ChatPolicyIn(ApiModel):
     agent_allowed: bool | None = None
     rss_allowed: bool | None = None
     note: str | None = Field(default=None, max_length=256)
-    # None = 保持原值。agent_quota_daily_tokens 的 0 表示"该群不分配额度", 与"保持原值"不冲突。
+    # None preserves the value; agent_quota_daily_tokens = 0 explicitly means no group allocation.
     agent_quota_daily_tokens: int | None = Field(default=None, ge=0, le=10**12)
     agent_quota_exempt: bool | None = None
     agent_credits: int | None = Field(default=None, ge=0, le=AGENT_CREDITS_MAX)

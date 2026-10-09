@@ -17,6 +17,7 @@ from kmua.common.memory_store import memttlcache
 from kmua.config import app_config
 from kmua.logger import logger
 from kmua.plugins.panel import chat_panel_button
+from kmua.timezone import as_bot_time
 
 _BOTTLE_MSG_PREFIX = "bottle_msg:"
 
@@ -111,7 +112,9 @@ async def start(client: Client, message: Message):
                 locale=lang,
             ).format(
                 sender=sender_mention,
-                created_at=html.escape(bottle.created_at.strftime("%Y-%m-%d %H:%M:%S")),
+                created_at=html.escape(
+                    as_bot_time(bottle.created_at).strftime("%Y-%m-%d %H:%M:%S %z")
+                ),
                 sender_id=bottle.sender_id,
             )
         else:
@@ -120,7 +123,9 @@ async def start(client: Client, message: Message):
                 locale=lang,
             ).format(
                 sender=sender_mention,
-                created_at=html.escape(bottle.created_at.strftime("%Y-%m-%d %H:%M:%S")),
+                created_at=html.escape(
+                    as_bot_time(bottle.created_at).strftime("%Y-%m-%d %H:%M:%S %z")
+                ),
             )
         try:
             await message.reply(

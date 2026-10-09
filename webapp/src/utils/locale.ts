@@ -3,7 +3,7 @@
  *
  * A raw tag like `zh-Hant` is fine in a config file and wrong in a picker: the
  * person choosing a language reads their own language's name, not a BCP 47 tag.
- * The list is explicit rather than `Intl.DisplayNames` because kmua ships joke
+ * The list is explicit rather than `Intl.DisplayNames` because waku ships joke
  * locales (Martian, 🤪) that no CLDR table knows, and because each name should be
  * written in the language it selects - that is what makes it findable.
  *

@@ -75,7 +75,7 @@ _DOMAIN_MAX_LEN = 253
 
 
 def _is_valid_ip_or_domain(value: str) -> bool:
-    """校验是否为合法的公网 IP 地址或域名, 防止 `.`、`localhost`、`127.1` 等触发本机/内网查询."""
+    """Validate public IP addresses or domains; reject '.', 'localhost', '127.1' and similar local queries."""
     try:
         ip_obj = ipaddress.ip_address(value)
     except ValueError:

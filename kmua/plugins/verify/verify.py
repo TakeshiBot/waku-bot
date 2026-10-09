@@ -1,4 +1,4 @@
-"""群聊新成员验证: Telegram 处理器(challenge 在 `challenge` 模块, 生命周期在 `session` 模块)。"""
+"""Telegram handlers for group-member verification; challenge builders and lifecycle live in challenge and session."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ from kmua.plugins.verify.session import (
     verification_lock,
 )
 
-# 对外再导出: __main__ / chat_member 以 verify 模块为入口
+# Re-exported entry points for __main__ and chat_member through the verify module.
 from kmua.plugins.verify.session import (
     handle_user_left as handle_user_left,
 )
@@ -55,12 +55,12 @@ from kmua.plugins.verify.session import (
     verify_sweep as verify_sweep,
 )
 
-# --------------------------------------------------------------------------- 处理器
+# --------------------------------------------------------------------------- Handlers.
 
 
 @Client.on_message(pyrogram.filters.new_chat_members & pyrogram.filters.group, group=2)
 async def on_new_members(client: Client, message: pyrogram.types.Message) -> None:
-    """新成员入群 -> 按策略/配置验证: 限制发言 + 发 challenge。"""
+    """Verify new members according to policy/configuration: restrict speech and send a challenge."""
     chat = message.chat
     if chat is None:
         return
@@ -79,7 +79,7 @@ async def on_new_members(client: Client, message: pyrogram.types.Message) -> Non
         logger.warning(f"verify: cannot check bot membership in {chat_id}: {e}")
         return
     if member.privileges is None or not member.privileges.can_restrict_members:
-        # fail-open: 无权限不拦截入群
+        # Fail open: do not block joining when permissions are missing.
         logger.warning(
             f"verify: bot lacks can_restrict_members in {chat_id}, skipping verification"
         )
@@ -89,7 +89,7 @@ async def on_new_members(client: Client, message: pyrogram.types.Message) -> Non
         if user is None:
             continue
         if client.me is not None and user.id == client.me.id:
-            continue  # bot 自己被拉入群
+            continue  # The bot itself was added to the group.
         await maybe_verify(
             client,
             VerifyContext(chat_id=chat_id, user=user, is_join=True),
@@ -98,7 +98,7 @@ async def on_new_members(client: Client, message: pyrogram.types.Message) -> Non
 
 @Client.on_callback_query(pyrogram.filters.regex(r"^verify:"), group=0)
 async def on_verify_callback(client: Client, callback_query: CallbackQuery) -> None:
-    """作答按钮回调: 归属校验 -> 过期兜底 -> 判对错。"""
+    """Answer callbacks: validate ownership, handle expiry, then check correctness."""
     lang = (
         await message_locale(callback_query.message)
         if callback_query.message is not None
@@ -124,13 +124,13 @@ async def on_verify_callback(client: Client, callback_query: CallbackQuery) -> N
     message = callback_query.message
     chat = message.chat if message is not None else None
     if session_row is None or chat is None or user is None:
-        # 会话不存在或消息缺失
+        # Session or message is missing.
         await callback_query.answer(
             i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
         )
         return
     if session_row.chat_id != chat.id or user.id != session_row.user_id:
-        # 越权点击
+        # Unauthorized button press.
         await callback_query.answer(
             i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
         )
@@ -151,7 +151,7 @@ async def on_verify_callback(client: Client, callback_query: CallbackQuery) -> N
         return
     payload = session_row.payload or {}
     if data[2] == "submit":
-        # 多选题确认: 已选项集合与正确答案集合一致才通过
+        # Confirm multi-select only when selected options equal the correct-answer set.
         selected = set(payload.get("selected") or [])
         options = payload.get("options") or []
         correct = {
@@ -179,7 +179,7 @@ async def on_verify_callback(client: Client, callback_query: CallbackQuery) -> N
         )
         return
     if _is_multi_answer(session_row):
-        # 多选题: 点选只切换勾选状态, 不判对错
+        # Multi-select presses toggle selection only; correctness is checked on confirmation.
         selected = set(payload.get("selected") or [])
         if index in selected:
             selected.discard(index)
@@ -211,7 +211,7 @@ async def on_verify_callback(client: Client, callback_query: CallbackQuery) -> N
 async def on_verify_admin_callback(
     client: Client, callback_query: CallbackQuery
 ) -> None:
-    """管理员放行/封禁按钮。权限门 = 全仓统一管理权限。"""
+    """Administrator approve/ban buttons use the shared bot-management permission check."""
     lang = (
         await message_locale(callback_query.message)
         if callback_query.message is not None
@@ -296,7 +296,7 @@ async def on_verify_admin_callback(
 async def on_verify_sticker_answer(
     client: Client, message: pyrogram.types.Message
 ) -> None:
-    """贴纸作答: 任意贴纸即通过, 仅超时可能失败; group=-50 抢在 agent 前。"""
+    """Any sticker passes; only timeout can fail. group=-50 runs before the agent."""
     chat = message.chat
     user = message.from_user
     if chat is None or user is None:
@@ -325,7 +325,7 @@ async def on_verify_sticker_answer(
 
 
 async def maybe_verify(client: Client, ctx: VerifyContext) -> bool:
-    """检查验证状态; 返回是否应拦截当前消息。"""
+    """Check verification state and return whether to intercept the current message."""
     config = await _chat_config(ctx.chat_id)
     if config is None or not config.verify_enabled:
         return False
@@ -345,7 +345,7 @@ async def _start_verification(
     user: pyrogram.types.User | pyrogram.types.Chat,
     config: ChatConfig,
 ) -> bool:
-    """建会话并限制成员; 每个失败分支都尽量恢复外部状态。"""
+    """Create a session and restrict the member; restore external state on each failure path where possible."""
     user_id = user.id
     if user_id is None:
         return False
@@ -417,7 +417,7 @@ async def _start_verification(
 async def _test_verify_target(
     client: Client, message: pyrogram.types.Message
 ) -> pyrogram.types.User | pyrogram.types.Chat | None:
-    """测试命令的目标: 回复对象(用户/频道) > 参数(id/用户名) > 命令发送者。"""
+    """Test command target priority: replied-to user/channel, argument ID/username, then command sender."""
     reply = message.reply_to_message
     if reply is not None:
         if (
@@ -429,7 +429,7 @@ async def _test_verify_target(
             reply.sender_chat is not None
             and reply.sender_chat.type == pyrogram.enums.ChatType.CHANNEL
         ):
-            # 频道身份发言: 目标是该频道
+            # Channel-identity message: target that channel.
             return reply.sender_chat
     command = message.command or []
     if len(command) > 1:
@@ -453,7 +453,7 @@ async def _test_verify_target(
     pyrogram.filters.command("testverify") & pyrogram.filters.group, group=0
 )
 async def test_verify_command(client: Client, message: pyrogram.types.Message) -> None:
-    """调试命令: 仅 bot 全局管理员可用, 对目标成员立即触发一次完整验证。"""
+    """Global-admin debug command: immediately trigger full verification for the target member."""
     chat = message.chat
     if chat is None:
         return
@@ -499,7 +499,7 @@ async def test_verify_command(client: Client, message: pyrogram.types.Message) -
 async def on_first_message_verify(
     client: Client, message: pyrogram.types.Message
 ) -> None:
-    """首次用户消息触发验证并拦截未验证消息。"""
+    """Trigger verification on the first user message and intercept unverified messages."""
     chat = message.chat
     user = message.from_user
     if chat is None or user is None:
@@ -510,7 +510,7 @@ async def on_first_message_verify(
     if client.me is not None and user.id == client.me.id:
         return
     if message.service:
-        return  # 入群/退群等系统消息不触发验证
+        return  # Join/leave and other service messages do not trigger verification.
     text = message.text or message.caption or ""
     should_stop = await maybe_verify(
         client,

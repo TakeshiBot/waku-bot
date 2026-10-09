@@ -1,5 +1,4 @@
 import asyncio
-import datetime
 from io import BytesIO
 
 import pyrogram
@@ -8,6 +7,7 @@ from wordcloud import WordCloud
 
 from kmua import common, consts, database, i18n
 from kmua.common.utils import is_explicit_reply
+from kmua.timezone import bot_now
 
 
 def _encode_png(image) -> bytes:
@@ -53,9 +53,7 @@ async def wordcloud_command(client: Client, message: pyrogram.types.Message):
                 font_path=consts.QUOTE_FONT_PATH,
                 width=1920,
                 height=1080,
-                background_color="white"
-                if 6 < datetime.datetime.now().hour < 18
-                else "black",
+                background_color="white" if 6 < bot_now().hour < 18 else "black",
             ).generate,
             text,
         )  # type: ignore

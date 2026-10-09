@@ -119,14 +119,14 @@ class I18n:
 
     def t(self, key: str, locale: str | None = "") -> str:
         """
-        翻译指定的键
+        Translate the given key.
 
         Args:
-            key: 翻译键, 使用点分隔的字符串表示嵌套
-            locale: 目标语言
+            key: Translation key with dot-separated nesting.
+            locale: Target language.
 
         Returns:
-            翻译后的字符串，如果找不到则返回原键
+            Translated string, or the original key when missing.
         """
         locale = normalize_locale(locale) if locale else self.default_locale
 
@@ -181,7 +181,7 @@ class I18n:
         return translation if isinstance(translation, str) else key
 
     def get_raw(self, key: str, locale: str | None = "") -> Any:
-        """获取任意类型的翻译值(dict/list), 解析规则同 t()。"""
+        """Get a structured translation value (dict/list), resolving it as t() does."""
         locale = normalize_locale(locale) if locale else self.default_locale
         if locale not in self.translations:
             if self.default_locale in self.translations:

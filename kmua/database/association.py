@@ -33,7 +33,7 @@ async def add_association_in_chat(
 ) -> UserChatAssociation | None:
     assert session is not None
 
-    # 如果已知该 association 存在，跳过 upsert 直接返回
+    # Skip the upsert when this association is already known to exist.
     cache_pair = (user.id, chat.id)
     if cache_pair in _association_cache:
         return await session.get(UserChatAssociation, (user.id, chat.id))

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
 import pyrogram
@@ -22,6 +21,7 @@ from kmua.config import app_config
 from kmua.logger import logger
 from kmua.plugins.agent import datatype, state
 from kmua.plugins.agent.localization import tr
+from kmua.timezone import as_bot_time, bot_now
 
 # Media types deliverable to the model, with size caps and the multimodal-inputs key.
 _SIZE_CAPS = {
@@ -151,8 +151,8 @@ def _sender_key(message: pyrogram.types.Message) -> tuple[str, int] | None:
 class SenderInfo:
     name: str
     user_id: str
-    kind: str  # 真人 / 频道 / bot / 匿名管理 / 系统
-    status: str  # 群主 / 管理员 / 普通群员 / 系统
+    kind: str  # Person / channel / bot / anonymous admin / system
+    status: str  # Owner / administrator / member / system
 
     def label(self) -> str:
         return f"{self.name}({self.user_id}) | {self.kind} | {self.status}"
@@ -420,7 +420,7 @@ def _env_header(
 
 def _now_text() -> str:
 
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return bot_now().strftime("%Y-%m-%d %H:%M:%S %z")
 
 
 def _chat_info_lines(chat: pyrogram.types.Chat | None) -> list[str]:
@@ -447,7 +447,8 @@ def _msg_line(
 ) -> str:
     attrs = [f"id={message.id}"]
     if message.date:
-        attrs.append(f"date={_quote(message.date.strftime('%Y-%m-%d %H:%M:%S'))}")
+        timestamp = as_bot_time(message.date, naive_timezone=None)
+        attrs.append(f"date={_quote(timestamp.strftime('%Y-%m-%d %H:%M:%S %z'))}")
     if (
         message.reply_to_message_id
         and message.reply_to_top_message_id != message.reply_to_message_id
@@ -480,7 +481,7 @@ def _render_history(
     senders: dict[int, SenderInfo],
     budget: Budget,
 ) -> str:
-    """The 历史消息 section: chronological, consecutive-sender grouping."""
+    """The history section: chronological, consecutive-sender grouping."""
     lines: list[str] = []
     current_label: str | None = None
     for msg in messages:

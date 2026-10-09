@@ -69,7 +69,7 @@ async def handle_send_gift_callback(
             rarity=gift.get_rarity_display_name(g.rarity, lang),
             name=gift.get_display_name(gift.GiftID(g.gift_id), lang),
         )
-    # 每行5个按钮, 第2行分页
+    # Five buttons per row; pagination is on the second row.
     buttons = [
         [
             types.InlineKeyboardButton(

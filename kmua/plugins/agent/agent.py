@@ -422,7 +422,7 @@ if app_config.agent and app_config.agent_model:
         chat = message.chat
         if not user or not user.id or not chat or not chat.id:
             return
-        # 白名单外不回复: 免得泄露群额度。
+        # Do not answer outside the whitelist, avoiding unintended group quota spending.
         if not is_chat_allowed(chat.id):
             return
         if chat.type == pyrogram.enums.ChatType.PRIVATE:
@@ -1029,7 +1029,7 @@ async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
         else:
             lang = (await database.get_chat_config(chat.id)).lang
 
-        # 额度闸门排在 typing 之前: 用尽的回复只有一条文字, 不该先亮 typing。
+        # Check quota before typing; an exhausted-quota response sends only one text message.
         subject = quota.subject_of(message)
         if not await quota.can_start(subject):
             await trace.note_rejection(
@@ -1080,8 +1080,8 @@ async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
             history=history,
             is_group_chat=is_group_chat,
         )
-        # 在群聊场景中获取附近消息作为上下文; 群聊的新格式把 ctx_info 折进首帧
-        # 环境信息, 因此 additional_instructions 不再重复携带。
+        # Gather nearby messages as group context; the new format folds ctx_info into the first frame's
+        # environment information, so additional_instructions must not repeat it.
         nearby_count = (
             app_config.agent_group_context_nearby_message_count if is_group_chat else 0
         )

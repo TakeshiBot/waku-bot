@@ -25,6 +25,7 @@ import { useAsyncData } from "@/composables/useAsyncData";
 import { useDirtyState } from "@/composables/useDirtyState";
 import { useMainButton } from "@/composables/useMainButton";
 import { t } from "@/i18n";
+import { parseBotMoment } from "@/utils/botTime";
 import { formatDateTime, formatTokens, truncate } from "@/utils/format";
 
 const PAGE_SIZE = 20;
@@ -99,25 +100,6 @@ const statusOptions = computed(() => [
   ...STATUSES.map((value) => ({ value, text: t(`agentRuns.status.${value}`) })),
 ]);
 
-/**
- * Read a filter box as a moment in time.
- *
- * `datetime-local` is not used because the Telegram WebView renders it as an
- * unusable spinner, so the box takes `YYYY-MM-DD` or `YYYY-MM-DD HH:MM` in the
- * operator's own timezone. A date without a time means the whole day, which is what
- * "runs since the 1st" has to mean at both ends.
- */
-function parseMoment(raw: string, endOfDay: boolean): string | undefined {
-  const value = raw.trim();
-  if (!value) return undefined;
-  const hasTime = value.includes(":") || value.includes("T");
-  const normalized = hasTime
-    ? value.replace(" ", "T")
-    : `${value}T${endOfDay ? "23:59:59" : "00:00:00"}`;
-  const moment = new Date(normalized);
-  return Number.isNaN(moment.getTime()) ? undefined : moment.toISOString();
-}
-
 function parseId(raw: string): number | undefined {
   const value = raw.trim();
   if (!/^-?\d+$/.test(value)) return undefined;
@@ -139,8 +121,8 @@ function applyFilters(): void {
     user_id: parseId(boxes.userId),
     kind: boxes.kind || undefined,
     status: boxes.status || undefined,
-    since: parseMoment(boxes.since, false),
-    until: parseMoment(boxes.until, true),
+    since: parseBotMoment(boxes.since, false),
+    until: parseBotMoment(boxes.until, true),
     q: boxes.search.trim() || undefined,
   };
   // The boxes are the new baseline: what is on screen is what the list shows.

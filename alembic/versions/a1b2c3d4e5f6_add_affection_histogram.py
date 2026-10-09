@@ -22,7 +22,7 @@ depends_on: str | Sequence[str] | None = None
 
 def affection_bucket(x: int) -> int:
     """
-    将好感度值映射到桶编号（与 kmua/database/affection.py 保持一致）
+    Map affection values to buckets, matching kmua/database/affection.py.
     """
     if x < -200:
         return x // 50
@@ -45,7 +45,7 @@ def upgrade() -> None:
 
     table_name = "affection_histogram"
 
-    # 检查表是否已存在
+    # Check whether the table already exists.
     if not insp.has_table(table_name):
         op.create_table(
             table_name,
@@ -53,7 +53,7 @@ def upgrade() -> None:
             sa.Column("cnt", sa.BigInteger(), nullable=False, default=0),
         )
 
-        # 创建索引
+        # Create the index.
         op.create_index(
             "ix_affection_histogram_bucket",
             table_name,
@@ -61,10 +61,10 @@ def upgrade() -> None:
             unique=False,
         )
 
-    # 由于使用非线性分桶函数，需要在应用层逐行处理
-    # 所有数据库使用相同的 Python 逻辑
+    # Nonlinear bucketing requires processing each row in the application.
+    # Use the same Python logic for every database backend.
     if not insp.has_table("user_data"):
-        result = []  # 全新库无存量数据可统计
+        result = []  # A fresh database has no existing values to aggregate.
     elif dialect == "postgresql":
         result = bind.execute(
             text(
@@ -90,7 +90,7 @@ def upgrade() -> None:
         bucket = affection_bucket(affection)
         bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
 
-    # 批量插入直方图数据
+    # Insert the histogram data.
     if bucket_counts:
         for bucket, cnt in bucket_counts.items():
             if dialect == "postgresql":
@@ -120,9 +120,9 @@ def upgrade() -> None:
                     {"bucket": bucket, "cnt": cnt},
                 )
 
-    # PostgreSQL: 安装 SQL 分桶函数和触发器
+    # PostgreSQL: install the SQL bucketing function and triggers.
     if dialect == "postgresql":
-        # 创建 SQL 版本的 affection_bucket 函数
+        # Create the SQL version of affection_bucket.
         op.execute(
             text("""
             CREATE OR REPLACE FUNCTION affection_bucket(x INT)
@@ -146,7 +146,7 @@ def upgrade() -> None:
         """)
         )
 
-        # 创建触发器函数
+        # Create the trigger function.
         op.execute(
             text("""
             CREATE OR REPLACE FUNCTION update_affection_histogram()
@@ -219,7 +219,7 @@ def downgrade() -> None:
     bind = op.get_bind()
     dialect = bind.dialect.name
 
-    # PostgreSQL: 删除触发器和函数
+    # PostgreSQL: remove the triggers and functions.
     if dialect == "postgresql":
         op.execute(
             text("DROP TRIGGER IF EXISTS trg_update_affection_histogram ON user_data;")
@@ -227,6 +227,6 @@ def downgrade() -> None:
         op.execute(text("DROP FUNCTION IF EXISTS update_affection_histogram;"))
         op.execute(text("DROP FUNCTION IF EXISTS affection_bucket;"))
 
-    # 删除索引和表
+    # Remove the index and table.
     op.drop_index("ix_affection_histogram_bucket", table_name="affection_histogram")
     op.drop_table("affection_histogram")

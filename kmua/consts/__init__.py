@@ -1,7 +1,7 @@
 from pathlib import Path
 
-REPO_URL = "https://github.com/krau/kmua-bot/"
-DOCS_URL = "https://kmua.unv.app"
+REPO_URL = "https://github.com/TakeshiBot/waku-bot/"
+DOCS_URL = f"{REPO_URL}tree/v2/docs/docs"
 
 RESOURCES_DIRNAME = "resources"
 

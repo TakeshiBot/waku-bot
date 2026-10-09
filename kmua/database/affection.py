@@ -222,7 +222,7 @@ BEGIN
     old_aff := (OLD.config->>'affection')::int;
     new_aff := (NEW.config->>'affection')::int;
 
-    -- affection 没变，直接跳过（关键）
+    -- Skip unchanged affection values (required).
     IF old_aff IS NOT DISTINCT FROM new_aff THEN
         RETURN NEW;
     END IF;
@@ -289,10 +289,10 @@ async def update_user_affection(
     if runtime_config.db_is_postgres:
         return
 
-    # 非 PG：手动维护
+    # Maintain manually on non-PostgreSQL databases.
     if old_bucket != new_bucket:
-        # CASE 而非 greatest(): SQLite 没有 greatest 函数, 用它会让
-        # SQLite 上任何跨桶的好感度变更直接抛 OperationalError.
+        # Use CASE instead of greatest(), which SQLite does not provide;
+        # otherwise cross-bucket affection changes raise OperationalError on SQLite.
         decremented = sqlalchemy.case(
             (AffectionHistogram.cnt - 1 < 0, 0),
             else_=AffectionHistogram.cnt - 1,
@@ -370,7 +370,7 @@ async def get_affection_stats(session: AsyncSession | None = None) -> dict:
 
 async def uninstall_postgres_trigger() -> None:
     """
-    卸载 PostgreSQL 触发器
+    Remove PostgreSQL triggers.
     """
     if not runtime_config.db_is_postgres:
         return

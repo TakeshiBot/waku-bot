@@ -293,7 +293,7 @@ async def delete_quote_in_private(
     ~pyrogram.filters.command("") & pyrogram.filters.group, group=1
 )
 async def random_quote(client: PyrogramClient, message: pyrogram.types.Message):
-    """尝试主动发送引用消息"""
+    """Attempt to send a proactive quote."""
     chat = message.chat
     if not chat or not chat.id:
         return

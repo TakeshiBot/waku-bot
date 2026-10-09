@@ -392,7 +392,7 @@ async def _transcribe_media_tool_return(
     from ...prompt import transcribe_binary_content
 
     try:
-        # 转写是这次工具调用额外发起的一次模型调用: 记在本次 run 的付款方账上。
+        # Transcription adds a model call to this tool invocation; charge the current run's payer.
         subject = quota.subject_of(ctx.deps.message)
         description = await transcribe_binary_content(model, data, media_type, subject)
     except Exception as e:

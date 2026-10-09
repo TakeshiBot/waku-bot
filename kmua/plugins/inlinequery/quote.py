@@ -43,7 +43,7 @@ async def query_quote(
             #     ]
             # )
 
-            # https://github.com/krau/kmua-bot/issues/71
+            # Historical upstream issue: https://github.com/krau/kmua-bot/issues/71
             markup = pyrogram.types.InlineKeyboardMarkup(
                 [[pyrogram.types.InlineKeyboardButton(text="↗️", url=quote.link)]]
             )

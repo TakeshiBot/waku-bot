@@ -31,7 +31,7 @@ const props = defineProps<{ chatId: number }>();
 
 const MAX_QUESTIONS = 200;
 const MAX_OPTIONS = 6;
-/** 新建题目时预置的空选项行数(2 是后端下限, 多给一行方便起步)。 */
+/** Initial blank options for a new question: the backend requires two; add one extra to start. */
 const INITIAL_OPTION_ROWS = 3;
 
 /** Draft shape: options are editable rows, each carrying its own correct flag. */
@@ -43,7 +43,7 @@ interface OptionRow {
 interface QuestionDraft {
   question: string;
   optionRows: OptionRow[];
-  /** 多正确答案时: true = 任选其一即可, false = 必须全选。 */
+  /** For multiple correct answers: true = any correct answer suffices; false = select all. */
   anyOf: boolean;
 }
 
@@ -70,13 +70,13 @@ function toPayload(draft: QuestionDraft): VerifyQuestion {
   return {
     question: draft.question,
     options,
-    // 一个都没勾时默认第一个选项为正确答案; 单选时模式恒为 all。
+    // If none are selected, the first option is correct; single-answer mode always uses all.
     answers: answers.length > 0 ? answers : [options[0] ?? ""],
     select: answers.length > 1 && draft.anyOf ? "any" : "all",
   };
 }
 
-/** 列表行的摘要: 非空选项数 + 正确答案内容(逗号拼接, 展示层截断)。 */
+/** List summary: nonempty option count and comma-separated correct answers, truncated for display. */
 function questionMeta(question: QuestionDraft): { options: number; correct: string } {
   const rows = question.optionRows.filter((row) => row.text.trim().length > 0);
   const answers = rows.filter((row) => row.correct).map((row) => row.text.trim());
@@ -90,14 +90,14 @@ function correctCount(question: QuestionDraft): number {
 const saving = ref(false);
 const route = useRoute();
 const router = useRouter();
-/** 当前编辑的题目下标; 由路由 query 驱动, 原生返回键即可回到列表。 */
+/** Question index from the route query; the native back button returns to the list. */
 const editingIndex = computed<number | null>(() => {
   const raw = route.query.edit;
   if (typeof raw !== "string" || !/^\d+$/.test(raw)) return null;
   const index = Number(raw);
   return index >= 0 && index < form.draft.value.questions.length ? index : null;
 });
-/** 正在编辑的题目草稿(列表模式下为 undefined)。 */
+/** Question draft under editing; undefined in list mode. */
 const editingQuestion = computed<QuestionDraft | undefined>(() =>
   editingIndex.value === null ? undefined : form.draft.value.questions[editingIndex.value],
 );
@@ -195,7 +195,7 @@ useMainButton({
     :error="data.error.value"
     @retry="data.reload"
   >
-    <!-- 列表模式: 每行一道题的摘要, 行内可删除 -->
+    <!-- List mode: one question summary per row, with inline deletion. -->
     <template v-if="editingIndex === null">
       <SettingsSection :label="t('chats.verifyListLabel')">
         <div
@@ -246,7 +246,7 @@ useMainButton({
       </SettingsSection>
     </template>
 
-    <!-- 详情模式: 单题编辑 -->
+    <!-- Detail mode: edit one question. -->
     <template v-else-if="editingQuestion">
       <SettingsSection
         :label="t('chats.verifyQuestionNumber', { number: (editingIndex ?? 0) + 1 })"

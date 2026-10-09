@@ -120,7 +120,7 @@ class _ManyacgClient:
         self.api_key = api_key
         self.url = url
         headers = {
-            "User-Agent": "KMUA ManyacgClient",
+            "User-Agent": "WAKU ManyacgClient",
         }
         self.client = httpx.AsyncClient(
             base_url=self.url,

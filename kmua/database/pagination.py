@@ -48,7 +48,7 @@ def text_match(column: Any, query: str) -> sqlalchemy.ColumnElement[bool]:
 
     PostgreSQL's ILIKE is native. SQLite's LIKE is already case-insensitive for
     ASCII but not for non-ASCII, so both sides are lowered explicitly - which
-    matters here because most kmua display names are CJK.
+    matters here because most bot display names are CJK.
     """
     pattern = f"%{query.lower()}%"
     if runtime_config.db_is_postgres:

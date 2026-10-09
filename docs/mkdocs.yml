@@ -1,30 +1,30 @@
-site_name: kmua の小站
+site_name: waku
 site_author: Krau
-site_description: 关于 kmua 已知的情报
-repo_name: krau/kmua-bot
-repo_url: https://github.com/krau/kmua-bot
+site_description: Tài liệu triển khai, cấu hình và sử dụng waku
+repo_name: TakeshiBot/waku-bot
+repo_url: https://github.com/TakeshiBot/waku-bot
 copyright: CC BY-NC-SA 4.0
 theme:
   name: material
-  language: zh
+  language: vi
   highlightjs: true
   palette:
     - media: "(prefers-color-scheme)"
       toggle:
         icon: material/brightness-auto
-        name: 切换主题
+        name: Đổi giao diện
     - media: "(prefers-color-scheme: light)"
       scheme: default
       primary: cyan
       toggle:
         icon: material/brightness-7
-        name: 暗色模式
+        name: Giao diện tối
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
       primary: blue grey
       toggle:
         icon: material/brightness-4
-        name: 亮色模式
+        name: Giao diện sáng
 
 nav:
   - index.md
@@ -32,4 +32,5 @@ nav:
   - self-host.md
   - webapp.md
   - i18n.md
+  - branding-timezone.md
   - license.md

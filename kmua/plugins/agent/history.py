@@ -2,7 +2,7 @@
 
 Compaction delegates to pydantic-ai-harness's TieredCompaction: cheap
 zero-LLM passes first, an LLM summary last, stopping once the history fits
-the compression threshold (window x ratio). Two kmua invariants on top:
+the compression threshold (window x ratio). Two bot invariants on top:
 - the pair-complete prefix before the last deferred (unresolved) tool call
   is the only part compaction may touch (a pending ask_user answer must
   still resolve);

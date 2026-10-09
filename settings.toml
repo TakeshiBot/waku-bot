@@ -8,15 +8,16 @@ use_ipv6 = false
 log_retention_days = 30
 log_level = "INFO"
 lang = "vi"
+nickname = "waku"
 
-# Telegram Mini App 管理面板.
+# Telegram Mini App management panel.
 # webapp = false
 # webapp_host = "0.0.0.0"
 # webapp_port = 8180
-# 公网 HTTPS 地址, 启用面板时必填 (Telegram 不会打开 HTTP 的 Mini App)
+# Public HTTPS URL, required when the panel is enabled (Telegram rejects HTTP Mini Apps).
 # webapp_url = ""
-# 在 BotFather 用 /newapp 注册的 Mini App short name.
-# 群内 /config 的深链 t.me/<bot>/<short_name>?startapp=... 需要它
+# Mini App short name registered with /newapp in BotFather.
+# Required for group /config deep links: t.me/<bot>/<short_name>?startapp=...
 # webapp_short_name = "panel"
 # webapp_menu_button = true
 
@@ -73,9 +74,9 @@ manyacg_setu_cd = 1
 # agent_periodic_sticker_interval = 5
 # agent_periodic_reaction_interval = 3
 
-# RSS 订阅推送
+# RSS subscription delivery.
 # rss_enabled = true
-# 白名单模式: 默认开启, 只有 owner 在面板中放行的 chat 可以订阅
+# Whitelist mode: enabled by default; only chats approved by an owner can subscribe.
 # rss_whitelist_mode = true
-# 轮询间隔(分钟)
+# Polling interval (minutes).
 # rss_interval = 30

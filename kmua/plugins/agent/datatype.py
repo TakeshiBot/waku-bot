@@ -34,7 +34,7 @@ class ChatMemoryy(BaseModel):
         if self.attitudes_to_you:
             parts.append(tr("attitude_value", p0=";".join(self.attitudes_to_you)))
 
-        # 仅在私聊时输出完整信息
+        # Output full information only in private chats.
         if not is_group_chat:
             if self.interests:
                 parts.append(tr("interests_value", p0=";".join(self.interests)))
@@ -204,4 +204,4 @@ class BotLastReply:
     reply_text: str
     timestamp: float
     original_user_message: str = ""
-    full_output: str = ""  # 可能分割成多条消息发送
+    full_output: str = ""  # May be split into multiple outgoing messages.

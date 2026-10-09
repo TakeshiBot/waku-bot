@@ -1,5 +1,5 @@
 /**
- * Transient feedback: "已保存", "头像已刷新", and the failures that pair with them.
+ * Transient feedback for saves, avatar refreshes and related failures.
  *
  * State lives at module scope rather than in a component or a Pinia store, because a
  * notice outlives the action that raised it and belongs to no single page: a save on

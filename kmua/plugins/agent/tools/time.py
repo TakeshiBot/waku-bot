@@ -1,4 +1,4 @@
-"""时间工具: 查询当前时间或计算两个时间之间的差值。"""
+"""Read the current time or calculate the difference between timestamps."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic_ai import RunContext
 
 from kmua.plugins.agent.localization import tr
+from kmua.timezone import BOT_TIMEZONE
 
 from .. import datatype
 
@@ -34,7 +35,7 @@ class _DifferenceResult:
 async def _now(
     timezone_name: TimezoneName, format_type: Literal["iso", "readable", "both"]
 ) -> _NowResult:
-    from zoneinfo import ZoneInfo, available_timezones
+    from zoneinfo import ZoneInfo
 
     try:
         utc_now = datetime.now(UTC)
@@ -42,17 +43,11 @@ async def _now(
             target_time = utc_now
             tz_info = UTC
         elif timezone_name == "local":
-            target_time = datetime.now()
-            tz_info = target_time.astimezone().tzinfo
-            target_time = target_time.replace(tzinfo=tz_info)
+            tz_info = BOT_TIMEZONE
+            target_time = utc_now.astimezone(tz_info)
         else:
-            if timezone_name in available_timezones():
-                tz_info = ZoneInfo(timezone_name)
-                target_time = utc_now.astimezone(tz_info)
-            else:
-                target_time = datetime.now()
-                tz_info = target_time.astimezone().tzinfo
-                target_time = target_time.replace(tzinfo=tz_info)
+            tz_info = ZoneInfo(timezone_name)
+            target_time = utc_now.astimezone(tz_info)
 
         iso_str = target_time.isoformat()
         weekdays = [
@@ -92,10 +87,10 @@ async def _difference(time1: str, time2: str) -> _DifferenceResult:
         dt1 = parser.parse(time1)
         dt2 = parser.parse(time2)
         if dt1.tzinfo is None:
-            dt1 = dt1.replace(tzinfo=datetime.now().astimezone().tzinfo)
+            dt1 = dt1.replace(tzinfo=BOT_TIMEZONE)
         if dt2.tzinfo is None:
-            dt2 = dt2.replace(tzinfo=datetime.now().astimezone().tzinfo)
-        diff = dt2 - dt1
+            dt2 = dt2.replace(tzinfo=BOT_TIMEZONE)
+        diff = dt2.astimezone(UTC) - dt1.astimezone(UTC)
         total_seconds = abs(diff.total_seconds())
         days = int(total_seconds // 86400)
         hours = int((total_seconds % 86400) // 3600)
@@ -140,10 +135,10 @@ async def time_info(
     Args:
         operation: "now" reads the current time; "difference" compares two times.
         time1, time2: Required for "difference" — timestamps in ISO format
-            (e.g. "2026-08-02T10:00:00+08:00") or natural strings such as
-            "2026-08-02 10:00" or "now"; formats are detected automatically.
+            (e.g. "2026-08-02T10:00:00+07:00") or date strings such as
+            "2026-08-02 10:00"; naive timestamps use the bot's UTC+7 timezone.
         timezone_name: The timezone "now" is reported in — "local" (default)
-            is the bot's timezone, or any IANA name like "Asia/Shanghai",
+            is "Asia/Ho_Chi_Minh" (UTC+7), or any IANA name like "Asia/Ho_Chi_Minh",
             "Europe/Berlin". Ignored for "difference".
         format_type: How "now" is formatted: "iso", "readable", or "both" (default).
     """

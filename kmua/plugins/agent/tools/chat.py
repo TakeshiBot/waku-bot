@@ -33,8 +33,8 @@ async def search_group_memory(
         results = await ctx.deps.powermemory.search(
             query, user_id=f"group_{ctx.deps.chat_id}", limit=10
         )
-    # powermem 自己调模型, 用量只有它的回调看得到; 记到这次运行的人头上, 和这次运行的
-    # 其它开销一样。
+    # powermem calls the model internally; collect usage through its callback and attribute it to this run's payer,
+    # just like other costs in the run.
     await _settle_powermem(ctx, memory_calls)
 
     # powermem search response: entries under "results", each carrying "memory"
@@ -82,8 +82,8 @@ async def update_group_memory(
             f"{e.__class__.__name__}: {e}"
         )
         raise ModelRetry(tr("memory_store_failed", p0=e.__class__.__name__, p1=e))
-    # 计费发生在存储成功之后, 也不放在上面的 try 里: 结算失败不该被当成"没存进去"
-    # 而让模型重试。
+    # Bill after successful storage and outside the try block; a settlement failure must not look like failed storage
+    # and cause the model to retry.
     await _settle_powermem(ctx, memory_calls)
     return tr("tool_memory_stored_p0", p0=repr(content))
 

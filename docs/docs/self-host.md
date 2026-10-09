@@ -1,25 +1,69 @@
-# 部署指南
+# Hướng dẫn triển khai
 
-启动 Bot 之前, 请为 Bot 关闭隐私模式, 以接收群组消息. 此外还需要打开 Inline Mode 和 Inline Query Feedback.
+Trước khi chạy bot, tắt Privacy Mode để bot nhận tin nhắn trong nhóm.
+Bật Inline Mode và Inline Query Feedback. Thực hiện các thiết lập này trong
+[@BotFather](https://t.me/BotFather).
 
-上述配置都需要在 [BotFather](https://t.me/botfather) 中完成.
+## Chạy bằng Docker Compose
 
-## 使用 docker compose
-
-一般情况下仅需要 Bot Token 和你的 ID 即可启动一个 kmua 实例.
-
-下载 [docker-compose.yml](https://github.com/krau/kmua-bot/blob/v2/docker-compose.yml) 和 [settings.toml](https://github.com/krau/kmua-bot/blob/v2/settings.toml) 到同一目录下, 然后按需修改配置.
-
+Clone toàn bộ repository để build image từ source hiện tại:
 
 ```bash
-docker compose up -d
+git clone https://github.com/TakeshiBot/waku-bot.git
+cd waku-bot
 ```
 
-## 源码运行
+Sửa `settings.toml`: điền token của bot vào `token` và ID Telegram của quản trị
+viên vào danh sách `owners`. Các tùy chọn AI, RSS và Mini App có thể cấu hình
+theo nhu cầu.
 
-Python 版本: 3.13+, 在系统中需安装 `graphviz` 用于绘制关系图.
+```bash
+docker compose up -d --build
+docker compose logs -f waku
+```
 
-1. git clone https://github.com/krau/kmua-bot.git
-2. 修改 `settings.toml`
-3. 使用 uv 创建虚拟环境, 安装依赖
-4. `python -m kmua`
+Compose build image `waku-bot:local`. Cấu hình, dữ liệu và log được gắn từ
+`settings.toml`, `data/` và `logs/` trên máy chủ. Khi cập nhật source, sao lưu
+các mục này rồi chạy lại lệnh build.
+
+### Nâng cấp từ bản cũ
+
+Dịch vụ Compose đã đổi tên từ `kmua` sang `waku`. Dừng instance cũ trước
+khi khởi động instance mới để hai container không cùng dùng phiên Telegram và
+cơ sở dữ liệu. Trong thư mục/project Compose cũ, chạy:
+
+```bash
+docker compose down --remove-orphans
+```
+
+Sau đó chạy `docker compose up -d --build` với source mới. Lệnh dừng trên không
+xóa các thư mục bind mount `data/`, `logs/` hoặc file `settings.toml`. Nếu đổi thư
+mục dự án hoặc tên project Compose, cần dừng project cũ riêng và chuyển dữ liệu
+đã sao lưu sang đường dẫn bind mount của project mới.
+
+Múi giờ mặc định của bot và container là `Asia/Ho_Chi_Minh` (UTC+7).
+Xem [ghi chú múi giờ và đổi tên](branding-timezone.md) nếu triển khai từ bản cũ.
+
+Để dùng bảng quản trị, thiết lập HTTPS theo [hướng dẫn Mini App](webapp.md).
+
+## Chạy trực tiếp từ source
+
+Dự án yêu cầu **Python 3.13** theo `pyproject.toml`. Cài `graphviz` trên hệ
+thống để tạo sơ đồ quan hệ. Chạy trực tiếp trên Linux vì dependency `uvloop`
+không hỗ trợ Windows. AI agent shell cũng dùng Landlock/landrun trên Linux;
+Docker là cách triển khai sẵn có của dự án.
+
+```bash
+git clone https://github.com/TakeshiBot/waku-bot.git
+cd waku-bot
+uv sync --frozen
+```
+
+Sửa `settings.toml` như hướng dẫn ở trên, rồi chạy:
+
+```bash
+uv run --no-sync python -m kmua
+```
+
+Tên phân phối là `waku-bot`. Thư mục và module Python `kmua` được giữ nguyên
+để bảo toàn import, migration và lệnh khởi động.

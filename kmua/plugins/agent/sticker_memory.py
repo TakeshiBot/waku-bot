@@ -104,7 +104,7 @@ async def _get_description(
         else:
             content_part = BinaryContent(data=image_bytes, media_type=mime_type)  # type: ignore
 
-        # 使用超时控制防止模型调用阻塞事件循环（贴纸描述使用小模型超时）
+        # Enforce the small-model timeout for sticker descriptions to avoid stalling the event loop.
         session = await trace.start_trace("sticker_description", model_role="small")
         try:
             timeout = app_config.agent_small_model_timeout
@@ -122,7 +122,7 @@ async def _get_description(
             else:
                 result = await coro
 
-            # 贴纸描述也是一次模型调用: 按发送贴纸的那条消息结算。
+            # Sticker descriptions are model calls; bill them against the message that sent the sticker.
             await quota.settle(subject, result.usage)
             trace.mark_trace(session, usage=result.usage, output=result.output)
             return result.output
@@ -138,7 +138,7 @@ async def _get_description(
 
 
 def sample_rate_for(chat_count: int) -> float:
-    """入库采样率: 库存低于 warmup 目标时线性放大到 1.0, 加快冷启动填充."""
+    """Increase the storage sample rate linearly up to 1.0 below the warmup target to fill cold-start inventories."""
     base = app_config.agent_sticker_memory_sample_rate
     target = app_config.agent_sticker_warmup_count
     if not target or target <= 0 or chat_count >= target:
@@ -166,7 +166,7 @@ async def _process_sticker(
         return
 
     try:
-        # 使用超时控制防止下载大文件阻塞事件循环
+        # Enforce a download timeout so large files cannot stall the event loop.
         timeout = app_config.agent_download_timeout
         if timeout > 0:
             raw = await asyncio.wait_for(

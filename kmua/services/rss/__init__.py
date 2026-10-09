@@ -58,7 +58,7 @@ _MAX_REDIRECTS = 5
 """Redirect hops we will follow; each hop is re-validated against the address
 blocklist, so a public URL cannot tunnel into the internal network."""
 
-_USER_AGENT = "KMUA Bot"
+_USER_AGENT = "WAKU Bot"
 
 # Addresses a feed may never resolve to: private, loopback, link-local, CGNAT,
 # documentation, multicast and reserved ranges (IPv4), plus loopback/ULA/

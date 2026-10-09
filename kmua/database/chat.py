@@ -13,11 +13,11 @@ from kmua.database import pagination
 from .db import with_session, with_tx
 from .models import ChatConfig, ChatData, UserChatAssociation
 
-# 本地内存缓存：记录已同步到 DB 的群组快照，避免每条消息触发重复 upsert
+# Cache synchronized group snapshots to avoid repeated upserts for each message.
 # key: chat_id, value: (title, username)
 _upsert_chat_cache: dict[int, tuple] = {}
 
-_CHAT_CONFIG_CACHE_TTL = 300  # 5 分钟
+_CHAT_CONFIG_CACHE_TTL = 300  # 5 minutes.
 _CHAT_CONFIG_CACHE_PREFIX = "chat_config:"
 
 
@@ -38,7 +38,7 @@ async def upsert_chat(chat: Chat, session: AsyncSession | None = None) -> ChatDa
         raise ValueError("chat.id must not be None")
     chat_id: int = chat.id
 
-    # 检查缓存：如果数据没有变化，直接从 DB 读取并返回，避免触发写事务
+    # Check the cache; read unchanged data from the DB without opening a write transaction.
     cache_data = (chat.title, chat.username)
     if _upsert_chat_cache.get(chat_id) == cache_data:
         cached = await session.get(ChatData, chat_id)
@@ -202,7 +202,7 @@ async def update_chat_config(
             raise ValueError(f"Chat with id {chat_id} not found")
     chat_data.chat_config = config
 
-    # 立即更新缓存，使新配置对后续请求即时生效
+    # Update the cache immediately so subsequent requests see the new configuration.
     await memttlcache.set(
         f"{_CHAT_CONFIG_CACHE_PREFIX}{chat_id}", config, _CHAT_CONFIG_CACHE_TTL
     )

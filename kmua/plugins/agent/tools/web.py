@@ -19,6 +19,7 @@ from kmua.config import app_config
 from kmua.database import get_chat_by_id
 from kmua.logger import logger
 from kmua.plugins.agent.localization import tr
+from kmua.timezone import as_bot_time
 
 from .. import datatype
 
@@ -398,7 +399,12 @@ def _format_telegram_message(
     parts.append(tr("web_sender", p0=sender_name))
 
     if message.date:
-        parts.append(tr("web_date", p0=message.date.isoformat()))
+        parts.append(
+            tr(
+                "web_date",
+                p0=as_bot_time(message.date, naive_timezone=None).isoformat(),
+            )
+        )
 
     content_parts: list[str] = []
 

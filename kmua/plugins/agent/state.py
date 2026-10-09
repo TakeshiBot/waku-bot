@@ -217,7 +217,7 @@ def user_blocked_key(user_id: int) -> str:
 
 
 def quota_notice_key(subject_key: str) -> str:
-    """额度用尽提示的节流键(群聊里避免刷屏)。"""
+    """Throttle key for exhausted-quota notices to avoid flooding groups."""
     return f"agent_quota_notice:{subject_key}"
 
 

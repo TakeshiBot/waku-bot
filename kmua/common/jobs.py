@@ -12,26 +12,23 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from kmua.database.db import sync_engine
 from kmua.logger import logger
+from kmua.timezone import BOT_TIMEZONE
 
 
 class _TaskScheduler:
-    """定时任务调度器
+    """Persistent APScheduler tasks, with memory fallback for non-serializable jobs.
 
-    使用 APScheduler 原生的 SQLAlchemyJobStore 实现任务持久化。
-    任务会在数据库中持久存储，重启后自动恢复。
-
-    对于无法序列化的任务（如嵌套函数），自动回退到内存存储并记录警告。
-    """
+    Saved jobs retain their explicit trigger timezone when restored after a restart."""
 
     def __init__(self):
-        # 配置持久化存储和内存回退存储
+        # Configure persistent storage and the in-memory fallback.
         jobstores = {
             "default": SQLAlchemyJobStore(
                 engine=sync_engine,
             ),
-            "memory": MemoryJobStore(),  # 内存回退存储
+            "memory": MemoryJobStore(),  # Fallback for non-serializable jobs.
         }
-        self._scheduler = AsyncIOScheduler(jobstores=jobstores)
+        self._scheduler = AsyncIOScheduler(jobstores=jobstores, timezone=BOT_TIMEZONE)
 
     def _add_job_with_fallback(
         self,
@@ -42,21 +39,9 @@ class _TaskScheduler:
         kwargs: dict | None = None,
         replace_existing: bool = True,
     ) -> Job:
-        """添加任务，如果持久化失败则回退到内存存储
-
-        Args:
-            func: 任务函数
-            trigger: 触发器
-            id: 任务ID
-            args: 位置参数
-            kwargs: 关键字参数
-            replace_existing: 是否替换已存在的任务
-
-        Returns:
-            APScheduler Job 实例
-        """
+        """Add a persistent task, falling back to memory for non-serializable callables."""
         try:
-            # 尝试添加到持久化存储
+            # Try persistent storage first.
             job = self._scheduler.add_job(
                 func=func,
                 trigger=trigger,
@@ -69,7 +54,7 @@ class _TaskScheduler:
             return job
         except ValueError as e:
             if "cannot be serialized" in str(e) or "could not be determined" in str(e):
-                # 无法序列化，回退到内存存储
+                # Non-serializable callables fall back to memory.
                 logger.warning(
                     f"Job '{id}' cannot be serialized for persistent storage. "
                     f"Falling back to memory storage. Error: {e}"
@@ -88,23 +73,20 @@ class _TaskScheduler:
                 )
                 return job
             else:
-                # 其他错误，重新抛出
+                # Propagate unrelated errors.
                 raise
 
     def start(self) -> None:
-        """启动调度器
-
-        APScheduler 会自动从数据库恢复已保存的任务
-        """
+        """Start scheduling and restore saved jobs from the database."""
         if not self._scheduler.running:
             self._scheduler.start()
-            # 检查持久化存储状态
+            # Check the persistent job store.
             jobstore = self._scheduler._jobstores.get("default")
             if jobstore:
                 logger.success(
                     f"Job scheduler started with persistent storage ({jobstore.__class__.__name__})"
                 )
-                # 尝试列出存储中的任务数量
+                # Report the number of restored jobs.
                 try:
                     jobs = self._scheduler.get_jobs(jobstore="default")
                     logger.info(f"Loaded {len(jobs)} jobs from persistent storage")
@@ -114,7 +96,7 @@ class _TaskScheduler:
                 logger.warning("Job scheduler started WITHOUT persistent storage")
 
     def shutdown(self, wait: bool = True) -> None:
-        """关闭调度器"""
+        """Shut down the scheduler."""
         self._scheduler.shutdown(wait=wait)
         logger.debug("Job scheduler shutdown")
 
@@ -127,20 +109,8 @@ class _TaskScheduler:
         kwargs: dict | None = None,
         replace_existing: bool = True,
     ) -> Job:
-        """添加一次性任务
-
-        Args:
-            job_id: 任务唯一标识
-            func: 任务函数
-            run_date: 执行时间
-            args: 位置参数
-            kwargs: 关键字参数
-            replace_existing: 是否替换已存在的同名任务
-
-        Returns:
-            APScheduler Job 实例
-        """
-        trigger = DateTrigger(run_date=run_date)
+        """Schedule one execution. Naive run dates use the bot timezone (UTC+7)."""
+        trigger = DateTrigger(run_date=run_date, timezone=BOT_TIMEZONE)
         logger.debug(f"add one-time job: {job_id} at {run_date}")
 
         return self._add_job_with_fallback(
@@ -166,24 +136,7 @@ class _TaskScheduler:
         kwargs: dict | None = None,
         replace_existing: bool = True,
     ) -> Job:
-        """添加间隔任务
-
-        Args:
-            job_id: 任务唯一标识
-            func: 任务函数
-            seconds: 间隔秒数
-            minutes: 间隔分钟数
-            hours: 间隔小时数
-            days: 间隔天数
-            start_date: 开始时间
-            end_date: 结束时间
-            args: 位置参数
-            kwargs: 关键字参数
-            replace_existing: 是否替换已存在的同名任务
-
-        Returns:
-            APScheduler Job 实例
-        """
+        """Schedule a repeating interval, using UTC+7 for naive date boundaries."""
         trigger = IntervalTrigger(
             seconds=seconds,
             minutes=minutes,
@@ -191,6 +144,7 @@ class _TaskScheduler:
             days=days,
             start_date=start_date,
             end_date=end_date,
+            timezone=BOT_TIMEZONE,
         )
         logger.debug(
             f"add interval job: {job_id} every {seconds}s, {minutes}m, {hours}h, {days}d"
@@ -212,31 +166,14 @@ class _TaskScheduler:
         hour: int | str = 0,
         minute: int | str = 0,
         second: int | str = 0,
-        timezone: datetime.tzinfo = datetime.timezone(datetime.timedelta(hours=8)),
+        timezone: datetime.tzinfo = BOT_TIMEZONE,
         start_date: str | None = None,
         end_date: str | None = None,
         args: list | None = None,
         kwargs: dict | None = None,
         replace_existing: bool = True,
     ) -> Job:
-        """添加每日任务
-
-        Args:
-            job_id: 任务唯一标识
-            func: 任务函数
-            hour: 小时
-            minute: 分钟
-            second: 秒
-            timezone: 时区
-            start_date: 开始日期
-            end_date: 结束日期
-            args: 位置参数
-            kwargs: 关键字参数
-            replace_existing: 是否替换已存在的同名任务
-
-        Returns:
-            APScheduler Job 实例
-        """
+        """Schedule a daily wall-clock time in UTC+7 unless a timezone is supplied."""
         trigger = CronTrigger(
             hour=hour,
             minute=minute,
@@ -257,12 +194,8 @@ class _TaskScheduler:
         )
 
     def remove_job(self, job_id: str) -> None:
-        """移除任务
-
-        Args:
-            job_id: 任务唯一标识
-        """
-        # 先尝试从持久化存储移除
+        """Remove a task from persistent storage or its memory fallback."""
+        # Try removing the persistent task first.
         try:
             self._scheduler.remove_job(job_id, jobstore="default")
             logger.debug(f"Removed job: {job_id}")
@@ -270,7 +203,7 @@ class _TaskScheduler:
         except Exception:
             pass
 
-        # 再尝试从内存存储移除（回退的任务会加上 _memory 后缀）
+        # Fallback task ids carry the _memory suffix.
         try:
             self._scheduler.remove_job(f"{job_id}_memory", jobstore="memory")
             logger.debug(f"Removed job from memory: {job_id}")
@@ -278,15 +211,8 @@ class _TaskScheduler:
             pass
 
     def get_job(self, job_id: str) -> Job | None:
-        """获取任务
-
-        Args:
-            job_id: 任务唯一标识
-
-        Returns:
-            APScheduler Job 实例或 None
-        """
-        # 先尝试从持久化存储获取
+        """Get a persistent or memory task by id, returning None if it is absent."""
+        # Look in persistent storage first.
         try:
             job = self._scheduler.get_job(job_id, jobstore="default")
             if job is not None:
@@ -294,25 +220,21 @@ class _TaskScheduler:
         except Exception:
             pass
 
-        # 再尝试从内存存储获取（回退的任务会加上 _memory 后缀）
+        # Fallback task ids carry the _memory suffix.
         try:
             return self._scheduler.get_job(f"{job_id}_memory", jobstore="memory")
         except Exception:
             return None
 
     def get_all_jobs(self) -> list[Job]:
-        """获取所有任务（包括持久化和内存存储）
-
-        Returns:
-            APScheduler Job 列表
-        """
+        """List both persistent and in-memory tasks."""
         jobs = []
-        # 获取持久化存储的任务
+        # Read tasks from persistent storage.
         try:
             jobs.extend(self._scheduler.get_jobs(jobstore="default"))
         except Exception:
             pass
-        # 获取内存存储的任务
+        # Read tasks from memory storage.
         try:
             jobs.extend(self._scheduler.get_jobs(jobstore="memory"))
         except Exception:
@@ -320,12 +242,8 @@ class _TaskScheduler:
         return jobs
 
     def pause_job(self, job_id: str) -> None:
-        """暂停任务
-
-        Args:
-            job_id: 任务唯一标识
-        """
-        # 先尝试暂停持久化存储的任务
+        """Pause a persistent task or its memory fallback."""
+        # Try pausing the persistent task first.
         try:
             self._scheduler.pause_job(job_id, jobstore="default")
             logger.debug(f"Paused job: {job_id}")
@@ -333,7 +251,7 @@ class _TaskScheduler:
         except Exception:
             pass
 
-        # 再尝试暂停内存存储的任务
+        # Try pausing its in-memory fallback.
         try:
             self._scheduler.pause_job(f"{job_id}_memory", jobstore="memory")
             logger.debug(f"Paused job from memory: {job_id}")
@@ -341,12 +259,8 @@ class _TaskScheduler:
             pass
 
     def resume_job(self, job_id: str) -> None:
-        """恢复任务
-
-        Args:
-            job_id: 任务唯一标识
-        """
-        # 先尝试恢复持久化存储的任务
+        """Resume a persistent task or its memory fallback."""
+        # Try resuming the persistent task first.
         try:
             self._scheduler.resume_job(job_id, jobstore="default")
             logger.debug(f"Resumed job: {job_id}")
@@ -354,7 +268,7 @@ class _TaskScheduler:
         except Exception:
             pass
 
-        # 再尝试恢复内存存储的任务
+        # Try resuming its in-memory fallback.
         try:
             self._scheduler.resume_job(f"{job_id}_memory", jobstore="memory")
             logger.debug(f"Resumed job from memory: {job_id}")
@@ -366,15 +280,7 @@ class _TaskScheduler:
         job_id: str,
         **changes: Any,
     ) -> Job:
-        """修改任务
-
-        Args:
-            job_id: 任务唯一标识
-            **changes: 要修改的属性
-
-        Returns:
-            修改后的 Job 实例
-        """
+        """Update a persistent task and return the modified Job."""
         job = self._scheduler.modify_job(job_id, jobstore="default", **changes)
         logger.debug(f"Modified job: {job_id}")
         return job

@@ -8,7 +8,7 @@ class _AniObjCutClient:
         self.url = url
         self.api_key = api_key
         headers = {
-            "User-Agent": "KMUA AniObjCut Client",
+            "User-Agent": "WAKU AniObjCut Client",
         }
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"

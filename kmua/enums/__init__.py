@@ -41,7 +41,7 @@ class GLockKey(StrEnum):
 
 
 class VerifyTrigger(StrEnum):
-    """新成员验证触发策略(何时验证), 与验证方式解耦。"""
+    """When to trigger member verification, independent of the verification method."""
 
     __slots__ = ()
 
@@ -50,7 +50,7 @@ class VerifyTrigger(StrEnum):
 
 
 class VerifyMethod(StrEnum):
-    """新成员验证方式(如何验证), 与触发策略解耦。"""
+    """How to verify new members, independent of the trigger policy."""
 
     __slots__ = ()
 
@@ -62,10 +62,10 @@ class VerifyMethod(StrEnum):
 
 
 class VerifyFailAction(StrEnum):
-    """验证失败(超时/次数耗尽)后对用户采取的动作。"""
+    """Action taken after verification fails by timeout or exhausted attempts."""
 
     __slots__ = ()
 
-    KICK = "kick"  # ban+unban, 移出但不拉黑, 可重新加群再验证
-    BAN = "ban"  # 永久拉黑
-    UNRESTRICT = "unrestrict"  # 仅解除限制, 留在群里
+    KICK = "kick"  # ban + unban: remove without blacklisting; rejoining allows another verification.
+    BAN = "ban"  # Permanently ban.
+    UNRESTRICT = "unrestrict"  # Remove restrictions and keep the member in the group.

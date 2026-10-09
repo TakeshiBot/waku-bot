@@ -156,7 +156,7 @@ group_memory_filter = base_memory_filter & pyrogram.filters.group
 
 
 def format_user_messages(messages: list[AgentMessage]) -> str:
-    """按聊天分组、带时间戳的紧凑格式, 供 memory agent 阅读。"""
+    """Compact timestamped format grouped by chat for the memory agent."""
     if not messages:
         return ""
     grouped: dict[int, list[AgentMessage]] = {}
@@ -212,7 +212,7 @@ async def record_memory(client: Client, message: pyrogram.types.Message):
     )
     if len(user_messages) > 100:
         user_messages = user_messages[-100:]
-        # 每个用户每小时最多通过此函数更新一次记忆
+        # Allow at most one memory update per user per hour through this function.
         last_update_key = state.user_memory_update_key(user.id)
         last_updated = await memttlcache.get(last_update_key)
         if not last_updated:
@@ -268,7 +268,7 @@ async def record_agent_memory(client: Client, message: pyrogram.types.Message):
     )
     if len(agent_messages) >= _AGENT_MEMORY_TRIGGER_COUNT:
         agent_messages = agent_messages[-_AGENT_MEMORY_TRIGGER_COUNT:]
-        # 每个用户每小时最多通过此函数更新一次记忆
+        # Allow at most one memory update per user per hour through this function.
         last_update_key = state.agent_memory_update_key(user.id)
         last_updated = await memttlcache.get(last_update_key)
         if not last_updated:
@@ -281,7 +281,7 @@ async def record_agent_memory(client: Client, message: pyrogram.types.Message):
                     quota.subject_of(message),
                 )
             agent_messages = []
-        # 小时额度已用完: 保留最近 100 条, 下次触发时再提交, 不丢弃已记录内容
+        # Hourly limit reached: retain the latest 100 messages for the next trigger instead of discarding them.
     await memttlcache.set(
         state.agent_messages_key(user.id), agent_messages, ttl=86400 * 7
     )
@@ -306,7 +306,7 @@ async def record_group_memory(client: Client, message: pyrogram.types.Message):
     ), "Invalid message state in record_group_memory"
     if not is_chat_allowed(chat.id):
         return
-    # 利用缓存的 chat config，避免重复 DB 查询
+    # Use cached chat configuration to avoid repeated DB lookups.
     chat_config = await database.get_chat_config(chat.id)
     if not chat_config.ai_reply or not chat_config.group_memory_enabled:
         return
@@ -326,15 +326,15 @@ async def record_group_memory(client: Client, message: pyrogram.types.Message):
     )
     if len(group_messages) > 100:
         batch_messages = group_messages[-100:]
-        # 每个群组每小时最多通过此函数更新一次记忆
+        # Allow at most one memory update per group per hour through this function.
         last_update_key = state.group_memory_update_key(chat.id)
         last_updated = await memttlcache.get(last_update_key)
         subject = quota.Subject(user_id=None, chat_id=chat.id, in_group=True)
         if last_updated or chat.id in _group_memory_inflight_chats:
             group_messages = []
         elif not await quota.can_start(subject):
-            # 群没额度就别总结, 静默跳过: 保留这批消息(截到最近 100 条), 等有额度时再补,
-            # 也不消耗"每小时一次"的名额。
+            # Without group quota, silently defer the summary and retain the latest 100 messages until quota is available;
+            # do not consume the hourly update slot.
             logger.debug(f"Skip group memory update for chat {chat.id}: no quota")
             group_messages = batch_messages
         else:
@@ -344,8 +344,8 @@ async def record_group_memory(client: Client, message: pyrogram.types.Message):
                 f"Updating group memory for chat {chat.id} with "
                 f"{len(batch_messages)} messages in {len(chunks)} chunks"
             )
-            # powermem 自己调模型, 用量只在它的回调里看得到: 整段收集起来, 结束后记到
-            # 群账上, 否则这段开销在任何地方都不显示。
+            # powermem calls the model internally; collect usage through its callback and record the full block on
+            # the group account so this cost remains visible.
             with powermem_usage.collect() as memory_calls:
                 try:
                     for index, batch_text in enumerate(chunks, start=1):

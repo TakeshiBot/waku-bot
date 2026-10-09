@@ -117,7 +117,7 @@ def anan_base_image(face: str | None = None) -> str:
     """Get the base image path for Anan's face
 
     Args:
-        face (Optional[str], optional): The face type to be used. Available: 害羞, 生气, 病娇, 无语, 开心. Defaults to None.
+        face (Optional[str], optional): The face type: shy, angry, yandere, speechless or happy. Defaults to None.
 
     Returns:
         str: The path to the base image
@@ -133,7 +133,7 @@ def draw_anan(text: str, face: str | None = None, locale: str = "") -> bytes:
 
     Args:
         text (str): The text to be drawn
-        face (Optional[str], optional): The face type to be used. Available: 害羞, 生气, 病娇, 无语, 开心. Defaults to None.
+        face (Optional[str], optional): The face type: shy, angry, yandere, speechless or happy. Defaults to None.
 
     Returns:
         bytes: The image bytes of the drawn image

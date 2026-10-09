@@ -27,7 +27,7 @@ def upgrade() -> None:
     table_name = "user_chat_association"
     column_name = "promoted_by"
 
-    # 检查: 存在表, 且不存在列
+    # Add the column only when the table exists and the column does not.
     if insp.has_table(table_name):
         existing_cols = {col["name"] for col in insp.get_columns(table_name)}
         if column_name not in existing_cols:

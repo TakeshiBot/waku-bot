@@ -1,31 +1,34 @@
-# 管理面板
+# Bảng quản trị
 
-kmua 内置一个基于 [Telegram Mini Apps](https://core.telegram.org/bots/webapps) 的管理面板, 在 Telegram 里直接配置 bot.
+waku có bảng quản trị dựa trên
+[Telegram Mini Apps](https://core.telegram.org/bots/webapps), cho phép cấu hình
+bot ngay trong Telegram.
 
-## 前置条件
+## Điều kiện triển khai
 
-1. 域名及其证书
-2. 在 [@BotFather](https://t.me/BotFather) 为 bot 注册一个 Mini App
+1. Có tên miền và chứng chỉ HTTPS hợp lệ.
+2. Đăng ký Mini App cho bot trong [@BotFather](https://t.me/BotFather).
 
-使用 docker 部署时, 前端产物已经打包进镜像
+Khi build bằng Docker, frontend được đóng gói sẵn trong image.
 
-## 注册 Mini App
+## Đăng ký Mini App
 
-在 [@BotFather](https://t.me/BotFather) 里发 `/newapp`, 选择你的 bot, 然后按提示填写:
+Gửi `/newapp` trong [@BotFather](https://t.me/BotFather), chọn bot, rồi điền:
 
-| 字段 | 填什么 |
+| Trường | Nội dung |
 | --- | --- |
-| Title | 随便, 例如 `kmua 管理面板` |
-| Description | 随便 |
-| Photo | 640x360 图片, 必填 |
+| Title | Tên hiển thị, ví dụ `Bảng quản trị waku` |
+| Description | Mô tả bảng quản trị |
+| Photo | Ảnh 640 × 360, bắt buộc |
 | Web App URL | `https://panel.example.com` |
 | Short name | `panel` |
 
-Web App URL 要和配置里的 `webapp_url` 完全一致, Short name 要和 `webapp_short_name` 一致.
+Web App URL phải trùng với `webapp_url` trong cấu hình. Short name phải trùng
+với `webapp_short_name`.
 
-## 修改配置
+## Cấu hình bot
 
-在 `settings.toml` 里添加如下配置:
+Thêm các dòng sau vào `settings.toml`:
 
 ```toml
 webapp = true
@@ -33,28 +36,30 @@ webapp_url = "https://panel.example.com"
 webapp_short_name = "panel"
 ```
 
-## 启动
+## Khởi động
 
 ```bash
-docker compose pull
-docker compose up -d
-docker compose logs -f kmua
+docker compose up -d --build
+docker compose logs -f waku
 ```
 
-## 完整配置项
+API và health check dùng chung cổng `8180`. Cấu hình reverse proxy cung cấp
+HTTPS cho tên miền của bảng quản trị và chuyển yêu cầu đến cổng này.
 
-| 配置项 | 默认值 | 说明 |
+## Các tùy chọn cấu hình
+
+| Tùy chọn | Giá trị mặc định | Ý nghĩa |
 | --- | --- | --- |
-| `webapp` | `false` | 是否启用面板 |
-| `webapp_host` | `"0.0.0.0"` | 监听地址 |
-| `webapp_port` | `8180` | 监听端口 |
-| `webapp_url` | `""` | 公网 HTTPS 基址, 启用面板时必填 |
-| `webapp_short_name` | `"panel"` | BotFather 注册的 Mini App short name |
-| `webapp_menu_button` | `true` | 是否把聊天菜单按钮指向面板 |
-| `webapp_jwt_secret` | `""` | 会话令牌签名密钥, 留空则从 bot token 派生 |
-| `webapp_jwt_ttl` | `21600` | 会话有效期(秒) |
-| `webapp_initdata_ttl` | `300` | 启动参数有效期(秒) |
-| `webapp_allow_origins` | `[]` | CORS 白名单, 仅本地开发用 |
-| `webapp_trusted_proxies` | `["127.0.0.1", "::1"]` | 信任其 `X-Forwarded-For` 的地址 |
-| `webapp_static_dir` | `""` | 前端产物目录, 留空用镜像内置的 |
-| `webapp_admin_edit_user` | `true` | 是否允许后台编辑用户信息 |
+| `webapp` | `false` | Bật bảng quản trị |
+| `webapp_host` | `"0.0.0.0"` | Địa chỉ lắng nghe |
+| `webapp_port` | `8180` | Cổng lắng nghe |
+| `webapp_url` | `""` | URL HTTPS công khai, bắt buộc khi bật bảng quản trị |
+| `webapp_short_name` | `"panel"` | Short name của Mini App đã đăng ký trong BotFather |
+| `webapp_menu_button` | `true` | Cho nút menu trong cuộc trò chuyện mở bảng quản trị |
+| `webapp_jwt_secret` | `""` | Khóa ký token phiên; để trống thì tạo từ token của bot |
+| `webapp_jwt_ttl` | `21600` | Thời hạn phiên, tính bằng giây |
+| `webapp_initdata_ttl` | `300` | Thời hạn dữ liệu khởi tạo, tính bằng giây |
+| `webapp_allow_origins` | `[]` | Danh sách origin CORS được phép, dùng khi phát triển cục bộ |
+| `webapp_trusted_proxies` | `["127.0.0.1", "::1"]` | Địa chỉ proxy được tin cậy khi đọc `X-Forwarded-For` |
+| `webapp_static_dir` | `""` | Thư mục frontend đã build; để trống thì dùng thư mục mặc định |
+| `webapp_admin_edit_user` | `true` | Cho phép sửa thông tin người dùng trong bảng quản trị |

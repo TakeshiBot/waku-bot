@@ -81,10 +81,10 @@ def _pack(vector: list[float]) -> bytes:
 
 
 async def _lazy_evict(db: aiosqlite.Connection, chat_id: int | None = None) -> None:
-    """清理过期贴纸记录，分批处理避免阻塞事件循环。
+    """Clean expired sticker records in batches to avoid stalling the event loop.
 
-    当聊天室的贴纸数量少于配置的阈值时，保留所有贴纸不逐出，
-    确保小群聊不会频繁丢失贴纸记忆。
+    Keep all stickers when the chat's inventory is below the configured threshold,
+    so small groups do not repeatedly lose their sticker memory.
     """
     ttl = app_config.agent_sticker_ttl
     if ttl <= 0:
@@ -129,7 +129,7 @@ async def _lazy_evict(db: aiosqlite.Connection, chat_id: int | None = None) -> N
     await db.commit()
     logger.debug(f"sticker_vec: evicted {len(expired_ids)} expired stickers")
 
-    # 如果清理了满批次的记录，给其他任务一个运行机会
+    # Yield to other tasks after processing a full batch.
     if len(expired_ids) >= _EVICT_BATCH_SIZE:
         await asyncio.sleep(0)
 

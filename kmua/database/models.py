@@ -449,10 +449,10 @@ class ChatPolicy:
     agent_allowed: bool = False
     # Whether RSS subscriptions may be created here, when rss_whitelist_mode is on.
     rss_allowed: bool = False
-    # 该群的每日共享额度池(群账户的免费额度), 单位 token; 0 = 未分配。
-    # 群账户在个人免费额度用尽后兜底, 也让没有个人账户的匿名管理/频道身份有额度可用。
+    # Daily shared free token pool for the group account; 0 = unallocated.
+    # The group pool follows personal free tokens and serves anonymous admins and channel identities.
     agent_quota_daily_tokens: int = 0
-    # 该群是否完全不计费(不计数、不限额)。
+    # Whether the group is fully exempt from billing (no counters or limits).
     agent_quota_exempt: bool = False
 
     @classmethod
@@ -527,7 +527,7 @@ class ChatPolicyData(Base):
 
 
 class VerificationSession(Base):
-    """一条进行中的新成员验证会话。"""
+    """An active new-member verification session."""
 
     __tablename__ = "verification_sessions"
     __table_args__ = (
@@ -555,7 +555,7 @@ class VerificationSession(Base):
 
 
 class VerificationMember(Base):
-    """在该群已通过验证的用户(first_message 策略跳过重复验证)。"""
+    """A verified group member; the first_message policy skips repeat verification."""
 
     __tablename__ = "verification_members"
 
@@ -735,22 +735,22 @@ class AgentPersistentFile(Base):
 
 
 class AgentUsageDaily(Base):
-    """一个额度账户在某一天(UTC)的用量, 单位一律是 token。
+    """A quota account's usage for one UTC date, measured in tokens.
 
-    `input_tokens` / `output_tokens` 是当天真实的模型消耗, `free_used_tokens` 是其中由
-    该账户的免费额度付掉的部分(闸门)。两者分开, 因为被群池或余额付款的调用也算那个人的
-    用量, 而面板要能同时回答"这个人用了多少"和"他的免费额度还剩多少"。
+    `input_tokens` / `output_tokens` track actual daily model usage; `free_used_tokens` tracks
+    the part paid from this account's free allocation. Calls paid by a group pool or credits still
+    count toward personal usage, so the panel can report both total usage and remaining free tokens.
     """
 
     __tablename__ = "agent_usage_daily"
 
-    # "user" = 发言者账户, "chat" = 会话/群账户。
+    # "user" = speaker account; "chat" = conversation/group account.
     scope: Mapped[str] = mapped_column(String(16), primary_key=True)
     scope_id: Mapped[int] = mapped_column(
         BigInteger, primary_key=True, autoincrement=False
     )
     day: Mapped[date] = mapped_column(Date, primary_key=True)
-    # server_default 与迁移保持一致, 否则 create_all 建的表和迁移建的表 DDL 不同。
+    # Keep server_default aligned with migrations so create_all produces the same DDL.
     requests: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=sa.text("0")
     )
@@ -777,10 +777,10 @@ class AgentUsageDaily(Base):
 
 
 class AgentCredit(Base):
-    """一个额度账户的余额, 单位是 token。没有行就是 0, 只在第一次发放时创建。
+    """An account's token balance; absent rows mean zero, created on the first credit grant.
 
-    余额可以扣成负数: 单次 run 的用量只有跑完才知道, 用超的部分如实入账成为欠费,
-    下一次调用的预检就会拒绝, 直到运维补发。所以这里没有非负约束。
+    Balances may become negative: usage is known only after a run, so overspending is recorded as debt.
+    The next preflight rejects calls until an operator grants credit; no nonnegative constraint applies.
     """
 
     __tablename__ = "agent_credits"
@@ -804,11 +804,11 @@ class AgentCredit(Base):
 
 
 class AgentCreditLedger(Base):
-    """额度余额的 append-only 流水, 单位是 token。
+    """An append-only token balance ledger.
 
-    只有余额回答不了"这笔钱从哪来"。所有余额变更(发放/扣费)都在同一事务里追加一行;
-    将来接入支付时用 `ref` 存外部单号并对同一账户去重, 回调重放不会重复入账。
-    `reason` 取值为 "admin"(面板发放/调整)、"usage"(按用量扣费)。
+    Balances alone do not show provenance. Every grant or charge appends a ledger row in the same transaction.
+    For future payments, `ref` stores an external reference unique per account to deduplicate callbacks.
+    `reason` is "admin" (panel grant/adjustment) or "usage" (usage charge).
     """
 
     __tablename__ = "agent_credit_ledger"
@@ -818,7 +818,7 @@ class AgentCreditLedger(Base):
     )
     scope: Mapped[str] = mapped_column(String(16), nullable=False)
     scope_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    # 负数是扣费, 正数是发放; 余额本就允许为负, 所以这就是实际生效量。
+    # Negative amounts are charges, positive amounts are grants; this is the actual applied change.
     delta: Mapped[int] = mapped_column(BigInteger, nullable=False)
     balance_after: Mapped[int] = mapped_column(BigInteger, nullable=False)
     reason: Mapped[str] = mapped_column(String(32), nullable=False)

@@ -27,7 +27,7 @@ async def channel_forward_filter_func(_, __, message: pyrogram.types.Message):
 channel_forward_filter = pyrogram.filters.create(channel_forward_filter_func)
 
 
-# TODO: 队列以防止 floodlimit
+# TODO: Queue requests to avoid flood limits.
 @PyrogramClient.on_message(channel_forward_filter, group=1)
 async def unpin_channel(client: PyrogramClient, message: pyrogram.types.Message):
     chat = message.chat

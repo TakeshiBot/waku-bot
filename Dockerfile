@@ -19,7 +19,8 @@ RUN pnpm build
 
 # ------------------------------------------------------------------ runtime image
 FROM ghcr.io/astral-sh/uv:debian-slim
-WORKDIR /kmua
+WORKDIR /app
+ENV TZ=Asia/Ho_Chi_Minh
 COPY pyproject.toml uv.lock ./
 RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc g++ make build-essential git graphviz ca-certificates ffmpeg curl \
@@ -37,7 +38,7 @@ RUN curl -fsSL -o /usr/local/bin/landrun \
 COPY . .
 RUN .venv/bin/python -m compileall -q -j 0 kmua
 # Where the FastAPI app looks for the bundle by default.
-COPY --from=webui /build/kmua/webapp/dist /kmua/kmua/webapp/dist
+COPY --from=webui /build/kmua/webapp/dist /app/kmua/webapp/dist
 
 # Health check and Mini App panel share this port
 EXPOSE 8180

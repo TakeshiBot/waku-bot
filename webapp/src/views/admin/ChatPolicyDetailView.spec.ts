@@ -134,8 +134,8 @@ describe("ChatPolicyDetailView quota scope", () => {
   });
 
   it("hides the quota form for a private chat id", async () => {
-    // 群账户只在群里存在, 后端对私聊行的额度字段一律拒绝: 这里连入口都不该出现, 否则
-    // 每一次改动都注定失败。
+    // Group accounts exist only in groups; hide quota fields for private chats because the backend rejects them.
+    // Otherwise every edit would fail.
     const wrapper = mount(ChatPolicyDetailView, { props: { chatId: 12345 } });
     await vi.advanceTimersByTimeAsync(0);
 

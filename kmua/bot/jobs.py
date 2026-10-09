@@ -77,8 +77,8 @@ async def _cleanup_agent_traces() -> None:
 
 async def change_bot_avatar():
     """
-    定时更换 bot 头像
-    使用 manyacg 获取随机图片，aniobjcut 裁切为头像，然后更新 bot profile photo
+    Periodically rotate the bot avatar.
+    Fetch random artwork via manyacg, crop it via aniobjcut, and update the profile photo.
     """
     from kmua.bot.client import client
     from kmua.services import aniobjcut, manyacg
@@ -90,7 +90,7 @@ async def change_bot_avatar():
     try:
         logger.info(i18n.t("log.avatar_changing", locale=app_config.lang))
 
-        # 获取随机图片
+        # Fetch random artwork.
         resp = await manyacg.manyacg_client.random_artwork(limit=1, r18=0)
         if resp.status != 200 or not resp.data:
             logger.error(f"failed to get random artwork: {resp.message}")
@@ -99,14 +99,14 @@ async def change_bot_avatar():
         artwork = resp.data[0]
         picture = artwork.pictures[random.randint(0, len(artwork.pictures) - 1)]
 
-        # 下载图片
+        # Download the image.
         async with httpx.AsyncClient(timeout=30) as http_client:
             fileresp = await http_client.get(
                 f"{app_config.manyacg_api_url}/picture/file/{picture.id}",
             )
             fileresp.raise_for_status()
 
-        # 裁切为头像
+        # Crop the avatar.
         avatar = await aniobjcut.aniobjcut_client.cut_avatar(fileresp.content)
 
         await client.set_profile_photo(

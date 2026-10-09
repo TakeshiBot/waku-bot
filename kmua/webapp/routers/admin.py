@@ -479,7 +479,7 @@ async def _apply_user_field(
             return audit.FieldChange(field=field, old=old, new=value)
 
         case "agent_credits":
-            # 改前余额只能取 set_credit 事务内的读, 否则审计会记错或漏写。
+            # Read the prior balance inside set_credit's transaction to avoid incorrect or missing audit records.
             previous = await database.set_credit(
                 database.SCOPE_USER,
                 target.id,
@@ -600,8 +600,8 @@ async def write_chat_policy(
     """
     write_limiter.check(client_key(request, user.id))
 
-    # 群额度账户只在群聊里存在(`Subject.accounts()` 仅在 in_group 时加上它), 正数 id 只能
-    # 是私聊, 给它配额度或发余额都是永远不会被消费的额度 —— 宁可当场拒绝。
+    # Group quota accounts exist only in group chats (Subject.accounts adds them only in_group).
+    # Positive IDs are private chats; reject grants or allocations that could never be consumed.
     if chat_id > 0 and (
         payload.agent_quota_daily_tokens is not None
         or payload.agent_quota_exempt is not None
@@ -645,8 +645,8 @@ async def write_chat_policy(
     ]
 
     if payload.agent_credits is not None:
-        # set_credit 返回改动前的余额; 额度不在 policy 里, 所以必须自己补一条改动记录,
-        # 否则纯发放额度的请求会不留任何审计痕迹。
+        # set_credit returns the old balance; credits are outside policy, so append an audit record explicitly.
+        # Otherwise credit-only grants would leave no audit trail.
         previous = await database.set_credit(
             database.SCOPE_CHAT, chat_id, payload.agent_credits
         )

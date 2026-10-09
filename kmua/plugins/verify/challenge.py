@@ -1,4 +1,4 @@
-"""验证 challenge 的纯构建逻辑: 题目生成与键盘。题目文案在 i18n。"""
+"""Pure verification challenge builders for questions and keyboards; question text comes from i18n."""
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ def deserialize_permissions(raw: Any) -> ChatPermissions:
 def restore_permissions_for_session(
     session_row: VerificationSession,
 ) -> ChatPermissions | None:
-    """返回待恢复权限; 贴纸验证不改权限, 无自定义限制时全放开。"""
+    """Return permissions to restore; sticker verification does not change them, and no custom restrictions means allow all."""
     if session_row.method == "sticker":
         return None
     payload = session_row.payload or {}
@@ -79,18 +79,18 @@ def restore_permissions_for_session(
 
 
 def restrict_permissions(method: str) -> ChatPermissions | None:
-    """新成员入群施加的限制权限; 贴纸验证返回 None(不限制)。"""
+    """Permissions restricted for new members; sticker verification returns None (unrestricted)."""
     if method == "sticker":
         return None
     return ChatPermissions()
 
 
-# --------------------------------------------------------------------------- 纯函数
+# --------------------------------------------------------------------------- Pure functions.
 
 
 @dataclass
 class VerifyContext:
-    """验证候选事件的全量上下文, 供策略判定; 事件 handler 构造后交 maybe_verify。"""
+    """Full candidate-event context for policy checks; handlers construct it and pass it to maybe_verify."""
 
     chat_id: int
     user: User | Chat
@@ -112,7 +112,7 @@ class VerifyContext:
 
 
 def strategy_matches(strategy: str, ctx: VerifyContext) -> bool:
-    """策略是否命中当前事件; 未知策略不验证, 新策略在此加分支。"""
+    """Check whether the policy matches this event; unknown policies skip verification. Add new policy branches here."""
     match strategy:
         case "all":
             return ctx.is_join
@@ -125,7 +125,7 @@ def strategy_matches(strategy: str, ctx: VerifyContext) -> bool:
 
 
 def make_math_challenge() -> dict:
-    """算术题: 两个 2..9 的加数, 4 个选项中含正确答案。"""
+    """Arithmetic question: add two numbers from 2..9, with the answer among four options."""
     a, b = random.randint(2, 9), random.randint(2, 9)
     answer = a + b
     pool = list(range(max(0, answer - 6), answer + 7))
@@ -136,18 +136,18 @@ def make_math_challenge() -> dict:
 
 
 def _tpl(key: str, lang: str, **kwargs: object) -> str:
-    """读取 i18n 模板并格式化; 缺失时原样返回 key(同 i18n.t 约定)。"""
+    """Format an i18n template; return the key unchanged when missing, matching i18n.t."""
     tpl = i18n.get_raw(key, locale=lang)
     return tpl.format(**kwargs) if isinstance(tpl, str) else key
 
 
 def _math_data(key: str, lang: str) -> Any:
-    """math_hard 的题目数据(模板/表述池), 完整 i18n key。"""
+    """Get math_hard question data (template/phrasing pool) by the complete i18n key."""
     return i18n.get_raw(key, locale=lang)
 
 
 def _default_questions(lang: str = "") -> list[dict]:
-    """从 i18n 读取默认题库(格式同面板存储的 verify_questions)。"""
+    """Read default questions from i18n using the same format as panel-stored verify_questions."""
     questions = i18n.get_raw("bot.msg.verify.default_questions", locale=lang)
     if not isinstance(questions, list):
         return []
@@ -162,14 +162,14 @@ def _fraction(numerator: int, denominator: int) -> str:
 
 
 def _distractors(correct: int | str, candidates: Iterable[int | str]) -> list[str]:
-    """从候选中随机取 3 个与正确答案不同的干扰项。"""
+    """Pick three random distractors from candidates excluding the correct answer."""
     pool = [c for c in candidates if str(c) != str(correct)]
     random.shuffle(pool)
     return [str(c) for c in pool[:3]]
 
 
 def _math_html(question: str) -> str:
-    """把题目中的行内公式 $...$ 转为 rich 消息的 <tg-math> 标签。"""
+    """Convert inline $...$ formulas to rich-message <tg-math> tags."""
     return re.sub(r"\$([^$]+)\$", r"<tg-math>\1</tg-math>", question)
 
 
@@ -354,8 +354,8 @@ def _probability_challenge(lang: str = "") -> dict:
         a = random.choice((0, 2, 4))
         b = a + random.choice((4, 6))
         lam = random.choice((2, 3))
-        mean = (a + b) // 2  # U(a,b) 期望; a、b 同奇偶保证为整数
-        answer = _fraction(mean * lam + 1, lam)  # + Exp(λ) 的 1/λ
+        mean = (a + b) // 2  # Mean of U(a,b); matching parity makes this an integer.
+        answer = _fraction(mean * lam + 1, lam)  # Add 1/λ for Exp(λ).
         question = _tpl(f"{prob}.{kind}", lang, a=a, b=b, lam=lam)
         candidates = {"2", "7/3", "5/2", "8/3", "3", "4", "9/2", "11/3"}
     else:  # second_moment
@@ -376,7 +376,7 @@ def make_math_hard_challenge(lang: str = "") -> dict:
 
 
 def make_challenge_payload(method: str, questions: list[dict], lang: str = "") -> dict:
-    """按验证方式生成 challenge payload; 未知方式退回 custom_qa。"""
+    """Build the challenge payload by method; unknown methods fall back to custom_qa."""
     if method == "math_easy":
         return make_math_challenge()
     if method == "math_hard":
@@ -389,7 +389,7 @@ def make_challenge_payload(method: str, questions: list[dict], lang: str = "") -
 
 
 def make_emoji_challenge() -> dict:
-    """点选表情: 6 个选项中保证含目标表情。"""
+    """Emoji selection: include the target emoji among six options."""
     target = random.choice(EMOJI_POOL)
     rest = [e for e in EMOJI_POOL if e != target]
     options = [target] + random.sample(rest, 5)
@@ -398,12 +398,12 @@ def make_emoji_challenge() -> dict:
 
 
 def make_sticker_challenge() -> dict:
-    """贴纸验证: 任意贴纸即通过, 无需 payload。"""
+    """Sticker verification: any sticker passes, no payload needed."""
     return {}
 
 
 def make_qa_challenge(questions: list[dict], lang: str = "") -> dict:
-    """随机取一条有效题目, 选项打乱, answers 为全部正确选项; 全无效时用默认题库。"""
+    """Pick a valid random question, shuffle options and retain all answers; use defaults if none are valid."""
     valid = [
         q
         for q in questions
@@ -429,21 +429,21 @@ def make_qa_challenge(questions: list[dict], lang: str = "") -> dict:
 
 
 def _is_multi_answer(session_row: VerificationSession) -> bool:
-    """custom_qa 全选模式: 多正确答案且必须全部选中(而非任选其一)。"""
+    """custom_qa all-select mode: multiple correct answers must all be selected."""
     if session_row.method != "custom_qa":
         return False
     return _multi_payload(session_row.payload or {})
 
 
 def _multi_payload(payload: dict) -> bool:
-    """payload 是否全选模式: select=all 且正确答案多于一个。"""
+    """Whether this payload requires all correct answers: select=all and more than one answer."""
     return (
         payload.get("select", "all") == "all" and len(payload.get("answers") or []) > 1
     )
 
 
 def _callback_data(callback_query: CallbackQuery) -> list[str]:
-    """回调数据按 ':' 拆分; 兼容 str/bytes/None(自定义按钮恒为 ASCII str)。"""
+    """Split callback data on ':'; accept str/bytes/None (custom buttons use ASCII strings)."""
     data = callback_query.data or ""
     if isinstance(data, bytes):
         data = data.decode(errors="replace")
@@ -451,7 +451,7 @@ def _callback_data(callback_query: CallbackQuery) -> list[str]:
 
 
 def _is_correct_option(session_row: VerificationSession, index: int) -> bool:
-    """点中的选项是否属于正确答案: emoji 按 target, math 按 answer, custom_qa 按 answers。"""
+    """Check the selected option against target for emoji, answer for math, or answers for custom_qa."""
     payload = session_row.payload or {}
     options = payload.get("options") or []
     if index < 0 or index >= len(options):
@@ -474,7 +474,7 @@ def build_challenge_text(
     lang: str,
     user_mention: str = "",
 ) -> str:
-    """challenge 正文; user_mention 非空时作为首行。"""
+    """Challenge body; prepend a nonempty user_mention as the first line."""
     prefix = i18n.t("bot.msg.verify.wrong_prefix", locale=lang) if wrong_prefix else ""
     if method == "math_easy":
         body = i18n.t("bot.msg.verify.challenge_math_easy", locale=lang).format(
@@ -496,7 +496,7 @@ def build_challenge_text(
             max=config.verify_max_attempts,
         )
     elif method == "sticker":
-        # 贴纸方法不存在答错, 仅超时
+        # Sticker verification cannot have wrong answers, only timeouts.
         body = i18n.t("bot.msg.verify.challenge_sticker", locale=lang)
     else:  # custom_qa
         key = (
@@ -513,15 +513,15 @@ def build_challenge_text(
         timeout=config.verify_timeout_seconds
     )
     mention_line = f"{user_mention}\n" if user_mention else ""
-    # 空行分隔题目区与次数/超时提示, 避免混排
+    # Separate the question and attempts/timeout notices with a blank line.
     return mention_line + prefix + body + "\n\n" + timeout_hint
 
 
-# --------------------------------------------------------------------------- 键盘
+# --------------------------------------------------------------------------- Keyboards.
 
 
 def _admin_row(session_id: int, lang: str) -> list[InlineKeyboardButton]:
-    """放行/封禁两个管理员按钮, 所有验证方式一致。"""
+    """The same approve/ban administrator buttons for every verification method."""
     return [
         InlineKeyboardButton(
             i18n.t("bot.button.verify.approve", locale=lang),
@@ -539,7 +539,7 @@ def _admin_row(session_id: int, lang: str) -> list[InlineKeyboardButton]:
 def _challenge_markup(
     session_row: VerificationSession, lang: str
 ) -> InlineKeyboardMarkup:
-    """作答行(math 2x2 / emoji 2x3 / custom_qa 2xN, 多选带确认行) + 管理员行。"""
+    """Answer rows (math 2x2, emoji 2x3, custom_qa 2xN; confirmation for multi-select) plus admin row."""
     rows: list[list[InlineKeyboardButton]] = []
     payload = session_row.payload or {}
     options = payload.get("options") or []

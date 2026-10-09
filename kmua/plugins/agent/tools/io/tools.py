@@ -36,7 +36,7 @@ async def read(
     """Read text or return binary content.
 
     Protocols:
-    - kmua://kmua/plugins/x.py — a file from the kmua's own codebase
+    - kmua://kmua/plugins/x.py — a file from the bot's own codebase
     - work://notes/hello.html — a file from this chat's workspace
     - persist://report.txt — a file persisted for this chat
     - chat://media/123 — media with message id 123 in this chat
@@ -227,7 +227,7 @@ async def list(ctx: RunContext[datatype.ContextDeps], path: str = "work://") -> 
     Protocols:
     - work://             — agent workspace (default)
     - persist://          — files persisted for this chat
-    - kmua://             — kmua's codebase
+    - kmua://             — bot's codebase
     """
     try:
         protocol, rest = _split_target(path)
@@ -311,7 +311,7 @@ async def search(
     """Search text across files, web, chat messages or group memory.
 
     Protocols:
-    - kmua://           — the kmua's own codebase
+    - kmua://           — the bot's own codebase
     - work://           — the agent workspace
     - web://            — search on Internet
     - chat://           — messages in the current group
