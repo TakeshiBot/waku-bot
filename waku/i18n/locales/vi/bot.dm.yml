@@ -1,0 +1,8 @@
+bot:
+  dm:
+    button_enabled: "🤖 AI trong chat riêng: BẬT · nhấn để tắt"
+    button_disabled: "🤖 AI trong chat riêng: TẮT · nhấn để bật"
+    enabled: "Đã bật AI trong chat riêng."
+    disabled: "Đã tắt AI trong chat riêng."
+    unavailable: "AI trong chat riêng đang tắt. Gửi /start rồi nhấn nút AI để bật."
+    not_yours: "Nút này chỉ dùng trong chat riêng của bạn với bot."

@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from waku import gift
 from waku.database.db import with_session, with_tx
 from waku.database.models import Gift, UserData
+from waku.database.user import _patch_user_config_values
 
 
 @with_tx
@@ -72,7 +73,7 @@ async def buy_gift_for_user(
     if config.coins < cost:
         raise ValueError("Not enough coins to buy gift")
     config.coins = max(-144 * 16, config.coins - cost)
-    user_data.user_config = config
+    await _patch_user_config_values(owner_id, {"coins": config.coins}, session)
     return await add_gift_to_user(owner_id, gift_id, rarity, session=session)
 
 

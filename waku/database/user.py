@@ -196,8 +196,7 @@ async def add_user_coins(
         raise ValueError(f"User with id {user_id} not found")
     config = user_data.user_config
     config.coins += coins
-    user_data.user_config = config
-    return user_data.user_config
+    return await _patch_user_config_values(user_id, {"coins": config.coins}, session)
 
 
 @with_tx
@@ -211,21 +210,115 @@ async def cost_user_coins(
         raise ValueError(f"User with id {user_id} not found")
     config = user_data.user_config
     config.coins = max(-144 * 16, config.coins - coins)
-    user_data.user_config = config
-    return user_data.user_config
+    return await _patch_user_config_values(user_id, {"coins": config.coins}, session)
 
 
 @with_tx
 async def update_user_config(
     user_id: int, config: UserConfig, session: AsyncSession | None = None
 ) -> UserConfig:
-    assert session is not None
+    """Write legacy config fields while preserving the independently edited DM flag.
 
-    user_data = await session.get(UserData, user_id)
+    Use set_user_dm_ai_enabled / patch_user_preferences to change the DM flag.
+    """
+    assert session is not None
+    fields = config.to_dict()
+    fields.pop("dm_ai_enabled", None)
+    return await _patch_user_config_values(user_id, fields, session)
+
+
+@with_tx
+async def patch_user_preferences(
+    user_id: int,
+    *,
+    lang: str | None = None,
+    dm_ai_enabled: bool | None = None,
+    session: AsyncSession | None = None,
+) -> UserConfig:
+    """Update selected JSON keys without replacing other preferences or balances."""
+    assert session is not None
+    fields = {}
+    if lang is not None:
+        fields["lang"] = lang
+    if dm_ai_enabled is not None:
+        if not isinstance(dm_ai_enabled, bool):
+            raise TypeError("dm_ai_enabled must be bool")
+        fields["dm_ai_enabled"] = dm_ai_enabled
+    return await _patch_user_config_values(user_id, fields, session)
+
+
+async def _patch_user_config_values(
+    user_id: int, fields: dict, session: AsyncSession
+) -> UserConfig:
+    dialect = session.get_bind().dialect.name
+    if fields and dialect in {"sqlite", "postgresql", "mysql", "mariadb"}:
+        import json
+
+        if dialect == "postgresql":
+            config = sqlalchemy.func.coalesce(
+                sqlalchemy.func.nullif(
+                    sqlalchemy.cast(
+                        UserData.config, sqlalchemy.dialects.postgresql.JSONB
+                    ),
+                    sqlalchemy.cast(
+                        sqlalchemy.literal("null"), sqlalchemy.dialects.postgresql.JSONB
+                    ),
+                ),
+                sqlalchemy.cast(
+                    sqlalchemy.literal("{}"), sqlalchemy.dialects.postgresql.JSONB
+                ),
+            )
+        else:
+            config = sqlalchemy.func.coalesce(
+                sqlalchemy.func.nullif(UserData.config, sqlalchemy.literal("null")),
+                sqlalchemy.literal("{}"),
+            )
+        for key, value in fields.items():
+            encoded = sqlalchemy.literal(json.dumps(value))
+            if dialect == "sqlite":
+                config = sqlalchemy.func.json_set(
+                    config, f"$.{key}", sqlalchemy.func.json(encoded)
+                )
+            elif dialect == "postgresql":
+                config = sqlalchemy.func.jsonb_set(
+                    sqlalchemy.cast(config, sqlalchemy.dialects.postgresql.JSONB),
+                    "{" + key + "}",
+                    sqlalchemy.cast(encoded, sqlalchemy.dialects.postgresql.JSONB),
+                    True,
+                )
+            else:
+                config = sqlalchemy.func.json_set(
+                    config, f"$.{key}", sqlalchemy.func.json_extract(encoded, "$")
+                )
+        stmt = (
+            sqlalchemy.update(UserData)
+            .where(UserData.id == user_id)
+            .values(config=config)
+            .execution_options(synchronize_session=False)
+        )
+        await session.execute(stmt)
+    elif fields:
+        # Unknown dialects still preserve raw keys and serialize concurrent writers
+        # using a row lock where the database supports one.
+        result = await session.execute(
+            sqlalchemy.select(UserData)
+            .where(UserData.id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        user_data = result.scalar_one_or_none()
+        if user_data is None:
+            raise ValueError(f"User with id {user_id} not found")
+        user_data.config = {**(user_data.config or {}), **fields}
+        await session.flush()
+    user_data = await session.get(UserData, user_id, populate_existing=True)
     if user_data is None:
         raise ValueError(f"User with id {user_id} not found")
-    user_data.user_config = config
     return user_data.user_config
+
+
+async def set_user_dm_ai_enabled(user_id: int, enabled: bool) -> UserConfig:
+    return await patch_user_preferences(user_id, dm_ai_enabled=enabled)
 
 
 @with_tx

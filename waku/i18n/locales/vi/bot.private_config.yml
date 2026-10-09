@@ -1,0 +1,64 @@
+bot:
+  private_config:
+    info_command: 'Xem các nhóm bot đã ghi nhận'
+    title: ⌬ <b>Cấu hình Waku</b>
+    open_settings: ⚙️ Cài đặt
+    variables_title: ⌬ <b>Biến cấu hình</b>
+    groups_summary: "│\n┟ <b>Nhóm</b> → {count}\n┠ <b>Trang</b> → {page}/{pages}\n┖ <b>Đã sửa</b> → {changed}"
+    section_title: "⌬ <b>{name}</b>"
+    page: "Trang: <b>{page}/{pages}</b>"
+    providers_summary: "│\n┟ <b>Tổng số</b> → {count}\n┖ <b>Default</b> → {default}"
+    provider_title: "⌬ <b>Nhà cung cấp: {name}</b>"
+    entry_summary: "⌬ <b>Biến cấu hình</b>\n│\n┟ <b>Key</b> → <code>{key}</code>\n┠ <b>Kiểu</b> → <code>{type}</code>\n┖ <b>Giá trị</b> → <pre>{value}</pre>"
+    summary: 'File đang sửa: <code>{file}</code>
+
+      Múi giờ: {timezone}
+
+      Model đang chạy: <code>{model}</code>
+
+      Đã lưu trong phiên: {count} mục. Thay đổi có hiệu lực đầy đủ sau khi khởi động lại.
+
+      Biến môi trường vẫn được ưu tiên khi khởi động lại.'
+    denied: Chỉ chủ bot hoặc quản trị viên toàn cục được dùng cấu hình riêng tư.
+    expired: Menu đã hết hạn hoặc không thuộc về bạn. Mở lại /config.
+    back: ↩️
+    close: ✖️
+    closed: Đã đóng cấu hình.
+    edit: ✏️ Sửa giá trị
+    toggle: Bật / tắt
+    providers: 🔌 Nhà cung cấp AI
+    add_provider: ➕ Thêm provider
+    delete_provider: 🗑 Xoá provider
+    restart: 🔄 Khởi động lại để áp dụng
+    saved: Đã lưu an toàn vào file cấu hình. Khởi động lại để áp dụng đầy đủ.
+    send_value: 'Gửi giá trị mới cho <code>{key}</code> trong 2 phút. Prompt/chuỗi: gửi nguyên văn; danh sách/object:
+      dùng JSON hoặc TOML; dùng null để xoá giá trị tuỳ chọn. /cancel để huỷ. Tin giá trị sẽ được xoá nếu bot có
+      thể xoá.'
+    send_provider: 'Gửi tên provider mới (1–48 ký tự: chữ, số, dấu gạch ngang hoặc gạch dưới) trong 2 phút. /cancel
+      để huỷ.'
+    confirm_delete: Xác nhận xoá provider <code>{name}</code>? Provider đang được model tham chiếu sẽ không được
+      xoá.
+    confirm_restart: Khởi động lại để áp dụng settings và tạo lại model/client. Bot sẽ thoát sau khi xác nhận; Docker/systemd
+      cần có chính sách tự khởi động lại. Nếu chạy Python trực tiếp, bạn phải chạy lại bot. Tiếp tục?
+    restarting: Đã kiểm tra cấu hình. Bot đang khởi động lại; nếu chạy trực tiếp bằng Python, hãy chạy lại bot.
+    cancelled: Đã huỷ sửa giá trị.
+    groups:
+      base: Cơ bản và vận hành
+      agent: AI, model và prompt
+      webapp: Mini App và HTTP
+      rss: RSS và nội dung liên kết
+      services: Dịch vụ và kết nối
+      cache: Cache và avatar
+      economy: Coin và chi phí
+    errors:
+      menu_failed: Không cập nhật được menu. Thử nhấn lại nút hoặc mở lại /config.
+      missing_file: Không tìm thấy file settings đang được bot sử dụng.
+      invalid_file: Không đọc được file hoặc TOML không hợp lệ. Kiểm tra file trên máy.
+      invalid_value: Giá trị không hợp lệ với kiểu dữ liệu/cấu hình của base hiện tại. Mở lại mục để thử.
+      stale_file: File đã thay đổi sau khi mở mục này. Mở lại mục rồi sửa để tránh ghi đè.
+      write_failed: Không ghi được file cấu hình. File gốc được giữ nguyên.
+      invalid_name: Tên provider không hợp lệ. Dùng 1–48 ký tự chữ, số, - hoặc _.
+      provider_exists: Provider này đã tồn tại.
+      provider_in_use: Model đang tham chiếu provider bị thiếu. Đổi các model sang provider hợp lệ trước.
+      inherited_value: Giá trị này được kế thừa từ file settings trước. Hãy sửa file gốc trên máy.
+      edit_expired: Đã hết 2 phút nhập giá trị. Mở lại mục để sửa.

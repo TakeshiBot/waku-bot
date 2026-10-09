@@ -57,6 +57,8 @@
     "id": "ID",
     "username": "Tên người dùng",
     "lang": "Ngôn ngữ",
+    "dmAi": "AI trong chat riêng",
+    "dmAiHint": "Bật trả lời AI khi chat riêng với bot. Mặc định tắt.",
     "economy": "Xu và tình cảm",
     "coins": "Xu",
     "affection": "Tình cảm",

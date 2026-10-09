@@ -90,6 +90,7 @@ async def read_me(user: CurrentUser) -> MeOut:
         full_name=user.data.full_name,
         username=user.data.username,
         lang=config.lang,
+        dm_ai_enabled=config.dm_ai_enabled,
         coins=config.coins,
         affection=config.affection,
         affection_percentile=percentile,
@@ -111,10 +112,10 @@ async def update_my_config(
     """Apply the fields present in the payload; absent fields stay untouched."""
     write_limiter.check(client_key(request, user.id))
 
-    if payload.lang is not None:
-        config = user.data.user_config
-        config.lang = payload.lang
-        await database.update_user_config(user.id, config)
+    if payload.lang is not None or payload.dm_ai_enabled is not None:
+        await database.patch_user_preferences(
+            user.id, lang=payload.lang, dm_ai_enabled=payload.dm_ai_enabled
+        )
 
     if payload.waifu_mention is not None:
         await database.set_user_waifu_mention(user.id, payload.waifu_mention)

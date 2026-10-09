@@ -2,13 +2,13 @@ import sqlalchemy
 from sqlalchemy import BigInteger, CheckConstraint, Integer, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.orm.attributes import flag_modified
 
 from waku.config import runtime_config
 from waku.logger import logger
 
 from .db import engine, with_session, with_tx
 from .models import Base, UserConfig, UserData
+from .user import _patch_user_config_values
 
 
 def affection_bucket(x: int) -> int:
@@ -281,10 +281,7 @@ async def update_user_affection(
     old_bucket = affection_bucket(old_affection)
     new_bucket = affection_bucket(new_affection)
 
-    cfg = user.config.copy()
-    cfg["affection"] = new_affection
-    user.config = cfg
-    flag_modified(user, "config")
+    await _patch_user_config_values(user_id, {"affection": new_affection}, session)
 
     if runtime_config.db_is_postgres:
         return

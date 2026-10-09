@@ -1,0 +1,18 @@
+bot:
+  info:
+    header: "📚 <b>Nhóm Telegram</b>\n<b>Tổng:</b> <code>{total}</code>   <b>Trang:</b> <code>{page}/{pages}</code>"
+    group_line: "<blockquote><b>{index}. {title}</b></blockquote>\n   <b>ID:</b> <code>{id}</code>\n   <b>Liên kết:</b> {handle} | {status}"
+    legend: "🟢 Là thành viên · 🔴 Không truy cập được · ⚪ Chưa xác minh"
+    empty: "Chưa có nhóm nào trong cơ sở dữ liệu. Gửi một tin nhắn hoặc lệnh trong nhóm để bot ghi nhận."
+    accessible: "🟢 Bot đang là thành viên"
+    unavailable: "🔴 Bot không còn truy cập được"
+    unknown: "⚪ Chưa xác minh được trạng thái"
+    loading: "Đang tải nhóm và kiểm tra quyền truy cập…"
+    denied: "Chỉ chủ bot hoặc quản trị viên toàn cục được dùng /info trong tin nhắn riêng."
+    invalid: "Nút không hợp lệ."
+    expired: "Bảng đã hết hạn. Gửi /info để mở lại."
+    error: "Không tải được danh sách nhóm. Vui lòng thử lại /info."
+    previous: "◀️"
+    next: "▶️"
+    refresh: "↻ Làm mới"
+    close: "✖️"

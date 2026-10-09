@@ -58,9 +58,10 @@ async def change_lang(client: Client, callback_query: pyrogram.types.CallbackQue
     if not message or not message.chat:
         return
     if message.chat.type == pyrogram.enums.ChatType.PRIVATE:
-        config = await database.get_user_config(callback_query.from_user)
-        config.lang = select_lang
-        await database.update_user_config(callback_query.from_user.id, config)
+        await database.get_user_config(callback_query.from_user)
+        await database.patch_user_preferences(
+            callback_query.from_user.id, lang=select_lang
+        )
     else:
         if not callback_query.from_user:
             return

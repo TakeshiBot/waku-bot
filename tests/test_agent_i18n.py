@@ -271,7 +271,9 @@ async def test_ask_uses_group_locale_and_private_user_locale():
         tools=SimpleNamespace(is_user_blocked=AsyncMock(return_value=False)),
         pyrogram=pyrogram,
         database=SimpleNamespace(
-            get_user_config=AsyncMock(return_value=SimpleNamespace(lang="en")),
+            get_user_config=AsyncMock(
+                return_value=SimpleNamespace(lang="en", dm_ai_enabled=True)
+            ),
             get_chat_config=AsyncMock(return_value=SimpleNamespace(lang="zh-CN")),
         ),
         quota=SimpleNamespace(

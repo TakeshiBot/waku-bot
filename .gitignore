@@ -7,6 +7,7 @@ logs/
 .vscode
 # Local runtime settings. Only sanitized examples belong in the repository.
 settings*.toml
+.settings-editor-*
 !settings.ex.toml
 !settings.example.toml
 !settings.sample.toml

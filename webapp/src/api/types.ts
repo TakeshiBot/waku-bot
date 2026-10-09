@@ -34,6 +34,7 @@ export interface Me {
   full_name: string;
   username: string | null;
   lang: string;
+  dm_ai_enabled: boolean;
   coins: number;
   affection: number;
   affection_percentile: number | null;
@@ -50,6 +51,7 @@ export interface Me {
 export interface MeConfigPatch {
   lang?: string;
   waifu_mention?: boolean;
+  dm_ai_enabled?: boolean;
 }
 
 export interface ChatBrief {

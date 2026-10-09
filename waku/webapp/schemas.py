@@ -93,6 +93,7 @@ class MeOut(ApiModel):
     full_name: str
     username: str | None
     lang: str
+    dm_ai_enabled: bool = False
     coins: int
     affection: int
     affection_percentile: float | None
@@ -111,6 +112,7 @@ class MeConfigPatch(ApiModel):
 
     lang: LocaleStr | None = None
     waifu_mention: bool | None = None
+    dm_ai_enabled: bool | None = None
 
     @field_validator("lang")
     @classmethod

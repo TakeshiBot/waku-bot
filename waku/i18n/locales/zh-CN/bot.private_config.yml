@@ -1,0 +1,63 @@
+bot:
+  private_config:
+    info_command: 'List groups known to the bot'
+    title: ⌬ <b>Waku settings</b>
+    open_settings: ⚙️ Settings
+    variables_title: ⌬ <b>Config variables</b>
+    groups_summary: "│\n┟ <b>Groups</b> → {count}\n┠ <b>Page</b> → {page}/{pages}\n┖ <b>Changed</b> → {changed}"
+    section_title: "⌬ <b>{name}</b>"
+    page: "Page: <b>{page}/{pages}</b>"
+    providers_summary: "│\n┟ <b>Total</b> → {count}\n┖ <b>Default</b> → {default}"
+    provider_title: "⌬ <b>Provider: {name}</b>"
+    entry_summary: "⌬ <b>Config variable</b>\n│\n┟ <b>Key</b> → <code>{key}</code>\n┠ <b>Type</b> → <code>{type}</code>\n┖ <b>Value</b> → <pre>{value}</pre>"
+    summary: 'Editing: <code>{file}</code>
+
+      Timezone: {timezone}
+
+      Running model: <code>{model}</code>
+
+      Saved this session: {count} fields. Restart to fully apply changes.
+
+      Environment overrides still take precedence after restart.'
+    denied: Only bot owners and global administrators can use private settings.
+    expired: This menu expired or belongs to another user. Open /config again.
+    back: ↩️
+    close: ✖️
+    closed: Settings closed.
+    edit: ✏️ Edit value
+    toggle: Toggle
+    providers: 🔌 AI providers
+    add_provider: ➕ Add provider
+    delete_provider: 🗑 Delete provider
+    restart: 🔄 Restart to apply
+    saved: Saved safely to the settings file. Restart to fully apply changes.
+    send_value: Send a new value for <code>{key}</code> within 2 minutes. Send strings/prompts as plain text, lists/objects
+      as JSON or TOML, or null to clear an optional value. /cancel aborts. The input message will be deleted if
+      possible.
+    send_provider: Send a new provider name (1–48 letters, numbers, hyphens or underscores) within 2 minutes. /cancel
+      aborts.
+    confirm_delete: Delete provider <code>{name}</code>? A provider referenced by a model cannot be removed.
+    confirm_restart: Restart to apply settings and rebuild models/clients. The bot will exit after confirmation;
+      Docker/systemd must be configured to restart it. For a direct Python run, start the bot again manually. Continue?
+    restarting: Settings validated. Restarting; for a direct Python run, start the bot again manually.
+    cancelled: Edit cancelled.
+    groups:
+      base: General and runtime
+      agent: AI, models and prompts
+      webapp: Mini App and HTTP
+      rss: RSS and linked content
+      services: Services and connections
+      cache: Cache and avatars
+      economy: Coins and costs
+    errors:
+      menu_failed: Could not update the menu. Try the button again or reopen /config.
+      missing_file: No active settings file was found.
+      invalid_file: The settings file cannot be read or contains invalid TOML. Check it locally.
+      invalid_value: The value does not match the current base configuration/type. Reopen the entry to retry.
+      stale_file: The file changed after you opened this entry. Reopen it before editing.
+      write_failed: The settings file could not be written. The original file was preserved.
+      invalid_name: Invalid provider name. Use 1–48 letters, numbers, - or _.
+      provider_exists: This provider already exists.
+      provider_in_use: A model references a missing provider. Update model specs to valid providers first.
+      inherited_value: This value is inherited from an earlier settings file. Edit the original file locally.
+      edit_expired: The 2-minute edit window expired. Reopen the entry to edit.

@@ -1,0 +1,8 @@
+bot:
+  dm:
+    button_enabled: "🤖 Private chat AI: ON · tap to disable"
+    button_disabled: "🤖 Private chat AI: OFF · tap to enable"
+    enabled: "Private chat AI enabled."
+    disabled: "Private chat AI disabled."
+    unavailable: "Private chat AI is off. Send /start and tap the AI button to enable it."
+    not_yours: "This button is only available in your own private chat with the bot."

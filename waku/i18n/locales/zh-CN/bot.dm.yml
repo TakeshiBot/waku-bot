@@ -1,0 +1,8 @@
+bot:
+  dm:
+    button_enabled: "🤖 私聊 AI：已开启 · 点击关闭"
+    button_disabled: "🤖 私聊 AI：已关闭 · 点击开启"
+    enabled: "已开启私聊 AI。"
+    disabled: "已关闭私聊 AI。"
+    unavailable: "私聊 AI 已关闭。发送 /start 并点击 AI 按钮以开启。"
+    not_yours: "此按钮只能在你与机器人的私聊中使用。"

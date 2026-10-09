@@ -12,6 +12,7 @@ from waku.config import app_config, runtime_config
 
 from .db import AsyncSessionFactory, with_session, with_tx
 from .models import ChatData, UserChatAssociation, UserData
+from .user import _patch_user_config_values
 
 _association_cache: set[tuple[int, int]] = set()
 
@@ -395,7 +396,7 @@ async def change_user_waifu_in_chat(
     if config.coins < 0:
         raise ValueError("Not enough coins")
     config.coins = max(-144 * 16, config.coins - cost)
-    user.user_config = config
+    await _patch_user_config_values(user_id, {"coins": config.coins}, session)
     new_waifu = await take_waifu_for_user_in_chat(user, chat, session)
     if new_waifu is None:
         return None

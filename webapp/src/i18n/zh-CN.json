@@ -57,6 +57,8 @@
     "id": "ID",
     "username": "用户名",
     "lang": "语言",
+    "dmAi": "私聊 AI",
+    "dmAiHint": "开启与机器人私聊时的 AI 回复。默认关闭。",
     "economy": "喵喵币与好感度",
     "coins": "喵喵币",
     "affection": "好感度",

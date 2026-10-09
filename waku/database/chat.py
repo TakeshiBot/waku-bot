@@ -294,6 +294,40 @@ async def get_chats_page(
 
 
 @with_session
+async def get_known_groups_page(
+    page: int = 1,
+    size: int = pagination.DEFAULT_PAGE_SIZE,
+    session: AsyncSession | None = None,
+) -> pagination.Page[ChatData]:
+    """Page stored Telegram groups without loading dialogs or all group rows."""
+    assert session is not None
+    page, size = pagination.normalize_page(page, size)
+    groups = ChatData.id < 0
+    total = (
+        await session.execute(
+            sqlalchemy.select(sqlalchemy.func.count())
+            .select_from(ChatData)
+            .where(groups)
+        )
+    ).scalar() or 0
+    page = min(page, max(1, (total + size - 1) // size))
+    items = (
+        (
+            await session.execute(
+                sqlalchemy.select(ChatData)
+                .where(groups)
+                .order_by(ChatData.created_at.desc(), ChatData.id.desc())
+                .offset(pagination.offset_for(page, size))
+                .limit(size)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return pagination.Page(items=items, total=total, page=page, size=size)
+
+
+@with_session
 async def count_chat_members(chat_id: int, session: AsyncSession | None = None) -> int:
     """Count members the bot knows about, which is what the panel can act on.
 

@@ -57,6 +57,8 @@
     "id": "ID",
     "username": "Username",
     "lang": "Language",
+    "dmAi": "AI in private chat",
+    "dmAiHint": "Enable AI replies in your private chat with the bot. Off by default.",
     "economy": "Coins and affection",
     "coins": "Coins",
     "affection": "Affection",

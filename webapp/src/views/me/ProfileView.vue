@@ -2,7 +2,7 @@
 /**
  * The caller's own profile.
  *
- * The only editable fields are language and the waifu mention flag; everything else
+ * Editable fields are language, private-chat AI, and the waifu mention flag; everything else
  * is read-only because it is earned in chat, not set here. Saving goes through the
  * native main button, which stays disabled until something actually changed.
  */
@@ -10,6 +10,7 @@ import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 
 import { refreshMyAvatar } from "@/api/endpoints/me";
+import type { MeConfigPatch } from "@/api/types";
 import { systemInfo } from "@/api/endpoints/auth";
 import { isApiError } from "@/api/errors";
 import DefinitionList, { type DefinitionItem } from "@/components/DefinitionList.vue";
@@ -37,11 +38,11 @@ const { notify, notifyError } = useNotice();
 
 const profile = useAsyncData(async () => {
   const me = await meStore.load(true);
-  form.commit({ lang: me.lang, waifu_mention: me.waifu_mention });
+  form.commit({ lang: me.lang, waifu_mention: me.waifu_mention, dm_ai_enabled: me.dm_ai_enabled });
   return me;
 });
 
-const form = useDirtyState({ lang: "vi", waifu_mention: false });
+const form = useDirtyState({ lang: "vi", waifu_mention: false, dm_ai_enabled: false });
 
 // The bot may ship locales the panel has no catalogue for; offer what the bot
 // accepts and let the i18n layer fall back for the ones it does not know.
@@ -74,12 +75,21 @@ const economyItems = computed<DefinitionItem[]>(() => {
 async function save(): Promise<void> {
   saving.value = true;
   try {
-    const updated = await meStore.save({
-      lang: form.draft.value.lang,
-      waifu_mention: form.draft.value.waifu_mention,
-    });
+    const patch: MeConfigPatch = {};
+    if (form.changedFields.value.includes("lang")) patch.lang = form.draft.value.lang;
+    if (form.changedFields.value.includes("waifu_mention")) {
+      patch.waifu_mention = form.draft.value.waifu_mention;
+    }
+    if (form.changedFields.value.includes("dm_ai_enabled")) {
+      patch.dm_ai_enabled = form.draft.value.dm_ai_enabled;
+    }
+    const updated = await meStore.save(patch);
     profile.data.value = updated;
-    form.commit({ lang: updated.lang, waifu_mention: updated.waifu_mention });
+    form.commit({
+      lang: updated.lang,
+      waifu_mention: updated.waifu_mention,
+      dm_ai_enabled: updated.dm_ai_enabled,
+    });
     notify(t("app.saved"));
     haptics.success();
   } catch (error) {
@@ -140,6 +150,15 @@ async function onRefreshAvatar(): Promise<void> {
         :options="localeOptions"
         :changed="form.changedFields.value.includes('lang')"
       />
+      <SettingsRow
+        :label="t('me.dmAi')"
+        :hint="t('me.dmAiHint')"
+        :changed="form.changedFields.value.includes('dm_ai_enabled')"
+      >
+        <template #control>
+          <ToggleSwitch v-model="form.draft.value.dm_ai_enabled" :aria-label="t('me.dmAi')" />
+        </template>
+      </SettingsRow>
     </SettingsSection>
 
     <SettingsSection :label="t('me.economy')">

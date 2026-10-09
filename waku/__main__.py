@@ -194,6 +194,10 @@ async def init_bot(client: Client = client):
             "randmyavatar", i18n.t("bot.cmd.randmyavatar", locale=app_config.lang)
         ),
         BotCommand("reload", i18n.t("bot.cmd.reload", locale=app_config.lang)),
+        BotCommand("config", i18n.t("bot.cmd.config", locale=app_config.lang)),
+        BotCommand(
+            "info", i18n.t("bot.private_config.info_command", locale=app_config.lang)
+        ),
     ]
 
     # Build the command map for comparison.

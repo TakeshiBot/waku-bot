@@ -322,11 +322,16 @@ if app_config.agent and app_config.agent_model:
         """Start a new agent run to handle an ask_user answer (button click)."""
         if not app_config.agent or agent is None or not is_chat_allowed(chat_id):
             return
+        if not message.chat or message.chat.id != chat_id:
+            return
         if await tools.is_user_blocked(user_id):
             return
         is_private = (
             message.chat and message.chat.type == pyrogram.enums.ChatType.PRIVATE
         )
+        user_config = await database.get_user_config(user_id)
+        if is_private and not user_config.dm_ai_enabled:
+            return
         if (
             is_private
             and app_config.agent_private_chat_required_channel
@@ -335,7 +340,6 @@ if app_config.agent and app_config.agent_model:
             )
         ):
             return
-        user_config = await database.get_user_config(user_id)
         lang = (
             user_config.lang
             if is_private
@@ -380,6 +384,11 @@ if app_config.agent and app_config.agent_model:
             return
         await ask_lock.acquire()
         try:
+            if (
+                is_private
+                and not (await database.get_user_config(user_id)).dm_ai_enabled
+            ):
+                return
             await _run_registered(
                 chat_id,
                 user_id,
@@ -964,6 +973,17 @@ async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
     chat_config = None
     if not is_chat_allowed(chat.id):
         return await word_reply(client, message)
+    if chat.type == pyrogram.enums.ChatType.PRIVATE:
+        user_config = await database.get_user_config(user.id)
+        if not user_config.dm_ai_enabled:
+            command = message.command or []
+            if (command and command[0].split("@", 1)[0].lower() == "chat") or (
+                await myfilter.mention_me_filter_func(None, client, message)
+            ):
+                await message.reply_text(
+                    i18n.t("bot.dm.unavailable", locale=user_config.lang)
+                )
+            return
     if (
         chat.type == pyrogram.enums.ChatType.PRIVATE
         and app_config.agent_private_chat_required_channel
@@ -1010,6 +1030,11 @@ async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
     if conv_lock.locked():
         if is_bot_user:
             return
+        if (
+            chat.type == pyrogram.enums.ChatType.PRIVATE
+            and not (await database.get_user_config(user.id)).dm_ai_enabled
+        ):
+            return
         await _queue_interjection(message, chat.id, user.id)
         return
     typing_keepalive: TypingKeepAlive | None = None
@@ -1025,7 +1050,10 @@ async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
             )
 
         if chat.type == pyrogram.enums.ChatType.PRIVATE:
-            lang = (await database.get_user_config(user.id)).lang
+            user_config = await database.get_user_config(user.id)
+            if not user_config.dm_ai_enabled:
+                return
+            lang = user_config.lang
         else:
             lang = (await database.get_chat_config(chat.id)).lang
 

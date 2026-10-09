@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from waku.config import app_config
 from waku.database.db import with_session, with_tx
 from waku.database.models import Bottle, BottleReply, UserData
+from waku.database.user import _patch_user_config_values
 
 
 @with_tx
@@ -38,7 +39,7 @@ async def add_bottle(
         raise ValueError("Not enough coins to throw a bottle")
     if cost > 0:
         config.coins = max(-144 * 16, config.coins - cost)
-    user.user_config = config
+        await _patch_user_config_values(sender_id, {"coins": config.coins}, session)
     bottle = Bottle(
         sender_id=sender_id,
         text=text,

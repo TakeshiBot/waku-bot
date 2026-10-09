@@ -1,0 +1,18 @@
+bot:
+  info:
+    header: "📚 <b>Telegram 群组</b>\n<b>总数：</b><code>{total}</code>   <b>页数：</b><code>{page}/{pages}</code>"
+    group_line: "<blockquote><b>{index}. {title}</b></blockquote>\n   <b>ID：</b><code>{id}</code>\n   <b>链接：</b>{handle} | {status}"
+    legend: "🟢 群成员 · 🔴 无法访问 · ⚪ 未确认"
+    empty: "数据库中暂无群组。在群组中发送消息或命令后，机器人会记录该群组。"
+    accessible: "🟢 机器人仍是群成员"
+    unavailable: "🔴 机器人已无法访问该群组"
+    unknown: "⚪ 暂时无法确认成员状态"
+    loading: "正在加载群组并检查访问状态…"
+    denied: "只有机器人所有者或全局管理员可在私聊中使用 /info。"
+    invalid: "按钮无效。"
+    expired: "面板已过期，请发送 /info 重新打开。"
+    error: "无法加载群组，请再次尝试 /info。"
+    previous: "◀️"
+    next: "▶️"
+    refresh: "↻ 刷新"
+    close: "✖️"
