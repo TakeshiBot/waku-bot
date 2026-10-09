@@ -8,6 +8,39 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .db import with_session, with_tx
 from .models import ChatConfig, DiscordChatData
 
+_GLOBAL_SETTINGS_ID = 0  # Guild IDs are positive; personal DM IDs are negative.
+
+
+@with_session
+async def get_discord_global_ai_enabled(session: AsyncSession | None = None) -> bool:
+    assert session is not None
+    row = await session.get(DiscordChatData, _GLOBAL_SETTINGS_ID)
+    if row is None:
+        return True
+    value = (row.config or {}).get("discord_global_ai_enabled", True)
+    return value if isinstance(value, bool) else False
+
+
+@with_tx
+async def set_discord_global_ai_enabled(
+    enabled: bool, session: AsyncSession | None = None
+) -> None:
+    if not isinstance(enabled, bool):
+        raise ValueError("Discord global AI switch must be boolean")
+    assert session is not None
+    row = (
+        await session.execute(
+            select(DiscordChatData).where(DiscordChatData.id == _GLOBAL_SETTINGS_ID).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        row = DiscordChatData(id=_GLOBAL_SETTINGS_ID, title="Discord bot settings")
+        session.add(row)
+    config = dict(row.config or {})
+    config["discord_global_ai_enabled"] = enabled
+    row.config = config
+    await session.flush()
+
 
 def _check_id(chat_id: int) -> None:
     if isinstance(chat_id, bool) or not isinstance(chat_id, int):
@@ -24,7 +57,12 @@ async def get_discord_chat_config(
     _check_id(chat_id)
     assert session is not None
     chat = await session.get(DiscordChatData, chat_id)
-    return chat.chat_config if chat is not None else ChatConfig()
+    config = chat.chat_config if chat is not None else ChatConfig()
+    if chat_id > 0:
+        # Old approval flags remain stored for compatibility but no longer
+        # control access to guilds the bot has joined.
+        config.discord_enabled = True
+    return config
 
 
 @with_tx
@@ -62,17 +100,14 @@ async def patch_discord_chat_config(
 
 
 @with_session
-async def list_authorized_discord_servers(
+async def list_discord_guilds(
     session: AsyncSession | None = None,
 ) -> list[tuple[int, dict]]:
-    """Return authorized guilds, excluding DM rows even when enabled."""
+    """Return all known guilds, including rows from the retired approval flow."""
     assert session is not None
     rows = await session.execute(
         select(DiscordChatData.id, DiscordChatData.config)
-        .where(
-            DiscordChatData.id > 0,
-            DiscordChatData.config["discord_enabled"].as_boolean().is_(True),
-        )
+        .where(DiscordChatData.id > 0)
         .order_by(DiscordChatData.id)
     )
     return [(chat_id, config) for chat_id, config in rows.all()]

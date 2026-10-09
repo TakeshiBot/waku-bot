@@ -272,6 +272,7 @@ async def _stop_discord_bot() -> None:
         state.discord_client = None
         state.discord_agent = None
         state.discord_recovery_agent = None
-        state.server_list_view_registered = False
         state.warned_empty_content = False
         state.discord_message_tasks.clear()
+        state.discord_ai_tasks.clear()
+        state.discord_global_ai_enabled = None

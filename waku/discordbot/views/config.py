@@ -1,349 +1,604 @@
+"""Private, session-bound Discord slash command settings."""
+
 from __future__ import annotations
+
+import asyncio
+from dataclasses import replace
 
 import discord
 
+from waku.config import app_config
 from waku.i18n import normalize_locale
 from waku.logger import logger
 
+from .. import state
 from ..embeds import discord_command_embed
 from ..models import DiscordGuildSettings
 from ..permissions import _is_discord_user_bot_admin
 from ..settings import (
     _discord_dm_settings,
+    _discord_global_ai_enabled,
     _discord_guild_settings,
     _r18_mode_label,
     _rotate_discord_history_epoch,
     _set_discord_dm_settings,
+    _set_discord_global_ai_enabled,
     _set_discord_guild_settings,
 )
 
 
+def _can_manage(interaction) -> bool:
+    if interaction.guild is None:
+        return _is_discord_user_bot_admin(interaction.user)
+    permissions = getattr(interaction, "permissions", None)
+    if permissions is None:
+        permissions = getattr(interaction.user, "guild_permissions", None)
+    return (
+        interaction.guild.owner_id == interaction.user.id
+        or bool(permissions and permissions.administrator)
+        or _is_discord_user_bot_admin(interaction.user)
+    )
+
+
+async def _private_error(interaction, description: str) -> None:
+    embed = discord_command_embed(description, title="Waku", color=discord.Color.red())
+    if interaction.response.is_done():
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    else:
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 class DiscordConfigView(discord.ui.View):
-    def __init__(self, guild: discord.Guild, settings: DiscordGuildSettings):
-        super().__init__(timeout=300)
-        self.guild = guild
-        self.message: discord.Message | None = None
-        self.pending_settings = DiscordGuildSettings(
-            enabled=settings.enabled,
-            r18_mode=settings.r18_mode,
-            ai_reply=settings.ai_reply,
-            group_memory_enabled=settings.group_memory_enabled,
-            setu_enabled=settings.setu_enabled,
-            lang=settings.lang,
+    def __init__(
+        self,
+        interaction: discord.Interaction,
+        settings: DiscordGuildSettings,
+        global_ai_enabled: bool | None = None,
+    ):
+        super().__init__(timeout=900)
+        self.origin = interaction
+        self.user_id = interaction.user.id
+        self.guild = interaction.guild
+        self.guild_id = self.guild.id if self.guild else None
+        self.pending_settings = replace(settings)
+        self.saved_settings = replace(settings)
+        self.pending_global_ai = (
+            global_ai_enabled if _is_discord_user_bot_admin(interaction.user) else None
+        )
+        self.saved_global_ai = self.pending_global_ai
+        self.section = "chat"
+        self.notice = ""
+        self._lock = asyncio.Lock()
+        self._sync_controls()
+
+    def _t(self, vi: str, en: str) -> str:
+        return vi if normalize_locale(self.pending_settings.lang) == "vi" else en
+
+    def _global_access(self, user) -> bool:
+        return self.pending_global_ai is not None and _is_discord_user_bot_admin(user)
+
+    def _dirty(self) -> bool:
+        return (
+            self.pending_settings != self.saved_settings
+            or self.pending_global_ai != self.saved_global_ai
         )
 
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        guild = interaction.guild
-        if guild is None or guild.id != self.guild.id:
-            await interaction.response.send_message(
-                "Menu này chỉ dùng được trong server đã mở nó.", ephemeral=True
+    async def interaction_check(self, interaction) -> bool:
+        if interaction.guild is None and not _is_discord_user_bot_admin(
+            interaction.user
+        ):
+            return False
+        guild_id = interaction.guild.id if interaction.guild else None
+        if (
+            self.is_finished()
+            or interaction.user.id != self.user_id
+            or guild_id != self.guild_id
+        ):
+            await _private_error(
+                interaction,
+                self._t(
+                    "Menu đã hết hạn hoặc không thuộc về bạn. Mở lại `/config`.",
+                    "This menu expired or belongs to another user. Open `/config` again.",
+                ),
             )
             return False
-        user = interaction.user
-        permissions = getattr(user, "guild_permissions", None)
-        is_server_admin = guild.owner_id == user.id or bool(
-            permissions and permissions.administrator
-        )
-        if not is_server_admin and not _is_discord_user_bot_admin(user):
-            await interaction.response.send_message(
-                "Chỉ admin server mới có thể thay đổi cấu hình Waku.", ephemeral=True
+        if not _can_manage(interaction):
+            await _private_error(
+                interaction,
+                self._t(
+                    "Bạn cần là chủ server, quản trị viên server hoặc quản trị viên bot.",
+                    "Server owner, server administrator or bot administrator access is required.",
+                ),
             )
             return False
-        if not (await _discord_guild_settings(guild)).enabled:
-            await interaction.response.send_message(
-                "Waku chưa được bật cho server này. Hãy mở lại `!config` để xin quyền.",
-                ephemeral=True,
-            )
-            return False
+        task = asyncio.current_task()
+        if task is not None and task not in state.discord_message_tasks:
+            state.discord_message_tasks.add(task)
+            task.add_done_callback(state.discord_message_tasks.discard)
         return True
 
-    async def on_timeout(self) -> None:
-        if self.message is None:
-            return
-        try:
-            await self.message.delete()
-        except Exception:
-            pass
+    def embed(self) -> discord.Embed:
+        settings = self.pending_settings
 
-    async def _sync_buttons(self) -> None:
-        r18_button = self.children[0]
-        if isinstance(r18_button, discord.ui.Button):
-            r18_button.label = f"R18: {_r18_mode_label(self.pending_settings.setu_enabled, self.pending_settings.r18_mode)}"
-            r18_button.style = (
-                discord.ButtonStyle.secondary
-                if not self.pending_settings.setu_enabled
-                else discord.ButtonStyle.danger
-                if self.pending_settings.r18_mode == 1
-                else discord.ButtonStyle.secondary
-                if self.pending_settings.r18_mode == 0
-                else discord.ButtonStyle.primary
-            )
-        ai_button = self.children[1]
-        if isinstance(ai_button, discord.ui.Button):
-            ai_button.label = f"AI Reply: {'ON' if self.pending_settings.ai_reply else 'OFF'}"
-            ai_button.style = (
-                discord.ButtonStyle.success
-                if self.pending_settings.ai_reply
-                else discord.ButtonStyle.secondary
-            )
-        memory_button = self.children[2]
-        if isinstance(memory_button, discord.ui.Button):
-            memory_button.label = (
-                f"Group Memory: {'ON' if self.pending_settings.group_memory_enabled else 'OFF'}"
-            )
-            memory_button.style = (
-                discord.ButtonStyle.success
-                if self.pending_settings.group_memory_enabled
-                else discord.ButtonStyle.secondary
-            )
-        lang_button = self.children[3]
-        if isinstance(lang_button, discord.ui.Button):
-            lang_label = "Tiếng Việt" if normalize_locale(self.pending_settings.lang) == "vi" else "English"
-            lang_button.label = f"Language: {lang_label}"
-            lang_button.style = discord.ButtonStyle.primary
+        def on(value):
+            return self._t("Bật", "On") if value else self._t("Tắt", "Off")
 
-    @discord.ui.button(label="R18", style=discord.ButtonStyle.secondary, row=0)
-    async def toggle_r18(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        if not self.pending_settings.setu_enabled:
-            current_state = 0
+        scope = (
+            discord.utils.escape_markdown(self.guild.name)[:150]
+            if self.guild
+            else self._t("Cá nhân trong DM", "Personal DM")
+        )
+        if self.section == "global_ai" and self._global_access(self.origin.user):
+            scope = self._t(
+                "Toàn bộ Discord (server và DM)", "All Discord servers and DMs"
+            )
+        embed = discord_command_embed(
+            self._t(
+                "Thay đổi chỉ được áp dụng khi bấm **Lưu**.",
+                "Changes apply only after **Save**.",
+            )
+            + (f"\n{self.notice}" if self.notice else ""),
+            title=self._t("Cấu hình Waku", "Waku settings"),
+        )
+        embed.add_field(name=self._t("Phạm vi", "Scope"), value=scope, inline=False)
+        if self.section == "chat":
+            value = (
+                self._t("Tự động trả lời: ", "Automatic replies: ")
+                + f"**{on(settings.ai_reply)}**\n"
+                + self._t(
+                    "Lệnh slash vẫn hoạt động khi tắt trả lời AI.",
+                    "Slash commands remain available when AI replies are off.",
+                )
+            )
+            name = self._t("AI / trò chuyện", "AI / chat")
+        elif self.section == "global_ai" and self._global_access(self.origin.user):
+            name = self._t("AI Discord toàn bot", "Global Discord AI")
+            value = (
+                self._t(
+                    "Trả lời AI tại mọi server và DM: ",
+                    "AI replies across all servers and DMs: ",
+                )
+                + f"**{on(self.pending_global_ai)}**\n"
+                + self._t(
+                    "Công tắc riêng cho Discord. Lệnh và menu vẫn hoạt động khi tắt AI. Thay đổi có hiệu lực ngay sau khi Lưu.",
+                    "A separate Discord switch. Commands and menus remain available when AI is off. Changes take effect immediately after Save.",
+                )
+            )
+        elif self.section == "memory":
+            name = self._t("Bộ nhớ", "Memory")
+            value = (
+                (
+                    self._t(
+                        "Bộ nhớ riêng từng kênh: ",
+                        "Separate conversation memory per channel: ",
+                    )
+                    + f"**{on(settings.group_memory_enabled)}**\n"
+                    + self._t(
+                        "Thiết lập áp dụng cho toàn server; bộ nhớ không chia sẻ giữa các kênh. Lưu thay đổi sẽ làm mới lịch sử AI trong các kênh của server.",
+                        "This setting applies across the server; memory is never shared between channels. Saving a change resets AI history in the server's channels.",
+                    )
+                )
+                if self.guild
+                else self._t(
+                    "Lịch sử hội thoại DM được lưu riêng cho bạn. Dùng `/forget` để bắt đầu lại.",
+                    "DM conversation history is private to you. Use `/forget` to start again.",
+                )
+            )
+        elif self.section == "images":
+            name = self._t("Ảnh / R18", "Images / R18")
+            value = (
+                f"**{_r18_mode_label(settings.setu_enabled, settings.r18_mode)}**\n"
+                + (
+                    self._t(
+                        "Chế độ ảnh lọc nội dung an toàn, R18 hoặc cả hai. Ảnh R18 được gửi dưới dạng tệp spoiler.",
+                        "Image mode filters safe content, R18 or both. R18 images are sent as spoiler attachments.",
+                    )
+                    if self.guild
+                    else self._t(
+                        "DM chỉ hỗ trợ ảnh an toàn.", "DM supports safe images only."
+                    )
+                )
+            )
+        elif self.section == "language":
+            name = self._t("Ngôn ngữ", "Language")
+            value = (
+                "Tiếng Việt" if normalize_locale(settings.lang) == "vi" else "English"
+            )
         else:
-            current_state = self.pending_settings.r18_mode + 1
-        
-        next_state = (current_state + 1) % 4
-        
-        if next_state == 0:
-            self.pending_settings.setu_enabled = False
-            self.pending_settings.r18_mode = 0
-        elif next_state == 1:
-            self.pending_settings.setu_enabled = True
-            self.pending_settings.r18_mode = 0
-        elif next_state == 2:
-            self.pending_settings.setu_enabled = True
-            self.pending_settings.r18_mode = 1
-        elif next_state == 3:
-            self.pending_settings.setu_enabled = True
-            self.pending_settings.r18_mode = 2
-
-        await interaction.response.defer()
-        await self._sync_buttons()
-        await interaction.edit_original_response(
-            content=None,
-            embed=_discord_config_embed(self.pending_settings),
-            view=self,
-        )
-
-    @discord.ui.button(label="AI Reply", style=discord.ButtonStyle.success, row=0)
-    async def toggle_ai_reply(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        self.pending_settings.ai_reply = not self.pending_settings.ai_reply
-        await interaction.response.defer()
-        await self._sync_buttons()
-        await interaction.edit_original_response(
-            content=None,
-            embed=_discord_config_embed(self.pending_settings),
-            view=self,
-        )
-
-    @discord.ui.button(label="Group Memory", style=discord.ButtonStyle.success, row=1)
-    async def toggle_group_memory(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        self.pending_settings.group_memory_enabled = (
-            not self.pending_settings.group_memory_enabled
-        )
-        await interaction.response.defer()
-        await self._sync_buttons()
-        await interaction.edit_original_response(
-            content=None,
-            embed=_discord_config_embed(self.pending_settings),
-            view=self,
-        )
-
-    @discord.ui.button(label="Language", style=discord.ButtonStyle.primary, row=1)
-    async def toggle_lang(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        if normalize_locale(self.pending_settings.lang) == "vi":
-            self.pending_settings.lang = "en"
-        else:
-            self.pending_settings.lang = "vi"
-        await interaction.response.defer()
-        await self._sync_buttons()
-        await interaction.edit_original_response(
-            content=None,
-            embed=_discord_config_embed(self.pending_settings),
-            view=self,
-        )
-
-    @discord.ui.button(label="Save", style=discord.ButtonStyle.success, row=0)
-    async def save_config(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await interaction.response.defer()
-        try:
-            await _set_discord_guild_settings(self.guild, self.pending_settings, require_enabled=True)
-        except PermissionError:
-            await interaction.followup.send(
-                "Waku chưa được bật cho server này. Hãy mở lại `!config` để xin quyền.",
-                ephemeral=True,
+            name = self._t("Trạng thái", "Status")
+            value = (
+                f"AI: **{on(bool(app_config.agent))}**\n"
+                + self._t("Trả lời tại đây: ", "Replies here: ")
+                + f"**{on(settings.ai_reply)}**\n"
+                + self._t("Giới hạn kênh toàn bot: ", "Global channel restrictions: ")
+                + (
+                    self._t("Đang bật", "Active")
+                    if app_config.discord_channel_allowlist
+                    else self._t("Không giới hạn", "Unrestricted")
+                )
             )
+        embed.add_field(name=name, value=value, inline=False)
+        dirty = self._dirty()
+        embed.set_footer(
+            text=self._t(
+                "Chỉ bạn thấy menu • Hết hạn sau 15 phút",
+                "Only you can see this menu • Expires after 15 minutes",
+            )
+            + (
+                self._t(" • Có thay đổi chưa lưu", " • Unsaved changes")
+                if dirty
+                else ""
+            )
+        )
+        return embed
+
+    def _button(
+        self,
+        label,
+        callback,
+        *,
+        style=discord.ButtonStyle.secondary,
+        row=1,
+        disabled=False,
+    ):
+        button = discord.ui.Button(label=label, style=style, row=row, disabled=disabled)
+        button.callback = callback
+        self.add_item(button)
+
+    def _sync_controls(self) -> None:
+        self.clear_items()
+        has_global = self._global_access(self.origin.user)
+        if self.section == "global_ai" and not has_global:
+            self.section = "chat"
+        sections = [
+            ("chat", "AI / trò chuyện", "AI / chat"),
+            ("memory", "Bộ nhớ", "Memory"),
+            ("images", "Ảnh / R18", "Images / R18"),
+            ("language", "Ngôn ngữ", "Language"),
+            ("status", "Trạng thái", "Status"),
+        ]
+        if has_global:
+            sections.insert(
+                1, ("global_ai", "AI Discord toàn bot", "Global Discord AI")
+            )
+        select = discord.ui.Select(
+            placeholder=self._t("Chọn mục cấu hình", "Choose a settings section"),
+            row=0,
+            options=[
+                discord.SelectOption(
+                    label=self._t(vi, en), value=key, default=key == self.section
+                )
+                for key, vi, en in sections
+            ],
+        )
+
+        async def choose(interaction):
+            await self._change(interaction, section=select.values[0])
+
+        select.callback = choose
+        self.add_item(select)
+        if self.section == "chat":
+            self._button(
+                self._t("Bật / tắt trả lời AI", "Toggle AI replies"),
+                self.toggle_ai_reply,
+            )
+        elif self.section == "global_ai" and has_global:
+            self._button(
+                self._t("Bật / tắt AI Discord toàn bot", "Toggle global Discord AI"),
+                self.toggle_global_ai,
+            )
+        elif self.section == "memory" and self.guild:
+            self._button(
+                self._t("Bật / tắt bộ nhớ từng kênh", "Toggle per-channel memory"),
+                self.toggle_group_memory,
+            )
+        elif self.section == "images":
+            self._button(
+                self._t("Đổi chế độ ảnh", "Change image mode"), self.toggle_r18
+            )
+        elif self.section == "language":
+            self._button("Tiếng Việt / English", self.toggle_lang)
+        dirty = self._dirty()
+        for label, callback, style, disabled in [
+            (
+                self._t("Lưu", "Save"),
+                self.save_config,
+                discord.ButtonStyle.success,
+                not dirty,
+            ),
+            (
+                self._t("Hủy thay đổi", "Cancel changes"),
+                self.cancel_changes,
+                discord.ButtonStyle.secondary,
+                not dirty,
+            ),
+            (
+                self._t("Tải lại", "Reload"),
+                self.reload_settings,
+                discord.ButtonStyle.primary,
+                False,
+            ),
+            (
+                self._t("Đóng", "Close"),
+                self.close_menu,
+                discord.ButtonStyle.danger,
+                False,
+            ),
+        ]:
+            self._button(label, callback, style=style, row=2, disabled=disabled)
+
+    async def _refresh(self, interaction):
+        if self.is_finished():
             return
-        await _rotate_discord_history_epoch(self.guild)
-        logger.info(
-            "Discord config saved: "
-            f"guild={self.guild.name!r}({self.guild.id}) "
-            f"r18_mode={self.pending_settings.r18_mode}"
-            f"({_r18_mode_label(self.pending_settings.setu_enabled, self.pending_settings.r18_mode)}) "
-            f"ai_reply={self.pending_settings.ai_reply} "
-            f"group_memory={self.pending_settings.group_memory_enabled} "
-            f"setu_enabled={self.pending_settings.setu_enabled} "
-            f"lang={self.pending_settings.lang}"
-        )
-        try:
-            if interaction.message is not None:
-                await interaction.message.delete()
-        except Exception:
-            pass
-        self.stop()
-
-class DiscordDMConfigView(discord.ui.View):
-    def __init__(self, user: discord.abc.User, settings: DiscordGuildSettings):
-        super().__init__(timeout=300)
-        self.user = user
-        self.message: discord.Message | None = None
-        self.pending_settings = DiscordGuildSettings(
-            enabled=True,
-            r18_mode=0,
-            ai_reply=settings.ai_reply,
-            group_memory_enabled=False,
-            setu_enabled=settings.setu_enabled,
-            lang=settings.lang,
+        self._sync_controls()
+        await interaction.edit_original_response(
+            content=None, embed=self.embed(), view=self
         )
 
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.guild is not None or interaction.user.id != self.user.id:
-            await interaction.response.send_message(
-                "Chỉ người mở menu DM này mới có thể thay đổi cấu hình.", ephemeral=True
-            )
+    async def _ack(self, interaction):
+        if not await self.interaction_check(interaction):
             return False
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
         return True
 
-    async def on_timeout(self) -> None:
-        if self.message is None:
+    async def _change(self, interaction, *, field=None, value=None, section=None):
+        if not await self._ack(interaction):
             return
-        try:
-            await self.message.delete()
-        except Exception:
-            pass
+        async with self._lock:
+            if not await self.interaction_check(interaction):
+                return
+            if section == "global_ai" and not self._global_access(interaction.user):
+                await _private_error(
+                    interaction,
+                    self._t(
+                        "Chỉ quản trị viên bot được cấu hình AI toàn Discord.",
+                        "Only bot administrators can configure global Discord AI.",
+                    ),
+                )
+                return
+            if field:
+                setattr(
+                    self.pending_settings, field, value() if callable(value) else value
+                )
+            if section:
+                self.section = section
+            self.notice = ""
+            await self._refresh(interaction)
 
-    async def _sync_buttons(self) -> None:
-        ai_button = self.children[0]
-        if isinstance(ai_button, discord.ui.Button):
-            ai_button.label = f"AI Reply: {'ON' if self.pending_settings.ai_reply else 'OFF'}"
-            ai_button.style = (
-                discord.ButtonStyle.success
-                if self.pending_settings.ai_reply
-                else discord.ButtonStyle.secondary
+    async def toggle_ai_reply(self, interaction):
+        await self._change(
+            interaction,
+            field="ai_reply",
+            value=lambda: not self.pending_settings.ai_reply,
+        )
+
+    async def toggle_global_ai(self, interaction):
+        if not await self._ack(interaction):
+            return
+        async with self._lock:
+            if not await self.interaction_check(interaction):
+                return
+            if not self._global_access(interaction.user):
+                await _private_error(
+                    interaction,
+                    self._t(
+                        "Chỉ quản trị viên bot được cấu hình AI toàn Discord.",
+                        "Only bot administrators can configure global Discord AI.",
+                    ),
+                )
+                return
+            self.pending_global_ai = not self.pending_global_ai
+            self.notice = ""
+            await self._refresh(interaction)
+
+    async def toggle_group_memory(self, interaction):
+        if self.guild:
+            await self._change(
+                interaction,
+                field="group_memory_enabled",
+                value=lambda: not self.pending_settings.group_memory_enabled,
             )
-        lang_button = self.children[1]
-        if isinstance(lang_button, discord.ui.Button):
-            lang_label = "Tiếng Việt" if normalize_locale(self.pending_settings.lang) == "vi" else "English"
-            lang_button.label = f"Language: {lang_label}"
-            lang_button.style = discord.ButtonStyle.primary
 
-    @discord.ui.button(label="AI Reply", style=discord.ButtonStyle.success, row=0)
-    async def toggle_ai_reply(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        self.pending_settings.ai_reply = not self.pending_settings.ai_reply
-        await interaction.response.defer()
-        await self._sync_buttons()
-        await interaction.edit_original_response(
-            content=None,
-            embed=_discord_dm_config_embed(self.pending_settings),
-            view=self,
+    async def toggle_lang(self, interaction):
+        await self._change(
+            interaction,
+            field="lang",
+            value=lambda: (
+                "en" if normalize_locale(self.pending_settings.lang) == "vi" else "vi"
+            ),
         )
 
-    @discord.ui.button(label="Language", style=discord.ButtonStyle.primary, row=1)
-    async def toggle_lang(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        if normalize_locale(self.pending_settings.lang) == "vi":
-            self.pending_settings.lang = "en"
-        else:
-            self.pending_settings.lang = "vi"
-        await interaction.response.defer()
-        await self._sync_buttons()
-        await interaction.edit_original_response(
-            content=None,
-            embed=_discord_dm_config_embed(self.pending_settings),
-            view=self,
-        )
+    async def toggle_r18(self, interaction):
+        if not await self._ack(interaction):
+            return
+        async with self._lock:
+            if not await self.interaction_check(interaction):
+                return
+            settings = self.pending_settings
+            if self.guild:
+                index = (settings.r18_mode + 1) if settings.setu_enabled else 0
+                index = (index + 1) % 4
+                settings.setu_enabled, settings.r18_mode = index != 0, max(0, index - 1)
+            else:
+                settings.setu_enabled = not settings.setu_enabled
+                settings.r18_mode = 0
+            self.notice = ""
+            await self._refresh(interaction)
 
-    @discord.ui.button(label="Save", style=discord.ButtonStyle.success, row=0)
-    async def save_config(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await interaction.response.defer()
-        await _set_discord_dm_settings(self.user, self.pending_settings)
-        logger.info(
-            "Discord DM config saved: "
-            f"user={self.user.id} ai_reply={self.pending_settings.ai_reply} lang={self.pending_settings.lang}"
-        )
-        try:
-            if interaction.message is not None:
-                await interaction.message.delete()
-        except Exception:
-            pass
+    async def save_config(self, interaction):
+        if not await self._ack(interaction):
+            return
+        async with self._lock:
+            if not await self.interaction_check(interaction):
+                return
+            snapshot = replace(self.pending_settings)
+            global_snapshot = self.pending_global_ai
+            local_changed = snapshot != self.saved_settings
+            global_changed = global_snapshot != self.saved_global_ai
+            if global_changed and not self._global_access(interaction.user):
+                await _private_error(
+                    interaction,
+                    self._t(
+                        "Quyền quản trị bot đã thay đổi. Tải lại menu trước khi Lưu.",
+                        "Bot administrator access changed. Reload the menu before Save.",
+                    ),
+                )
+                return
+            memory_changed = (
+                snapshot.group_memory_enabled
+                != self.saved_settings.group_memory_enabled
+            )
+            self.notice = ""
+            try:
+                if local_changed:
+                    if self.guild:
+                        await _set_discord_guild_settings(self.guild, snapshot)
+                    else:
+                        await _set_discord_dm_settings(interaction.user, snapshot)
+                    # Keep committed local and global drafts independent when
+                    # one storage operation succeeds and the next one fails.
+                    self.saved_settings = replace(snapshot)
+                    if self.guild and memory_changed:
+                        try:
+                            await _rotate_discord_history_epoch(self.guild)
+                        except Exception as error:
+                            logger.warning(
+                                f"Discord history reset failed: {type(error).__name__}"
+                            )
+                            self.notice = self._t(
+                                "Không làm mới được lịch sử; hãy dùng `/forget`.",
+                                "History reset failed; use `/forget`.",
+                            )
+                if global_changed:
+                    if self.is_finished():
+                        return
+                    if not self._global_access(interaction.user):
+                        raise PermissionError("Bot administrator access changed")
+                    await _set_discord_global_ai_enabled(global_snapshot)
+                    self.saved_global_ai = global_snapshot
+            except Exception as error:
+                logger.warning(f"Discord settings save failed: {type(error).__name__}")
+                await _private_error(
+                    interaction,
+                    self._t(
+                        "Không lưu được tất cả thay đổi. Mục chưa lưu vẫn còn trong menu; hãy thử lại hoặc tải lại.",
+                        "Not all changes were saved. Unsaved changes remain in the menu; retry or reload.",
+                    ),
+                )
+                await self._refresh(interaction)
+                return
+            self.notice = self._t("Đã lưu cấu hình.", "Settings saved.") + (
+                " " + self.notice if self.notice else ""
+            )
+            await self._refresh(interaction)
+
+    async def cancel_changes(self, interaction):
+        if not await self._ack(interaction):
+            return
+        async with self._lock:
+            if not await self.interaction_check(interaction):
+                return
+            self.pending_settings = replace(self.saved_settings)
+            self.pending_global_ai = self.saved_global_ai
+            self.notice = self._t(
+                "Đã hủy thay đổi chưa lưu.", "Unsaved changes cancelled."
+            )
+            await self._refresh(interaction)
+
+    async def reload_settings(self, interaction):
+        if not await self._ack(interaction):
+            return
+        async with self._lock:
+            if not await self.interaction_check(interaction):
+                return
+            settings = (
+                await _discord_guild_settings(self.guild)
+                if self.guild
+                else await _discord_dm_settings(interaction.user)
+            )
+            global_ai = (
+                await _discord_global_ai_enabled()
+                if _is_discord_user_bot_admin(interaction.user)
+                else None
+            )
+            self.saved_settings = replace(settings)
+            self.pending_settings = replace(settings)
+            self.saved_global_ai = self.pending_global_ai = global_ai
+            self.notice = self._t(
+                "Đã tải lại cấu hình hiện tại.", "Current settings reloaded."
+            )
+            await self._refresh(interaction)
+
+    async def close_menu(self, interaction):
+        if not await self._ack(interaction):
+            return
+        async with self._lock:
+            if not await self.interaction_check(interaction):
+                return
+            await interaction.edit_original_response(
+                embed=discord_command_embed(
+                    self._t(
+                        "Đã đóng menu. Thay đổi chưa lưu được bỏ qua.",
+                        "Menu closed. Unsaved changes discarded.",
+                    )
+                ),
+                view=None,
+            )
+            self.stop()
+
+    async def on_timeout(self) -> None:
         self.stop()
+        for child in self.children:
+            child.disabled = True
+        try:
+            await self.origin.edit_original_response(view=self)
+        except discord.HTTPException:
+            pass
 
-async def _new_discord_config_view(guild: discord.Guild) -> DiscordConfigView:
-    settings = await _discord_guild_settings(guild)
-    view = DiscordConfigView(guild, settings)
-    await view._sync_buttons()
-    return view
-
-async def _new_discord_dm_config_view(user: discord.abc.User) -> DiscordDMConfigView:
-    settings = await _discord_dm_settings(user)
-    view = DiscordDMConfigView(user, settings)
-    await view._sync_buttons()
-    return view
-
-def _discord_dm_config_text(settings: DiscordGuildSettings) -> str:
-    lang_name = "Tiếng Việt (vi-VN)" if normalize_locale(settings.lang) == "vi" else "English (en)"
-    return (
-        "**Waku DM config:**\n"
-        f"AI Reply: `{'ON' if settings.ai_reply else 'OFF'}`\n"
-        f"Language: `{lang_name}`\n"
-        "\nWhen AI Reply is `OFF`, Waku will ignore normal DM chat messages. "
-        "Commands like `!config` still work.\n"
-        "\nPress `Save` to apply changes."
-    )
+    async def on_error(self, interaction, error, item) -> None:
+        logger.warning(f"Discord config menu failed: {type(error).__name__}")
+        await _private_error(
+            interaction,
+            self._t(
+                "Không thực hiện được. Hãy thử lại hoặc mở lại `/config`.",
+                "Action failed. Try again or reopen `/config`.",
+            ),
+        )
 
 
-def _discord_dm_config_embed(settings: DiscordGuildSettings) -> discord.Embed:
-    return discord_command_embed(
-        _discord_dm_config_text(settings),
-        title="Waku DM config",
-    )
-
-def _discord_config_text(settings: DiscordGuildSettings) -> str:
-    lang_name = "Tiếng Việt (vi-VN)" if normalize_locale(settings.lang) == "vi" else "English (en)"
-    return (
-        "Server: `Authorized!`\n"
-        f"AI Reply: `{'ON' if settings.ai_reply else 'OFF'}`\n"
-        f"Group Memory: `{'ON' if settings.group_memory_enabled else 'OFF'}`\n"
-        f"R18/SEG images: `{_r18_mode_label(settings.setu_enabled, settings.r18_mode)}`\n"
-        f"Language: `{lang_name}`\n"
-        "\nPress `Save` to apply changes."
-    )
-
-
-def _discord_config_embed(settings: DiscordGuildSettings) -> discord.Embed:
-    return discord_command_embed(
-        _discord_config_text(settings),
-        title="Waku Bot Server config",
-    )
+async def open_discord_config(interaction: discord.Interaction) -> None:
+    if not _can_manage(interaction):
+        if interaction.guild is None:
+            return
+        await _private_error(
+            interaction,
+            "Bạn cần quyền quản trị server hoặc bot để mở `/config`. / Server or bot administrator access is required.",
+        )
+        return
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=True, thinking=True)
+    try:
+        settings = (
+            await _discord_guild_settings(interaction.guild)
+            if interaction.guild
+            else await _discord_dm_settings(interaction.user)
+        )
+        global_ai = (
+            await _discord_global_ai_enabled()
+            if _is_discord_user_bot_admin(interaction.user)
+            else None
+        )
+        if not _can_manage(interaction):
+            return
+        view = DiscordConfigView(interaction, settings, global_ai_enabled=global_ai)
+        await interaction.edit_original_response(embed=view.embed(), view=view)
+    except Exception as error:
+        logger.warning(f"Discord config open failed: {type(error).__name__}")
+        await interaction.edit_original_response(
+            embed=discord_command_embed(
+                "Không tải được cấu hình. Hãy thử lại. / Settings unavailable. Try again.",
+                color=discord.Color.red(),
+            ),
+            view=None,
+        )

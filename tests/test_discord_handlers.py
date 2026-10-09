@@ -8,6 +8,11 @@ from waku.discordbot import handlers, state
 from waku.discordbot.agent import DiscordPostRunError
 
 
+@pytest.fixture(autouse=True)
+def global_ai_enabled(monkeypatch):
+    monkeypatch.setattr(handlers, "_discord_global_ai_enabled", AsyncMock(return_value=True))
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("run_error", "expected_reply"),
@@ -22,7 +27,7 @@ async def test_discord_does_not_retry_failed_or_completed_model_turns(
     channel = SimpleNamespace(id=123, name="test", send=AsyncMock())
     message = SimpleNamespace(
         author=SimpleNamespace(id=987),
-        guild=None,
+        guild=SimpleNamespace(id=10, name="test"),
         channel=channel,
     )
     monkeypatch.setattr(state, "discord_agent", object())
@@ -57,7 +62,7 @@ async def test_discord_serializes_same_user_before_prompt_preparation(monkeypatc
     release = asyncio.Event()
     channel = SimpleNamespace(id=123, name="test", send=AsyncMock())
     message = SimpleNamespace(
-        author=SimpleNamespace(id=988), guild=None, channel=channel
+        author=SimpleNamespace(id=988), guild=SimpleNamespace(id=10, name="test"), channel=channel
     )
 
     async def slow_prompt(*args):

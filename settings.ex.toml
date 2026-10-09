@@ -20,7 +20,7 @@ discord_enabled = false
 discord_token = ""
 # Discord user IDs only; Telegram owners are not Discord administrators.
 discord_admin_users = []
-# Empty allowlist permits all channels in an authorized server.
+# Empty allowlist permits all joined servers; joining requires no Waku approval.
 discord_channel_allowlist = []
 # Omit keywords to use the bot nickname; keep prefix commands such as !waku.
 # discord_keywords = ["waku"]

@@ -1,8 +1,9 @@
 # Bot Discord
 
 Discord chạy cùng tiến trình `python -m waku`, dùng schema cấu hình, database,
-scheduler và AI provider của base hiện tại. Bot giữ prefix `!`, menu, embed và
-cách tương tác của bản Discord đã mod. Discord không cần URL/key AI riêng:
+scheduler và AI provider của base hiện tại. Thêm bot vào server là dùng được ngay,
+không có bước xin hoặc duyệt quyền Waku. Bot dùng slash command và menu embed
+riêng tư trong server; lệnh quản trị bot dùng tiền tố `!` trong DM. Discord không cần URL/key AI riêng:
 `agent_model` chọn provider trong `[agent_providers.*]` như Telegram.
 
 ## Cấu hình và chạy
@@ -21,10 +22,14 @@ agent = true
 agent_model = "default/ten-model"
 ```
 
-`discord_admin_users` chứa ID tài khoản Discord được quản trị Waku và duyệt server.
-Danh sách `owners` của Telegram không cấp quyền Discord. Allowlist rỗng cho phép
-các kênh trong server đã được cấp quyền; khi có ID, bot chỉ hoạt động trong những
-kênh đó. Bỏ `discord_keywords` để dùng nickname mặc định.
+`discord_admin_users` chứa ID tài khoản Discord được quản trị Waku trên nhiều server.
+Danh sách `owners` của Telegram không cấp quyền Discord. Chủ server và thành viên
+có quyền Administrator được sửa cấu hình của server mình. Thành viên thường có
+thể trò chuyện và dùng các lệnh thông thường ngay.
+
+Allowlist rỗng cho phép các kênh trong mọi server bot đã tham gia; khi chủ bot
+cấu hình ID, bot chỉ hoạt động trong phạm vi đó. Bỏ `discord_keywords` để dùng
+nickname mặc định.
 
 Trong Discord Developer Portal → Bot, bật **Message Content Intent** và
 **Server Members Intent**. Phần Discord cũ sử dụng cả nội dung tin và danh sách
@@ -49,23 +54,52 @@ riêng đã được `.gitignore` loại trừ.
 
 ## Menu và lệnh
 
-- `!waku`, `!unwaku`: cấu hình việc Waku hoạt động trong server, theo quyền hiện có.
-- `!config`: mở menu server hoặc DM; giữ các lựa chọn AI, ảnh, bộ nhớ và ngôn ngữ.
-- `!server`: danh sách server dành cho quản trị viên Waku.
-- `!forget`: xoá ngữ cảnh AI hiện tại.
-- `!help`, `!invite`: trợ giúp và liên kết mời.
-- `!clean`: xoá tin của chính Waku khi đủ quyền, theo giới hạn của bản mod.
-- `/seg`: gửi ảnh anime/Pixiv.
-- `/bc`: phát thông báo; có lựa chọn server hiện tại, đã/chưa cấp quyền, tất cả
-  hoặc ID server, theo quyền quản trị Discord.
+| Lệnh | Chức năng |
+| --- | --- |
+| `/config` | Cấu hình server; trong DM là cấu hình chat riêng của bot admin. Bot admin có thêm công tắc AI toàn Discord. |
+| `!info [ID server]` | Không có ID: trạng thái Waku. Có ID: cấu hình chi tiết server bot đang tham gia. Chỉ bot admin dùng trong DM. |
+| `/help` | Hướng dẫn trò chuyện và danh sách lệnh. |
+| `/forget` | Xoá ngữ cảnh AI của người gọi trong kênh hiện tại. |
+| `/invite` | Liên kết thêm Waku vào server. |
+| `/clean` | Xoá tối đa 50 tin của Waku; cần quyền quản lý tin hoặc quản trị. |
+| `!server` | Danh sách đánh số, mỗi dòng gồm ID server và số thành viên; mới tham gia trước, tối đa 50 server/trang, có nút chuyển trang. Chỉ bot admin dùng trong DM. |
+| `/seg` | Gửi ảnh anime/Pixiv khi dịch vụ ảnh đã được cấu hình. |
+| `!bc all <nội dung>` | Phát thông báo đến mọi server; chỉ quản trị viên bot dùng trong DM. |
+| `!bc <ID server> <nội dung>` | Phát thông báo đến server đã chọn; chỉ quản trị viên bot dùng trong DM. |
 
-Server chưa được cấp quyền dùng menu yêu cầu cấp quyền; quản trị viên Discord
-trong `discord_admin_users` nhận menu duyệt/từ chối. Các nút cấp quyền và danh
-sách server được đăng ký lại khi bot khởi động để tiếp tục dùng sau restart.
+Menu và phản hồi lệnh slash trong server dùng embed **chỉ người gọi thấy** (ephemeral).
+Ba lệnh quản trị `!bc`, `!info`, `!server` phản hồi bằng embed trong DM riêng của
+quản trị viên bot. Ảnh được yêu cầu và nội dung phát thông báo được gửi tới kênh
+đã chọn. `/bc`, `/info`, `/server` đã bị loại khỏi danh sách slash command.
+`!bc` cần chỉ rõ `all` hoặc ID server; hỗ trợ xuống dòng thật và ký tự `\n`.
 
-AI có các tool Discord để tìm kênh/người dùng, đọc tin có quyền truy cập, nhớ thông
-tin server, reaction, ảnh và lịch gửi tin/ảnh. Lịch dùng scheduler của base hiện
-tại, múi giờ `Asia/Ho_Chi_Minh` (UTC+7), có namespace riêng.
+Bot admin trong `discord_admin_users` dùng được mọi lệnh slash trong DM, kể cả
+`/config`, `/help`, `/forget`, `/invite`, `/clean`, `/seg`. User thường nhắn hoặc
+gọi lệnh trong DM không được phản hồi. `/clean` trong DM chỉ xoá tin của bot.
 
-Settings server/DM được lưu trong bảng `discord_chat_data`, không dùng bảng nhóm
-Telegram. Bot không tự chép dữ liệu chạy hoặc credentials từ source cũ.
+`/config` có các mục AI/trò chuyện, bộ nhớ, ảnh/R18, ngôn ngữ và trạng thái.
+Trong DM của bot admin, **AI / trò chuyện** bật/tắt chat riêng cho admin đó.
+Bot admin còn có mục **AI Discord toàn bot**, điều khiển trả lời AI tại mọi server
+và DM. Tắt công tắc này cũng dừng các lượt AI đang chạy và việc học bộ nhớ;
+các lệnh/menu và yêu cầu ảnh trực tiếp vẫn hoạt động. Công tắc được lưu riêng
+trong database và giữ nguyên sau khi khởi động lại; không thay đổi AI Telegram.
+Thay đổi nằm trong bản nháp riêng cho đến khi bấm **Lưu**; có **Huỷ thay đổi**,
+**Tải lại** và **Đóng**. Bot kiểm tra lại quyền ở mỗi lần dùng menu. Menu hết hạn
+sau khoảng 15 phút; mở lại `/config` khi cần. Đây là giới hạn của interaction
+[theo tài liệu Discord](https://github.com/discord/discord-api-docs/blob/main/developers/interactions/receiving-and-responding.mdx).
+
+Các lệnh quản lý `!config`, `!waku`, `!unwaku`, `!forget`, `!help`,
+`!invite`, `!clean` cũ đã ngừng sử dụng. Lệnh ảnh văn bản `!seg` vẫn hỗ trợ.
+Trạng thái chờ duyệt/từ chối cũ không chặn server, và các lựa chọn đã lưu như
+AI tắt, ngôn ngữ hoặc ảnh vẫn được giữ.
+
+Trong server, tag Waku, trả lời tin của Waku hoặc gọi nickname để trò chuyện;
+bot admin có thể chat trực tiếp trong DM khi AI riêng và AI toàn Discord cùng bật.
+Tin nhắn DM của user thường không được phản hồi. AI có tool tìm kênh/người dùng, đọc tin có quyền
+truy cập, bộ nhớ theo kênh, reaction, ảnh và lịch gửi tin/ảnh. Bộ nhớ từng kênh
+được tách riêng để tránh lấy nội dung từ kênh kín sang kênh khác. Lịch dùng
+scheduler hiện tại, múi giờ `Asia/Ho_Chi_Minh` (UTC+7), có namespace riêng.
+
+Settings server, cấu hình DM của admin và công tắc AI toàn Discord được lưu riêng
+trong bảng `discord_chat_data`, không dùng bảng nhóm Telegram. Bot không tự chép
+dữ liệu chạy hoặc credentials từ source cũ.

@@ -428,6 +428,7 @@ async def schedule_discord_message(
                 reference=message if not cross_channel else None,
                 allowed_mentions=_discord_allowed_mentions(allow_everyone),
             )
+            ctx.deps.side_effects_started = True
         except discord.HTTPException as e:
             logger.warning(f"Immediate Discord message failed: {type(e).__name__}")
             return DiscordScheduleResult(success=False, message="Discord could not send the message.")
@@ -492,6 +493,7 @@ async def schedule_discord_message(
             func=_scheduled_discord_text_job,
             args=args,
         )
+    ctx.deps.side_effects_started = True
     logger.info(
         "Discord reminder scheduled: "
         f"guild={message.guild.id} channel={message.channel.id} "
@@ -654,6 +656,7 @@ async def schedule_discord_image_action(
             func=_scheduled_discord_image_job,
             args=args,
         )
+    ctx.deps.side_effects_started = True
     logger.info(
         "Discord image schedule created: "
         f"guild={message.guild.id} channel={target_channel_actual_id} user={message.author.id} "
@@ -742,6 +745,7 @@ async def cancel_discord_scheduled_message(
     cancelled: list[str] = []
     for job in targets:
         common.jobqueue.remove_job(job.job_id)
+        ctx.deps.side_effects_started = True
         cancelled.append(_format_discord_scheduled_job(job, len(cancelled) + 1))
     logger.info(
         "Discord reminders cancelled: "

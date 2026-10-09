@@ -13,13 +13,14 @@ discord_task: asyncio.Task | None = None
 discord_agent: Any = None
 discord_recovery_agent: Any = None
 discord_message_tasks: set[asyncio.Task] = set()
+discord_ai_tasks: set[asyncio.Task] = set()
+discord_global_ai_enabled: bool | None = None
 discord_stopping = False
 warned_empty_content = False
-server_list_view_registered = False
 discord_image_send_lock: asyncio.Lock | None = None
 discord_agent_semaphore: asyncio.Semaphore | None = None
 discord_agent_semaphore_limit = 0
-discord_auth_locks: dict[int, asyncio.Lock] = {}
+discord_settings_locks: dict[int, asyncio.Lock] = {}
 discord_turn_locks: weakref.WeakValueDictionary[int, asyncio.Lock] = (
     weakref.WeakValueDictionary()
 )
@@ -40,11 +41,11 @@ def _discord_agent_busy_timeout() -> float:
     return DISCORD_AGENT_BUSY_TIMEOUT
 
 
-def _discord_auth_lock(guild_id: int) -> asyncio.Lock:
-    lock = discord_auth_locks.get(guild_id)
+def _discord_settings_lock(guild_id: int) -> asyncio.Lock:
+    lock = discord_settings_locks.get(guild_id)
     if lock is None:
         lock = asyncio.Lock()
-        discord_auth_locks[guild_id] = lock
+        discord_settings_locks[guild_id] = lock
     return lock
 
 

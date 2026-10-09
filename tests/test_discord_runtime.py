@@ -65,13 +65,11 @@ async def test_discord_start_is_idempotent_and_stop_resets_runtime(monkeypatch):
         assert len(clients) == 1
         assert state.discord_task is first_task
 
-        state.server_list_view_registered = True
         await runtime.stop_discord_bot()
         assert state.discord_task is None
         assert state.discord_client is None
         assert state.discord_agent is None
         assert state.discord_recovery_agent is None
-        assert state.server_list_view_registered is False
     finally:
         if state.discord_task is not None or state.discord_client is not None:
             await runtime.stop_discord_bot()
@@ -188,17 +186,11 @@ async def test_shutdown_cancels_message_handlers_before_closing_client(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_real_discord_client_agent_schema_and_persistent_views_start_offline(monkeypatch):
+async def test_real_discord_client_agent_schema_and_slash_commands_start_offline(monkeypatch):
     """Exercise native SDK setup while replacing only the model and network entry."""
     import discord
     from pydantic_ai import Agent
     from pydantic_ai.models.test import TestModel
-
-    from waku.discordbot.views.authorization import (
-        DiscordAuthorizationRequestView,
-        DiscordAuthorizationReviewView,
-    )
-    from waku.discordbot.views.server_list import DiscordServerListView
 
     connected = asyncio.Event()
     release = asyncio.Event()
@@ -234,16 +226,10 @@ async def test_real_discord_client_agent_schema_and_persistent_views_start_offli
         }
         command_tree = native_client._connection._command_tree
         assert isinstance(command_tree, discord.app_commands.CommandTree)
-        assert {command.name for command in command_tree.get_commands()} == {"seg", "bc"}
-        for view_type in (
-            DiscordServerListView,
-            DiscordAuthorizationRequestView,
-            DiscordAuthorizationReviewView,
-        ):
-            view = view_type()
-            assert view.is_persistent()
-            native_client.add_view(view)
-        assert len(native_client.persistent_views) == 3
+        assert {command.name for command in command_tree.get_commands()} == {
+            "seg", "config", "help", "forget", "invite", "clean"
+        }
+        assert not native_client.persistent_views
         release.set()
         await runtime.stop_discord_bot()
         assert native_client.is_closed()

@@ -8,7 +8,7 @@ import discord
 
 @dataclass
 class DiscordGuildSettings:
-    enabled: bool = False
+    enabled: bool = True
     r18_mode: int = 0
     ai_reply: bool = True
     group_memory_enabled: bool = True
@@ -18,6 +18,7 @@ class DiscordGuildSettings:
 @dataclass
 class DiscordContextDeps:
     message: discord.Message
+    side_effects_started: bool = False
 
 @dataclass
 class DiscordGroupMemoryMessage:

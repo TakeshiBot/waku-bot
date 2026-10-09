@@ -24,7 +24,7 @@ from .models import DiscordContextDeps
 
 
 class DiscordPostRunError(RuntimeError):
-    """The model completed, but delivering or storing its result failed.
+    """A run failed after a tool mutation or while delivering/storing its result.
 
     Retrying the agent here could repeat tool side effects (messages, images,
     reactions or schedules), so callers must not start another model run.
@@ -113,11 +113,16 @@ async def _run_discord_agent_once(
             usage_limits=build_usage_limits(),
         )
 
-    async with message.channel.typing():
-        result = await asyncio.wait_for(
-            run_with_history(),
-            timeout=timeout,
-        )
+    try:
+        async with message.channel.typing():
+            result = await asyncio.wait_for(
+                run_with_history(),
+                timeout=timeout,
+            )
+    except Exception as error:
+        if deps.side_effects_started:
+            raise DiscordPostRunError("Discord run failed after tool side effects") from error
+        raise
     if result.output:
         try:
             await _send_reply(message, str(result.output))

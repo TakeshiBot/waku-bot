@@ -151,6 +151,10 @@ def domain():
             )
         ),
         _discord_dm_ai_reply_enabled=AsyncMock(return_value=False),
+        _discord_global_ai_enabled=AsyncMock(return_value=True),
+        _discord_dm_settings=AsyncMock(
+            return_value=SimpleNamespace(setu_enabled=True, r18_mode=0)
+        ),
         _can_read_message_history=Mock(return_value=True),
         _can_view_channel=Mock(return_value=True),
         _channel_allowed=AsyncMock(return_value=True),
@@ -483,16 +487,38 @@ async def test_reaction_to_other_message_requires_requester_history_permission(d
 
 
 @pytest.mark.parametrize("tool", ["send_discord_anime_photo", "send_discord_web_image"])
-async def test_disabled_images_stop_tool_before_network(domain, tool):
+@pytest.mark.parametrize("guild", [False, True])
+async def test_disabled_images_stop_tool_before_network(domain, tool, guild):
     incoming = message()
-    incoming.guild = SimpleNamespace(id=1)
-    domain["_discord_guild_settings"].return_value.setu_enabled = False
+    if guild:
+        incoming.guild = SimpleNamespace(id=1)
+    domain[
+        "_discord_guild_settings" if guild else "_discord_dm_settings"
+    ].return_value.setu_enabled = False
     domain["_search_web_images"] = AsyncMock()
     result = await domain[tool](
         SimpleNamespace(deps=SimpleNamespace(message=incoming)), "anime"
     )
     assert not result.success
     domain["_search_web_images"].assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "send_succeeds,cache_succeeds", [(False, True), (True, False), (True, True)]
+)
+async def test_reaction_marker_tracks_success_even_if_subsequent_cache_fails(
+    domain, send_succeeds, cache_succeeds
+):
+    incoming = message()
+    incoming.add_reaction = AsyncMock(
+        side_effect=None if send_succeeds else RuntimeError("denied")
+    )
+    domain["_remember_discord_reaction_style"] = AsyncMock(
+        side_effect=None if cache_succeeds else RuntimeError("cache failed")
+    )
+    deps = domain["DiscordContextDeps"](message=incoming)
+    await domain["send_discord_reaction"](SimpleNamespace(deps=deps), "👍")
+    assert deps.side_effects_started is send_succeeds
 
 
 @pytest.mark.parametrize("allowed", [False, True])
@@ -555,9 +581,136 @@ async def test_group_memory_retains_batch_after_failure_and_retries(domain):
     incoming.guild = SimpleNamespace(id=1)
     incoming.created_at = datetime.now(UTC)
     await domain["_record_discord_group_memory"](incoming)
-    key = domain["_discord_group_messages_key"](1)
+    key = domain["_discord_group_messages_key"](1, incoming.channel.id)
     assert len(cache[key]) == 1
-    cache.pop(domain["_discord_group_memory_update_key"](1) + ":retry")
+    cache.pop(
+        domain["_discord_group_memory_update_key"](1, incoming.channel.id) + ":retry"
+    )
     await domain["_record_discord_group_memory"](incoming)
     assert cache[key] == []
     assert add.await_count == 2
+
+
+async def test_memory_record_search_and_update_share_only_current_channel(domain):
+    # Old verification flags no longer gate a server's explicitly enabled AI.
+    domain["_discord_guild_settings"].return_value.enabled = False
+    memory = SimpleNamespace(
+        add=AsyncMock(return_value="stored"),
+        search=AsyncMock(return_value={"results": [{"memory": "fact"}]}),
+    )
+    domain["_get_powermemory"] = lambda: memory
+    domain["_DISCORD_GROUP_MEMORY_BATCH_SIZE"] = 1
+    domain["common"].memttlcache.get.return_value = None
+    cache = {}
+
+    async def get(key, default=None):
+        return cache.get(key, default)
+
+    async def set_value(key, value, ttl=None):
+        cache[key] = value
+
+    domain["common"].memttlcache.get = get
+    domain["common"].memttlcache.set = set_value
+    incoming = message()
+    incoming.guild = SimpleNamespace(id=1)
+    incoming.created_at = datetime.now(UTC)
+    for channel_id in (8, 10):
+        incoming.channel.id = channel_id
+        await domain["_record_discord_group_memory"](incoming)
+        deps = domain["DiscordContextDeps"](message=incoming)
+        ctx = SimpleNamespace(deps=deps)
+        assert await domain["search_discord_group_memory"](ctx, "fact") == ["fact"]
+        await domain["update_discord_group_memory"](ctx, "fact")
+        assert deps.side_effects_started
+        namespace = f"discord_group_1_channel_{channel_id}"
+        assert memory.add.await_args.kwargs["user_id"] == namespace
+        assert memory.search.await_args.kwargs["user_id"] == namespace
+    assert {call.kwargs["user_id"] for call in memory.add.await_args_list} == {
+        "discord_group_1_channel_8",
+        "discord_group_1_channel_10",
+    }
+    assert domain["_discord_group_messages_key"](1, 8) != domain[
+        "_discord_group_messages_key"
+    ](1, 10)
+
+
+@pytest.mark.parametrize("allowed,readable", [(False, True), (True, False)])
+async def test_memory_denied_channel_never_reads_or_writes(domain, allowed, readable):
+    memory = SimpleNamespace(add=AsyncMock(), search=AsyncMock())
+    domain["_get_powermemory"] = lambda: memory
+    domain["_channel_allowed"].return_value = allowed
+    domain["_can_read_message_history"].return_value = readable
+    incoming = message()
+    incoming.guild = SimpleNamespace(id=1)
+    incoming.created_at = datetime.now(UTC)
+    ctx = SimpleNamespace(deps=domain["DiscordContextDeps"](message=incoming))
+    await domain["_record_discord_group_memory"](incoming)
+    assert await domain["search_discord_group_memory"](ctx, "fact") == []
+    assert "Cannot access" in await domain["update_discord_group_memory"](ctx, "fact")
+    memory.add.assert_not_awaited()
+    memory.search.assert_not_awaited()
+    assert not ctx.deps.side_effects_started
+    domain["common"].memttlcache.set.assert_not_awaited()
+
+
+@pytest.mark.parametrize("mutating", [False, True])
+async def test_native_tool_then_model_history_error_never_retries_mutations(
+    domain, mutating
+):
+    sends = AsyncMock()
+
+    async def tool(ctx):
+        if mutating:
+            await sends()
+            ctx.deps.side_effects_started = True
+        return "done"
+
+    async def respond(messages, _info):
+        if any(
+            isinstance(part, ToolReturnPart) for msg in messages for part in msg.parts
+        ):
+            raise pydantic_ai.exceptions.ModelHTTPError(
+                400, "offline", {"error": "messages[2].tool_call_id mismatch"}
+            )
+        return ModelResponse(parts=[ToolCallPart("tool", {}, "call-1")])
+
+    domain["build_usage_limits"].return_value = UsageLimits(request_limit=3)
+    domain["state"].discord_agent = pydantic_ai.Agent(
+        FunctionModel(respond),
+        deps_type=domain["DiscordContextDeps"],
+        tools=[pydantic_ai.Tool(tool, takes_ctx=True)],
+    )
+    domain["_send_reply"] = AsyncMock()
+    error_type = (
+        domain["DiscordPostRunError"]
+        if mutating
+        else pydantic_ai.exceptions.ModelHTTPError
+    )
+    with pytest.raises(error_type) as caught:
+        await domain["_run_discord_agent_once"](
+            message(), ["hello"], "history", [], None
+        )
+    assert sends.await_count == int(mutating)
+    if mutating:
+        assert isinstance(caught.value.__cause__, pydantic_ai.exceptions.ModelHTTPError)
+        assert not domain["_is_discord_history_error"](caught.value)
+    domain["_send_reply"].assert_not_awaited()
+    domain["common"].memttlcache.set.assert_not_awaited()
+
+
+async def test_image_tool_marks_only_successful_delivery(domain):
+    incoming = message()
+    domain["_search_web_images"] = AsyncMock(
+        return_value=[
+            {
+                "image": "https://example.test/image.png",
+                "title": "Photo",
+                "url": "https://example.test/page",
+            }
+        ]
+    )
+    domain["_download_image_bytes"] = AsyncMock(return_value=(b"image", "image/png"))
+    deps = domain["DiscordContextDeps"](message=incoming)
+    result = await domain["send_discord_web_image"](SimpleNamespace(deps=deps), "photo")
+    assert result.success and deps.side_effects_started
+    incoming.channel.send.assert_awaited_once()

@@ -21,7 +21,13 @@ from waku.services import manyacg as manyacg_service
 from waku.services.manyacg import manyacg_client
 
 from .embeds import discord_command_embed
-from .settings import _discord_guild_settings, _discord_r18_mode, _r18_mode_label
+from .permissions import _channel_allowed
+from .settings import (
+    _discord_dm_settings,
+    _discord_guild_settings,
+    _discord_r18_mode,
+    _r18_mode_label,
+)
 from .state import _discord_image_lock
 from .utilities import _channel_name, _guild_name
 
@@ -353,21 +359,22 @@ def _image_filename(content_type: str) -> str:
     return f"waku_image.{extension}"
 
 async def _send_discord_seg(message: discord.Message, keyword: str = "") -> bool:
+    settings = (
+        await _discord_guild_settings(message.guild)
+        if message.guild is not None
+        else await _discord_dm_settings(message.author)
+    )
+    if not settings.setu_enabled:
+        await _send_discord_media_notice(
+            message, i18n.t("bot.msg.manyacg.chat_setu_disabled", locale=settings.lang)
+        )
+        return True
     if manyacg_client is None:
         await _send_discord_media_notice(
             message,
             "ManyACG is not configured, so Waku cannot send images yet.",
         )
         return True
-
-    if message.guild is not None:
-        settings = await _discord_guild_settings(message.guild)
-        if not settings.setu_enabled:
-            await _send_discord_media_notice(
-                message,
-                i18n.t("bot.msg.manyacg.chat_setu_disabled", locale=settings.lang),
-            )
-            return True
 
     ratekey = f"discord_seg_cd:{message.channel.id}:{message.author.id}"
     if await common.memttlcache.get(ratekey, False):
@@ -405,7 +412,7 @@ async def _respond_to_discord_seg_interaction(
     interaction: discord.Interaction,
     text: str,
     *,
-    ephemeral: bool = False,
+    ephemeral: bool = True,
 ) -> None:
     """Respond to a slash command with the same embed style as text commands."""
     embed = discord_command_embed(text, title="Waku")
@@ -429,38 +436,42 @@ async def _send_discord_seg_interaction(
         )
         return
 
+    await interaction.response.defer(ephemeral=True, thinking=True)
     guild = interaction.guild
-    if guild is not None:
-        settings = await _discord_guild_settings(guild)
-        if not settings.enabled:
-            await _respond_to_discord_seg_interaction(
-                interaction,
-                "Waku chưa được bật cho server này.",
-                ephemeral=True,
-            )
-            return
-        if not settings.setu_enabled:
-            await _respond_to_discord_seg_interaction(
-                interaction,
-                i18n.t("bot.msg.manyacg.chat_setu_disabled", locale=settings.lang),
-                ephemeral=True,
-            )
-            return
+    request_context = SimpleNamespace(guild=guild, channel=channel, author=interaction.user)
+    if not await _channel_allowed(request_context):
+        await _respond_to_discord_seg_interaction(
+            interaction, "Kênh này không nằm trong phạm vi hoạt động đã cấu hình của Waku."
+        )
+        return
+    settings = (
+        await _discord_guild_settings(guild)
+        if guild is not None
+        else await _discord_dm_settings(interaction.user)
+    )
+    def notice(vi: str, en: str) -> str:
+        return en if settings.lang == "en" else vi
+
+    if not settings.setu_enabled:
+        await _respond_to_discord_seg_interaction(
+            interaction,
+            i18n.t("bot.msg.manyacg.chat_setu_disabled", locale=settings.lang),
+        )
+        return
 
     if manyacg_client is None:
         await _respond_to_discord_seg_interaction(
             interaction,
-            "ManyACG is not configured, so Waku cannot send images yet.",
+            notice("Chưa cấu hình ManyACG nên Waku chưa thể gửi ảnh.", "ManyACG is not configured, so Waku cannot send images yet."),
             ephemeral=True,
         )
         return
 
-    await interaction.response.defer(thinking=True)
     ratekey = f"discord_seg_cd:{channel.id}:{interaction.user.id}"
     if await common.memttlcache.get(ratekey, False):
         await _respond_to_discord_seg_interaction(
             interaction,
-            "Please wait a moment before requesting another image.",
+            notice("Chờ một chút rồi yêu cầu ảnh tiếp nhé.", "Please wait a moment before requesting another image."),
         )
         return
 
@@ -473,11 +484,6 @@ async def _send_discord_seg_interaction(
         return
     await common.memttlcache.set(ratekey, True, ttl=app_config.manyacg_setu_cd)
 
-    request_context = SimpleNamespace(
-        guild=guild,
-        channel=channel,
-        author=interaction.user,
-    )
     try:
         r18_mode = await _discord_r18_mode(guild)
         async with image_lock:
@@ -488,7 +494,7 @@ async def _send_discord_seg_interaction(
             if fetched is None:
                 await _respond_to_discord_seg_interaction(
                     interaction,
-                    "Could not fetch an image from ManyACG.",
+                    notice("Không lấy được ảnh từ ManyACG. Thử lại sau nhé.", "Could not fetch an image from ManyACG."),
                 )
                 return
             artwork, picture = fetched
@@ -496,7 +502,7 @@ async def _send_discord_seg_interaction(
         if not sent:
             await _respond_to_discord_seg_interaction(
                 interaction,
-                "Image sending failed. Please try again later.",
+                notice("Gửi ảnh thất bại. Thử lại sau nhé.", "Image sending failed. Please try again later."),
             )
             return
         try:
@@ -507,30 +513,40 @@ async def _send_discord_seg_interaction(
         logger.error(f"Discord seg slash error: {e.__class__.__name__}: {e}")
         await _respond_to_discord_seg_interaction(
             interaction,
-            "Image sending failed. Please try again later.",
+            notice("Gửi ảnh thất bại. Thử lại sau nhé.", "Image sending failed. Please try again later."),
         )
 
 async def _send_discord_artwork(message: discord.Message, artwork_url: str) -> bool:
+    settings = (
+        await _discord_guild_settings(message.guild)
+        if message.guild is not None
+        else await _discord_dm_settings(message.author)
+    )
+    if not settings.setu_enabled:
+        await _send_discord_media_notice(
+            message, i18n.t("bot.msg.manyacg.chat_setu_disabled", locale=settings.lang)
+        )
+        return True
     if manyacg_client is None:
-        await message.channel.send("ManyACG is not configured, so Waku cannot parse artwork links yet.", reference=message)
+        await _send_discord_media_notice(message, "ManyACG is not configured, so Waku cannot parse artwork links yet.")
         return True
     if not app_config.manyacg_api_key:
-        await message.channel.send("ManyACG API key is missing, so Waku cannot parse artwork links yet.", reference=message)
+        await _send_discord_media_notice(message, "ManyACG API key is missing, so Waku cannot parse artwork links yet.")
         return True
 
     try:
         async with message.channel.typing():
             resp = await manyacg_client.fetch_artwork(artwork_url)
         if resp.status != 200 or resp.data is None:
-            await message.channel.send("Could not fetch artwork from this link.", reference=message)
+            await _send_discord_media_notice(message, "Could not fetch artwork from this link.")
             return True
         artwork = resp.data
         if artwork.r18 and await _discord_r18_mode(message.guild) == 0:
-            await message.channel.send("R18 artwork is disabled in this Discord server.", reference=message)
+            await _send_discord_media_notice(message, "R18 artwork is disabled here.")
             return True
         pictures = sorted(artwork.pictures or [], key=lambda item: item.index)
         if not pictures:
-            await message.channel.send("This artwork has no image to send.", reference=message)
+            await _send_discord_media_notice(message, "This artwork has no image to send.")
             return True
         sent = False
         view = _discord_artwork_view(artwork.source_url)
@@ -557,14 +573,14 @@ async def _send_discord_artwork(message: discord.Message, artwork_url: str) -> b
                 spoiler=artwork.r18,
             )
             if not success:
-                await message.channel.send(
+                await _send_discord_media_notice(
+                    message,
                     "Failed to upload this R18 artwork as a spoiler attachment.",
-                    reference=message,
                 )
                 return True
             sent = True
         return True
     except Exception as e:
         logger.error(f"Discord artwork parse error: {e.__class__.__name__}: {e}")
-        await message.channel.send("Failed to parse this artwork link.", reference=message)
+        await _send_discord_media_notice(message, "Failed to parse this artwork link.")
         return True

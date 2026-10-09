@@ -38,7 +38,11 @@ from ..permissions import (
     _discord_allowed_mentions,
     _is_discord_bot_admin,
 )
-from ..settings import _contains_r18_keyword, _discord_guild_settings, _discord_r18_mode
+from ..settings import (
+    _contains_r18_keyword,
+    _discord_dm_settings,
+    _discord_guild_settings,
+)
 from ..state import _discord_image_lock
 from ..utilities import _channel_name, _guild_name
 
@@ -56,14 +60,13 @@ async def send_discord_web_image(
         query: Image search query.
     """
     message = ctx.deps.message
-    if message.guild is not None:
-        settings = await _discord_guild_settings(message.guild)
-        if not settings.enabled or not settings.setu_enabled:
-            return DiscordWebImageResult(success=False, message="Image sending is disabled for this server.")
+    settings = await _discord_guild_settings(message.guild) if message.guild is not None else await _discord_dm_settings(message.author)
+    if not settings.setu_enabled:
+        return DiscordWebImageResult(success=False, message="Image sending is disabled for this conversation.")
     search_query = query.strip()
     if not search_query:
         return DiscordWebImageResult(success=False, message="Image search query is empty.")
-    r18_mode = await _discord_r18_mode(message.guild)
+    r18_mode = settings.r18_mode if message.guild is not None else 0
     if r18_mode == 0 and _contains_r18_keyword(search_query):
         return DiscordWebImageResult(
             success=False,
@@ -102,6 +105,7 @@ async def send_discord_web_image(
         embed.set_image(url=f"attachment://{file.filename}")
         try:
             await message.channel.send(embed=embed, file=file, reference=message)
+            ctx.deps.side_effects_started = True
         except discord.HTTPException as e:
             logger.warning(f"Discord web image upload failed: {e}")
             return DiscordWebImageResult(
@@ -149,10 +153,9 @@ async def send_discord_anime_photo(
             a safe batch size and spaces each send to avoid Discord limits.
     """
     message = ctx.deps.message
-    if message.guild is not None:
-        settings = await _discord_guild_settings(message.guild)
-        if not settings.enabled or not settings.setu_enabled:
-            return DiscordAnimePhotoResult(success=False, message="Image sending is disabled for this server.")
+    settings = await _discord_guild_settings(message.guild) if message.guild is not None else await _discord_dm_settings(message.author)
+    if not settings.setu_enabled:
+        return DiscordAnimePhotoResult(success=False, message="Image sending is disabled for this conversation.")
     target_channel = await _resolve_discord_channel(message, target_channel_id)
     if target_channel is None or not isinstance(target_channel, discord.abc.Messageable):
         return DiscordAnimePhotoResult(success=False, message="Target channel is not messageable or was not found.")
@@ -205,7 +208,7 @@ async def send_discord_anime_photo(
             message="Image caption exceeds Discord's 4096-character embed limit.",
         )
 
-    r18_mode = await _discord_r18_mode(message.guild)
+    r18_mode = settings.r18_mode if message.guild is not None else 0
     if r18_mode == 0 and _contains_r18_keyword(keyword):
         return DiscordAnimePhotoResult(
             success=False,
@@ -301,6 +304,7 @@ async def send_discord_anime_photo(
                         capped_count=capped_count,
                     )
                 break
+            ctx.deps.side_effects_started = True
             sent_count += 1
             artist = None
             if artwork.artist is not None:

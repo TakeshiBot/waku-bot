@@ -11,7 +11,7 @@ def discord_command_embed(
 ) -> discord.Embed:
     """Create the consistent embed used for Discord command responses."""
     return discord.Embed(
-        title=title,
-        description=description,
+        title=title[:256],
+        description=description[:4096],
         color=color if color is not None else discord.Color.blurple(),
     )

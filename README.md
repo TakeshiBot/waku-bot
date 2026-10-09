@@ -48,7 +48,11 @@ Tên hiển thị của bot là `waku`; tên repository và phân phối Python 
 Thư mục và module Python là `waku`; chạy trực tiếp bằng `python -m waku`.
 Các dữ liệu cũ được xử lý theo [hướng dẫn nâng cấp](docs/docs/branding-timezone.md).
 
-Để bật Discord và dùng các menu/lệnh của bản đã mod, xem
+Discord dùng được ngay sau khi thêm vào server, không cần duyệt. Dùng `/config`
+để mở menu embed riêng tư trong server; `/help` liệt kê các lệnh. Admin bot dùng
+`!bc`, `!info [ID server]`, `!server` và mọi slash command trong DM; chat DM của
+admin và AI toàn Discord có công tắc riêng trong `/config`. User thường không
+được phản hồi trong DM. Để bật Discord, xem
 [hướng dẫn Discord](docs/docs/discord.md). Hai nền tảng dùng chung cấu hình provider
 AI; settings và quyền quản trị Discord được lưu riêng với Telegram.
 

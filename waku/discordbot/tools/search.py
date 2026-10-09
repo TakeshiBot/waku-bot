@@ -13,7 +13,7 @@ from ..models import (
     DiscordMessageSearchEntry,
     DiscordMessageSearchResult,
 )
-from ..permissions import _can_read_message_history
+from ..permissions import _can_read_message_history, _channel_allowed
 from ..settings import _discord_guild_settings
 from ..utilities import _author_name, _channel_name, _message_text
 
@@ -112,11 +112,11 @@ async def search_discord_messages(
 async def search_discord_group_memory(
     ctx: RunContext[DiscordContextDeps], query: str
 ) -> list[str]:
-    """Search this Discord server's long-term group memory.
+    """Search this Discord channel's long-term group memory.
 
     Use this when the current Discord conversation may depend on facts Waku has
     learned about this server, its members, relationships, preferences, recurring
-    topics, or past events. This memory is server-specific and separate from
+    topics, or past events. This memory is channel-specific and separate from
     Telegram group memory.
 
     Args:
@@ -126,7 +126,9 @@ async def search_discord_group_memory(
     if message.guild is None:
         return []
     settings = await _discord_guild_settings(message.guild)
-    if not settings.enabled or not settings.ai_reply or not settings.group_memory_enabled or not app_config.agent_group_memory:
+    if not settings.ai_reply or not settings.group_memory_enabled or not app_config.agent_group_memory:
+        return []
+    if not await _channel_allowed(message) or not _can_read_message_history(message.channel, message.guild, requester=message.author):
         return []
     powermemory = _get_powermemory()
     if powermemory is None:
@@ -136,7 +138,7 @@ async def search_discord_group_memory(
         return []
     results = await powermemory.search(
         search_query,
-        user_id=_discord_group_memory_user_id(message.guild.id),
+        user_id=_discord_group_memory_user_id(message.guild.id, message.channel.id),
         limit=10,
     )
     return [res.get("memory", "") for res in results.get("results", [])]
@@ -144,7 +146,7 @@ async def search_discord_group_memory(
 async def update_discord_group_memory(
     ctx: RunContext[DiscordContextDeps], content: str
 ) -> str:
-    """Store a useful fact in this Discord server's long-term group memory.
+    """Store a useful fact in this Discord channel's long-term group memory.
 
     Use only for genuinely useful, non-trivial facts about the Discord server or
     its members. Do not store casual filler or information already obvious from
@@ -157,8 +159,10 @@ async def update_discord_group_memory(
     if message.guild is None:
         return "Discord group memory is only available in servers."
     settings = await _discord_guild_settings(message.guild)
-    if not settings.enabled or not settings.ai_reply or not settings.group_memory_enabled or not app_config.agent_group_memory:
+    if not settings.ai_reply or not settings.group_memory_enabled or not app_config.agent_group_memory:
         return "Discord group memory is disabled for this server."
+    if not await _channel_allowed(message) or not _can_read_message_history(message.channel, message.guild, requester=message.author):
+        return "Cannot access this Discord channel's memory."
     powermemory = _get_powermemory()
     if powermemory is None:
         return "Discord group memory system is not available."
@@ -169,13 +173,14 @@ async def update_discord_group_memory(
         result = await powermemory.add(
             fact,
             infer=True,
-            user_id=_discord_group_memory_user_id(message.guild.id),
+            user_id=_discord_group_memory_user_id(message.guild.id, message.channel.id),
             prompt=(
                 "You are Waku's Discord server memory. Extract useful facts, "
                 "member preferences, relationships, recurring topics, or notable "
                 "events worth remembering for this Discord server."
             ),
         )
+        ctx.deps.side_effects_started = True
         logger.debug(
             "update_discord_group_memory: stored memory "
             f"guild={message.guild.id} result={result}"

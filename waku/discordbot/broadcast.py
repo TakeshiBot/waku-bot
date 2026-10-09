@@ -1,34 +1,31 @@
+"""Private administrator prefix commands for Discord announcements."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
 
 import discord
 
-from waku.database.discord import list_authorized_discord_servers
 from waku.logger import logger
 
 from . import state
 from .embeds import discord_command_embed
 from .permissions import _is_discord_user_bot_admin
 
-
-async def _authorized_discord_guild_ids() -> set[int]:
-    """Return guild IDs that have explicitly enabled Waku's Discord features."""
-    return {guild_id for guild_id, _ in await list_authorized_discord_servers()}
+__all__ = ["send_discord_broadcast_message"]
 
 
-async def _respond_to_broadcast_interaction(
-    interaction: discord.Interaction,
+async def _respond_to_broadcast_message(
+    message: discord.Message,
     description: str,
     *,
     title: str = "Phát thông báo",
     color: discord.Color | None = None,
 ) -> None:
-    embed = discord_command_embed(description, title=title, color=color)
-    if interaction.response.is_done():
-        await interaction.edit_original_response(content=None, embed=embed)
-    else:
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+    await message.channel.send(
+        embed=discord_command_embed(description, title=title, color=color),
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
 
 
 def _broadcast_bot_member(guild: discord.Guild) -> discord.Member | None:
@@ -45,7 +42,11 @@ def _can_send_broadcast(channel: object, member: discord.Member | None) -> bool:
     if member is None or not callable(permissions_for):
         return False
     permissions = permissions_for(member)
-    return bool(permissions.view_channel and permissions.send_messages)
+    return bool(
+        permissions.view_channel
+        and permissions.send_messages
+        and permissions.embed_links
+    )
 
 
 async def _broadcast_channel(
@@ -72,8 +73,10 @@ async def _broadcast_channel(
                 for channel in await guild.fetch_channels()
                 if isinstance(channel, discord.TextChannel)
             )
-        except discord.HTTPException as e:
-            logger.debug(f"Discord broadcast channel fetch failed for guild={guild.id}: {e}")
+        except discord.HTTPException as error:
+            logger.debug(
+                f"Discord broadcast channel fetch failed for guild={guild.id}: {error}"
+            )
 
     seen: set[int] = set()
     for candidate in candidates:
@@ -81,148 +84,126 @@ async def _broadcast_channel(
         if channel_id is None or channel_id in seen:
             continue
         seen.add(channel_id)
-        if isinstance(candidate, discord.abc.Messageable) and _can_send_broadcast(candidate, member):
+        if isinstance(candidate, discord.abc.Messageable) and _can_send_broadcast(
+            candidate, member
+        ):
             return candidate, True
     return None, True
 
 
-async def send_discord_broadcast(
-    interaction: discord.Interaction,
-    message: str,
-    target: str | None = None,
-) -> None:
-    """Send an owner-authored announcement to one or more Discord servers.
+def _parse_broadcast_arguments(arguments: str) -> tuple[str, str] | None:
+    parts = arguments.strip().split(maxsplit=1)
+    if len(parts) != 2:
+        return None
+    target, text = parts[0].casefold(), parts[1].replace("\\n", "\n").strip()
+    if target != "all" and not (
+        target.isascii()
+        and target.isdigit()
+        and len(target) <= 20
+        and 0 < int(target) < 2**64
+    ):
+        return None
+    return target, text
 
-    `target` accepts `here` (or omitted) for the current server, `all` for every
-    joined server, `auth`/`unauth` to filter by authorization state, or a guild ID.
+
+async def send_discord_broadcast_message(
+    message: discord.Message, arguments: str
+) -> None:
+    """Handle ``!bc all <text>`` or ``!bc <guild_id> <text>`` in an admin's DM.
+
+    Unauthorized callers and guild invocations are deliberately silent. The
+    caller's DM receives only status/error embeds; announcements go exclusively
+    to the explicitly selected joined guilds.
     """
-    if not _is_discord_user_bot_admin(interaction.user):
-        await _respond_to_broadcast_interaction(
-            interaction,
-            "Chỉ chủ bot mới có thể dùng `/bc`.",
-            title="Không đủ quyền",
+    if (
+        message.guild is not None
+        or not isinstance(message.channel, discord.DMChannel)
+        or message.author.bot
+        or not _is_discord_user_bot_admin(message.author)
+    ):
+        return
+    parsed = _parse_broadcast_arguments(arguments)
+    if parsed is None:
+        await _respond_to_broadcast_message(
+            message,
+            "Cú pháp: `!bc all <nội dung>` hoặc `!bc <server_id> <nội dung>`.\n"
+            "Dùng `\\n` để xuống dòng. Lệnh chỉ dùng trong DM với Waku.",
+            title="Cú pháp phát thông báo",
             color=discord.Color.orange(),
         )
         return
-
-    text = message.replace("\\n", "\n").strip()
+    target, text = parsed
     if not text:
-        await _respond_to_broadcast_interaction(
-            interaction,
+        await _respond_to_broadcast_message(
+            message,
             "Nội dung thông báo không được để trống.",
             title="Nội dung không hợp lệ",
             color=discord.Color.orange(),
         )
         return
     if len(text) > 4000:
-        await _respond_to_broadcast_interaction(
-            interaction,
+        await _respond_to_broadcast_message(
+            message,
             "Nội dung tối đa là 4.000 ký tự để hiển thị trọn vẹn trong embed.",
             title="Nội dung quá dài",
             color=discord.Color.orange(),
         )
         return
-
     client = state.discord_client
     if client is None:
-        await _respond_to_broadcast_interaction(
-            interaction,
+        await _respond_to_broadcast_message(
+            message,
             "Waku chưa sẵn sàng để phát thông báo. Vui lòng thử lại sau.",
             title="Không thể phát thông báo",
             color=discord.Color.orange(),
         )
         return
-
-    normalized_target = (target or "here").strip().casefold()
-    if normalized_target in {"", ".", "here"}:
-        if interaction.guild is None:
-            await _respond_to_broadcast_interaction(
-                interaction,
-                "Khi dùng trong DM, hãy đặt `target` là `all` hoặc ID server.",
-                title="Thiếu server đích",
-                color=discord.Color.orange(),
-            )
-            return
-        target_mode = "here"
-        requested_guilds = [interaction.guild]
-    elif normalized_target in {"all", "auth", "unauth"}:
-        target_mode = "all"
-        requested_guilds = list(client.guilds)
-    elif normalized_target.isdigit():
-        guild = client.get_guild(int(normalized_target))
+    if target == "all":
+        guilds = list(client.guilds)
+    else:
+        guild = client.get_guild(int(target))
         if guild is None:
-            await _respond_to_broadcast_interaction(
-                interaction,
+            await _respond_to_broadcast_message(
+                message,
                 f"Không tìm thấy server có ID `{target}` mà Waku đang tham gia.",
                 title="Không tìm thấy server",
                 color=discord.Color.orange(),
             )
             return
-        target_mode = "guild"
-        requested_guilds = [guild]
-    else:
-        await _respond_to_broadcast_interaction(
-            interaction,
-            "`target` chỉ nhận `here`, `all`, `auth`, `unauth`, hoặc ID server.",
-            title="Server đích không hợp lệ",
-            color=discord.Color.orange(),
-        )
-        return
-
-    if normalized_target in {"auth", "unauth"}:
-        try:
-            authorized_ids = await _authorized_discord_guild_ids()
-        except Exception as e:
-            logger.error(f"Failed to load Discord broadcast targets: {e.__class__.__name__}: {e}")
-            await _respond_to_broadcast_interaction(
-                interaction,
-                "Không thể tải danh sách server đã được cấp quyền. Vui lòng thử lại sau.",
-                title="Không thể phát thông báo",
-                color=discord.Color.orange(),
-            )
-            return
-        if normalized_target == "auth":
-            guilds = [guild for guild in requested_guilds if guild.id in authorized_ids]
-        else:
-            guilds = [guild for guild in requested_guilds if guild.id not in authorized_ids]
-    else:
-        # `here`, a guild ID, and `all` are explicit destinations.  They must
-        # keep working even if the selected server has not requested Waku auth.
-        guilds = requested_guilds
+        guilds = [guild]
     if not guilds:
-        await _respond_to_broadcast_interaction(
-            interaction,
-            "Không có server nào khớp với target đã chọn.",
+        await _respond_to_broadcast_message(
+            message,
+            "Waku chưa tham gia server nào để phát thông báo.",
             title="Không có server đích",
             color=discord.Color.orange(),
         )
         return
 
-    await interaction.response.defer(ephemeral=True, thinking=True)
     announcement = discord.Embed(
         title="📢 Thông báo từ Waku",
         description=text,
         color=discord.Color.blurple(),
         timestamp=datetime.now(UTC),
     )
-    direct_count = 0
-    fallback_count = 0
-    failed_count = 0
-    preferred_channel = interaction.channel if target_mode == "here" else None
-
+    direct_count = fallback_count = failed_count = 0
     for guild in guilds:
-        channel, used_fallback = await _broadcast_channel(guild, preferred_channel)
-        if channel is None:
-            failed_count += 1
-            logger.warning(f"Discord broadcast skipped guild={guild.id}: no writable channel")
-            continue
         try:
-            await channel.send(embed=announcement, allowed_mentions=discord.AllowedMentions.none())
-        except (discord.Forbidden, discord.HTTPException) as e:
+            # The calling DM can never be a preferred guild destination.
+            channel, used_fallback = await _broadcast_channel(guild)
+            if channel is None:
+                failed_count += 1
+                logger.warning(
+                    f"Discord broadcast skipped guild={guild.id}: no writable channel"
+                )
+                continue
+            await channel.send(
+                embed=announcement, allowed_mentions=discord.AllowedMentions.none()
+            )
+        except (discord.HTTPException, discord.ClientException) as error:
             failed_count += 1
             logger.warning(
-                f"Discord broadcast send failed guild={guild.id} "
-                f"channel={getattr(channel, 'id', None)} error={e}"
+                f"Discord broadcast send failed guild={guild.id}: {type(error).__name__}"
             )
             continue
         if used_fallback:
@@ -232,27 +213,24 @@ async def send_discord_broadcast(
 
     total_sent = direct_count + fallback_count
     result = discord_command_embed(
-        "Phát sóng hoàn tất." if total_sent else "Không gửi được thông báo đến server nào.",
+        "Phát sóng hoàn tất."
+        if total_sent
+        else "Không gửi được thông báo đến server nào.",
         title="Kết quả phát thông báo",
         color=discord.Color.green() if total_sent else discord.Color.red(),
     )
     result.add_field(name="Đã gửi", value=f"`{total_sent}` server", inline=True)
-    result.add_field(name="Kênh fallback", value=f"`{fallback_count}` server", inline=True)
+    result.add_field(
+        name="Kênh fallback", value=f"`{fallback_count}` server", inline=True
+    )
     result.add_field(name="Thất bại", value=f"`{failed_count}` server", inline=True)
     result.set_footer(
-        text=(
-            "Đích: toàn bộ server"
-            if normalized_target == "all"
-            else "Đích: server đã cấp quyền"
-            if normalized_target == "auth"
-            else "Đích: server chưa cấp quyền"
-            if normalized_target == "unauth"
-            else "Đích: server đã chọn"
-        )
+        text="Đích: toàn bộ server" if target == "all" else f"Đích: server {target}"
     )
-    await interaction.edit_original_response(content=None, embed=result)
+    await message.channel.send(
+        embed=result, allowed_mentions=discord.AllowedMentions.none()
+    )
     logger.info(
-        "Discord broadcast completed: "
-        f"user={interaction.user.id} target={normalized_target!r} sent={total_sent} "
-        f"fallback={fallback_count} failed={failed_count}"
+        f"Discord broadcast completed: user={message.author.id} target={target!r} "
+        f"sent={total_sent} fallback={fallback_count} failed={failed_count}"
     )

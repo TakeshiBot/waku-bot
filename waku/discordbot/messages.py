@@ -26,8 +26,16 @@ from .media import (
     _discord_sticker_contents,
     _find_artwork_url,
 )
-from .permissions import _channel_allowed, _channel_candidate_ids
-from .settings import _discord_dm_ai_reply_enabled, _discord_guild_settings
+from .permissions import (
+    _channel_allowed,
+    _channel_candidate_ids,
+    _is_discord_user_bot_admin,
+)
+from .settings import (
+    _discord_dm_settings,
+    _discord_global_ai_enabled,
+    _discord_guild_settings,
+)
 from .utilities import (
     _author_name,
     _channel_name,
@@ -137,11 +145,16 @@ def _discord_current_time() -> str:
 async def _should_wake(message: discord.Message, bot_user: discord.ClientUser) -> tuple[bool, str]:
     if message.author.bot:
         return False, ""
+    is_dm = message.guild is None
+    if is_dm and (
+        not isinstance(message.channel, discord.DMChannel)
+        or not _is_discord_user_bot_admin(message.author)
+    ):
+        return False, ""
     if not isinstance(message.channel, discord.abc.Messageable):
         return False, ""
 
     content = _message_text(message)
-    is_dm = isinstance(message.channel, discord.DMChannel)
     mentioned = bot_user in message.mentions
     replied_to_bot = _is_reply_to_bot(message, bot_user)
     keyword = _matches_keyword(content)
@@ -165,9 +178,6 @@ async def _should_wake(message: discord.Message, bot_user: discord.ClientUser) -
         and not artwork_url
     ):
         return False, ""
-    if is_dm and not await _discord_dm_ai_reply_enabled(message.author):
-        logger.debug(f"Discord DM AI reply ignored because it is disabled: user={message.author.id}")
-        return False, ""
     if not is_dm and not await _channel_allowed(message):
         logger.debug(
             "Discord wake ignored because Waku is disabled for server: "
@@ -175,8 +185,13 @@ async def _should_wake(message: discord.Message, bot_user: discord.ClientUser) -
             f"candidate_ids={sorted(_channel_candidate_ids(message))}"
         )
         return False, ""
-    if not is_dm and not seg_command and not artwork_url:
-        settings = await _discord_guild_settings(message.guild)
+    if not seg_command and not artwork_url:
+        if not await _discord_global_ai_enabled():
+            return False, ""
+        settings = (
+            await _discord_dm_settings(message.author)
+            if is_dm else await _discord_guild_settings(message.guild)
+        )
         if not settings.ai_reply:
             logger.debug(
                 "Discord AI reply ignored because it is disabled for server: "

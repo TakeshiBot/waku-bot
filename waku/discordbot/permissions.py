@@ -8,7 +8,6 @@ from waku.config import app_config
 
 from . import state
 from .models import DiscordGuildSettings
-from .settings import _discord_guild_settings
 
 
 def _discord_allowed_mentions(allow_everyone: bool = False) -> discord.AllowedMentions:
@@ -42,10 +41,10 @@ def _can_clean_discord_messages(message: discord.Message) -> bool:
     permissions = getattr(message.author, "guild_permissions", None)
     return bool(permissions and (permissions.administrator or permissions.manage_messages))
 
-def _can_manage_discord_config(message: discord.Message, settings: DiscordGuildSettings) -> bool:
-    if _is_discord_bot_admin(message):
-        return settings.enabled
-    return settings.enabled and _is_discord_server_admin(message)
+def _can_manage_discord_config(
+    message: discord.Message, settings: DiscordGuildSettings | None = None
+) -> bool:
+    return _is_discord_bot_admin(message)
 
 async def _send_admin_notice(message: discord.Message, text: str) -> None:
     embed = discord.Embed(
@@ -74,8 +73,7 @@ async def _channel_allowed(message: discord.Message) -> bool:
     allowlist = set(app_config.discord_channel_allowlist)
     if allowlist and not (_channel_candidate_ids(message) & allowlist):
         return False
-    settings = await _discord_guild_settings(message.guild)
-    return settings.enabled
+    return True
 
 def _bot_member(guild: discord.Guild | None) -> discord.Member | None:
     if guild is None:

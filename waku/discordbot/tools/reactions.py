@@ -57,6 +57,7 @@ async def send_discord_reaction(
         if _CUSTOM_EMOJI_RE.fullmatch(emoji_text):
             reaction_emoji = discord.PartialEmoji.from_str(emoji_text)
         await target.add_reaction(reaction_emoji)
+        ctx.deps.side_effects_started = True
         await _remember_discord_reaction_style(message)
         logger.info(
             "Discord reaction sent: "

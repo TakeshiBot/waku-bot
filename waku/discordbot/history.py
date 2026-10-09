@@ -29,18 +29,19 @@ from .constants import (
     DISCORD_COMMAND_PREFIX,
 )
 from .models import DiscordGroupMemoryMessage
-from .settings import _discord_guild_settings
+from .permissions import _can_read_message_history, _channel_allowed
+from .settings import _discord_global_ai_enabled, _discord_guild_settings
 from .utilities import _author_name, _clean_content, _message_text
 
 
-def _discord_group_memory_user_id(guild_id: int) -> str:
-    return f"discord_group_{guild_id}"
+def _discord_group_memory_user_id(guild_id: int, channel_id: int) -> str:
+    return f"discord_group_{guild_id}_channel_{channel_id}"
 
-def _discord_group_messages_key(guild_id: int) -> str:
-    return f"discord_group_messages:{guild_id}"
+def _discord_group_messages_key(guild_id: int, channel_id: int) -> str:
+    return f"discord_group_messages:{guild_id}:{channel_id}"
 
-def _discord_group_memory_update_key(guild_id: int) -> str:
-    return f"discord_group_memory_last_update:{guild_id}"
+def _discord_group_memory_update_key(guild_id: int, channel_id: int) -> str:
+    return f"discord_group_memory_last_update:{guild_id}:{channel_id}"
 
 def _get_powermemory():
     try:
@@ -114,19 +115,23 @@ async def _record_discord_group_memory(message: discord.Message) -> None:
     guild = message.guild
     if guild is None or message.author.bot:
         return
+    if not await _discord_global_ai_enabled():
+        return
     content = _clean_content(message)
     if not content or len(content) < 2 or len(content) > 2048:
         return
     if content.startswith(DISCORD_COMMAND_PREFIX):
         return
     settings = await _discord_guild_settings(guild)
-    if not settings.enabled or not settings.ai_reply or not settings.group_memory_enabled:
+    if not settings.ai_reply or not settings.group_memory_enabled:
+        return
+    if not await _channel_allowed(message) or not _can_read_message_history(message.channel, guild, requester=message.author):
         return
     powermemory = _get_powermemory()
     if powermemory is None or not app_config.agent_group_memory:
         return
 
-    key = _discord_group_messages_key(guild.id)
+    key = _discord_group_messages_key(guild.id, message.channel.id)
     group_messages: list[DiscordGroupMemoryMessage] = await common.memttlcache.get(key, [])
     group_messages.append(
         DiscordGroupMemoryMessage(
@@ -141,7 +146,7 @@ async def _record_discord_group_memory(message: discord.Message) -> None:
     )
     if len(group_messages) >= _DISCORD_GROUP_MEMORY_BATCH_SIZE:
         group_messages = group_messages[-_DISCORD_GROUP_MEMORY_BATCH_SIZE:]
-        update_key = _discord_group_memory_update_key(guild.id)
+        update_key = _discord_group_memory_update_key(guild.id, message.channel.id)
         retry_key = f"{update_key}:retry"
         if not await common.memttlcache.get(update_key) and not await common.memttlcache.get(retry_key):
             memory_text = "Discord server message log:\n" + "\n".join(
@@ -153,7 +158,7 @@ async def _record_discord_group_memory(message: discord.Message) -> None:
                     powermemory.add(
                         memory_text,
                         infer=True,
-                        user_id=_discord_group_memory_user_id(guild.id),
+                        user_id=_discord_group_memory_user_id(guild.id, message.channel.id),
                         prompt=(
                             "You are Waku's Discord server memory. Extract useful facts, "
                             "member preferences, relationships, recurring topics, jokes, "

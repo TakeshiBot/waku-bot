@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 from datetime import UTC, datetime
 
@@ -16,11 +17,35 @@ from .constants import (
     _DISCORD_GUILD_SETTINGS_CACHE_PREFIX,
     _DISCORD_GUILD_SETTINGS_CACHE_TTL,
     _R18_KEYWORDS,
-    DISCORD_AUTH_STATUS_NONE,
-    DISCORD_AUTH_STATUS_PENDING,
-    DISCORD_AUTH_STATUS_REJECTED,
 )
 from .models import DiscordGuildSettings
+
+
+async def _discord_global_ai_enabled() -> bool:
+    async with state._discord_settings_lock(0):
+        if state.discord_global_ai_enabled is None:
+            try:
+                state.discord_global_ai_enabled = await repository.get_discord_global_ai_enabled()
+            except Exception as error:
+                logger.warning(f"Discord global AI setting unavailable: {type(error).__name__}")
+                return False
+        return state.discord_global_ai_enabled
+
+
+async def _set_discord_global_ai_enabled(enabled: bool) -> None:
+    if not isinstance(enabled, bool):
+        raise ValueError("Discord global AI switch must be boolean")
+    async with state._discord_settings_lock(0):
+        await repository.set_discord_global_ai_enabled(enabled)
+        state.discord_global_ai_enabled = enabled
+        pending = (
+            tuple(task for task in state.discord_ai_tasks if task is not asyncio.current_task())
+            if not enabled else ()
+        )
+        for task in pending:
+            task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
 
 
 def _discord_settings_cache_key(guild_id: int) -> str:
@@ -60,7 +85,7 @@ def _discord_dm_config_id(user_id: int) -> int:
 
 def _settings_from_config(config, *, dm: bool = False) -> DiscordGuildSettings:
     return DiscordGuildSettings(
-        enabled=True if dm else config.discord_enabled,
+        enabled=True,
         r18_mode=0 if dm else max(0, min(2, int(config.discord_r18_mode))),
         ai_reply=config.discord_ai_reply,
         group_memory_enabled=False if dm else config.group_memory_enabled,
@@ -74,7 +99,9 @@ async def _discord_guild_settings(guild: discord.Guild | None) -> DiscordGuildSe
         return DiscordGuildSettings(enabled=True, group_memory_enabled=False)
     cached = await common.memttlcache.get(_discord_settings_cache_key(guild.id))
     if isinstance(cached, DiscordGuildSettings):
-        return copy.copy(cached)
+        settings = copy.copy(cached)
+        settings.enabled = True
+        return settings
     try:
         config = await repository.get_discord_chat_config(guild.id)
         settings = _settings_from_config(config)
@@ -85,33 +112,18 @@ async def _discord_guild_settings(guild: discord.Guild | None) -> DiscordGuildSe
         return copy.copy(settings)
     except Exception as exc:
         logger.error(f"Failed to load Discord guild settings from DB: {type(exc).__name__}")
-        return DiscordGuildSettings(enabled=False)
+        return DiscordGuildSettings(
+            ai_reply=False, group_memory_enabled=False, setu_enabled=False
+        )
 
 
-def _clear_auth_fields() -> dict:
-    return {
-        "discord_auth_status": DISCORD_AUTH_STATUS_NONE,
-        "discord_auth_requester_id": None,
-        "discord_auth_channel_id": None,
-        "discord_auth_requested_at": None,
-        "discord_auth_rejection_reason": None,
-        "discord_auth_review_messages": None,
-    }
+async def _set_discord_guild_settings(guild, settings) -> None:
+    await _set_discord_guild_settings_by_id(guild.id, guild.name, settings)
 
 
-async def _set_discord_guild_settings(guild, settings, *, require_enabled=False) -> None:
-    await _set_discord_guild_settings_by_id(
-        guild.id, guild.name, settings, require_enabled=require_enabled
-    )
-
-
-async def _set_discord_guild_settings_by_id(
-    guild_id, guild_name, settings, *, require_enabled=False
-) -> None:
+async def _set_discord_guild_settings_by_id(guild_id, guild_name, settings) -> None:
     updates = {
-        **_clear_auth_fields(),
-        "discord_enabled": settings.enabled,
-        "discord_muted": False,
+        "discord_enabled": True,
         "discord_allow_r18": settings.r18_mode != 0,
         "discord_r18_mode": max(0, min(2, int(settings.r18_mode))),
         "discord_ai_reply": settings.ai_reply,
@@ -119,106 +131,9 @@ async def _set_discord_guild_settings_by_id(
         "setu_enabled": settings.setu_enabled,
         "lang": normalize_locale(settings.lang),
     }
-    async with state._discord_auth_lock(guild_id):
-        if require_enabled and not (await repository.get_discord_chat_config(guild_id)).discord_enabled:
-            raise PermissionError("Discord guild authorization was revoked")
+    async with state._discord_settings_lock(guild_id):
         await repository.patch_discord_chat_config(guild_id, updates, title=guild_name)
         await common.memttlcache.delete(_discord_settings_cache_key(guild_id))
-
-
-async def _delete_discord_guild_settings(guild) -> None:
-    await _delete_discord_guild_settings_by_id(guild.id)
-
-
-async def _delete_discord_guild_settings_by_id(guild_id: int) -> None:
-    async with state._discord_auth_lock(guild_id):
-        await repository.patch_discord_chat_config(
-            guild_id, {**_clear_auth_fields(), "discord_enabled": False, "discord_muted": False}
-        )
-        await common.memttlcache.delete(_discord_settings_cache_key(guild_id))
-
-
-async def _discord_auth_config(guild_id, guild_name=None):
-    return await repository.get_discord_chat_config(guild_id)
-
-
-async def _submit_discord_auth_request(guild_id, guild_name, requester_id, channel_id):
-    async with state._discord_auth_lock(guild_id):
-        config = await repository.get_discord_chat_config(guild_id)
-        if config.discord_enabled or config.discord_auth_status == DISCORD_AUTH_STATUS_PENDING:
-            return config, False
-        config = await repository.patch_discord_chat_config(
-            guild_id,
-            {
-                "discord_auth_status": DISCORD_AUTH_STATUS_PENDING,
-                "discord_auth_requester_id": requester_id,
-                "discord_auth_channel_id": channel_id,
-                "discord_auth_requested_at": datetime.now(UTC).isoformat(),
-                "discord_auth_rejection_reason": None,
-                "discord_auth_review_messages": [],
-            },
-            title=guild_name,
-        )
-        await common.memttlcache.delete(_discord_settings_cache_key(guild_id))
-        return config, True
-
-
-async def _set_discord_auth_review_messages(guild_id, messages) -> None:
-    async with state._discord_auth_lock(guild_id):
-        config = await repository.get_discord_chat_config(guild_id)
-        if config.discord_auth_status == DISCORD_AUTH_STATUS_PENDING:
-            await repository.patch_discord_chat_config(
-                guild_id, {"discord_auth_review_messages": messages}
-            )
-
-
-async def _reset_discord_auth_request(guild_id: int) -> None:
-    async with state._discord_auth_lock(guild_id):
-        config = await repository.get_discord_chat_config(guild_id)
-        if config.discord_enabled:
-            return
-        await repository.patch_discord_chat_config(guild_id, _clear_auth_fields())
-        await common.memttlcache.delete(_discord_settings_cache_key(guild_id))
-
-
-async def _approve_discord_auth_request(guild_id: int):
-    async with state._discord_auth_lock(guild_id):
-        config = await repository.get_discord_chat_config(guild_id)
-        if config.discord_auth_status != DISCORD_AUTH_STATUS_PENDING:
-            return None
-        snapshot = copy.deepcopy(config)
-        await repository.patch_discord_chat_config(
-            guild_id,
-            {
-                **_clear_auth_fields(),
-                "discord_enabled": True,
-                "discord_muted": False,
-                "discord_r18_mode": 0,
-                "discord_allow_r18": False,
-                "discord_ai_reply": True,
-                "group_memory_enabled": True,
-                "setu_enabled": True,
-            },
-        )
-        await common.memttlcache.delete(_discord_settings_cache_key(guild_id))
-        return snapshot
-
-
-async def _reject_discord_auth_request(guild_id: int, reason: str):
-    async with state._discord_auth_lock(guild_id):
-        config = await repository.get_discord_chat_config(guild_id)
-        if config.discord_auth_status != DISCORD_AUTH_STATUS_PENDING:
-            return None
-        config = await repository.patch_discord_chat_config(
-            guild_id,
-            {
-                "discord_enabled": False,
-                "discord_auth_status": DISCORD_AUTH_STATUS_REJECTED,
-                "discord_auth_rejection_reason": reason.strip()[:1000],
-            },
-        )
-        await common.memttlcache.delete(_discord_settings_cache_key(guild_id))
-        return config
 
 
 async def _discord_dm_settings(user) -> DiscordGuildSettings:
@@ -233,7 +148,7 @@ async def _discord_dm_settings(user) -> DiscordGuildSettings:
 
 async def _set_discord_dm_settings(user, settings) -> None:
     dm_id = _discord_dm_config_id(user.id)
-    async with state._discord_auth_lock(dm_id):
+    async with state._discord_settings_lock(dm_id):
         await repository.patch_discord_chat_config(
             dm_id,
             {
@@ -247,10 +162,6 @@ async def _set_discord_dm_settings(user, settings) -> None:
             },
             title=f"Discord DM {user}", username=str(user),
         )
-
-
-async def _discord_dm_ai_reply_enabled(user) -> bool:
-    return (await _discord_dm_settings(user)).ai_reply
 
 
 async def _discord_r18_mode(guild) -> int:
