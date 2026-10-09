@@ -8,6 +8,7 @@ import os
 import secrets
 import signal
 import time
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -466,3 +467,87 @@ async def test_native_close_deletes_menu_or_falls_back_to_closed_notice(
     else:
         panel.client.edit_message_text.assert_not_awaited()
     panel.client.answer_callback_query.assert_awaited_once()
+
+
+async def test_business_group_available_without_setting_and_preserves_provider_page(
+    native_panel,
+):
+    panel = native_panel
+    await open_native_panel(panel)
+    await panel.click("groups:0")
+    actions = [
+        button.callback_data.split(":", 3)[3]
+        for row in panel.message.reply_markup.inline_keyboard
+        for button in row
+    ]
+    assert "providers:0" in actions
+    await panel.click("groups:1")
+    await panel.click("group:business:0")
+    assert "Telegram Business" in panel.message.text
+    assert panel.session.entries == ["business_chat_enabled"]
+    assert panel.editor.snapshot()[0]["business_chat_enabled"] is False
+    assert panel.session.back == "groups:1"
+    await panel.click("groups:1")
+    assert any(
+        button.callback_data.endswith(":group:business:0")
+        for row in panel.message.reply_markup.inline_keyboard
+        for button in row
+    )
+
+
+async def test_business_native_toggle_applies_and_persists_without_restart(native_panel):
+    panel = native_panel
+    panel.ns["app_config"].agent = True
+    panel.ns["app_config"].agent_model = "default/example"
+    await open_native_panel(panel)
+    text, markup = panel.ns["_menu"](panel.token, panel.session, "group:business:0")
+    panel.message.text, panel.message.reply_markup = text, markup
+    for expected in (True, False):
+        await panel.click("toggle:0")
+        assert panel.ns["app_config"].business_chat_enabled is expected
+        assert tomllib.loads(panel.editor.path.read_text())["business_chat_enabled"] is expected
+        assert "business_chat_enabled" not in panel.session.dirty
+        assert panel.session.location == "group:business:0"
+        notice = panel.client.answer_callback_query.await_args.kwargs["text"]
+        assert notice == panel.ns["_tr"]("business_saved", panel.session)
+    panel.ns["logger"].error.assert_not_called()
+
+
+async def test_business_toggle_reports_missing_agent(panel):
+    panel.ns["app_config"].agent = False
+    panel.ns["_menu"]("test", panel.session, "group:business:0")
+    request = query(panel, "toggle:0")
+    await panel.ns["private_config_callback"](panel.client, request)
+    assert panel.ns["app_config"].business_chat_enabled is True
+    request.answer.assert_awaited_once_with(
+        panel.ns["_tr"]("business_requires_agent", panel.session), show_alert=True
+    )
+
+
+@pytest.mark.parametrize("error", ["stale_file", "write_failed"])
+async def test_business_failed_save_does_not_enable_runtime(panel, monkeypatch, error):
+    panel.ns["_menu"]("test", panel.session, "group:business:0")
+    if error == "stale_file":
+        with panel.editor.path.open("a") as target:
+            target.write("\n# external edit\n")
+    else:
+        def fail_write(*args):
+            raise SettingsEditError("write_failed")
+        monkeypatch.setattr(panel.editor, "set_value", fail_write)
+    request = query(panel, "toggle:0")
+    await panel.ns["private_config_callback"](panel.client, request)
+    assert panel.ns["app_config"].business_chat_enabled is False
+    assert panel.editor.snapshot()[0]["business_chat_enabled"] is False
+    assert "business_chat_enabled" not in panel.session.dirty
+
+
+async def test_business_typed_switch_also_applies_live_and_consumes_input(panel):
+    panel.session.pending = "business_chat_enabled"
+    panel.session.pending_until = time.monotonic() + 120
+    panel.session.revision = panel.editor.snapshot()[1]
+    panel.message.text = "true"
+    with pytest.raises(pyrogram.StopPropagation):
+        await panel.ns["private_config_input"](panel.client, panel.message)
+    assert panel.ns["app_config"].business_chat_enabled is True
+    assert panel.editor.snapshot()[0]["business_chat_enabled"] is True
+    assert "business_chat_enabled" not in panel.session.dirty

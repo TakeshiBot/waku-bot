@@ -31,6 +31,8 @@ bot:
     delete_provider: 🗑 Xoá provider
     restart: 🔄 Khởi động lại để áp dụng
     saved: Đã lưu an toàn vào file cấu hình. Khởi động lại để áp dụng đầy đủ.
+    business_saved: Đã lưu và áp dụng công tắc Telegram Business ngay.
+    business_requires_agent: Đã bật Business, nhưng cần bật agent và cấu hình agent_model để chat.
     send_value: 'Gửi giá trị mới cho <code>{key}</code> trong 2 phút. Prompt/chuỗi: gửi nguyên văn; danh sách/object:
       dùng JSON hoặc TOML; dùng null để xoá giá trị tuỳ chọn. /cancel để huỷ. Tin giá trị sẽ được xoá nếu bot có
       thể xoá.'
@@ -50,6 +52,7 @@ bot:
       services: Dịch vụ và kết nối
       cache: Cache và avatar
       economy: Coin và chi phí
+      business: Telegram Business
     errors:
       menu_failed: Không cập nhật được menu. Thử nhấn lại nút hoặc mở lại /config.
       missing_file: Không tìm thấy file settings đang được bot sử dụng.

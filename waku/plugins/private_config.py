@@ -38,7 +38,11 @@ _SESSION_TTL = 15 * 60
 _EDIT_TTL = 120
 _PAGE_SIZE = 8
 _MAX_SESSIONS = 100
-_GROUPS = ("base", "agent", "webapp", "rss", "services", "cache", "economy")
+_BUSINESS_SETTING_LOCK = asyncio.Lock()
+_GROUPS = ("base", "agent", "webapp", "rss", "services", "cache", "economy", "business")
+_MENU_GROUPS = tuple(group for group in _GROUPS if group != "business") + (
+    "providers", "business"
+)
 _SESSIONS: dict[str, ConfigSession] = {}
 
 
@@ -155,6 +159,8 @@ def _page(page_text: str, count: int) -> tuple[int, int]:
 
 
 def _group(key: str) -> str:
+    if key.startswith("business_chat_"):
+        return "business"
     if key.startswith("agent"):
         return "agent"
     if key.startswith("webapp") or key.startswith("health_check"):
@@ -168,6 +174,33 @@ def _group(key: str) -> str:
     if key.startswith(("redis", "btts", "manyacg", "aniobjcut", "infographic")):
         return "services"
     return "base"
+
+
+def _apply_live_setting(session: ConfigSession, key: str, value) -> str | None:
+    """Business uses its switch for each reply; other settings require restart."""
+    if key != "business_chat_enabled":
+        session.dirty.add(key)
+        return None
+    app_config.business_chat_enabled = value
+    session.dirty.discard(key)
+    if value and not (app_config.agent and app_config.agent_model):
+        return _tr("business_requires_agent", session)
+    return _tr("business_saved", session)
+
+
+async def _save_setting(session: ConfigSession, key: str, text: str) -> str | None:
+    async def save():
+        await asyncio.to_thread(
+            session.editor.set_value, key, text, session.revision
+        )
+        value = _entry_value(session.editor.snapshot()[0], key)
+        return _apply_live_setting(session, key, value)
+
+    if key == "business_chat_enabled":
+        # Serialize persistence and runtime changes across separate admin menus.
+        async with _BUSINESS_SETTING_LOCK:
+            return await save()
+    return await save()
 
 
 def _menu(token: str, session: ConfigSession, action: str = "home"):
@@ -213,8 +246,10 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
                 changed=len(session.dirty),
             )
         )
-        groups = [(group, _tr("groups." + group, session)) for group in _GROUPS]
-        groups.append(("providers", _tr("providers", session)))
+        groups = [
+            (group, _tr("providers" if group == "providers" else "groups." + group, session))
+            for group in _MENU_GROUPS
+        ]
         for group, label in groups[page * _PAGE_SIZE : (page + 1) * _PAGE_SIZE]:
             destination = "providers:0" if group == "providers" else f"group:{group}:0"
             rows.append([_button(label, token, destination)])
@@ -232,7 +267,7 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
         )
         session.entries = keys
         session.provider_name = None
-        session.back = "groups:0"
+        session.back = f"groups:{_MENU_GROUPS.index(group) // _PAGE_SIZE}"
         page, pages = _page(page_text, len(keys))
         session.entry_parent = f"group:{group}:{page}"
         page_keys = keys[page * _PAGE_SIZE : (page + 1) * _PAGE_SIZE]
@@ -456,15 +491,9 @@ async def private_config_callback(client: Client, query: CallbackQuery):
                     value = _entry_value(values, key)
                     if not isinstance(value, bool) or revision != session.revision:
                         raise SettingsEditError("stale_file")
-                    await asyncio.to_thread(
-                        session.editor.set_value,
-                        key,
-                        str(not value).lower(),
-                        session.revision,
-                    )
-                    session.dirty.add(key)
+                    notice = await _save_setting(session, key, str(not value).lower())
                     committed = True
-                    await query.answer(_tr("saved", session), show_alert=True)
+                    await query.answer(notice or _tr("saved", session), show_alert=True)
                     answered = True
                     action = (
                         session.location
@@ -618,6 +647,7 @@ async def private_config_input(client: Client, message: Message):
         return
     token, session = pair
     async with session.lock:
+        notice = None
         try:
             if not await _is_admin(message.from_user.id):
                 _SESSIONS.pop(token, None)
@@ -640,15 +670,12 @@ async def private_config_input(client: Client, message: Message):
                 )
                 session.dirty.add("agent_providers")
             elif key:
-                await asyncio.to_thread(
-                    session.editor.set_value, key, message.text, session.revision
-                )
-                session.dirty.add(key)
+                notice = await _save_setting(session, key, message.text)
             text, markup = _menu(token, session, session.entry_parent)
             await client.edit_message_text(
                 session.chat_id,
                 session.message_id,
-                _tr("saved", session) + "\n\n" + text,
+                (notice or _tr("saved", session)) + "\n\n" + text,
                 reply_markup=markup,
                 parse_mode=enums.ParseMode.HTML,
             )

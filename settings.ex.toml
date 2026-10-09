@@ -10,6 +10,10 @@ log_level = "INFO"
 lang = "vi"
 nickname = "waku"
 
+# Telegram Business: enable Secretary Mode in BotFather and connect the account.
+# Uses agent_model and agent_prompt; can be toggled immediately in private /config.
+business_chat_enabled = false
+
 # Optional Discord bot, using the AI providers configured below.
 # Enable Message Content Intent and Server Members Intent in the Developer Portal.
 discord_enabled = false

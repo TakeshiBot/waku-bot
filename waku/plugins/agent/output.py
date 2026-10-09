@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Callable
 from datetime import datetime
 
 import pyrogram
@@ -15,6 +16,11 @@ from waku.common.utils import GROUP_CHAT_TYPES
 from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.agent import datatype, state
+from waku.plugins.agent.rich_output import (
+    OfficialRichDraftStreamer,
+    bind_business_message,
+    edit_business_message_text,
+)
 from waku.plugins.agent.styling import (
     convert_md,
     convert_md_chunks,
@@ -92,31 +98,38 @@ async def record_tool_reply(
         logger.debug(f"Failed to cache tool reply: {e.__class__.__name__} - {e}")
 
 
-async def _rich_output_enabled() -> bool:
+async def _rich_output_enabled(message=None) -> bool:
     if not app_config.agent_rich_output:
         return False
-    return not await memttlcache.get(_RICH_DISABLED_KEY, False)
+    connection_id = getattr(message, "business_connection_id", None)
+    suffix = f":business:{connection_id}" if connection_id else ""
+    return not await memttlcache.get(_RICH_DISABLED_KEY + suffix, False)
 
 
-async def _note_rich_result(sent: bool) -> None:
+async def _note_rich_result(sent: bool, message=None) -> None:
+    connection_id = getattr(message, "business_connection_id", None)
+    suffix = f":business:{connection_id}" if connection_id else ""
+    failure_key = _RICH_FAILURE_KEY + suffix
+    disabled_key = _RICH_DISABLED_KEY + suffix
     if sent:
-        await memttlcache.delete(_RICH_FAILURE_KEY)
-        await memttlcache.delete(_RICH_DISABLED_KEY)
+        await memttlcache.delete(failure_key)
+        await memttlcache.delete(disabled_key)
         return
-    failures = int(await memttlcache.get(_RICH_FAILURE_KEY, 0) or 0) + 1
-    await memttlcache.set(_RICH_FAILURE_KEY, failures, ttl=_RICH_FAILURE_TTL)
+    failures = int(await memttlcache.get(failure_key, 0) or 0) + 1
+    await memttlcache.set(failure_key, failures, ttl=_RICH_FAILURE_TTL)
     if failures >= _RICH_FAILURE_LIMIT:
         logger.warning(
             f"Rich message output paused for {_RICH_FAILURE_TTL}s after "
             f"{failures} consecutive send failures"
         )
-        await memttlcache.set(_RICH_DISABLED_KEY, True, ttl=_RICH_FAILURE_TTL)
+        await memttlcache.set(disabled_key, True, ttl=_RICH_FAILURE_TTL)
 
 
 async def _send_rich_payloads(
     client: PyrogramClient,
     message: pyrogram.types.Message,
     payloads: list[pyrogram.types.InputRichMessage],
+    should_send: Callable[[], bool] | None = None,
 ) -> tuple[int, int | None]:
     """Send rich payloads in order, stopping at the first failure.
 
@@ -128,7 +141,11 @@ async def _send_rich_payloads(
         return 0, None
     chat_id = chat.id
     last_id: int | None = None
+    connection_id = getattr(message, "business_connection_id", None)
+    business_kwargs = {"business_connection_id": connection_id} if connection_id else {}
     for index, payload in enumerate(payloads):
+        if should_send is not None and not should_send():
+            return index, last_id
         try:
             last_id = await send_rich_message(
                 client,
@@ -137,19 +154,21 @@ async def _send_rich_payloads(
                 reply_parameters=pyrogram.types.ReplyParameters(message_id=message.id),
                 message_thread_id=message.message_thread_id,
                 direct_messages_topic_id=message.direct_messages_topic_id,
+                **business_kwargs,
             )
         except Exception as e:
             logger.warning(f"Rich message send failed: {e.__class__.__name__} - {e}")
-            await _note_rich_result(False)
+            await _note_rich_result(False, message)
             return index, last_id
-    await _note_rich_result(True)
+    await _note_rich_result(True, message)
     return len(payloads), last_id
 
 
 async def _send_rich_tail_plain(
     message: pyrogram.types.Message,
     payloads: list[pyrogram.types.InputRichMessage],
-) -> None:
+    should_send: Callable[[], bool] | None = None,
+) -> bool:
     text = "\n\n".join(
         part
         for part in (
@@ -159,20 +178,26 @@ async def _send_rich_tail_plain(
         if part
     )
     if not text:
-        return
+        return True
     for chunk in split_plain_text(text):
+        if should_send is not None and not should_send():
+            return False
         try:
-            await message.reply_text(chunk)
+            result = await message.reply_text(chunk)
+            if getattr(message, "business_connection_id", None):
+                bind_business_message(message, result)
         except Exception as e:
             logger.error(
                 f"Failed to send rich fallback text: {e.__class__.__name__} - {e}"
             )
-            return
+            return False
+    return True
 
 
 async def _send_plain_reply(
     message: pyrogram.types.Message,
     markdown: str,
+    should_send: Callable[[], bool] | None = None,
 ) -> pyrogram.types.Message | None:
     """Send markdown as plain text + entities.
 
@@ -182,18 +207,32 @@ async def _send_plain_reply(
     """
     last_msg: pyrogram.types.Message | None = None
     last_error: Exception | None = None
+    incomplete_error: Exception | None = None
     for plain, entities in convert_md_chunks(markdown):
+        if should_send is not None and not should_send():
+            return last_msg
         try:
             last_msg = await message.reply_text(plain, entities=entities)
+            if getattr(message, "business_connection_id", None):
+                bind_business_message(message, last_msg)
             last_error = None
         except Exception as e:
             logger.warning(f"Send failed: {e.__class__.__name__} - {e}")
+            if should_send is not None and not should_send():
+                return last_msg
             try:
                 last_msg = await message.reply_text(plain)
+                if getattr(message, "business_connection_id", None):
+                    bind_business_message(message, last_msg)
                 last_error = None
             except Exception as e:
                 logger.error(f"Send failed: {e.__class__.__name__} - {e}")
                 last_error = e
+                incomplete_error = e
+    if incomplete_error is not None and getattr(
+        message, "business_connection_id", None
+    ):
+        raise incomplete_error
     if last_msg is None and last_error is not None:
         raise last_error
     return last_msg
@@ -203,7 +242,10 @@ async def reply_output(
     client: PyrogramClient,
     message: pyrogram.types.Message,
     text: str,
+    should_send: Callable[[], bool] | None = None,
 ) -> bool:
+    if should_send is not None and not should_send():
+        return False
     if message.chat is None:
         return False
     is_group_chat = message.chat.type in GROUP_CHAT_TYPES
@@ -215,18 +257,25 @@ async def reply_output(
         last_reply_msg: pyrogram.types.Message | None = None
         last_reply_text = ""
         sent_count = 0
-        if await _rich_output_enabled():
+        if await _rich_output_enabled(message):
             payloads = convert_rich_md(text)
             sent_count, last_reply_id = await _send_rich_payloads(
-                client, message, payloads
+                client, message, payloads, should_send=should_send
             )
             if sent_count:
                 last_reply_text = text
             if 0 < sent_count < len(payloads):
-                await _send_rich_tail_plain(message, payloads[sent_count:])
+                if not await _send_rich_tail_plain(
+                    message, payloads[sent_count:], should_send=should_send
+                ):
+                    return False
         if not last_reply_text:
-            last_reply_msg = await _send_plain_reply(message, text)
+            last_reply_msg = await _send_plain_reply(
+                message, text, should_send=should_send
+            )
             last_reply_text = text
+        if should_send is not None and not should_send():
+            return False
         last_reply_message_id = last_reply_id or (
             last_reply_msg.id if last_reply_msg else None
         )
@@ -288,6 +337,9 @@ class TypingKeepAlive:
                 await self.client.send_chat_action(
                     chat_id=chat_id,
                     action=pyrogram.enums.ChatAction.TYPING,
+                    business_connection_id=getattr(
+                        self.message, "business_connection_id", None
+                    ),
                 )
             except asyncio.CancelledError:
                 break
@@ -326,12 +378,16 @@ class StreamingOutput:
         self,
         client: PyrogramClient,
         message: pyrogram.types.Message,
+        should_send: Callable[[], bool] | None = None,
     ):
         self.client = client
         self.message = message
+        self.should_send = should_send
         self.current_text = ""
         self._last_sent_text = ""
         self.reply_message_id: int | None = None
+        self.reply_message: pyrogram.types.Message | None = None
+        self.delivered = False
         self._rich = False
         self.last_edit_time = 0.0
         self.edit_count = 0
@@ -343,6 +399,12 @@ class StreamingOutput:
         self._edit_task: asyncio.Task | None = None
         self._start_task: asyncio.Task | None = None
         self._stop = False
+        self.official_draft = (
+            OfficialRichDraftStreamer(client, message, should_send=should_send)
+            if getattr(message, "business_connection_id", None)
+            else None
+        )
+        self._draft_attempted = False
 
     def _is_within_limits(self) -> bool:
         current_time = asyncio.get_event_loop().time()
@@ -359,7 +421,22 @@ class StreamingOutput:
             return False
         return True
 
+    async def _edit_message(self, chat_id, message_id, text=None, **kwargs):
+        if getattr(self.message, "business_connection_id", None):
+            kwargs.pop("business_connection_id", None)
+            return await edit_business_message_text(
+                self.client,
+                self.message,
+                message_id,
+                text,
+                should_send=self.should_send,
+                **kwargs,
+            )
+        return await self.client.edit_message_text(chat_id, message_id, text, **kwargs)
+
     async def _do_edit(self, text: str):
+        if self.should_send is not None and not self.should_send():
+            return
         chat = self.message.chat
         if self.reply_message_id is None or chat is None or chat.id is None:
             return
@@ -369,20 +446,28 @@ class StreamingOutput:
                 payloads = convert_rich_md(text)
                 if not payloads:
                     return
-                await self.client.edit_message_text(
+                result = await self._edit_message(
                     chat_id,
                     self.reply_message_id,
                     rich_message=payloads[0],
+                    business_connection_id=getattr(
+                        self.message, "business_connection_id", None
+                    ),
                 )
             else:
                 # During streaming, send plain text without entities to avoid
                 # rendering partially-formed markdown. Entities applied at finalize.
-                await self.client.edit_message_text(
+                result = await self._edit_message(
                     chat_id,
                     self.reply_message_id,
                     text[: self.MAX_MESSAGE_LENGTH],
                     parse_mode=pyrogram.enums.ParseMode.DISABLED,
+                    business_connection_id=getattr(
+                        self.message, "business_connection_id", None
+                    ),
                 )
+            if getattr(self.message, "business_connection_id", None):
+                self.reply_message = bind_business_message(self.message, result)
             self._last_sent_text = text
             self.last_edit_time = asyncio.get_event_loop().time()
             self.edit_count += 1
@@ -394,16 +479,19 @@ class StreamingOutput:
             logger.error(f"Error editing message: {e.__class__.__name__} - {e}")
 
     async def _send_new_message(self, text: str):
-        self._rich = await _rich_output_enabled()
+        if self.should_send is not None and not self.should_send():
+            return
+        self._rich = await _rich_output_enabled(self.message)
         if self._rich:
             # Only the first payload opens the stream; the overflow of a
             # >32768-byte answer goes out once at finalize instead of being
             # sent twice.
             payloads = convert_rich_md(text)[:1]
             sent_count, message_id = await _send_rich_payloads(
-                self.client, self.message, payloads
+                self.client, self.message, payloads, should_send=self.should_send
             )
             if sent_count:
+                self.delivered = True
                 if message_id is None:
                     # Without the id the stream can neither edit nor finalize.
                     raise RuntimeError("Rich streaming reply message was not returned")
@@ -414,6 +502,13 @@ class StreamingOutput:
                 return
             self._rich = False
         plain, entities = convert_md(text)
+        if getattr(self.message, "business_connection_id", None):
+            chunks = convert_md_chunks(text, self.MAX_MESSAGE_LENGTH)
+            if not chunks:
+                return
+            plain, entities = chunks[0]
+        if self.should_send is not None and not self.should_send():
+            return
         try:
             reply_message = await self.message.reply_text(
                 plain[: self.MAX_MESSAGE_LENGTH],
@@ -425,6 +520,10 @@ class StreamingOutput:
         if reply_message is None or reply_message.id is None:
             raise RuntimeError("Streaming reply message was not returned")
         self.reply_message_id = reply_message.id
+        self.reply_message = reply_message
+        if getattr(self.message, "business_connection_id", None):
+            bind_business_message(self.message, reply_message)
+        self.delivered = True
         self._last_sent_text = text
         self.last_edit_time = asyncio.get_event_loop().time()
         self.edit_count += 1
@@ -443,48 +542,90 @@ class StreamingOutput:
 
     async def _start(self):
         await self._send_new_message(self.current_text)
+        if self.should_send is not None and not self.should_send():
+            return
         self._edit_task = asyncio.create_task(self._edit_loop())
 
     async def append_delta(self, delta: str):
         if not delta:
             return
+        if self.should_send is not None and not self.should_send():
+            return
         self.current_text += delta
+        if self.official_draft is not None:
+            self.official_draft.update(self.current_text)
+            if not self._draft_attempted:
+                self._draft_attempted = True
+                if await self.official_draft.start():
+                    return
+            elif self.official_draft.supported is not False:
+                return
         if self.start_time == 0.0 and self.current_text.strip():
             self.start_time = asyncio.get_event_loop().time()
             self._stop = False
             self._start_task = asyncio.create_task(self._start())
 
-    async def _finalize_rich(self, text: str) -> None:
+    async def _finalize_rich(self, text: str) -> bool:
+        if self.should_send is not None and not self.should_send():
+            return False
         chat = self.message.chat
         if chat is None or chat.id is None or self.reply_message_id is None:
-            return
+            return False
         chat_id = chat.id
         payloads = convert_rich_md(text)
         if not payloads:
-            return
+            return False
+        complete = True
         try:
-            await self.client.edit_message_text(
+            result = await self._edit_message(
                 chat_id,
                 self.reply_message_id,
                 rich_message=payloads[0],
+                business_connection_id=getattr(
+                    self.message, "business_connection_id", None
+                ),
             )
+            if getattr(self.message, "business_connection_id", None):
+                self.reply_message = bind_business_message(self.message, result)
             self._last_sent_text = text
         except pyrogram.errors.exceptions.bad_request_400.MessageNotModified:
             pass
         except Exception as e:
             logger.error(f"Error editing final message: {e.__class__.__name__} - {e}")
+            complete = False
         # Long answers are split at Telegram's rich message limits; the
         # overflow goes out even when the final edit failed, so no content is
         # dropped.
         if len(payloads) > 1:
             sent_count, _ = await _send_rich_payloads(
-                self.client, self.message, payloads[1:]
+                self.client, self.message, payloads[1:], should_send=self.should_send
             )
             if sent_count < len(payloads) - 1:
-                await _send_rich_tail_plain(self.message, payloads[1 + sent_count :])
+                complete = (
+                    await _send_rich_tail_plain(
+                        self.message,
+                        payloads[1 + sent_count :],
+                        should_send=self.should_send,
+                    )
+                    and complete
+                )
+        return complete
 
     async def finalize(self):
         self._stop = True
+        if self.should_send is not None and not self.should_send():
+            await self.abort()
+            return False
+        if self.official_draft is not None:
+            await self.official_draft.stop()
+            if not self.delivered and not self._start_task and self.current_text:
+                self.delivered = await reply_output(
+                    self.client,
+                    self.message,
+                    self.current_text,
+                    should_send=self.should_send,
+                )
+                return self.delivered
         if self._start_task and not self._start_task.done():
             await self._start_task
         if self._edit_task and not self._edit_task.done():
@@ -494,6 +635,7 @@ class StreamingOutput:
             except asyncio.CancelledError:
                 pass
         chat = self.message.chat
+        complete = self.delivered
         if (
             self.reply_message_id is not None
             and chat is not None
@@ -503,17 +645,31 @@ class StreamingOutput:
             chat_id = chat.id
             text = self.current_text
             if self._rich:
-                await self._finalize_rich(text)
+                complete = await self._finalize_rich(text)
             else:
                 plain, entities = convert_md(text)
+                business_chunks = []
+                if getattr(self.message, "business_connection_id", None):
+                    business_chunks = convert_md_chunks(text, self.MAX_MESSAGE_LENGTH)
+                    if business_chunks:
+                        plain, entities = business_chunks[0]
                 if text != self._last_sent_text or entities:
                     try:
-                        await self.client.edit_message_text(
+                        if self.should_send is not None and not self.should_send():
+                            return False
+                        result = await self._edit_message(
                             chat_id,
                             self.reply_message_id,
                             plain[: self.MAX_MESSAGE_LENGTH],
                             entities=entities,
+                            business_connection_id=getattr(
+                                self.message, "business_connection_id", None
+                            ),
                         )
+                        if getattr(self.message, "business_connection_id", None):
+                            self.reply_message = bind_business_message(
+                                self.message, result
+                            )
                         self._last_sent_text = text
                     except (
                         pyrogram.errors.exceptions.bad_request_400.MessageNotModified
@@ -521,6 +677,28 @@ class StreamingOutput:
                         pass
                     except Exception as e:
                         logger.error(f"Error editing final message: {e}")
+                        complete = False
+                # A fallback preview contains only the first chunk. Deliver
+                # the final overflow once, preserving its UTF-16 entities.
+                for chunk, chunk_entities in business_chunks[1:]:
+                    if self.should_send is not None and not self.should_send():
+                        return False
+                    try:
+                        result = await self.message.reply_text(
+                            chunk, entities=chunk_entities
+                        )
+                    except Exception:
+                        if self.should_send is not None and not self.should_send():
+                            return False
+                        try:
+                            result = await self.message.reply_text(chunk)
+                        except Exception as e:
+                            logger.error(
+                                f"Final overflow send failed: {e.__class__.__name__}"
+                            )
+                            complete = False
+                            break
+                    bind_business_message(self.message, result)
         if self.reply_message_id and self.is_group_chat and self.user and self.user.id:
             bot_reply = datatype.BotLastReply(
                 message_id=self.reply_message_id,
@@ -538,9 +716,12 @@ class StreamingOutput:
                     bot_reply,
                     ttl=300,
                 )
+        return complete
 
     async def abort(self):
         self._stop = True
+        if self.official_draft is not None:
+            await self.official_draft.stop()
         for task in (self._start_task, self._edit_task):
             if task and not task.done():
                 task.cancel()

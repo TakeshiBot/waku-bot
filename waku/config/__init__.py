@@ -60,6 +60,9 @@ class _AppConfig(pydantic.BaseModel):
     fans_channel: str | int | None = None  # username or chat_id
     nickname: str = "waku"
 
+    # Reply on behalf of connected Telegram Business accounts when permitted.
+    business_chat_enabled: bool = False
+
     # Discord is an optional application layer; Telegram remains the default.
     discord_enabled: bool = False
     discord_token: str = ""

@@ -31,6 +31,8 @@ bot:
     delete_provider: 🗑 Delete provider
     restart: 🔄 Restart to apply
     saved: Saved safely to the settings file. Restart to fully apply changes.
+    business_saved: Saved and applied the Telegram Business switch immediately.
+    business_requires_agent: Business is enabled, but agent and agent_model must be configured for chat.
     send_value: Send a new value for <code>{key}</code> within 2 minutes. Send strings/prompts as plain text, lists/objects
       as JSON or TOML, or null to clear an optional value. /cancel aborts. The input message will be deleted if
       possible.
@@ -49,6 +51,7 @@ bot:
       services: Services and connections
       cache: Cache and avatars
       economy: Coins and costs
+      business: Telegram Business
     errors:
       menu_failed: Could not update the menu. Try the button again or reopen /config.
       missing_file: No active settings file was found.

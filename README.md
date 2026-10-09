@@ -18,6 +18,7 @@ hãy đọc lịch sử commit và sao lưu cấu hình, cơ sở dữ liệu, d
 - [Giới thiệu](docs/docs/index.md)
 - [Triển khai](docs/docs/self-host.md)
 - [Bảng quản trị Mini App](docs/docs/webapp.md)
+- [Telegram Business](docs/docs/telegram-business.md)
 - [Quốc tế hóa và tiếng Việt](docs/docs/i18n.md)
 - [Đổi tên dự án và múi giờ](docs/docs/branding-timezone.md)
 
@@ -50,6 +51,9 @@ Các dữ liệu cũ được xử lý theo [hướng dẫn nâng cấp](docs/do
 Để bật Discord và dùng các menu/lệnh của bản đã mod, xem
 [hướng dẫn Discord](docs/docs/discord.md). Hai nền tảng dùng chung cấu hình provider
 AI; settings và quyền quản trị Discord được lưu riêng với Telegram.
+
+Bot có thể trả lời tin nhắn thay mặt tài khoản đã kết nối qua Telegram Business.
+Xem [cách bật Business và công tắc trong /config](docs/docs/telegram-business.md).
 
 ## Giấy phép và nguồn gốc
 

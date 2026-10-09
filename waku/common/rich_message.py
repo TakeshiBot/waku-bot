@@ -23,6 +23,9 @@ from pyrogram.raw.base.input_rich_message import (
 )
 from pyrogram.raw.base.reply_markup import ReplyMarkup as _RawReplyMarkup
 from pyrogram.raw.functions.messages.send_message import SendMessage as _RawSendMessage
+from pyrogram.raw.types.update_bot_new_business_message import (
+    UpdateBotNewBusinessMessage as _RawUpdateBotNewBusinessMessage,
+)
 from pyrogram.raw.types.update_message_id import UpdateMessageID as _RawUpdateMessageID
 from pyrogram.raw.types.update_new_channel_message import (
     UpdateNewChannelMessage as _RawUpdateNewChannelMessage,
@@ -30,6 +33,7 @@ from pyrogram.raw.types.update_new_channel_message import (
 from pyrogram.raw.types.update_new_message import (
     UpdateNewMessage as _RawUpdateNewMessage,
 )
+from pyrogram.raw.types.update_short import UpdateShort as _RawUpdateShort
 from pyrogram.raw.types.update_short_sent_message import (
     UpdateShortSentMessage as _RawUpdateShortSentMessage,
 )
@@ -68,15 +72,20 @@ def rich_html_plain_text(html_text: str) -> str:
 
 def sent_message_id(result: object) -> int | None:
     """Message id carried by a ``messages.SendMessage`` reply, if any."""
-    if isinstance(result, _RawUpdateShortSentMessage):
+    if isinstance(result, _RawUpdateShort):
+        return sent_message_id(result.update)
+    if isinstance(result, (_RawUpdateShortSentMessage, _RawUpdateMessageID)):
         return result.id
+    if isinstance(
+        result,
+        (_RawUpdateNewMessage, _RawUpdateNewChannelMessage, _RawUpdateBotNewBusinessMessage),
+    ):
+        message = getattr(result, "message", None)
+        return message.id if message is not None else None
     for update in getattr(result, "updates", None) or ():
-        if isinstance(update, _RawUpdateMessageID):
-            return update.id
-        if isinstance(update, (_RawUpdateNewMessage, _RawUpdateNewChannelMessage)):
-            message = getattr(update, "message", None)
-            if message is not None:
-                return message.id
+        message_id = sent_message_id(update)
+        if message_id is not None:
+            return message_id
     return None
 
 
@@ -160,6 +169,7 @@ async def send_rich_message(
     message_thread_id: int | None = None,
     direct_messages_topic_id: int | None = None,
     reply_markup: _RawReplyMarkup | None = None,
+    business_connection_id: str | None = None,
 ) -> int | None:
     """Send one rich message, returning the id of the sent message.
 
@@ -169,6 +179,11 @@ async def send_rich_message(
     peer = await client.resolve_peer(chat_id)
     if peer is None:
         raise ValueError(f"Cannot resolve peer for chat {chat_id}")
+    business_kwargs = (
+        {"business_connection_id": business_connection_id}
+        if business_connection_id
+        else {}
+    )
     result = await client.invoke(
         _RawSendMessage(
             peer=peer,
@@ -179,6 +194,7 @@ async def send_rich_message(
             ),
             rich_message=rich_message,
             reply_markup=reply_markup,
-        )
+        ),
+        **business_kwargs,
     )
     return sent_message_id(result)
