@@ -60,6 +60,13 @@ class _AppConfig(pydantic.BaseModel):
     fans_channel: str | int | None = None  # username or chat_id
     nickname: str = "waku"
 
+    # Discord is an optional application layer; Telegram remains the default.
+    discord_enabled: bool = False
+    discord_token: str = ""
+    discord_keywords: list[str] | None = None
+    discord_channel_allowlist: list[int] = []
+    discord_admin_users: list[int] = []
+
     # health check server for container monitoring
     #
     # Deprecated: these fields are kept as aliases for the `webapp_*` settings
@@ -659,6 +666,8 @@ def reload_config(locale: str | None = None) -> tuple[bool, str, list[str]]:
             "api_id",
             "api_hash",
             "session_name",
+            "discord_enabled",
+            "discord_token",
             # Rebinding the HTTP listener needs a restart.
             "webapp_host",
             "webapp_port",

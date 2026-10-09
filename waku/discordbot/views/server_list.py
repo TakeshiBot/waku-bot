@@ -1,0 +1,128 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+import discord
+
+from waku import common
+from waku.config import app_config
+from waku.database.discord import list_authorized_discord_servers
+from waku.logger import logger
+
+from .. import state
+from ..constants import _DISCORD_SERVER_LIST_RELOAD_ID, _DISCORD_SERVER_MENU_CACHE_KEY
+from ..permissions import _is_discord_user_bot_admin
+from ..settings import _r18_mode_label
+
+
+async def _discord_authorized_server_rows() -> list[tuple[int, dict]]:
+    return await list_authorized_discord_servers()
+
+def _build_discord_server_list_embed(rows: list[tuple[int, dict]]) -> discord.Embed:
+    embed = discord.Embed(
+        title="Authorized Discord Servers",
+        description=(
+            "Servers currently authorized for Waku Discord features.\n"
+            "Use **Reload** to refresh this menu."
+        ),
+        color=0x8B5CF6,
+        timestamp=datetime.now(UTC),
+    )
+    if not rows:
+        embed.description = "No authorized Discord servers."
+        embed.color = 0x64748B
+    shown = 0
+    for guild_id, config in rows[:25]:
+        guild = state.discord_client.get_guild(guild_id) if state.discord_client else None
+        joined = guild is not None
+        name = guild.name if joined else "Unknown / not currently joined"
+        try:
+            r18_mode = int(config.get("discord_r18_mode", 2 if config.get("discord_allow_r18", False) else 0))
+        except (TypeError, ValueError):
+            r18_mode = 0
+        ai_reply = bool(config.get("discord_ai_reply", True))
+        status = "🟢 Joined" if joined else "⚫ Not joined"
+        field_name = f"{'✅' if joined else '❔'} {name}"[:100]
+        field_value = (
+            f"**Guild ID:** `{guild_id}`\n"
+            f"**Status:** {status}\n"
+            f"**AI Reply:** `{'ON' if ai_reply else 'OFF'}`\n"
+            f"**R18 images:** `{_r18_mode_label(bool(config.get('setu_enabled', True)), r18_mode)}`"
+        )
+        # Discord limits an entire embed to 6,000 characters, not just each field.
+        if len(embed) + len(field_name) + len(field_value) > 5800:
+            break
+        embed.add_field(name=field_name, value=field_value, inline=False)
+        shown += 1
+    if shown < len(rows):
+        embed.set_footer(text=f"Showing first {shown} of {len(rows)} servers • Last updated")
+    else:
+        embed.set_footer(text="Last updated")
+    return embed
+
+async def _remember_discord_server_menu(message: discord.Message) -> None:
+    try:
+        menus: list[dict] = await common.memttlcache.get(_DISCORD_SERVER_MENU_CACHE_KEY, [])
+        menus = [
+            item
+            for item in menus
+            if item.get("message_id") != message.id
+            and item.get("channel_id") != message.channel.id
+        ]
+        menus.insert(
+            0,
+            {
+                "channel_id": message.channel.id,
+                "message_id": message.id,
+                "created_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        await common.memttlcache.set(
+            _DISCORD_SERVER_MENU_CACHE_KEY,
+            menus[:20],
+            ttl=app_config.cachettl_agent_history,
+        )
+    except Exception as e:
+        logger.debug(f"Failed to remember Discord server menu: {e.__class__.__name__}: {e}")
+
+class DiscordServerListView(discord.ui.View):
+    def __init__(self) -> None:
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="Reload",
+        style=discord.ButtonStyle.primary,
+        emoji="🔄",
+        custom_id=_DISCORD_SERVER_LIST_RELOAD_ID,
+    )
+    async def reload_servers(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if not _is_discord_user_bot_admin(interaction.user):
+            await interaction.response.send_message(
+                "Only bot admins can reload this menu.", ephemeral=True
+            )
+            return
+        rows = await _discord_authorized_server_rows()
+        await interaction.response.edit_message(
+            embed=_build_discord_server_list_embed(rows),
+            view=self,
+        )
+        if interaction.message is not None:
+            await _remember_discord_server_menu(interaction.message)
+        logger.info(
+            "Discord server list menu reloaded: "
+            f"user={interaction.user.id} servers={len(rows)}"
+        )
+
+async def _send_discord_server_list(message: discord.Message) -> None:
+    rows = await _discord_authorized_server_rows()
+    sent = await message.channel.send(
+        embed=_build_discord_server_list_embed(rows),
+        view=DiscordServerListView(),
+    )
+    await _remember_discord_server_menu(sent)
+    logger.info(
+        "Discord server list menu sent: "
+        f"channel={message.channel.id} message={sent.id} servers={len(rows)}"
+    )

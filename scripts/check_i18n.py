@@ -16,6 +16,8 @@ from waku.i18n import i18n  # noqa: E402
 FIELDS = re.compile(r"(?<!\{)\{([a-zA-Z_][a-zA-Z_0-9]*)(?:![rsa])?(?::[^{}]*)?\}(?!\})")
 HAN = re.compile(r"[\u3400-\u9fff]")
 LEGACY_TOKENS = {
+    # Preserve the old Discord command aliases; these are parser tokens.
+    "waku/discordbot/constants.py": {"涩图", "色图"},
     "waku/plugins/inlinequery/main.py": {"无语"},
     "waku/plugins/inlinequery/manomeme/utils.py": {
         "病娇",

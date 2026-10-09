@@ -1,7 +1,7 @@
 [project]
 name = "waku-bot"
 version = "2.9.0"
-description = "waku-bot: a Vietnamese-first Telegram bot"
+description = "waku-bot: a Vietnamese-first Telegram and Discord bot"
 readme = "README.md"
 license = "AGPL-3.0"
 requires-python = "==3.13.*"
@@ -16,6 +16,7 @@ dependencies = [
     "asyncpg>=0.30.0",
     "crawl4ai>=0.9.0",
     "ddgs>=9.2.3",
+    "discord-py>=2.5.2,<3",
     "dynaconf>=3.2.13",
     "emoji>=2.11",
     "fastapi>=0.121.0",

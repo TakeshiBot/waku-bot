@@ -70,6 +70,17 @@ class ChatConfig:
     group_memory_enabled: bool = True
     sticker_memory_enabled: bool = True
     parse_wechat_enabled: bool = True
+    discord_enabled: bool = False
+    discord_muted: bool = False
+    discord_allow_r18: bool = False
+    discord_r18_mode: int = 0
+    discord_ai_reply: bool = True
+    discord_auth_status: str = "none"
+    discord_auth_requester_id: int | None = None
+    discord_auth_channel_id: int | None = None
+    discord_auth_requested_at: str | None = None
+    discord_auth_rejection_reason: str | None = None
+    discord_auth_review_messages: list[dict] | None = None
     rss_agent_summary: bool = False
     rss_agent_broadcast: bool = False
     verify_enabled: bool = False
@@ -107,6 +118,19 @@ class ChatConfig:
             group_memory_enabled=data.get("group_memory_enabled", True),
             sticker_memory_enabled=data.get("sticker_memory_enabled", True),
             parse_wechat_enabled=data.get("parse_wechat_enabled", True),
+            discord_enabled=data.get("discord_enabled", False),
+            discord_muted=data.get("discord_muted", False),
+            discord_allow_r18=data.get("discord_allow_r18", False),
+            discord_r18_mode=data.get(
+                "discord_r18_mode", 2 if data.get("discord_allow_r18", False) else 0
+            ),
+            discord_ai_reply=data.get("discord_ai_reply", True),
+            discord_auth_status=data.get("discord_auth_status", "none"),
+            discord_auth_requester_id=data.get("discord_auth_requester_id"),
+            discord_auth_channel_id=data.get("discord_auth_channel_id"),
+            discord_auth_requested_at=data.get("discord_auth_requested_at"),
+            discord_auth_rejection_reason=data.get("discord_auth_rejection_reason"),
+            discord_auth_review_messages=data.get("discord_auth_review_messages"),
             rss_agent_summary=data.get("rss_agent_summary", False),
             rss_agent_broadcast=data.get("rss_agent_broadcast", False),
             verify_enabled=data.get("verify_enabled", False),
@@ -300,6 +324,31 @@ class ChatData(Base):
 
     def __repr__(self) -> str:
         return f"<ChatData(id={self.id}, title='{self.title}', username='{self.username}')>"
+
+
+class DiscordChatData(Base):
+    """Discord-only guild/DM settings; IDs never share Telegram storage."""
+
+    __tablename__ = "discord_chat_data"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    config: Mapped[dict] = mapped_column(JSON, default=lambda: asdict(ChatConfig()))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    @property
+    def chat_config(self) -> ChatConfig:
+        return ChatConfig.from_dict(self.config)
+
+    @chat_config.setter
+    def chat_config(self, config: ChatConfig) -> None:
+        self.config = config.to_dict()
 
 
 class Quote(Base):

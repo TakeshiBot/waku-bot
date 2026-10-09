@@ -15,6 +15,7 @@ from waku.bot import jobs
 from waku.bot.client import client
 from waku.config import app_config
 from waku.database import db
+from waku.discordbot import start_discord_bot, stop_discord_bot
 from waku.logger import logger
 from waku.loop_monitor import LoopLagMonitor
 from waku.plugins.verify import verify as verify_plugin
@@ -312,6 +313,12 @@ async def _setup_menu_button(client: Client) -> None:
 async def stop_bot(client: Client = client):
     logger.info(i18n.t("log.stopping", locale=app_config.lang))
 
+    # Discord uses shared model clients, the scheduler and DB: stop it first.
+    try:
+        await stop_discord_bot()
+    except Exception as error:
+        logger.warning("Discord shutdown failed: {}", type(error).__name__)
+
     # Close code repository
     if app_config.agent and app_config.agent_code_awareness:
         try:
@@ -367,6 +374,16 @@ async def main():
         await webapp_server.start()
 
     await client.start()
+
+    try:
+        await start_discord_bot()
+    except Exception as error:
+        # An optional platform must not prevent the Telegram bot from running.
+        logger.error("Discord startup failed: {}", type(error).__name__)
+        try:
+            await stop_discord_bot()
+        except Exception as cleanup_error:
+            logger.warning("Discord cleanup failed: {}", type(cleanup_error).__name__)
 
     # Start Telegram session health monitor (force-restarts zombie sessions
     # that kurigram fails to recover on its own after silent TCP drops).

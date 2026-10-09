@@ -10,6 +10,17 @@ log_level = "INFO"
 lang = "vi"
 nickname = "waku"
 
+# Optional Discord bot, using the AI providers configured below.
+# Enable Message Content Intent and Server Members Intent in the Developer Portal.
+discord_enabled = false
+discord_token = ""
+# Discord user IDs only; Telegram owners are not Discord administrators.
+discord_admin_users = []
+# Empty allowlist permits all channels in an authorized server.
+discord_channel_allowlist = []
+# Omit keywords to use the bot nickname; keep prefix commands such as !waku.
+# discord_keywords = ["waku"]
+
 # Telegram Mini App management panel.
 # webapp = false
 # webapp_host = "0.0.0.0"

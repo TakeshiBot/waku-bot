@@ -1,0 +1,753 @@
+from __future__ import annotations
+
+import asyncio
+import io
+import re
+from datetime import UTC, datetime, timedelta
+from hashlib import md5
+from types import SimpleNamespace
+
+import discord
+from pydantic_ai import RunContext
+
+from waku import common
+from waku.config import app_config
+from waku.logger import logger
+from waku.services.manyacg import manyacg_client
+from waku.timezone import BOT_TIMEZONE
+
+from . import state
+from .media import (
+    _download_image_bytes,
+    _fetch_discord_anime_artwork,
+    _image_filename,
+    _search_web_images,
+    _send_discord_anime_photo_card,
+)
+from .messages import _resolve_discord_channel
+from .models import DiscordContextDeps, DiscordScheduleResult, _DiscordScheduledJob
+from .permissions import _discord_allowed_mentions, _is_discord_bot_admin
+from .settings import _contains_r18_keyword, _discord_r18_mode
+from .state import _discord_image_lock
+
+_DISCORD_SCHEDULE_PREFIXES = {
+    "discord_schedule_msg": ("message", False),
+    "discord_schedule_image": ("image", False),
+    "discord_schedule_repeat_msg": ("message", True),
+    "discord_schedule_repeat_image": ("image", True),
+}
+_DISCORD_MIN_REPEAT_SECONDS = 60
+_DISCORD_READY_TIMEOUT = 45
+_DISCORD_READY_POLL = 0.25
+_DISCORD_RETRY_LIMIT = 3
+
+
+def _add_discord_job(method, *args, **kwargs):
+    job = getattr(common.jobqueue, method)(*args, **kwargs)
+    # The old Discord scheduler allowed one minute of event-loop/startup lag.
+    # Keep that policy for Discord without changing Telegram job defaults.
+    if job is not None:
+        job.modify(misfire_grace_time=60, coalesce=True)
+    return job
+
+
+async def _ready_discord_client():
+    """Persisted jobs may fire while Telegram starts before Discord connects."""
+    if not app_config.discord_enabled:
+        return None
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _DISCORD_READY_TIMEOUT
+    while loop.time() < deadline and not state.discord_stopping:
+        client = state.discord_client
+        if client is not None and client.is_ready():
+            return client
+        task = state.discord_task
+        if task is not None and task.done():
+            return None
+        await asyncio.sleep(_DISCORD_READY_POLL)
+    return None
+
+
+def _retry_discord_job(job_id, callback, args, attempt):
+    if not app_config.discord_enabled or not job_id:
+        return
+    # A recurring job already has its next run; never replace its interval.
+    if common.jobqueue.get_job(job_id) is not None:
+        return
+    if attempt >= _DISCORD_RETRY_LIMIT:
+        logger.error(f"Scheduled Discord job could not connect after retries: {job_id}")
+        return
+    _add_discord_job("add_onetime_job",
+        job_id,
+        callback,
+        datetime.now(UTC) + timedelta(seconds=60),
+        args=[*args, attempt + 1],
+    )
+    logger.warning(f"Scheduled Discord job deferred while connecting: {job_id}")
+
+def _discord_schedule_timezone():
+    return BOT_TIMEZONE
+
+def _clean_discord_job_id(job_id: str) -> str:
+    return job_id.removesuffix("_memory")
+
+def _parse_discord_scheduled_job(job) -> _DiscordScheduledJob | None:
+    job_id = _clean_discord_job_id(str(job.id))
+    parts = job_id.split(":")
+    if len(parts) < 6 or parts[0] not in _DISCORD_SCHEDULE_PREFIXES:
+        return None
+    try:
+        guild_id = int(parts[1])
+        channel_id = int(parts[2])
+        user_id = int(parts[3])
+    except ValueError:
+        return None
+    args = list(getattr(job, "args", []) or [])
+    kind, recurring = _DISCORD_SCHEDULE_PREFIXES[parts[0]]
+    if kind == "image":
+        image_kind = str(args[1]) if len(args) >= 2 else "image"
+        query = str(args[2]) if len(args) >= 3 and args[2] else ""
+        summary = f"{image_kind} image {query}".strip()[:120]
+    else:
+        summary = str(args[2])[:120] if len(args) >= 3 else str(args[1])[:120] if len(args) >= 2 else "message"
+    return _DiscordScheduledJob(
+        job_id=job_id,
+        guild_id=guild_id,
+        channel_id=channel_id,
+        user_id=user_id,
+        run_time=getattr(job, "next_run_time", None),
+        summary=summary,
+        kind=kind,
+        recurring=recurring,
+    )
+
+def _discord_scheduled_jobs(
+    guild_id: int,
+    channel_id: int | None = None,
+    user_id: int | None = None,
+) -> list[_DiscordScheduledJob]:
+    jobs: list[_DiscordScheduledJob] = []
+    for job in common.jobqueue.get_all_jobs():
+        parsed = _parse_discord_scheduled_job(job)
+        if parsed is None or parsed.guild_id != guild_id:
+            continue
+        if channel_id is not None and parsed.channel_id != channel_id:
+            continue
+        if user_id is not None and parsed.user_id != user_id:
+            continue
+        jobs.append(parsed)
+    return sorted(jobs, key=lambda item: item.run_time or datetime.max.replace(tzinfo=UTC))
+
+def _format_discord_scheduled_job(job: _DiscordScheduledJob, index: int) -> str:
+    when = job.run_time.isoformat() if job.run_time else "unknown time"
+    repeat = "repeat " if job.recurring else ""
+    return f"{index}. [{when}] <#{job.channel_id}> - {repeat}{job.kind}: {job.summary} - id={job.job_id}"
+
+def _discord_reminder_text(
+    text: str, target_user_ids: int | list[int] | tuple[int, ...]
+) -> str:
+    raw_ids = [target_user_ids] if isinstance(target_user_ids, int) else target_user_ids
+    user_ids: list[int] = []
+    for raw_id in raw_ids:
+        try:
+            user_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if user_id > 0:
+            user_ids.append(user_id)
+    reminder_text = text.strip()
+    mentions = [f"<@{user_id}>" for user_id in dict.fromkeys(user_ids)]
+    prefix = " ".join(mention for mention in mentions if mention not in reminder_text)
+    return f"{prefix} {reminder_text}" if prefix else reminder_text
+
+def _discord_image_message_parts(
+    caption: str | None,
+    target_user_ids: int | list[int] | tuple[int, ...] | None,
+) -> tuple[str | None, str]:
+    caption_text = (caption or "").strip()
+    raw_ids = [target_user_ids] if isinstance(target_user_ids, int) else target_user_ids or []
+    mentions: list[str] = []
+    for raw_id in raw_ids:
+        try:
+            user_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if user_id > 0:
+            mention = f"<@{user_id}>"
+            if mention not in mentions:
+                mentions.append(mention)
+    mention_prefix = " ".join(mention for mention in mentions if mention not in caption_text)
+    if mentions and caption_text:
+        return f"{mention_prefix} {caption_text}".strip(), ""
+    if "@everyone" in caption_text or "@here" in caption_text:
+        return caption_text, ""
+    return mention_prefix or None, caption_text
+
+async def _scheduled_discord_text_job(
+    channel_id: int,
+    target_user_ids: int | list[int] | tuple[int, ...],
+    text: str,
+    allow_everyone: bool = False,
+    job_id: str | None = None,
+    repeat_until: str | None = None,
+    retry_attempt: int = 0,
+) -> None:
+    if repeat_until:
+        try:
+            until = datetime.fromisoformat(repeat_until)
+            if until.tzinfo is None:
+                until = until.replace(tzinfo=UTC)
+            if datetime.now(UTC) > until.astimezone(UTC):
+                if job_id:
+                    common.jobqueue.remove_job(job_id)
+                return
+        except ValueError:
+            pass
+    client = await _ready_discord_client()
+    if client is None:
+        _retry_discord_job(
+            job_id, _scheduled_discord_text_job,
+            [channel_id, target_user_ids, text, allow_everyone, job_id, repeat_until],
+            retry_attempt,
+        )
+        return
+    channel = client.get_channel(channel_id)
+    if channel is None:
+        try:
+            channel = await client.fetch_channel(channel_id)
+        except Exception as e:
+            logger.error(
+                "Scheduled Discord message failed to fetch channel: "
+                f"channel={channel_id} error={e.__class__.__name__}"
+            )
+            return
+    if not isinstance(channel, discord.abc.Messageable):
+        logger.error(f"Scheduled Discord target is not messageable: channel={channel_id}")
+        return
+    try:
+        reminder_text = _discord_reminder_text(text, target_user_ids)
+        if len(reminder_text) > 2000:
+            logger.error(f"Scheduled Discord message exceeds 2000 characters: channel={channel_id}")
+            return
+        await channel.send(
+            reminder_text,
+            allowed_mentions=_discord_allowed_mentions(allow_everyone),
+        )
+        logger.debug(f"Scheduled Discord message sent successfully: channel={channel_id}")
+    except Exception as e:
+        logger.error(f"Scheduled Discord message failed: {e.__class__.__name__}")
+
+async def _scheduled_discord_image_job(
+    channel_id: int,
+    image_kind: str,
+    query: str | None = None,
+    caption: str | None = None,
+    allow_everyone: bool = False,
+    job_id: str | None = None,
+    repeat_until: str | None = None,
+    target_user_ids: int | list[int] | tuple[int, ...] | None = None,
+    retry_attempt: int = 0,
+) -> None:
+    if repeat_until:
+        try:
+            until = datetime.fromisoformat(repeat_until)
+            if until.tzinfo is None:
+                until = until.replace(tzinfo=UTC)
+            if datetime.now(UTC) > until.astimezone(UTC):
+                if job_id:
+                    common.jobqueue.remove_job(job_id)
+                return
+        except ValueError:
+            pass
+    client = await _ready_discord_client()
+    if client is None:
+        _retry_discord_job(
+            job_id, _scheduled_discord_image_job,
+            [channel_id, image_kind, query, caption, allow_everyone, job_id, repeat_until, target_user_ids],
+            retry_attempt,
+        )
+        return
+    channel = client.get_channel(channel_id)
+    if channel is None:
+        try:
+            channel = await client.fetch_channel(channel_id)
+        except Exception as e:
+            logger.error(
+                "Scheduled Discord image failed to fetch channel: "
+                f"channel={channel_id} error={e.__class__.__name__}"
+            )
+            return
+    if not isinstance(channel, discord.abc.Messageable):
+        logger.error(f"Scheduled Discord image target is not messageable: channel={channel_id}")
+        return
+
+    message_content, embed_caption_text = _discord_image_message_parts(caption, target_user_ids)
+    if message_content and len(message_content) > 2000:
+        logger.error(f"Scheduled Discord image caption exceeds 2000 characters: channel={channel_id}")
+        return
+    image_lock = _discord_image_lock()
+    try:
+        async with image_lock:
+            if image_kind == "anime":
+                guild = getattr(channel, "guild", None)
+                r18_mode = await _discord_r18_mode(guild)
+                if manyacg_client is None:
+                    await channel.send("ManyACG is not configured, so Waku cannot send anime photos yet.")
+                    return
+                fetched = await _fetch_discord_anime_artwork((query or "").strip(), r18_mode=r18_mode)
+                if fetched is None:
+                    await channel.send("Could not fetch a scheduled anime image.")
+                    return
+                artwork, picture = fetched
+                sent = await _send_discord_anime_photo_card(
+                    SimpleNamespace(guild=guild, channel=channel),
+                    artwork,
+                    picture,
+                    channel=channel,
+                    content=message_content,
+                    caption=embed_caption_text,
+                    allowed_mentions=_discord_allowed_mentions(allow_everyone),
+                )
+                if sent:
+                    logger.info(f"discord_image_send_success scheduled channel={channel_id} kind=anime")
+                else:
+                    logger.warning(f"discord_image_send_failed scheduled channel={channel_id} kind=anime")
+                return
+
+            search_query = (query or "anime image").strip()
+            r18_mode = await _discord_r18_mode(getattr(channel, "guild", None))
+            if r18_mode == 0 and _contains_r18_keyword(search_query):
+                logger.warning(f"Scheduled Discord web image blocked by R18 policy: channel={channel_id}")
+                return
+            results = await _search_web_images(search_query)
+            for result in results:
+                image_url = result.get("image") or result.get("thumbnail")
+                if not image_url:
+                    continue
+                title = str(result.get("title") or search_query)
+                source_url = str(result.get("url") or image_url)
+                if r18_mode == 0 and _contains_r18_keyword(" ".join([title, source_url, str(image_url)])):
+                    continue
+                downloaded = await _download_image_bytes(str(image_url))
+                if downloaded is None:
+                    continue
+                data, content_type = downloaded
+                file = discord.File(io.BytesIO(data), filename=_image_filename(content_type))
+                embed = discord.Embed(
+                    title=title[:256],
+                    url=source_url,
+                    description=embed_caption_text or f"Scheduled image: `{search_query[:120]}`",
+                    color=0x8AC5FF,
+                )
+                embed.set_image(url=f"attachment://{file.filename}")
+                await channel.send(
+                    content=message_content,
+                    embed=embed,
+                    file=file,
+                    allowed_mentions=_discord_allowed_mentions(allow_everyone),
+                )
+                logger.info(f"discord_image_send_success scheduled channel={channel_id} kind=web")
+                return
+            await channel.send("Could not find a downloadable scheduled image.")
+    except Exception as e:
+        logger.error(f"Scheduled Discord image failed: {e.__class__.__name__}")
+
+async def schedule_discord_message(
+    ctx: RunContext[DiscordContextDeps],
+    schedule_time: str | None,
+    text: str,
+    send_immediately: bool = False,
+    target_user_ids: list[int] | None = None,
+    repeat_every_seconds: int | None = None,
+    repeat_until: str | None = None,
+    target_channel_id: int | None = None,
+    allow_everyone: bool = False,
+) -> DiscordScheduleResult:
+    """Schedule a text message/reminder in the current Discord channel.
+
+    Use this when the user asks Waku to remind them, schedule a reminder, or
+    send a text message later. If the user did not provide a clear time, ask a
+    follow-up question instead of guessing.
+
+    Args:
+        schedule_time: ISO 8601 datetime string in the future.
+        text: Reminder/message text to send.
+        send_immediately: If True, send text immediately without scheduling.
+        target_user_ids: Discord user IDs to mention when the reminder fires.
+            Use IDs from explicit user mentions/lookup in the user's request. If
+            omitted, the tool mentions explicit non-bot users in the current
+            message, otherwise the requester.
+        repeat_every_seconds: Bot-admin-only repeat interval in seconds.
+        repeat_until: Bot-admin-only ISO 8601 end time for recurring schedules.
+        target_channel_id: Bot-admin-only target channel ID for cross-channel sends.
+        allow_everyone: Bot-admin-only permission to allow @everyone/@here mentions.
+    """
+    message = ctx.deps.message
+    if message.guild is None:
+        return DiscordScheduleResult(success=False, message="Scheduling is only available in servers.")
+    if not text or not text.strip():
+        return DiscordScheduleResult(success=False, message="Reminder text is required.")
+
+    is_admin = _is_discord_bot_admin(message)
+    target_channel = await _resolve_discord_channel(message, target_channel_id)
+    if target_channel is None or not isinstance(target_channel, discord.abc.Messageable):
+        return DiscordScheduleResult(success=False, message="Target channel is not messageable or was not found.")
+    target_channel_actual_id = getattr(target_channel, "id", message.channel.id)
+    cross_channel = target_channel_actual_id != message.channel.id
+    if cross_channel and not is_admin:
+        return DiscordScheduleResult(success=False, message="Only bot admins can schedule messages in another channel.")
+    if repeat_every_seconds is not None and not is_admin:
+        return DiscordScheduleResult(success=False, message="Only bot admins can create recurring Discord schedules.")
+    if allow_everyone and not is_admin:
+        return DiscordScheduleResult(success=False, message="Only bot admins can schedule @everyone/@here mentions.")
+    if ("@everyone" in text or "@here" in text) and not is_admin:
+        return DiscordScheduleResult(success=False, message="Only bot admins can schedule @everyone/@here mentions.")
+
+    target_ids = list(target_user_ids or [])
+    bot_user_id = state.discord_client.user.id if state.discord_client and state.discord_client.user else None
+    if not target_ids:
+        target_ids = [
+            user.id
+            for user in message.mentions
+            if not user.bot and user.id != bot_user_id
+        ]
+    if not target_ids:
+        target_ids = [message.author.id]
+    target_ids = list(dict.fromkeys(target_ids))
+    message_text = _discord_reminder_text(text, target_ids)
+    if len(message_text) > 2000:
+        return DiscordScheduleResult(
+            success=False,
+            message="Reminder text including mentions exceeds Discord's 2000-character limit.",
+        )
+
+    if send_immediately:
+        try:
+            await target_channel.send(
+                message_text,
+                reference=message if not cross_channel else None,
+                allowed_mentions=_discord_allowed_mentions(allow_everyone),
+            )
+        except discord.HTTPException as e:
+            logger.warning(f"Immediate Discord message failed: {type(e).__name__}")
+            return DiscordScheduleResult(success=False, message="Discord could not send the message.")
+        return DiscordScheduleResult(success=True, message="Message sent.")
+
+    if not schedule_time:
+        return DiscordScheduleResult(success=False, message="A future schedule_time is required.")
+    try:
+        schedule_datetime = datetime.fromisoformat(schedule_time)
+    except ValueError as e:
+        return DiscordScheduleResult(success=False, message=f"Invalid schedule_time: {e}")
+    local_tz = _discord_schedule_timezone()
+    if schedule_datetime.tzinfo is None:
+        schedule_datetime = schedule_datetime.replace(tzinfo=local_tz)
+    schedule_datetime = schedule_datetime.astimezone(UTC)
+    if schedule_datetime < datetime.now(UTC):
+        return DiscordScheduleResult(success=False, message="schedule_time must be in the future.")
+
+    until_datetime: datetime | None = None
+    if repeat_every_seconds is not None:
+        if repeat_every_seconds < _DISCORD_MIN_REPEAT_SECONDS:
+            return DiscordScheduleResult(success=False, message=f"repeat_every_seconds must be at least {_DISCORD_MIN_REPEAT_SECONDS}.")
+        if not repeat_until:
+            return DiscordScheduleResult(success=False, message="repeat_until is required for recurring schedules.")
+        try:
+            until_datetime = datetime.fromisoformat(repeat_until)
+        except ValueError as e:
+            return DiscordScheduleResult(success=False, message=f"Invalid repeat_until: {e}")
+        if until_datetime.tzinfo is None:
+            until_datetime = until_datetime.replace(tzinfo=local_tz)
+        until_datetime = until_datetime.astimezone(UTC)
+        if until_datetime <= schedule_datetime:
+            return DiscordScheduleResult(success=False, message="repeat_until must be after schedule_time.")
+
+    text_content = text.strip()
+    prefix = "discord_schedule_repeat_msg" if repeat_every_seconds else "discord_schedule_msg"
+    job_key = (
+        f"{prefix}:{message.guild.id}:{target_channel_actual_id}:{message.author.id}"
+        f":{schedule_datetime.timestamp()}:{md5(text_content.encode()).hexdigest()}"
+    )
+    args = [
+        target_channel_actual_id,
+        target_ids,
+        text_content,
+        allow_everyone,
+        job_key,
+        until_datetime.isoformat() if until_datetime else None,
+    ]
+    if repeat_every_seconds:
+        _add_discord_job("add_interval_job",
+            job_key,
+            func=_scheduled_discord_text_job,
+            seconds=repeat_every_seconds,
+            start_date=schedule_datetime.isoformat(),
+            end_date=until_datetime.isoformat() if until_datetime else None,
+            args=args,
+        )
+    else:
+        _add_discord_job("add_onetime_job",
+            job_key,
+            run_date=schedule_datetime,
+            func=_scheduled_discord_text_job,
+            args=args,
+        )
+    logger.info(
+        "Discord reminder scheduled: "
+        f"guild={message.guild.id} channel={message.channel.id} "
+        f"user={message.author.id} time={schedule_datetime.isoformat()}"
+    )
+    return DiscordScheduleResult(
+        success=True,
+        message=(
+            f"{'Recurring schedule' if repeat_every_seconds else 'Scheduled'} for "
+            f"{schedule_datetime.isoformat()} in <#{target_channel_actual_id}>"
+        ),
+    )
+
+async def schedule_discord_image_action(
+    ctx: RunContext[DiscordContextDeps],
+    schedule_time: str | None,
+    image_kind: str = "anime",
+    query: str | None = None,
+    caption: str | None = None,
+    repeat_every_seconds: int | None = None,
+    repeat_until: str | None = None,
+    target_channel_id: int | None = None,
+    allow_everyone: bool = False,
+    target_user_ids: list[int] | None = None,
+) -> DiscordScheduleResult:
+    """Schedule a Discord image send action.
+
+    Use this when the user asks Waku to send images later or repeatedly. If the
+    user just says "send an image/photo/ảnh" without explicitly saying web/internet
+    search, keep `image_kind="anime"` so the default anime image API is used.
+    Only set `image_kind="web"` when the user clearly asks for web/internet image
+    search. Recurring image schedules and cross-channel targets are bot-admin
+    only. `image_kind` must be "anime" or "web".
+
+    Args:
+        schedule_time: ISO 8601 first send time.
+        image_kind: "anime" for the default anime/API image, or "web" only when
+            the user explicitly asks for web/internet image search.
+        query: Optional image search keyword.
+        caption: Optional text/caption to include in the scheduled image embed.
+        repeat_every_seconds: Bot-admin-only repeat interval in seconds.
+        repeat_until: Bot-admin-only ISO 8601 end time for recurring schedules.
+        target_channel_id: Bot-admin-only target channel ID for cross-channel sends.
+        allow_everyone: Bot-admin-only permission to allow @everyone/@here mentions.
+        target_user_ids: Discord user IDs to mention when the scheduled image is sent.
+            Use this when the user asks Waku to call/tag/invite/gửi tặng a user
+            for the image. If omitted, explicit non-bot mentions in the current
+            message and user mentions included in the caption are used as targets.
+            When the request is a gift/tặng image to a person, always provide this
+            and write an agent-authored caption/greeting for that person.
+    """
+    message = ctx.deps.message
+    if message.guild is None:
+        return DiscordScheduleResult(success=False, message="Scheduling is only available in servers.")
+    if image_kind not in {"anime", "web"}:
+        return DiscordScheduleResult(success=False, message="image_kind must be 'anime' or 'web'.")
+    if not schedule_time:
+        return DiscordScheduleResult(success=False, message="A future schedule_time is required.")
+
+    is_admin = _is_discord_bot_admin(message)
+    target_channel = await _resolve_discord_channel(message, target_channel_id)
+    if target_channel is None or not isinstance(target_channel, discord.abc.Messageable):
+        return DiscordScheduleResult(success=False, message="Target channel is not messageable or was not found.")
+    target_channel_actual_id = getattr(target_channel, "id", message.channel.id)
+    if target_channel_actual_id != message.channel.id and not is_admin:
+        return DiscordScheduleResult(success=False, message="Only bot admins can schedule images in another channel.")
+    if repeat_every_seconds is not None and not is_admin:
+        return DiscordScheduleResult(success=False, message="Only bot admins can create recurring Discord image schedules.")
+    if allow_everyone and not is_admin:
+        return DiscordScheduleResult(success=False, message="Only bot admins can schedule @everyone/@here mentions.")
+    caption_text = (caption or "").strip()
+    if ("@everyone" in caption_text or "@here" in caption_text) and not is_admin:
+        return DiscordScheduleResult(success=False, message="Only bot admins can schedule @everyone/@here mentions.")
+
+    target_ids = list(target_user_ids or [])
+    bot_user_id = state.discord_client.user.id if state.discord_client and state.discord_client.user else None
+    if caption_text:
+        target_ids.extend(int(user_id) for user_id in re.findall(r"<@!?(\d+)>", caption_text))
+    if not target_ids:
+        target_ids = [
+            user.id
+            for user in message.mentions
+            if not user.bot and user.id != bot_user_id
+        ]
+    target_ids = [user_id for user_id in dict.fromkeys(target_ids) if user_id != bot_user_id]
+    message_content, embed_caption = _discord_image_message_parts(caption_text, target_ids)
+    if message_content and len(message_content) > 2000:
+        return DiscordScheduleResult(
+            success=False,
+            message="Image caption including mentions exceeds Discord's 2000-character limit.",
+        )
+    if len(embed_caption) > 4096:
+        return DiscordScheduleResult(
+            success=False,
+            message="Image caption exceeds Discord's 4096-character embed limit.",
+        )
+
+    try:
+        schedule_datetime = datetime.fromisoformat(schedule_time)
+    except ValueError as e:
+        return DiscordScheduleResult(success=False, message=f"Invalid schedule_time: {e}")
+    local_tz = _discord_schedule_timezone()
+    if schedule_datetime.tzinfo is None:
+        schedule_datetime = schedule_datetime.replace(tzinfo=local_tz)
+    schedule_datetime = schedule_datetime.astimezone(UTC)
+    if schedule_datetime < datetime.now(UTC):
+        return DiscordScheduleResult(success=False, message="schedule_time must be in the future.")
+
+    until_datetime: datetime | None = None
+    if repeat_every_seconds is not None:
+        if repeat_every_seconds < _DISCORD_MIN_REPEAT_SECONDS:
+            return DiscordScheduleResult(success=False, message=f"repeat_every_seconds must be at least {_DISCORD_MIN_REPEAT_SECONDS}.")
+        if not repeat_until:
+            return DiscordScheduleResult(success=False, message="repeat_until is required for recurring schedules.")
+        try:
+            until_datetime = datetime.fromisoformat(repeat_until)
+        except ValueError as e:
+            return DiscordScheduleResult(success=False, message=f"Invalid repeat_until: {e}")
+        if until_datetime.tzinfo is None:
+            until_datetime = until_datetime.replace(tzinfo=local_tz)
+        until_datetime = until_datetime.astimezone(UTC)
+        if until_datetime <= schedule_datetime:
+            return DiscordScheduleResult(success=False, message="repeat_until must be after schedule_time.")
+
+    query_text = (query or "").strip()
+    if image_kind == "web" and await _discord_r18_mode(message.guild) == 0 and _contains_r18_keyword(query_text):
+        return DiscordScheduleResult(
+            success=False,
+            message="R18 web image search is disabled in this Discord server.",
+        )
+    hash_source = f"{image_kind}:{query_text}:{caption_text}"
+    prefix = "discord_schedule_repeat_image" if repeat_every_seconds else "discord_schedule_image"
+    job_key = (
+        f"{prefix}:{message.guild.id}:{target_channel_actual_id}:{message.author.id}"
+        f":{schedule_datetime.timestamp()}:{md5(hash_source.encode()).hexdigest()}"
+    )
+    args = [
+        target_channel_actual_id,
+        image_kind,
+        query_text,
+        caption_text,
+        allow_everyone,
+        job_key,
+        until_datetime.isoformat() if until_datetime else None,
+        target_ids,
+    ]
+    if repeat_every_seconds:
+        _add_discord_job("add_interval_job",
+            job_key,
+            func=_scheduled_discord_image_job,
+            seconds=repeat_every_seconds,
+            start_date=schedule_datetime.isoformat(),
+            end_date=until_datetime.isoformat() if until_datetime else None,
+            args=args,
+        )
+    else:
+        _add_discord_job("add_onetime_job",
+            job_key,
+            run_date=schedule_datetime,
+            func=_scheduled_discord_image_job,
+            args=args,
+        )
+    logger.info(
+        "Discord image schedule created: "
+        f"guild={message.guild.id} channel={target_channel_actual_id} user={message.author.id} "
+        f"kind={image_kind} repeat={repeat_every_seconds} time={schedule_datetime.isoformat()}"
+    )
+    return DiscordScheduleResult(
+        success=True,
+        message=(
+            f"{'Recurring image schedule' if repeat_every_seconds else 'Image scheduled'} for "
+            f"{schedule_datetime.isoformat()} in <#{target_channel_actual_id}>"
+        ),
+    )
+
+async def list_discord_scheduled_messages(
+    ctx: RunContext[DiscordContextDeps], only_mine: bool = False, include_all: bool = False
+) -> str:
+    """List pending Discord reminders/scheduled messages in this server.
+
+    Args:
+        only_mine: If True, list only schedules created by the requester.
+        include_all: Bot-admin-only flag for listing every schedule in the server.
+            Use this when an admin asks for all current schedules/reminders.
+    """
+    message = ctx.deps.message
+    if message.guild is None:
+        return "Scheduling is only available in servers."
+    if include_all and not _is_discord_bot_admin(message):
+        return "Chỉ bot admin mới xem được toàn bộ lịch hẹn của server."
+    # A regular member must not inspect other members' reminders. Admins opt
+    # into a server-wide listing explicitly with include_all.
+    user_id = None if include_all else message.author.id
+    jobs = _discord_scheduled_jobs(message.guild.id, user_id=user_id)
+    if not jobs:
+        return "Không có lịch hẹn nào trong server này."
+    title = "Toàn bộ lịch hẹn Discord hiện tại" if include_all else "Lịch hẹn Discord hiện tại"
+    lines = [
+        _format_discord_scheduled_job(job, index)
+        for index, job in enumerate(jobs, start=1)
+    ]
+    return f"{title}:\n" + "\n".join(lines[:50])
+
+async def cancel_discord_scheduled_message(
+    ctx: RunContext[DiscordContextDeps],
+    job_id: str | None = None,
+    match_text: str | None = None,
+    cancel_all: bool = False,
+    only_mine: bool = False,
+) -> DiscordScheduleResult:
+    """Cancel pending Discord reminders/scheduled messages in this server."""
+    message = ctx.deps.message
+    if message.guild is None:
+        return DiscordScheduleResult(success=False, message="Scheduling is only available in servers.")
+    # Cancellation by an arbitrary job ID is otherwise enough to remove
+    # another member's (or an admin's) scheduled message.
+    user_id = message.author.id if only_mine or not _is_discord_bot_admin(message) else None
+    jobs = _discord_scheduled_jobs(message.guild.id, user_id=user_id)
+    if not jobs:
+        return DiscordScheduleResult(success=False, message="Không có lịch hẹn nào để huỷ.")
+
+    if job_id:
+        normalized = _clean_discord_job_id(job_id.strip())
+        targets = [job for job in jobs if job.job_id == normalized]
+    elif match_text:
+        needle = match_text.casefold().strip()
+        targets = [
+            job
+            for job in jobs
+            if needle in job.job_id.casefold() or needle in job.summary.casefold()
+        ]
+    elif cancel_all:
+        targets = jobs
+    else:
+        return DiscordScheduleResult(
+            success=False,
+            message="Cần job_id, match_text hoặc cancel_all=True để huỷ lịch hẹn.",
+        )
+
+    if not targets:
+        return DiscordScheduleResult(success=False, message="Không tìm thấy lịch hẹn phù hợp.")
+    if len(targets) > 1 and not cancel_all and not match_text:
+        return DiscordScheduleResult(
+            success=False,
+            message="Tìm thấy nhiều lịch hẹn; hãy list rồi chọn job_id cụ thể.",
+        )
+
+    cancelled: list[str] = []
+    for job in targets:
+        common.jobqueue.remove_job(job.job_id)
+        cancelled.append(_format_discord_scheduled_job(job, len(cancelled) + 1))
+    logger.info(
+        "Discord reminders cancelled: "
+        f"guild={message.guild.id} user={message.author.id} count={len(cancelled)}"
+    )
+    return DiscordScheduleResult(
+        success=True,
+        message="Đã huỷ lịch hẹn:\n" + "\n".join(cancelled[:10]),
+    )

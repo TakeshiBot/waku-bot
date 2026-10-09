@@ -3,7 +3,7 @@
 
 # waku bot
 
-Bot Telegram đa chức năng, có trợ lý AI và bảng quản trị Mini App.
+Bot Telegram đa chức năng, có trợ lý AI, bảng quản trị Mini App và bot Discord tuỳ chọn.
 </div>
 
 Tiếng Việt là ngôn ngữ mặc định. Bot hỗ trợ quản lý nhóm, xác minh thành viên,
@@ -46,6 +46,10 @@ ngôn ngữ đã lưu của người dùng và nhóm được giữ lại, có t
 Tên hiển thị của bot là `waku`; tên repository và phân phối Python là `waku-bot`.
 Thư mục và module Python là `waku`; chạy trực tiếp bằng `python -m waku`.
 Các dữ liệu cũ được xử lý theo [hướng dẫn nâng cấp](docs/docs/branding-timezone.md).
+
+Để bật Discord và dùng các menu/lệnh của bản đã mod, xem
+[hướng dẫn Discord](docs/docs/discord.md). Hai nền tảng dùng chung cấu hình provider
+AI; settings và quyền quản trị Discord được lưu riêng với Telegram.
 
 ## Giấy phép và nguồn gốc
 
