@@ -203,15 +203,15 @@ class _AppConfig(pydantic.BaseModel):
     agent_powermem_config_path: str | None = None
     agent_powermem_config: dict[str, Any] | None = None
     agent_powermem_custom_fact_extraction_prompt: str | None = None
-    # Named providers: keys are provider names, values are {url, api_key}.
+    # Named providers: keys are provider names, values are {url, key, type, api_type}.
     # The "default" provider is used when a model spec has no explicit provider prefix.
     # Example:
     #   [agent_providers.openai]
     #   url = "https://api.openai.com/v1"
-    #   api_key = "sk-..."
+    #   key = "sk-..."
     #   [agent_providers.local]
     #   url = "http://localhost:11434"
-    #   api_key = "ollama"
+    #   key = "ollama"
     #   api_type = "ollama"   # native Ollama API for embeddings
     agent_providers: dict[str, ProviderConfig] = {"default": ProviderConfig()}
     # Global proxy for all agent model requests (fallback for providers without

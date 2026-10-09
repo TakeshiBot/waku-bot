@@ -69,3 +69,30 @@ uv run --no-sync python -m kmua
 
 Tên phân phối là `waku-bot`. Thư mục và module Python `kmua` được giữ nguyên
 để bảo toàn import, migration và lệnh khởi động.
+
+## Cấu hình AI provider
+
+Model dùng dạng `tên-provider/tên-model`, ví dụ `default/gpt-4o-mini` sẽ lấy URL
+và key từ bảng `[agent_providers.default]`. Tên model có thể chứa thêm dấu `/`;
+chỉ phần trước dấu `/` đầu tiên là tên provider.
+
+```toml
+agent = true
+agent_model = "default/gpt-4o-mini"
+
+# Đặt các cấu hình chung khác ở phía trên các bảng provider.
+[agent_providers.default]
+url = "https://api.openai.com/v1"
+key = "YOUR_API_KEY"
+type = "chat_completions"
+```
+
+`type` chọn API chat (`chat_completions` hoặc `responses`). `api_type` chọn
+họ API (`openai` hoặc `ollama`); mặc định là `openai`. Không cần khai báo URL/key
+AI lần nữa ở phần cấu hình chung. Đặt các bảng provider cuối file để những cấu
+hình như `manyacg_*` không bị đưa nhầm vào bảng provider.
+
+Khi chạy bot trong WSL và API ở Windows, chế độ mạng NAT cần URL dùng IP của
+Windows thay cho `127.0.0.1`. Trong Ubuntu, lấy địa chỉ bằng `ip route show default`
+(IP sau từ `via`); dùng IP đó cùng port API hiện tại. Địa chỉ có thể đổi khi môi
+trường mạng khởi động lại. Xem [hướng dẫn mạng WSL của Microsoft](https://learn.microsoft.com/en-us/windows/wsl/networking).

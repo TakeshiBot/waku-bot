@@ -28,36 +28,14 @@ redis_db = 0
 redis_password = ""
 
 agent = false
-agent_model = "gpt-4o-mini"
-agent_provider_url = "https://api.openai.com/v1"
-agent_api_key = ""
+agent_model = "default/gpt-4o-mini"
 agent_messages_threshold = 20
 agent_whitelist_mode = false
 agent_whitelist = []
 agent_prompt = ''''''
 
-# Provider configuration. Each named provider can specify:
-#   url     = base URL of the API endpoint
-#   key     = API key
-#   api_type = "chat_completions" (default, broadly compatible) or "responses" (OpenAI Responses API)
-#   proxy   = optional HTTP proxy for this provider (http://, https://, socks5://)
-#             e.g. proxy = "http://127.0.0.1:7890" or "socks5://user:pass@127.0.0.1:1080"
-#             requires httpx[socks] for socks5 (already pulled via ddgs, or pip install httpx[socks])
-#
 # Global fallback for all providers without an explicit proxy:
 # agent_proxy = "http://127.0.0.1:7890"
-#
-# Example:
-# [agent_providers.default]
-# url = "https://api.openai.com/v1"
-# key = "sk-..."
-# api_type = "chat_completions"
-# # proxy = "http://127.0.0.1:7890"
-#
-# [agent_providers.openai_native]
-# url = "https://api.openai.com/v1"
-# key = "sk-..."
-# api_type = "responses"
 manyacg_api_url = "https://api.manyacg.top/v1"
 manyacg_api_key = ""
 manyacg_channel = "MoreACG"
@@ -80,3 +58,19 @@ manyacg_setu_cd = 1
 # rss_whitelist_mode = true
 # Polling interval (minutes).
 # rss_interval = 30
+
+# Model specs use provider/model; the first part selects a table below.
+# Keep provider tables after global settings: following keys belong to the table.
+[agent_providers.default]
+url = "https://api.openai.com/v1"
+key = ""
+type = "chat_completions"
+# type = "responses" selects the Responses API instead.
+# api_type = "openai" is the API family; use "ollama" for native Ollama embeddings.
+# Optional provider HTTP proxy, otherwise agent_proxy is used:
+# proxy = "http://127.0.0.1:7890"
+
+# [agent_providers.openai_native]
+# url = "https://api.openai.com/v1"
+# key = ""
+# type = "responses"
