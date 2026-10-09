@@ -1,7 +1,7 @@
 token = ""
 owners = []
-db_url = "sqlite+aiosqlite:///./data/kmua.db"
-session_name = "kmua"
+db_url = "sqlite+aiosqlite:///./data/waku.db"
+session_name = "waku"
 api_id = 1025907
 api_hash = "452b0359b988148995f22ff0f4229750"
 use_ipv6 = false
