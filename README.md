@@ -44,8 +44,8 @@ tiếp bằng Python 3.13 và các điều kiện triển khai nằm trong tài 
 Múi giờ mặc định là `Asia/Ho_Chi_Minh` (UTC+7). Ngôn ngữ mặc định là `vi`; dữ liệu
 ngôn ngữ đã lưu của người dùng và nhóm được giữ lại, có thể đổi bằng `/lang`.
 Tên hiển thị của bot là `waku`; tên repository và phân phối Python là `waku-bot`.
-Namespace Python `kmua` và lệnh `python -m kmua` được giữ để các import và
-entrypoint tiếp tục hoạt động.
+Thư mục và module Python là `waku`; chạy trực tiếp bằng `python -m waku`.
+Các dữ liệu cũ được xử lý theo [hướng dẫn nâng cấp](docs/docs/branding-timezone.md).
 
 ## Giấy phép và nguồn gốc
 

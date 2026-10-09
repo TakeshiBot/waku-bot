@@ -21,8 +21,8 @@ from loguru import logger
 from lxml import html as lxml_html
 from sqlalchemy import create_engine
 
-from kmua.plugins.agent.localization import locale_scope, tr
-from kmua.timezone import BOT_TIMEZONE, BOT_TIMEZONE_NAME, as_bot_time, bot_now
+from waku.plugins.agent.localization import locale_scope, tr
+from waku.timezone import BOT_TIMEZONE, BOT_TIMEZONE_NAME, as_bot_time, bot_now
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -64,7 +64,7 @@ def test_storage_and_telegram_timestamps_preserve_their_instant():
 
 def test_naive_schedules_use_bot_time_and_explicit_offsets_are_honored():
     functions = load_definitions(
-        "kmua/plugins/agent/tools/send_ops.py",
+        "waku/plugins/agent/tools/send_ops.py",
         {"_parse_schedule_time"},
         datetime=datetime_module,
     )
@@ -89,7 +89,7 @@ async def test_current_time_and_naive_time_difference_use_bot_timezone():
             return instant.astimezone(tz) if tz else instant.replace(tzinfo=None)
 
     functions = load_definitions(
-        "kmua/plugins/agent/tools/time.py",
+        "waku/plugins/agent/tools/time.py",
         {"_NowResult", "_DifferenceResult", "_now", "_difference"},
         dataclass=dataclass,
         datetime=FrozenDatetime,
@@ -119,7 +119,7 @@ async def test_current_time_and_naive_time_difference_use_bot_timezone():
 def scheduler():
     engine = create_engine("sqlite:///:memory:")
     definitions = load_definitions(
-        "kmua/common/jobs.py",
+        "waku/common/jobs.py",
         {"_TaskScheduler"},
         datetime=datetime_module,
         MemoryJobStore=MemoryJobStore,
@@ -160,7 +160,7 @@ def test_scheduler_naive_boundaries_and_daily_wall_clock_are_utc_plus_seven(sche
 
 def test_prompt_clock_includes_the_bot_offset():
     definitions = load_definitions(
-        "kmua/plugins/agent/input_format.py",
+        "waku/plugins/agent/input_format.py",
         {"_now_text"},
         bot_now=lambda: datetime(2026, 10, 10, 3, 30, tzinfo=BOT_TIMEZONE),
     )
@@ -176,7 +176,7 @@ def test_prompt_clock_includes_the_bot_offset():
 )
 def test_wechat_publication_times_convert_the_source_instant_to_bot_time(page):
     functions = load_definitions(
-        "kmua/services/wechat.py",
+        "waku/services/wechat.py",
         {"WechatBlock", "WechatArticle", "parse_article_html"},
         datetime=datetime,
         timezone=datetime_module.timezone,
@@ -202,9 +202,9 @@ import sys
 from datetime import timedelta
 from types import SimpleNamespace
 sys.path.insert(0, {str(ROOT)!r})
-sys.modules['kmua.config'] = SimpleNamespace(app_config=SimpleNamespace(log_retention_days=1, log_level='ERROR'))
-from kmua.logger import logger
-from kmua.timezone import BOT_TIMEZONE, BOT_TIMEZONE_NAME
+sys.modules['waku.config'] = SimpleNamespace(app_config=SimpleNamespace(log_retention_days=1, log_level='ERROR'))
+from waku.logger import logger
+from waku.timezone import BOT_TIMEZONE, BOT_TIMEZONE_NAME
 captured = []
 handler = logger.add(lambda message: captured.append(message), format='{{time:YYYY-MM-DD HH:mm:ss.SSS ZZ}}')
 logger.info('timezone check')

@@ -14,8 +14,7 @@ là `Asia/Ho_Chi_Minh` (UTC+7).
 - [Đổi tên dự án và múi giờ](branding-timezone.md)
 - [Giấy phép](license.md)
 
-Namespace Python `kmua` được giữ để bảo toàn import và entrypoint; lệnh chạy
-source vẫn là `python -m kmua`.
+Thư mục và module Python là `waku`; lệnh chạy source là `python -m waku`.
 
 Linh vật của bot:
 

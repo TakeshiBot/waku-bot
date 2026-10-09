@@ -9,7 +9,7 @@ import vue from "eslint-plugin-vue";
 const config: Linter.Config[] = defineConfigWithVueTs(
   {
     name: "ignores",
-    ignores: ["dist/**", "node_modules/**", "../kmua/webapp/dist/**"],
+    ignores: ["dist/**", "node_modules/**", "../waku/webapp/dist/**"],
   },
   js.configs.recommended,
   vue.configs["flat/recommended"],

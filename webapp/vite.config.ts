@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vite";
 
-// The bundle is served by the bot's FastAPI app from kmua/webapp/dist, so the build
+// The bundle is served by the bot's FastAPI app from waku/webapp/dist, so the build
 // writes straight there. `pnpm dev` instead runs on its own origin and proxies /api
 // to the bot, which needs webapp_allow_origins set on the backend.
 export default defineConfig({
@@ -15,10 +15,10 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: fileURLToPath(new URL("../kmua/webapp/dist", import.meta.url)),
+    outDir: fileURLToPath(new URL("../waku/webapp/dist", import.meta.url)),
     emptyOutDir: true,
     // Hashed filenames under assets/ let the server cache them immutably; see
-    // kmua/webapp/static.py.
+    // waku/webapp/static.py.
     assetsDir: "assets",
     sourcemap: false,
     target: "es2022",

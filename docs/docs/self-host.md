@@ -64,11 +64,14 @@ Tạo `settings.toml` từ `settings.ex.toml` nếu chưa có, điền cấu hì
 ở trên, rồi chạy:
 
 ```bash
-uv run --no-sync python -m kmua
+mkdir -p data
+uv run --no-sync python -m waku
 ```
 
-Tên phân phối là `waku-bot`. Thư mục và module Python `kmua` được giữ nguyên
-để bảo toàn import, migration và lệnh khởi động.
+Tên phân phối là `waku-bot`; thư mục và module Python là `waku`.
+Thư mục `data/` phải tồn tại trước khi mở database SQLite mặc định.
+Lịch chạy đã lưu tự chuyển tham chiếu module cũ sang `waku` khi khởi động;
+xem [ghi chú nâng cấp](branding-timezone.md) để biết các giá trị tương thích được giữ lại.
 
 ## Cấu hình AI provider
 

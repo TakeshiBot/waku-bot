@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from kmua.i18n import DEFAULT_LOCALE, I18n, i18n, normalize_locale
+from waku.i18n import DEFAULT_LOCALE, I18n, i18n, normalize_locale
 
 ROOT = Path(__file__).resolve().parents[1]
 FIELDS = re.compile(r"(?<!\{)\{([a-zA-Z_][a-zA-Z_0-9]*)(?:![rsa])?(?::[^{}]*)?\}(?!\})")
@@ -52,7 +52,7 @@ def test_vietnamese_covers_chinese_and_english_catalogue():
 
 def test_vi_has_no_chinese_text_or_duplicate_keys():
     seen = set()
-    for path in sorted((ROOT / "kmua/i18n/locales/vi").glob("*.yml")):
+    for path in sorted((ROOT / "waku/i18n/locales/vi").glob("*.yml")):
         contents = path.read_text(encoding="utf-8")
         assert not re.search(r"[\u3400-\u9fff]", contents), path
         values = flatten(yaml.safe_load(contents))
@@ -132,7 +132,7 @@ def test_config_prompt_defaults_follow_language_and_preserve_custom(lang):
 
     import pydantic
 
-    path = ROOT / "kmua/config/__init__.py"
+    path = ROOT / "waku/config/__init__.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
     nodes = [
         node
@@ -221,7 +221,7 @@ def test_duplicate_yaml_keys_fail_visibly(tmp_path):
 
 def test_static_translation_references_exist():
     missing = []
-    for path in (ROOT / "kmua").rglob("*.py"):
+    for path in (ROOT / "waku").rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if not isinstance(node, ast.Call) or not node.args:
                 continue
@@ -244,7 +244,7 @@ def test_static_translation_references_exist():
 
 def test_saved_language_preserved_while_new_defaults_are_vi():
     # The dataclasses are evaluated without importing database drivers or connecting.
-    path = ROOT / "kmua/database/models.py"
+    path = ROOT / "waku/database/models.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
     from dataclasses import asdict, dataclass, field
 

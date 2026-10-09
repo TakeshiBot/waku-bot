@@ -147,7 +147,7 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresBotAdmin: true },
   },
   // The run trace returns conversation content, so it is owner-only on both sides
-  // (see kmua.webapp.routers.agent_runs).
+  // (see waku.webapp.routers.agent_runs).
   {
     path: "/admin/agent-runs",
     name: "admin-agent-runs",

@@ -27,7 +27,7 @@ webapp/node_modules/
 webapp/dist/
 webapp/.vite/
 webapp/*.tsbuildinfo
-kmua/webapp/dist/
+waku/webapp/dist/
 # Environment files can contain API keys, bot tokens and signed initData.
 .env
 .env.*

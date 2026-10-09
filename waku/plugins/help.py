@@ -1,0 +1,35 @@
+import asyncio
+
+import pyrogram
+from pyrogram.client import Client
+
+from waku import common, database, i18n
+from waku.common.utils import GROUP_CHAT_TYPES
+
+
+@Client.on_message(pyrogram.filters.command("help"), group=0)
+async def help_command(client: Client, message: pyrogram.types.Message):
+    """Handle the /help command."""
+    chat = message.chat
+    user = message.from_user
+    if chat is None or chat.id is None or user is None:
+        return
+    in_group = chat.type in GROUP_CHAT_TYPES
+    if in_group:
+        lang = (await database.get_chat_config(chat.id)).lang
+    else:
+        lang = (await database.get_user_config(user.id)).lang
+
+    text = i18n.t("bot.msg.help", locale=lang)
+
+    reply = await message.reply_text(text, parse_mode=pyrogram.enums.ParseMode.HTML)
+    if in_group:
+        common.spawn(_auto_delete(reply, 120), name="help-auto-delete")
+
+
+async def _auto_delete(message: pyrogram.types.Message, delay: int = 120) -> None:
+    try:
+        await asyncio.sleep(delay)
+        await message.delete()
+    except Exception:
+        pass

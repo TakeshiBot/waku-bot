@@ -8,9 +8,15 @@ Repository hiện tại là
 [`TakeshiBot/waku-bot`](https://github.com/TakeshiBot/waku-bot).
 Docker Compose build image `waku-bot:local` từ source trong repository.
 
-Namespace Python `kmua` được giữ để bảo toàn các import và entrypoint. Lệnh
-chạy vẫn là `python -m kmua`; tên module không phải tên hiển thị của bot.
+Thư mục source và namespace Python đã đổi thành `waku`. Lệnh chạy là
+`python -m waku`; các import, cấu hình build và migration dùng namespace mới.
 Thông tin tác giả, giấy phép và nguồn upstream được giữ để ghi nhận nguồn gốc.
+
+Khi khởi động, bot tự chuyển các tham chiếu module `kmua` trong lịch chạy đã lưu
+sang `waku` để tiếp tục thực thi các job cũ. Giao thức tham chiếu source dùng
+`waku://`; `kmua://` vẫn được chấp nhận như alias để lịch sử hội thoại và đường
+dẫn đã lưu tiếp tục hoạt động. Namespace cache và các giá trị nhận diện JWT cũ
+được giữ để tương thích với dữ liệu và phiên đăng nhập đã có.
 
 Khi nâng cấp bản đang chạy, sao lưu `settings.toml`, cơ sở dữ liệu, file phiên
 Telegram và các thư mục `data/`, `logs/` trước khi thay container. Đối chiếu
@@ -27,7 +33,7 @@ Dừng project Compose cũ bằng
 
 Bot dùng `Asia/Ho_Chi_Minh` (UTC+7) làm múi giờ mặc định cho lịch chạy và các
 giá trị thời gian địa phương. Giá trị này được định nghĩa tập trung trong
-`kmua/timezone.py`; không có khóa `timezone` trong `settings.toml`.
+`waku/timezone.py`; không có khóa `timezone` trong `settings.toml`.
 Container dùng cùng múi giờ qua biến `TZ`.
 
 Log của bot và ngày giờ trong bảng quản trị Mini App dùng UTC+7, kể cả khi máy

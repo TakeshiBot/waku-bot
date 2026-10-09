@@ -11,8 +11,8 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from kmua.gift import define as gifts
-from kmua.i18n import i18n
+from waku.gift import define as gifts
+from waku.i18n import i18n
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -28,16 +28,16 @@ def _load(name, path, monkeypatch):
 @pytest.fixture
 def meme(monkeypatch):
     package = ModuleType("_backend_test_meme")
-    package.__path__ = [str(ROOT / "kmua/plugins/inlinequery/manomeme")]
+    package.__path__ = [str(ROOT / "waku/plugins/inlinequery/manomeme")]
     monkeypatch.setitem(sys.modules, package.__name__, package)
     drawer = _load(
         "_backend_test_meme.drawer",
-        "kmua/plugins/inlinequery/manomeme/drawer.py",
+        "waku/plugins/inlinequery/manomeme/drawer.py",
         monkeypatch,
     )
     utils = _load(
         "_backend_test_meme.utils",
-        "kmua/plugins/inlinequery/manomeme/utils.py",
+        "waku/plugins/inlinequery/manomeme/utils.py",
         monkeypatch,
     )
     return drawer, utils
@@ -58,7 +58,7 @@ def test_extracted_catalogues_have_matching_keys_and_placeholders():
     catalogs = {
         locale: _flatten(
             json.loads(
-                (ROOT / "kmua/i18n/locales" / locale / "bot.hardcoded.yml").read_text(
+                (ROOT / "waku/i18n/locales" / locale / "bot.hardcoded.yml").read_text(
                     encoding="utf-8"
                 )
             )
@@ -136,7 +136,7 @@ def test_meme_statement_parser_preserves_chinese_and_accepts_ascii_aliases(meme)
 
 
 def test_api_locale_prefers_saved_language_and_respects_weighted_header(monkeypatch):
-    module = _load("_backend_test_api_i18n", "kmua/webapp/i18n.py", monkeypatch)
+    module = _load("_backend_test_api_i18n", "waku/webapp/i18n.py", monkeypatch)
     request = SimpleNamespace(
         state=SimpleNamespace(), headers={"accept-language": "en-US;q=0.4,vi-VN;q=0.9"}
     )
@@ -151,8 +151,8 @@ def test_api_locale_prefers_saved_language_and_respects_weighted_header(monkeypa
 
 
 def test_every_api_error_code_has_localized_fallback_message(monkeypatch):
-    module = _load("_backend_test_api_i18n", "kmua/webapp/i18n.py", monkeypatch)
-    tree = ast.parse((ROOT / "kmua/webapp/errors.py").read_text(encoding="utf-8"))
+    module = _load("_backend_test_api_i18n", "waku/webapp/i18n.py", monkeypatch)
+    tree = ast.parse((ROOT / "waku/webapp/errors.py").read_text(encoding="utf-8"))
     cls = next(
         n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "ErrorCode"
     )
@@ -179,14 +179,14 @@ def test_api_error_handlers_localize_without_changing_codes_or_statuses(monkeypa
     from fastapi import FastAPI, Request
     from fastapi.testclient import TestClient
 
-    package = ModuleType("kmua.webapp")
-    package.__path__ = [str(ROOT / "kmua/webapp")]
-    monkeypatch.setitem(sys.modules, "kmua.webapp", package)
-    locale_module = _load("kmua.webapp.i18n", "kmua/webapp/i18n.py", monkeypatch)
-    logger_module = ModuleType("kmua.logger")
+    package = ModuleType("waku.webapp")
+    package.__path__ = [str(ROOT / "waku/webapp")]
+    monkeypatch.setitem(sys.modules, "waku.webapp", package)
+    locale_module = _load("waku.webapp.i18n", "waku/webapp/i18n.py", monkeypatch)
+    logger_module = ModuleType("waku.logger")
     logger_module.logger = SimpleNamespace()
-    monkeypatch.setitem(sys.modules, "kmua.logger", logger_module)
-    errors = _load("_backend_test_errors", "kmua/webapp/errors.py", monkeypatch)
+    monkeypatch.setitem(sys.modules, "waku.logger", logger_module)
+    errors = _load("_backend_test_errors", "waku/webapp/errors.py", monkeypatch)
     app = FastAPI()
     errors.install_error_handlers(app)
 
@@ -214,7 +214,7 @@ def test_api_error_handlers_localize_without_changing_codes_or_statuses(monkeypa
             locale_module.api_text("quota_group_only"),
         )
 
-    schemas = _load("_backend_test_schemas", "kmua/webapp/schemas.py", monkeypatch)
+    schemas = _load("_backend_test_schemas", "waku/webapp/schemas.py", monkeypatch)
 
     @app.post("/question")
     def question(payload: schemas.VerifyQuestionIn):
@@ -270,7 +270,7 @@ def test_api_error_handlers_localize_without_changing_codes_or_statuses(monkeypa
 
 
 def test_validation_reasons_preserve_schema_bounds_and_hide_user_input(monkeypatch):
-    module = _load("_backend_test_api_i18n", "kmua/webapp/i18n.py", monkeypatch)
+    module = _load("_backend_test_api_i18n", "waku/webapp/i18n.py", monkeypatch)
     message = module.validation_message(
         {"type": "less_than_equal", "ctx": {"le": 100}, "input": "PRIVATE INPUT"}, "vi"
     )

@@ -1,0 +1,98 @@
+from pydantic_ai import ModelRetry, RunContext
+
+from waku.logger import logger
+from waku.plugins.agent import datatype, powermem_usage, quota
+from waku.plugins.agent.localization import tr
+
+
+async def search_group_memory(
+    ctx: RunContext[datatype.ContextDeps], query: str
+) -> list[str]:
+    """Search the group's long-term memory for information relevant to the query.
+
+    Memory entries contain factual information about the group and its members,
+    such as personal interests, relationships between members, past events, and
+    other notable facts that have been observed over time.
+
+    This tool uses semantic (vector) search — it finds entries that are
+    conceptually related to the query, not just exact keyword matches. Use
+    natural-language phrases or concepts rather than precise keywords for best
+    results. For example, querying "outdoor activities" may surface memories
+    about hiking, cycling, or camping even if those exact words differ.
+
+    Args:
+        query: A natural-language phrase describing what you want to find.
+
+    Returns:
+        A list of matching memory entries as strings. Returns an empty list if
+        no relevant memories are found.
+    """
+    if not ctx.deps.powermemory:
+        return []
+    with powermem_usage.collect() as memory_calls:
+        results = await ctx.deps.powermemory.search(
+            query, user_id=f"group_{ctx.deps.chat_id}", limit=10
+        )
+    # powermem calls the model internally; collect usage through its callback and attribute it to this run's payer,
+    # just like other costs in the run.
+    await _settle_powermem(ctx, memory_calls)
+
+    # powermem search response: entries under "results", each carrying "memory"
+    # (plus metadata/score/id fields this tool ignores).
+    return [res.get("memory", "") for res in results.get("results", [])]
+
+
+async def update_group_memory(
+    ctx: RunContext[datatype.ContextDeps], content: str
+) -> str:
+    """Store a piece of information about this group into its long-term memory.
+
+    Use this tool when you observe something worth remembering about the group
+    or its members — for example, notable facts, recurring topics, preferences,
+    relationships between members, or significant events. The memory system
+    will infer structured facts from the text you provide.
+
+    Only store genuinely useful, non-trivial information. Do not store
+    conversational filler or information that is already in the current context.
+
+    Args:
+        content: A concise description of what should be remembered.
+            Write it as a factual statement in natural language.
+
+    Returns:
+        A message confirming the memory was stored, or an error description.
+    """
+    if not ctx.deps.powermemory:
+        return tr("memory_unavailable")
+    try:
+        with powermem_usage.collect() as memory_calls:
+            result = await ctx.deps.powermemory.add(
+                content,
+                infer=True,
+                user_id=f"group_{ctx.deps.chat_id}",
+                prompt=tr("memory_system"),
+            )
+        logger.debug(
+            f"update_group_memory: stored memory for group {ctx.deps.chat_id}, "
+            f"powermem result: {result}"
+        )
+    except Exception as e:
+        logger.error(
+            f"update_group_memory: failed for group {ctx.deps.chat_id}: "
+            f"{e.__class__.__name__}: {e}"
+        )
+        raise ModelRetry(tr("memory_store_failed", p0=e.__class__.__name__, p1=e))
+    # Bill after successful storage and outside the try block; a settlement failure must not look like failed storage
+    # and cause the model to retry.
+    await _settle_powermem(ctx, memory_calls)
+    return tr("tool_memory_stored_p0", p0=repr(content))
+
+
+async def _settle_powermem(
+    ctx: RunContext[datatype.ContextDeps], calls: list[tuple[int, int]]
+) -> None:
+    """Charge the tokens powermem spent on this tool call to the same account."""
+    usage = powermem_usage.usage_of(calls)
+    if usage is None:
+        return
+    await quota.settle(quota.subject_of(ctx.deps.message), usage)

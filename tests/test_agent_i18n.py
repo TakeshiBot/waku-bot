@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock
 import pytest
 import yaml
 
-from kmua.i18n import i18n
-from kmua.plugins.agent.localization import (
+from waku.i18n import i18n
+from waku.plugins.agent.localization import (
     configured_prompt,
     current_locale,
     locale_scope,
@@ -26,11 +26,11 @@ from kmua.plugins.agent.localization import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-AGENT = ROOT / "kmua/plugins/agent"
+AGENT = ROOT / "waku/plugins/agent"
 PARAMETER = re.compile(r"(?<!\{)\{(p\d+)\}(?!\})")
 CATALOGUES = {
     locale: yaml.safe_load(
-        (ROOT / f"kmua/i18n/locales/{locale}/bot.agent.yml").read_text(encoding="utf-8")
+        (ROOT / f"waku/i18n/locales/{locale}/bot.agent.yml").read_text(encoding="utf-8")
     )["bot"]["agent_i18n"]
     for locale in ("vi", "en", "zh-CN")
 }
@@ -201,7 +201,7 @@ async def test_parallel_locales_do_not_leak_and_reset_on_error_or_cancellation()
 def test_builtin_prompts_are_localized_and_custom_prompts_are_preserved(monkeypatch):
     field = "agent_multimodal_transcribe_prompt"
     fake = SimpleNamespace(app_config=SimpleNamespace())
-    monkeypatch.setitem(sys.modules, "kmua.config", fake)
+    monkeypatch.setitem(sys.modules, "waku.config", fake)
     key = f"bot.prompts.{field}"
     for locale in ("vi", "en", "zh-CN"):
         setattr(fake.app_config, field, i18n.t(key, locale))
@@ -220,10 +220,10 @@ async def test_message_and_callback_locale_resolution(monkeypatch):
     async def chat_config(chat_id):
         return SimpleNamespace(lang="zh-CN")
 
-    import kmua
+    import waku
 
     monkeypatch.setattr(
-        kmua,
+        waku,
         "database",
         SimpleNamespace(get_user_config=user_config, get_chat_config=chat_config),
         raising=False,
@@ -299,7 +299,7 @@ async def test_admin_command_locales_html_escaping_and_custom_prompt_preservatio
 ):
     import pyrogram
 
-    import kmua
+    import waku
 
     database = SimpleNamespace(
         get_user_config=AsyncMock(return_value=SimpleNamespace(lang="en")),
@@ -308,7 +308,7 @@ async def test_admin_command_locales_html_escaping_and_custom_prompt_preservatio
             return_value=SimpleNamespace(is_bot_global_admin=True)
         ),
     )
-    monkeypatch.setattr(kmua, "database", database, raising=False)
+    monkeypatch.setattr(waku, "database", database, raising=False)
     set_model = AsyncMock()
     set_prompt = AsyncMock()
     functions = load_functions(

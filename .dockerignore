@@ -13,7 +13,7 @@ logs/
 # its own stage, so copying the host's copies in would only invalidate the cache.
 webapp/node_modules/
 webapp/dist/
-kmua/webapp/dist/
+waku/webapp/dist/
 # Local credentials and signed test launch data must not ship in images.
 .env
 .env.*

@@ -3,7 +3,7 @@ name: Vietnamese i18n checks
 on:
   push:
     paths:
-      - "kmua/**"
+      - "waku/**"
       - "webapp/src/i18n/**"
       - "scripts/check_i18n.py"
       - "scripts/dev_init_data.py"
@@ -14,7 +14,7 @@ on:
       - ".github/workflows/i18n.yml"
   pull_request:
     paths:
-      - "kmua/**"
+      - "waku/**"
       - "webapp/src/i18n/**"
       - "scripts/check_i18n.py"
       - "scripts/dev_init_data.py"

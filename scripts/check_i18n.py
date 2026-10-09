@@ -11,20 +11,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from kmua.i18n import i18n  # noqa: E402
+from waku.i18n import i18n  # noqa: E402
 
 FIELDS = re.compile(r"(?<!\{)\{([a-zA-Z_][a-zA-Z_0-9]*)(?:![rsa])?(?::[^{}]*)?\}(?!\})")
 HAN = re.compile(r"[\u3400-\u9fff]")
 LEGACY_TOKENS = {
-    "kmua/plugins/inlinequery/main.py": {"无语"},
-    "kmua/plugins/inlinequery/manomeme/utils.py": {
+    "waku/plugins/inlinequery/main.py": {"无语"},
+    "waku/plugins/inlinequery/manomeme/utils.py": {
         "病娇",
         "生气",
         "害羞",
         "无语",
         "开心",
     },
-    "kmua/plugins/inlinequery/manomeme/drawer.py": {
+    "waku/plugins/inlinequery/manomeme/drawer.py": {
         "赞同",
         "疑问",
         "伪证",
@@ -104,7 +104,7 @@ def validate():
                 )
 
     retained = []
-    for path in (ROOT / "kmua").rglob("*.py"):
+    for path in (ROOT / "waku").rglob("*.py"):
         name = path.relative_to(ROOT).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         docstrings = set()
@@ -124,7 +124,7 @@ def validate():
                     first.value, ast.Constant
                 ):
                     docstrings.add(id(first.value))
-            if isinstance(node, ast.ImportFrom) and node.module == "kmua.i18n":
+            if isinstance(node, ast.ImportFrom) and node.module == "waku.i18n":
                 imports.update(
                     item.asname or item.name
                     for item in node.names
@@ -136,7 +136,7 @@ def validate():
                 agent_imports.update(
                     item.asname or item.name for item in node.names if item.name == "tr"
                 )
-            if isinstance(node, ast.ImportFrom) and node.module == "kmua.webapp.i18n":
+            if isinstance(node, ast.ImportFrom) and node.module == "waku.webapp.i18n":
                 prefixes = {
                     "api_text": "bot.hardcoded.api_reasons.",
                     "validation_text": "bot.hardcoded.api_validation.",
@@ -229,7 +229,7 @@ def validate():
                 continue
             if node.value in LEGACY_TOKENS.get(name, set()):
                 retained.append((name, node.lineno, "legacy parser/asset token"))
-            elif name == "kmua/database/affection.py" and not HAN.search(
+            elif name == "waku/database/affection.py" and not HAN.search(
                 re.sub(r"--[^\n]*", "", node.value)
             ):
                 retained.append((name, node.lineno, "SQL comments"))

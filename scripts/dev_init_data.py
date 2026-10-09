@@ -44,12 +44,12 @@ DEV_SIGNATURE_PLACEHOLDER = "A" * 86
 def load_settings() -> tuple[str, list[int]]:
     """Read the bot token and owner list from the project settings.
 
-    Imports `kmua.config` so the dev payload always matches whatever the bot is
+    Imports `waku.config` so the dev payload always matches whatever the bot is
     actually running with, including settings.dev.toml overrides.
     """
     sys.path.insert(0, str(REPO_ROOT))
     try:
-        from kmua.config import app_config
+        from waku.config import app_config
     except Exception as e:  # pragma: no cover - developer feedback path
         raise SystemExit(f"Could not load settings: {e}") from e
 
@@ -102,7 +102,7 @@ def build_init_data(
         fields["start_param"] = start_param
 
     # The data check string is every field except `hash`, sorted by key, joined
-    # with newlines. See kmua/webapp/auth.py for the verifying side.
+    # with newlines. See waku/webapp/auth.py for the verifying side.
     check_string = "\n".join(f"{key}={fields[key]}" for key in sorted(fields))
     secret = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
     data_hash = hmac.new(secret, check_string.encode(), hashlib.sha256).hexdigest()
@@ -180,7 +180,7 @@ def main() -> None:
         print(f"  start_param {start_param} -> chat {args.chat_id}")
     print("\nNext:")
     print("  1. add `webapp = true` and webapp_allow_origins to settings.dev.toml")
-    print("  2. uv run python -m kmua")
+    print("  2. uv run python -m waku")
     print("  3. cd webapp && pnpm dev")
 
 

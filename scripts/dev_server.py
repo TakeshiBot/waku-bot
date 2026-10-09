@@ -10,7 +10,7 @@ the database work normally; the few that call Telegram (member sync, leaving a c
 the divorce notification) will fail, and `/health` reports 503 because no client is
 connected. That is the expected shape of a frontend dev environment.
 
-Run the real bot (`uv run python -m kmua`) when you need those paths.
+Run the real bot (`uv run python -m waku`) when you need those paths.
 
 Usage:
     uv run python scripts/dev_server.py
@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 async def serve(host: str, port: int) -> None:
-    from kmua.config import app_config
+    from waku.config import app_config
 
     # Force the panel on: this script exists to serve it, whatever the file says.
     app_config.webapp = True
@@ -46,8 +46,8 @@ async def serve(host: str, port: int) -> None:
 
     import uvicorn
 
-    from kmua.database import db
-    from kmua.webapp import create_app
+    from waku.database import db
+    from waku.webapp import create_app
 
     await db.init_db()
 

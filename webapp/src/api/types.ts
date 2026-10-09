@@ -1,5 +1,5 @@
 /**
- * Types mirroring `kmua/webapp/schemas.py`.
+ * Types mirroring `waku/webapp/schemas.py`.
  *
  * Hand-written rather than generated: the API surface is small, and keeping these
  * by hand means a backend change shows up as a TypeScript error here instead of
@@ -399,7 +399,7 @@ export interface Page<T> {
 }
 
 /**
- * What triggered a run. Mirrors `RUN_KINDS` in `kmua/database/agent_trace.py`.
+ * What triggered a run. Mirrors `RUN_KINDS` in `waku/database/agent_trace.py`.
  */
 export type AgentRunKind =
   | "chat"

@@ -22,7 +22,7 @@ depends_on: str | Sequence[str] | None = None
 
 def affection_bucket(x: int) -> int:
     """
-    Map affection values to buckets, matching kmua/database/affection.py.
+    Map affection values to buckets, matching waku/database/affection.py.
     """
     if x < -200:
         return x // 50

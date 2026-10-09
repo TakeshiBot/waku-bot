@@ -1,0 +1,348 @@
+import mimetypes
+
+import pyrogram
+from pydantic import BaseModel, Field
+from pydantic_ai import Agent
+from pyrogram.client import Client
+
+from waku import database
+from waku.common.memory_store import memttlcache
+from waku.common.utils import GROUP_CHAT_TYPES
+from waku.config import app_config
+from waku.logger import logger
+from waku.plugins.agent.localization import configured_prompt, localized_message, tr
+from waku.plugins.agent.output import TypingKeepAlive, reply_output
+from waku.plugins.agent.prompt import get_input_prompt
+from waku.plugins.agent.runner import get_chat_prompt_override
+from waku.timezone import bot_now
+
+from . import provider, quota, trace
+from .agent import struct_model
+from .whitelist import is_chat_allowed
+
+
+class CommentResult(BaseModel):
+    comment: str = Field(description=tr("comment_content"))
+    poll_question: str | None = Field(default=None, description=tr("poll_question"))
+    poll_options: list[str] | None = Field(default=None, description=tr("poll_options"))
+    poll_is_anonymous: bool = Field(default=True, description=tr("poll_anonymous"))
+
+
+# Structured output forces a tool_choice, which thinking-enabled models
+# reject; the comment task needs the schema, so thinking defaults to off.
+# agent_struct_model_options applies on top - providers whose gateway
+# ignores reasoning_effort can disable thinking natively there, e.g.
+# extra_body={"thinking": {"type": "disabled"}} for DeepSeek-style gates.
+_comment_model_options = dict(app_config.agent_struct_model_options or {})
+_comment_model_options.setdefault("thinking", False)
+comment_agent = Agent(
+    model=struct_model,
+    output_type=CommentResult,
+    capabilities=[trace.AgentTraceCapability()],
+    retries=5,
+    model_settings=provider.make_model_settings(_comment_model_options),
+)
+
+
+def _normalize_poll(
+    question: str | None, options: list[str] | None
+) -> tuple[str, list[str]] | None:
+    """Sanitize a poll against the Telegram API limits; None when the poll
+    is unusable (no question, fewer than two non-empty options)."""
+    question = (question or "").strip()[:255]
+    options = [option.strip()[:100] for option in (options or []) if option.strip()][
+        :10
+    ]
+    if not question or len(options) < 2:
+        return None
+    return question, options
+
+
+async def _is_first_media_in_group(message: pyrogram.types.Message) -> bool:
+    """Return True only for the first message of a media group.
+
+    For non-album messages (no media_group_id), always returns True.
+    """
+    media_group_id = message.media_group_id
+    if not media_group_id:
+        return True
+
+    chat = message.chat
+    if chat is None or chat.id is None:
+        return True
+
+    if not (message.caption or message.text):
+        return False
+
+    key = f"channel_comment_media_group:{chat.id}:{media_group_id}"
+    if await memttlcache.get(key, False):
+        return False
+
+    await memttlcache.set(key, True, ttl=60)
+    return True
+
+
+def _message_has_unsupported_media(message: pyrogram.types.Message) -> bool:
+    """Return True if the message contains media that get_input_prompt cannot process.
+
+    This mirrors the media handling logic in get_input_prompt so that comments
+    are skipped when the model would only see a caption without the actual media.
+    """
+    if not message.media:
+        return False
+
+    # POLL is always converted to text; WEB_PAGE URL text is always visible.
+    if message.media in (
+        pyrogram.enums.MessageMediaType.POLL,
+        pyrogram.enums.MessageMediaType.WEB_PAGE,
+    ):
+        return False
+
+    if not app_config.agent_multimodal:
+        return True
+
+    match message.media:
+        case pyrogram.enums.MessageMediaType.PHOTO:
+            photo = message.photo
+            return not (
+                photo
+                and photo.file_id
+                and "photo" in app_config.agent_multimodal_inputs
+            )
+
+        case pyrogram.enums.MessageMediaType.LIVE_PHOTO:
+            # get_input_prompt has no handler for LIVE_PHOTO.
+            return True
+
+        case pyrogram.enums.MessageMediaType.VIDEO:
+            video = message.video
+            return not (
+                video
+                and video.file_id
+                and video.mime_type
+                and video.file_size
+                and video.file_size <= 20 * 1024 * 1024
+                and "video" in app_config.agent_multimodal_inputs
+            )
+
+        case pyrogram.enums.MessageMediaType.AUDIO:
+            audio = message.audio
+            return not (
+                audio
+                and audio.file_id
+                and audio.mime_type
+                and audio.file_size
+                and audio.file_size <= 10 * 1024 * 1024
+                and "audio" in app_config.agent_multimodal_inputs
+            )
+
+        case pyrogram.enums.MessageMediaType.VOICE:
+            voice = message.voice
+            return not (
+                voice
+                and voice.file_id
+                and voice.mime_type
+                and voice.file_size
+                and voice.file_size <= 10 * 1024 * 1024
+                and "audio" in app_config.agent_multimodal_inputs
+            )
+
+        case pyrogram.enums.MessageMediaType.DOCUMENT:
+            document = message.document
+            if not document or not document.file_id:
+                return True
+            if not document.file_size or document.file_size > 10 * 1024 * 1024:
+                return True
+            mime_type = document.mime_type
+            if not mime_type:
+                mime_type, _ = mimetypes.guess_type(document.file_name or "")
+                mime_type = mime_type or "application/octet-stream"
+            mime_type = mime_type.split(";")[0]
+            if mime_type.startswith("text/"):
+                return False
+            if (
+                mime_type.startswith("image/")
+                and "photo" in app_config.agent_multimodal_inputs
+            ):
+                return False
+            if mime_type in app_config.agent_multimodal_inputs:
+                return False
+            return True
+
+        case pyrogram.enums.MessageMediaType.STICKER:
+            sticker = message.sticker
+            if not sticker or not sticker.file_id:
+                return True
+            if sticker.is_animated:
+                return True
+            return "photo" not in app_config.agent_multimodal_inputs
+
+        case _:
+            # ANIMATION, VIDEO_NOTE, LOCATION, VENUE, CONTACT, DICE, GAME,
+            # GIVEAWAY, GIVEAWAY_WINNERS, STORY, INVOICE, PAID_MEDIA,
+            # CHECKLIST, UNSUPPORTED — none are handled by get_input_prompt.
+            return True
+
+
+def _media_would_be_embedded(message: pyrogram.types.Message) -> bool:
+    """True when get_input_prompt would embed this message's media as
+    multimodal content (photos, videos, audio, binary documents) rather
+    than as text (polls, web pages, text documents)."""
+    if not message.media:
+        return False
+    if message.media in (
+        pyrogram.enums.MessageMediaType.POLL,
+        pyrogram.enums.MessageMediaType.WEB_PAGE,
+    ):
+        return False
+    if message.media == pyrogram.enums.MessageMediaType.DOCUMENT:
+        document = message.document
+        mime_type = document.mime_type if document else None
+        if not mime_type and document:
+            mime_type, _ = mimetypes.guess_type(document.file_name)
+        if mime_type and mime_type.split(";")[0].startswith("text/"):
+            return False
+    return True
+
+
+async def channel_comment_filter_func(_, __, message: pyrogram.types.Message):
+    chat = message.chat
+    if chat is None:
+        return False
+    if chat.type not in GROUP_CHAT_TYPES:
+        return False
+    if not app_config.agent_channel_comment_enabled:
+        return False
+    if not message.automatic_forward:
+        return False
+    if _message_has_unsupported_media(message):
+        return False
+    if not app_config.agent_struct_model_multimodal and _media_would_be_embedded(
+        message
+    ):
+        # The comment model cannot take media: silently skip the post
+        # instead of commenting without anything to look at.
+        return False
+    if comment_agent is None:
+        return False
+    if not app_config.agent:
+        return False
+    if not chat.id or not is_chat_allowed(chat.id):
+        return False
+    chat_config = await database.get_chat_config(chat)
+    if not chat_config.ai_comment:
+        return False
+    return True
+
+
+channel_comment_filter = pyrogram.filters.create(channel_comment_filter_func)
+
+
+@Client.on_message(channel_comment_filter, group=2)  # 2 to after unpin
+@localized_message(prefer_chat=True)
+async def comment_channel_message(client: Client, message: pyrogram.types.Message):
+    if not app_config.agent:
+        return
+    chat = message.chat
+    if chat is None or chat.id is None:
+        return
+    if not is_chat_allowed(chat.id):
+        return
+    subject = quota.subject_of(message)
+    if not await quota.can_start(subject):
+        logger.debug(f"Skip commenting on channel post in {chat.id}: no quota")
+        return
+    channel = message.sender_chat
+    if channel is None or channel.id is None:
+        return
+
+    if not await _is_first_media_in_group(message):
+        return
+    instructions = (
+        app_config.agent_group_prompt
+        if app_config.agent_group_prompt
+        else app_config.agent_prompt
+    )
+    prompt_override = await get_chat_prompt_override(chat.id)
+    if prompt_override:
+        instructions = prompt_override
+    ctx_parts = [
+        tr("channel_task"),
+        tr("channel_name", p0=channel.title),
+        tr("channel_bio", p0=channel.bio or channel.description),
+        tr("current_time", p0=bot_now().strftime(tr("date_format")) + " +07:00"),
+        tr("task_description", p0=configured_prompt("agent_channel_comment_prompt")),
+    ]
+    instructions += "\n\n" + "\n".join(ctx_parts) + "\n\n" + tr("output_language")
+
+    prompts, _, _ = await get_input_prompt(client, message, ctx=None)
+    if not prompts:
+        return
+    logger.debug(
+        f"Channel comment post in chat {chat.id} from channel "
+        f"{channel.id} ({channel.title or '?'}), msg {message.id}: "
+        f"{message.caption or message.text}"
+    )
+    session = await trace.start_trace(
+        "channel_comment",
+        chat_id=chat.id,
+        user_id=channel.id,
+        message_id=message.id,
+    )
+    try:
+        async with TypingKeepAlive(client, message):
+            result = await comment_agent.run(
+                model=struct_model,
+                instructions=instructions,
+                user_prompt=prompts,
+            )
+            output = result.output
+            # Charge this model call like a normal turn. Channel identities have
+            # no personal account, so charge the group like anonymous admins.
+            await quota.settle(subject, result.usage)
+            # Record model success independently of subsequent comment/poll delivery.
+            trace.mark_trace(
+                session,
+                usage=result.usage,
+                output=output.comment,
+            )
+            if output.comment:
+                try:
+                    await reply_output(client, message, output.comment)
+                except Exception as e:
+                    logger.error(
+                        f"Channel comment reply failed: {e.__class__.__name__} - {e}"
+                    )
+            # An invalid poll is skipped, never fatal to the comment.
+            poll = _normalize_poll(output.poll_question, output.poll_options)
+            if poll is not None:
+                question, options = poll
+                try:
+                    await client.send_poll(
+                        chat_id=chat.id,
+                        question=question,
+                        options=list(options),  # type: ignore[arg-type]
+                        is_anonymous=output.poll_is_anonymous,
+                        reply_parameters=pyrogram.types.ReplyParameters(
+                            message_id=message.id
+                        ),
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Channel comment poll failed in chat {chat.id}: "
+                        f"{e.__class__.__name__} - {e}"
+                    )
+        logger.info(
+            f"Channel comment done in chat {chat.id} from channel "
+            f"{channel.id} ({channel.title or '?'}), msg {message.id}: "
+            f"comment={output.comment!r} "
+            f"poll={output.poll_question!r}"
+        )
+    except Exception as e:
+        trace.mark_trace(session, status="error", error=e)
+        logger.error(
+            f"Channel comment error in chat {chat.id} from channel "
+            f"{channel.id}: {e.__class__.__name__} - {e}"
+        )
+    finally:
+        trace.finish_trace(session)

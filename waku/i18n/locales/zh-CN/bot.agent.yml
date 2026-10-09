@@ -1,0 +1,548 @@
+bot:
+  agent_i18n:
+    busy: 「回复不过来啦, 请稍等一会吧...」
+    channel_task: '任务类型: 频道评论'
+    channel_name: '频道名称: {p0}'
+    channel_bio: '频道简介: {p0}'
+    current_time: '当前时间: {p0}'
+    task_description: '任务描述: {p0}'
+    comment_content: 评论内容
+    poll_question: 投票问题
+    poll_options: 投票选项
+    poll_anonymous: 投票是否匿名
+    date_format: '%Y年%m月%d日 %H:%M:%S'
+    personality: 性格
+    interests: 兴趣爱好
+    activities: 正在做的事情
+    occupation: 工作/职业
+    goals: 愿望/目标
+    worries: 担忧/烦恼
+    skills: 技能/专长
+    attitude: 对你的态度
+    shared_experiences: 与你的经历
+    extra_info_optional: 其他补充信息, 若无可不填
+    attitude_model: 对聊天中的AI助手的态度, 若消息记录中没有AI助手的则保持不变
+    experiences_model: 与聊天中的AI助手的经历, 若消息记录中没有AI助手的则保持不变
+    affection_option: 好感度变化选项, 枚举值 increase,decrease,no_change
+    affection_amplitude: 好感度变化幅度, 枚举值 small,medium,large
+    personality_value: '性格: {p0}'
+    attitude_value: '对你的态度: {p0}'
+    none: 无
+    user_profile: '用户信息: 姓名: {p0}, 用户名: {p1}'
+    additional_prompt: '附加提示: {p0}'
+    interests_value: '兴趣爱好: {p0}'
+    activities_value: '正在做的事情: {p0}'
+    occupation_value: '工作/职业: {p0}'
+    goals_value: '愿望/目标: {p0}'
+    worries_value: '担忧/烦恼: {p0}'
+    skills_value: '技能/专长: {p0}'
+    shared_experiences_value: '与你的经历: {p0}'
+    extra_info_value: '其他补充信息: {p0}'
+    user_memory: '关于用户的记忆: ({p0})'
+    followup_check: '
+
+      在群聊场景中发生如下原始对话:
+
+      用户: {p0}
+
+      Bot回复: {p1}
+
+
+      现在收到了某用户发送的新消息: {p2}
+
+
+      判断这条新消息是否是对Bot回复的评论、疑问、补充、反驳或相关讨论.
+
+      注意：
+
+      - 即使是不同用户发送的消息也可能相关
+
+      - 新消息与原先话题必须存在明显的关联性才算相关, 如果不能确定, 一律判定为不相关
+
+      '
+    followup_context: '
+
+      场景信息: 在群聊中刚才有用户与你进行了对话，内容如下:
+
+      用户[{p0}]: {p1}
+
+      你的回复: {p2}
+
+      ---
+
+      现在又有用户[{p3}]对这个话题继续讨论，请自然地参与对话。
+
+      '
+    is_relevant: 是否相关
+    relevance_reason: 判断依据说明
+    relevance_system: 你是一个对话相关性判断助手。判断用户的新消息是否是对之前对话的延续。
+    owner: 群主
+    administrator: 管理员
+    member: 群员
+    unavailable_content: 无法查看此内容
+    unknown: 未知
+    human: 真人
+    service_message: 系统消息
+    unknown_group: 未知群组
+    group_header: '# 群聊 - {p0}'
+    current_message_heading: '## 当前消息
+
+      '
+    current_user: '当前用户: {p0}'
+    message_content: '消息内容: {p0}'
+    message_id: '消息 ID: {p0}'
+    system: 系统
+    anonymous_admin: 匿名管理
+    group_info: '群组信息:'
+    history_heading: '## 历史消息
+
+      '
+    reply_chain_hint: reply_chain_depth={p0} (可用 chat://history?reply_chain_of={p1} 获取该消息的完整回复链)
+    reply_heading: '当前用户所回复的消息:'
+    reply_sender: '    发送者: {p0}'
+    reply_content: '    消息内容: {p0}'
+    reply_id: '    消息 ID: {p0}'
+    channel: 频道
+    group_id: 群 ID
+    username: 用户名
+    description: 简介
+    member_count: 成员数
+    image_reference_previous: '消息图号: 图{p0} (此图已在之前的对话中展示)'
+    image_reference: '消息图号: 图{p0}'
+    reply_image_previous: '    消息图号: 图{p0} (此图已在之前的对话中展示)'
+    reply_image: '    消息图号: 图{p0}'
+    jev_question: 新消息是否是对 Bot 回复的评论、疑问、补充、反驳或相关讨论?
+    jev_true: 新消息与 Bot 回复的话题存在明显关联
+    jev_false: 新消息与 Bot 回复的话题无关, 或无法确定是否相关
+    group_memory_heading: '群聊消息记录:
+
+      '
+    memory_message: '{p0}({p1})说: {p2}'
+    memory_history_heading: '用户与 AI 的聊天记录(按聊天分组, 时间为 UTC):'
+    private_chat: 私聊
+    group_chat: 群聊「{p0}」
+    media_photo: 图片
+    media_video: 视频
+    media_audio: 音频
+    media_voice: 语音
+    media_document: 文档
+    media_sticker: 贴纸
+    media_animation: 动画
+    media_video_note: 视频消息
+    media_live_photo: 实况照片
+    media_location: 位置
+    media_venue: 地点
+    media_contact: 联系人
+    media_dice: 骰子
+    media_game: 游戏
+    media_giveaway: 抽奖
+    media_giveaway_winners: 抽奖结果
+    media_story: 故事
+    media_invoice: 账单
+    media_paid: 付费内容
+    media_checklist: 清单
+    media_unsupported: 不支持的内容
+    unsupported_media: '[模型无法处理的内容: {p0}{p1}]'
+    current_message_label: '[当前消息|发送者:{p0}|消息ID:{p1}]'
+    describe_media: '请描述这份多媒体内容（类型: {p0}），转述其中的关键信息。'
+    media_generic: 多媒体内容
+    unknown_channel: 未知频道
+    media_transcription: '[用户发送了多媒体内容, 模型转述如下]:
+
+      {p0}'
+    unknown_user: 未知用户
+    current_message_marker: '## 当前消息'
+    media_failed: '[用户发送了多媒体内容, 但转述失败, 已省略]'
+    media_empty: '[用户发送了多媒体内容, 转述为空, 已省略]'
+    history_media_failed: '[历史多媒体内容转述失败, 已省略]'
+    quoted_message_label: '[被引用的消息|发送者:{p0}|消息ID:{p1}]'
+    rss_digest_intro: '以下是从 RSS feed「{p0}」抓取到的一批新条目, 需要你为其中部分条目写群聊口吻的点评:'
+    rss_digest_requirements: '
+
+      要求: 对每条值得群友关注的条目输出 1-2 句点评, 指出它为什么值得看; 不值得提的条目可以省略。点评用 {p0} 语言, 口语化, 不要复述原文。'
+    rss_json_format: '
+
+      输出格式: 一个 JSON 对象, summaries 为数组, 每项为 {"entry_id": "<条目ID>", "summary": "<点评>"}。只输出 JSON, 不要输出其它内容。'
+    rss_broadcast_intro: '以下是从 RSS feed「{p0}」抓取到的新条目:'
+    rss_broadcast_requirements: '
+
+      你是一个群聊成员, 刚看到这些新内容。请发一条 1-3 句的群聊消息讨论它们: 整体点评这一批内容(不要逐条罗列), 至少包含一个条目的标题和链接, 用 {p0} 语言, 口语化, 不用列表符号。'
+    rss_entry_id: 条目 ID, 必须是输入中给出的 [entry_id]
+    rss_summary: 该条目的 1-2 句群聊口吻点评, 指出它为什么值得看
+    rss_summaries: 值得点评的条目列表
+    rss_title: '标题: {p0}'
+    rss_link: '链接: {p0}'
+    rss_broadcast_title: '
+
+      - 标题: {p0}'
+    rss_broadcast_link: '  链接: {p0}'
+    rss_content_summary: '内容摘要: {p0}'
+    rss_broadcast_summary: '  内容摘要: {p0}'
+    rss_output_schema: '返回条目点评列表: summaries 为数组, 每项含 entry_id 与 summary'
+    sticker_added: 这个贴纸我记下啦, 之后可能会用它
+    sticker_reply_required: 请回复一条贴纸消息
+    sticker_deleted: 以后不会发这个贴纸啦 (只要别人也不发...
+    sticker_not_stored: 这个贴纸本就不在库中呢
+    stickers_cleared: 已清空本群的贴纸记忆 ({p0} 张贴纸)
+    stickers_already_empty: 本群贴纸库本来就是空的呢
+    update_user_memory: '根据已有的记忆和新的聊天消息, 更新对用户的记忆, 并决定对用户的好感变化.
+
+      旧的记忆: {p0}
+
+      新的聊天消息: {p1}'
+    summarize_user_memory: "根据以下聊天记录, 总结出关于用户的重要信息, 并决定对用户的好感变化. 记录已按聊天分组并标注时间, 注意区分用户在不同聊天中的表现:\n {p0}"
+    question_answer: '用户对问题「{p0}」的回答是: {p1}'
+    question_not_yours: 这不是你的问题哦
+    question_expired: 这条回答已经过期了哦
+    invalid_option: 无效的选项
+    send_failed: 发送失败
+    send_succeeded: 发送成功
+    send_error: '{p0}, 错误信息: {p1}'
+    send_info: '{p0}, 提示信息: {p1}'
+    time_difference: '时间差: {p0}
+
+      {p1} 是 {p2} 的{p3}
+
+      总计: {p4} 秒'
+    monday: 星期一
+    tuesday: 星期二
+    wednesday: 星期三
+    thursday: 星期四
+    friday: 星期五
+    saturday: 星期六
+    sunday: 星期日
+    readable_date_format: '%Y年%m月%d日 %H:%M:%S {p0}'
+    current_time_iso: '当前时间 (ISO): {p0}'
+    time_after: 之后
+    time_before: 之前
+    current_time_both: '当前时间:
+
+      - ISO格式: {p0}
+
+      - 易读格式: {p1}'
+    days: '{p0}天'
+    hours: '{p0}小时'
+    minutes: '{p0}分钟'
+    seconds: '{p0}秒'
+    time_failed: '获取时间失败: {p0}'
+    time_difference_failed: '计算时间差失败: {p0}'
+    context_unavailable: Message context is unavailable.
+    question_send_failed: 'Failed to send question: {p0}'
+    membership_check_failed: 'Cannot verify if user {p0} is in this group: {p1}'
+    history_selector: 'Error: pick exactly one selector: before=<id>, after=<id>, from_id=<a>&to_id=<b>,
+      or reply_chain_of=<id>.'
+    history_empty: No messages found in the specified range.
+    query_messages_empty: No messages found matching the query.
+    history_range_order: 'Error: to_id must be >= from_id.'
+    history_range_limit: 'Error: the requested range exceeds 200 messages; use a narrower from_id..to_id.'
+    history_reply_missing: 'Error: message not found or has no reply chain.'
+    history_current_unknown: 'Error: cannot fetch latest messages; the current message ID is unknown.'
+    memory_unavailable: Group memory system is not available.
+    memory_store_failed: 'Failed to store memory: {p0}: {p1}'
+    memory_system: You are a helpful assistant that stores useful information about the group based on
+      the following content. Extract any notable facts, relationships, preferences, or significant details
+      that would be worth remembering about the group and its members.
+    invalid_regex: 'Invalid regex pattern: {p0}'
+    edited_image_caption: 'Edited image based on prompt: {p0}'
+    image_generation_unconfigured: Image generation service is not configured.
+    current_context_unavailable: Current message context is unavailable.
+    image_edit_unconfigured: Image editing service is not configured.
+    image_edit_failed: 'Image editing failed: {p0}'
+    generated_image_send_failed: 'Image was generated but could not be sent: {p0}'
+    source_image_download_failed: Failed to download source image (timeout or error).
+    image_not_found: No image found in the current message, the message being replied to, or the recent
+      conversation history. Please send an image to edit.
+    edited_image_send_failed: 'Image was edited but could not be sent: {p0}'
+    sticker_memory_disabled: 'Error: Sticker sending is not available (sticker memory is disabled).'
+    stickers_group_only: 'Error: Stickers are only available in group chats.'
+    stickers_insufficient: 'Error: Not enough stickers stored in this chat yet (need at least 20).'
+    text_media_conflict: Cannot provide both text and media. Use caption for media description.
+    query_embedding_failed: Failed to embed query.
+    sticker_no_match: No matching sticker found in this group's sticker memory.
+    stickers_chat_disabled: 'Error: Sticker sending is disabled for this chat.'
+    sticker_availability_failed: 'Error: Failed to check sticker availability: {p0}'
+    poll_send_failed: 'Failed to send poll: {p0}: {p1}'
+    sticker_send_failed: 'Failed to send sticker: {p0}: {p1}'
+    anime_chat_disabled: Anime photo feature is disabled in this chat.
+    schedule_invalid: 'Invalid schedule_time format. Use ISO 8601, e.g. ''2025-06-04T15:00:00+08:00''.
+      Error: {p0}'
+    requests_too_frequent: You are sending requests too frequently. Please try again later.
+    anime_fetch_failed: Failed to fetch anime artwork.
+    operation_error: 'Error occurred: {p0}'
+    scheduled: Scheduled for {p0}
+    sticker_memory_unconfigured: Sticker memory is not configured.
+    message_sent: Message sent.
+    media_sent: '{p0} sent.'
+    send_operation_failed: 'Failed to send: {p0}'
+    files_entry_limit: 'Error: Too many files entries (max {p0}).'
+    command_empty: 'Error: command must not be empty.'
+    command_timeout: 'Error: Command timed out after {p0}s. Partial output:
+
+      {p1}'
+    error: 'Error: {p0}'
+    read_failed: 'Error: Cannot read {p0}: {p1}'
+    write_failed: 'Error: Cannot write {p0}: {p1}'
+    method_unknown: 'Error: Unknown method: {p0}'
+    error_context_unavailable: 'Error: Current message context is unavailable.'
+    method_unknown_supported: 'Error: Unknown method: {p0}. Supported: {p1}.'
+    schedule_fields_required: 'Error: scheduleMessage requires text and schedule_time.'
+    block_duration_range: 'Error: blockUser requires duration_minutes (1-10080).'
+    fields_unknown: 'Error: Unknown field(s) for {p0}: {p1}. Allowed: {p2}.'
+    chat_id_fixed: 'Error: chat_id is always the current chat; do not pass it.'
+    document_content_conflict: 'Error: sendDocument takes either document or content, not both.'
+    document_content_required: 'Error: sendDocument requires document or content.'
+    fields_required: 'Error: Missing required field(s) for {p0}: {p1}.'
+    method_invalid_message: 'Error: {p0} failed: MessageIdInvalid'
+    method_failed: 'Error: {p0} failed: {p1}'
+    block_duration_integer: 'Error: blockUser requires duration_minutes (integer).'
+    reaction_wrong_chat: 'Error: sendReaction target is not a message of this chat. Omit message_id to
+      react to the message being answered.'
+    reaction_message_invalid: 'Error: Invalid message_id for sendReaction: {p0}. Use a positive Telegram
+      message id, or omit message_id to react to the message being answered.'
+    parse_mode_invalid: 'Error: Invalid parse_mode ''{p0}''. Allowed: HTML, Markdown, MarkdownV2, disabled,
+      default.'
+    code_repository_uninitialized: 'Error: Code repository not initialized.'
+    media_target_invalid: 'Error: {p0} must be an http(s) URL, a work:// file reference or a waku:// codebase
+      file.'
+    download_failed: 'Error: Failed to download {p0}: {p1}'
+    time_difference_required: 'Error: operation ''difference'' requires both time1 and time2.'
+    page_empty: Page returned empty content
+    url_not_public: URL is not a public internet address
+    crawl_empty: Crawl API returned no results
+    fetch_timeout: Fetch timed out
+    crawl_timeout_config: Crawl API timed out after {p0}s (agent_crawl_api_timeout)
+    message_access_denied: Message not found or access denied
+    chat_access_denied: Cannot access this chat - it may be private or you are not a member
+    message_missing: Message not found
+    private_message_restricted: This is a Telegram message link but you cannot access private group/channel
+      messages from other chats for privacy reasons
+    crawl_timeout: Crawl API timed out
+    crawl_rejected: Crawl API rejected the request (HTTP {p0})
+    original_message_missing: Original message not found
+    chat_target_unknown: 'Error: Unknown chat:// target {p0}; use /info or /history.'
+    chat_info_missing: 'Error: Chat info not found.'
+    query_parameters_unknown: 'Error: unknown query parameters; supported: before=<id>, after=<id>, from_id=<a>&to_id=<b>,
+      reply_chain_of=<id>, count=N.'
+    query_parameters_invalid: 'Error: invalid query parameters; expected integers for before/after/from_id/to_id/count/reply_chain_of.'
+    file_missing: 'File not found: {p0}'
+    media_download_failed: Failed to download {p0}.
+    chat_media_target_invalid: Invalid chat:// media target {p0}; use chat://media/<message_id>
+    chat_media_id_invalid: Invalid chat:// media target {p0}; expected a message id.
+    message_no_media: Message {p0} has no downloadable media.
+    telegram_link_invalid: 'Not a t.me message link: {p0}'
+    chat_message_no_media: Message {p0} in {p1} has no downloadable media.
+    transcription_model_unavailable: No multimodal transcription model is available.
+    chat_resolve_failed: Cannot resolve {p0} from {p1}; the chat may be private or the bot may not be
+      a member.
+    target_unsupported: 'Unsupported target: {p0}. Use waku:// (codebase), work:// (workspace), persist://
+      (persisted files), chat:// (current chat: info, history, media), memory:// (memory), web:// (web
+      search) or http(s):// (web; t.me message links return the message content).'
+    codebase_disabled: 'Error: Codebase access is disabled.'
+    workspace_disabled: 'Error: Workspace access is disabled.'
+    web_disabled: 'Error: Web access is disabled.'
+    websearch_disabled: 'Error: Web search is disabled.'
+    chat_protocol_group_only: 'Error: chat:// is only available in group chats.'
+    memory_chat_unavailable: 'Error: Group memory is not available in this chat.'
+    file_persisted: Persisted {p0} for this chat (sent as a document).
+    filename_invalid: 'Error: name must be a plain name of 1-256 characters.'
+    content_empty: 'Error: The content is empty.'
+    file_size_limit: 'Error: File exceeds the {p0} byte limit.'
+    file_send_failed: 'Error: Failed to send the file to this chat.'
+    file_record_failed: 'Error: Failed to record the file; the sent document was removed.'
+    persisted_file_missing: No persisted file named {p0} in this chat.
+    workspace_written_hint: Wrote {p0} bytes to {p1}. Use read to verify, or tg sendDocument to share
+      it.
+    workspace_edited: Edited {p0}. Use read to verify.
+    workspace_deleted: Deleted {p0}.
+    target_content_required: 'Error: content is required for {p0} targets.'
+    target_not_editable: 'Error: {p0} is read-only or not editable; only work:// targets accept edits.'
+    search_empty: No results found for '{p0}'
+    workspace_written: Wrote {p0} bytes to {p1}.
+    target_not_writable: 'Error: {p0} is read-only or not writable; only work://, sandbox://, persist://
+      and memory:// targets accept writes.'
+    workspace_empty: Workspace is empty at {p0}.
+    memories_empty: No memories found.
+    persisted_file_removed: Removed {p0} from the managed set; the chat message stays.
+    target_not_deletable: 'Error: {p0} is not deletable; only work://, sandbox:// and persist:// targets
+      can be deleted.'
+    persisted_files_empty: No persisted files for this chat.
+    path_missing: 'Path not found: {p0}'
+    error_persisted_file_missing: 'Error: No persisted file named {p0} in this chat.'
+    tool_provide_at_least_2_options: Provide at least 2 options.
+    tool_provide_at_most_5_options: Provide at most 5 options.
+    tool_question_must_not_be_empty: Question must not be empty.
+    tool_this_feature_is_not_available_in_this_chat: This feature is not available in this chat.
+    tool_user_p0_has_been_blocked_for_p1_minutes_requested_p2_min_reduced_by_affection_rank: User {p0}
+      has been blocked for {p1} minutes (requested {p2} min, reduced by affection rank).
+    tool_user_p0_is_currently_immune_to_being_blocked: User {p0} is currently immune to being blocked.
+    tool_user_p0_is_not_a_member_of_this_group_cannot_block: User {p0} is not a member of this group,
+      cannot block.
+    tool_this_tool_is_not_available_in_private_chats: This tool is not available in private chats.
+    tool_chat_history_p0_messages: 'Chat History ({p0} messages):
+
+      '
+    tool_feature_is_not_available: Feature is not available.
+    tool_error_searching_messages: Error searching messages
+    tool_search_results_for_p0_p1_matches: '🔍 Search Results for ''{p0}'' ({p1} matches):
+
+      '
+    tool_count_must_be_between_1_and_200_inclusive: Count must be between 1 and 200, inclusive.
+    tool_memory_stored_p0: 'Memory stored: {p0}'
+    tool_file_p0_lines_p1_p2_of_p3: 'File: {p0} (lines {p1}-{p2} of {p3})'
+    tool_a_telegram_bot_with_ai_agent_capabilities: A Telegram bot with AI agent capabilities
+    tool_code_repository_not_initialized: Code repository not initialized
+    tool_p0_lines_above: '... ({p0} lines above)'
+    tool_p0_lines_below: '... ({p0} lines below)'
+    tool_a_non_empty_prompt_is_required_to_generate_an_image: A non-empty prompt is required to generate
+      an image.
+    tool_image_generation_failed_p0: 'Image generation failed: {p0}'
+    tool_image_generated_successfully: Image generated successfully.
+    tool_a_non_empty_prompt_is_required_to_edit_an_image: A non-empty prompt is required to edit an image.
+    tool_image_edited_successfully_based_on_prompt_p0: 'Image edited successfully based on prompt: {p0}'
+    tool_generated_image_based_on_prompt_p0: 'Generated image based on prompt: {p0}'
+    tool_must_provide_either_schedule_time_or_send_immediately_true: Must provide either schedule_time
+      or send_immediately=True
+    tool_must_provide_either_text_or_media_media_type_media_url: Must provide either text or media (media_type
+      + media_url).
+    tool_media_type_is_required_when_providing_media_url: media_type is required when providing media_url.
+    tool_media_url_is_required_when_providing_media_type: media_url is required when providing media_type.
+    tool_question_is_required_for_poll: '''question'' is required for poll.'
+    tool_options_must_have_at_least_2_items: '''options'' must have at least 2 items.'
+    tool_options_must_have_at_most_10_items: '''options'' must have at most 10 items.'
+    tool_schedule_time_must_be_in_the_future: schedule_time must be in the future.
+    tool_command_exited_with_code_p0_p1: 'Command exited with code {p0}:
+
+      {p1}'
+    tool_expected_a_work_reference_got_p0: Expected a work:// reference, got {p0}
+    tool_work_reference_has_no_file_name_p0: 'work:// reference has no file name: {p0}'
+    tool_p0_sent_message_id_p1: '{p0} sent (message_id={p1}).'
+    tool_crawl_api_at_p0_answered_health_with_http_p1_but_dropped_the_crawl_request_p2: Crawl API at {p0}
+      answered /health with HTTP {p1} but dropped the crawl request ({p2})
+    tool_crawl_api_at_p0_dropped_the_connection_p1: Crawl API at {p0} dropped the connection ({p1}).
+    tool_content_truncated_at_p0_characters: '
+
+
+      [Content truncated at {p0} characters]'
+    tool_crawl_api_url_is_not_configured: Crawl API URL is not configured
+    tool_this_is_a_comment_reply_message: '[This is a comment/reply message]'
+    tool_caption_p0: '[Caption]: {p0}'
+    tool_contains_photo: '[Contains photo]'
+    tool_forwarded_from_p0: 'Forwarded from: {p0}'
+    tool_this_is_a_reply_to_message_p0: '[This is a reply to message {p0}]'
+    tool_url_must_start_with_http_or_https: URL must start with http:// or https://
+    tool_contains_video: '[Contains video]'
+    tool_unknown_channel: Unknown channel
+    tool_message_p0: ' (message {p0})'
+    tool_content: '
+
+      --- Content ---
+
+      '
+    tool_crawl_api_returned_failure: Crawl API returned failure
+    tool_contains_audio_p0: '[Contains audio: {p0}]'
+    tool_contains_voice_message: '[Contains voice message]'
+    tool_contains_document_p0: '[Contains document: {p0}]'
+    tool_contains_sticker_p0: '[Contains sticker: {p0}]'
+    tool_contains_poll_p0: '[Contains poll: {p0}]'
+    tool_path_escapes_the_workspace_p0: 'Path escapes the workspace: {p0}'
+    tool_content_exceeds_the_p0_byte_limit: Content exceeds the {p0} byte limit
+    tool_result_exceeds_the_p0_byte_limit: Result exceeds the {p0} byte limit
+    tool_line_p0_out_of_range_file_has_p1_lines: line {p0} out of range (file has {p1} lines)
+    tool_old_text_not_found_on_line_p0: old_text not found on line {p0}
+    tool_old_text_matches_p0_times_on_line_p1_make_old_text_unique_or_pass_replace_all_true: old_text
+      matches {p0} times on line {p1}; make old_text unique or pass replace_all=True
+    tool_old_text_not_found_in_p0: old_text not found in {p0}
+    tool_old_text_matches_p0_times_in_p1_make_old_text_unique_or_pass_replace_all_true: old_text matches
+      {p0} times in {p1}; make old_text unique or pass replace_all=True
+    tool_target_p0_is_not_readable: Target {p0} is not readable.
+    tool_p0_contains_binary_content_p1_p2_the_bytes_were_not_decoded_as_text: '{p0} contains binary content
+      ({p1}). {p2} The bytes were not decoded as text.'
+    tool_media_transcription_from_p0_p1_p2: '[Media transcription from {p0} ({p1})]:
+
+      {p2}'
+    tool_p0_from_p1_p2: '[{p0} from {p1} ({p2})]'
+    tool_p0_caption_p1: '{p0}
+
+      [Caption]: {p1}'
+    tool_p0_paid_media_is_not_supported: '{p0}: paid media is not supported.'
+    tool_p0_the_message_has_no_downloadable_media: '{p0}: the message has no downloadable media.'
+    tool_p0_the_file_is_p1_bytes_over_the_p2_byte_download_limit: '{p0}: the file is {p1} bytes, over
+      the {p2} byte download limit.'
+    tool_p0_the_message_contains_an_album_of_several_media_files_albums_are_not_supported: '{p0}: the
+      message contains an album of several media files; albums are not supported.'
+    tool_p0_the_file_is_over_the_p1_byte_download_limit: '{p0}: the file is over the {p1} byte download
+      limit.'
+    tool_message_p0_in_p1: message {p0} in {p1}
+    tool_the_media_bytes_were_unavailable_for_transcription: The media bytes were unavailable for transcription.
+    tool_media_transcription_failed: Media transcription failed.
+    tool_caption_p0_2: '
+
+      [Caption]: {p0}'
+    tool_p0_contains_binary_content_p1_the_current_model_cannot_inspect_this_media: '{p0} contains binary
+      content ({p1}). The current model cannot inspect this media.'
+    tool_p0_is_p1_but_its_bytes_could_not_be_read: '{p0} is {p1}, but its bytes could not be read.'
+    tool_send_document_returned_none: send_document returned None
+    tool_sent_message_has_no_document: sent message has no document
+    tool_path_escapes_the_sandbox_p0: 'Path escapes the sandbox: {p0}'
+    tool_sandbox_paths_must_not_use_symlinks_p0: 'sandbox:// paths must not use symlinks: {p0}'
+    tool_the_stored_file_id_is_invalid: The stored file id is invalid.
+    tool_download_failed_p0: 'Download failed: {p0}'
+    tool_search_results_for_p0_p1: 'Search results for ''{p0}'' ({p1}):'
+    tool_max_lines_must_be_between_1_and_1500: max_lines must be between 1 and 1500
+    tool_start_line_must_be_1: start_line must be >= 1
+    tool_name_size_type: name | size | type
+    tool_query_must_be_at_least_2_characters: Query must be at least 2 characters
+    tool_max_results_must_be_between_1_and_50: max_results must be between 1 and 50
+    tool_name_size_updated: name | size | updated
+    tool_search_results_for_p0_p1_files: 'Search results for ''{p0}'' ({p1} files):'
+    tool_p0_p1_p2_matches: '
+
+      {p0}. {p1} ({p2} matches)'
+    tool_p0_p1_p2_matches_shown: '
+
+      {p0}. {p1} ({p2} matches shown)'
+    tool_line_p0_p1: '   Line {p0}: {p1}'
+    output_language: 默认使用中文回复；用户明确要求其他语言时使用该语言。
+    web_sender: '发送者: {p0}'
+    web_date: '日期: {p0}'
+    method_ok: '{p0} 成功。'
+    clear_sessions_confirm: 这会清空所有 Agent 会话（历史、待回答问题、等待状态、已存溢出数据），且无法撤销。执行 /clear_sessions confirm 继续。
+    clear_sessions_done: 已清空 {p0} 条会话历史、{p1} 个提示游标、{p2} 个待回答问题、{p3} 个会话 ID、{p4} 条溢出数据、{p5} 条排队消息、{p6}
+      个 shell 工作区、{p7} 个工作区数据库、{p8} 个持久文件（聊天消息保留）。
+    model_remote_chat: 聊天 <code>{p0}</code>
+    model_this_chat: 当前聊天
+    model_header: <b>{p0} 的当前模型覆盖设置：</b>
+    model_usage: 用法：<code>/model [@chat_id] [main|multimodal|small] [model_spec]</code>
+    model_reset_hint: 省略 model_spec 恢复全局默认值。
+    model_target_hint: 省略 @chat_id 则应用到当前聊天。
+    model_both_set: '{p0} 的主模型与多模态模型已设为 <code>{p1}</code>（原值：main=<code>{p2}</code>，multimodal=<code>{p3}</code>）。'
+    model_main_set: '{p0} 的主模型已设为 <code>{p1}</code>（原值：<code>{p2}</code>）。'
+    model_main_reset: '{p0} 的主模型已恢复全局默认值 <code>{p1}</code>（原值：<code>{p2}</code>）。'
+    model_multimodal_set: '{p0} 的多模态模型已设为 <code>{p1}</code>（原值：<code>{p2}</code>）。'
+    model_multimodal_reset: '{p0} 的多模态模型已恢复全局默认值 <code>{p1}</code>（原值：<code>{p2}</code>）。'
+    model_small_set: '{p0} 的小模型已设为 <code>{p1}</code>（原值：<code>{p2}</code>）。'
+    model_small_reset: '{p0} 的小模型已恢复全局默认值 <code>{p1}</code>（原值：<code>{p2}</code>）。'
+    prompt_custom_active: 当前聊天已<b>启用</b>自定义提示。
+    prompt_default_active: 当前聊天使用<b>默认</b>提示。
+    prompt_usage: '{p0}
+
+
+      用法：
+
+      <code>/prompt &lt;text&gt;</code> — 设置自定义提示
+
+      <code>/prompt reset</code> — 恢复默认提示'
+    prompt_reset: 当前聊天的提示已恢复默认值。
+    prompt_set: 已设置当前聊天的自定义提示。
+    model_global_default: （全局默认值：{p0}）
+    compaction_merge: '{p0}
+
+
+      将以上新消息整合进 <previous-summary> 标签内的现有摘要：必须保留仍然正确的信息，必须补充新进展、决策和上下文，必须将已完成事项移出进行中，必须更新下一步，可删除不再相关的信息。保持相同的分节格式。
+
+
+      <previous-summary>
+
+      {p1}
+
+      </previous-summary>'

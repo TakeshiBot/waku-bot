@@ -6,7 +6,7 @@ FROM node:24-alpine AS webui
 # the same version as local development instead of whatever is newest.
 RUN corepack enable
 # Mirrors the repo layout, because vite.config.ts writes the bundle to
-# ../kmua/webapp/dist relative to webapp/.
+# ../waku/webapp/dist relative to webapp/.
 WORKDIR /build/webapp
 # Manifests first: dependencies only re-install when they actually change.
 # pnpm-workspace.yaml carries the overrides (pnpm 11): without it the
@@ -36,11 +36,11 @@ RUN curl -fsSL -o /usr/local/bin/landrun \
     && chmod +x /usr/local/bin/landrun
 
 COPY . .
-RUN .venv/bin/python -m compileall -q -j 0 kmua
+RUN .venv/bin/python -m compileall -q -j 0 waku
 # Where the FastAPI app looks for the bundle by default.
-COPY --from=webui /build/kmua/webapp/dist /app/kmua/webapp/dist
+COPY --from=webui /build/waku/webapp/dist /app/waku/webapp/dist
 
 # Health check and Mini App panel share this port
 EXPOSE 8180
 
-ENTRYPOINT ["tini", "--", "uv", "run", "--no-sync", "python", "-m", "kmua"]
+ENTRYPOINT ["tini", "--", "uv", "run", "--no-sync", "python", "-m", "waku"]
