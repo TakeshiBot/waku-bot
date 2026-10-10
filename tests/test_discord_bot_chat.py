@@ -27,7 +27,7 @@ def routing(monkeypatch):
     monkeypatch.setattr(messages.app_config, "nickname", "waku")
     monkeypatch.setattr(messages.app_config, "discord_keywords", None)
     monkeypatch.setattr(messages, "_discord_global_ai_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(messages, "_discord_guild_settings", AsyncMock(return_value=DiscordGuildSettings()))
+    monkeypatch.setattr(messages, "_discord_guild_settings", AsyncMock(return_value=DiscordGuildSettings(reply_to_bots=True)))
     monkeypatch.setattr(messages, "_channel_allowed", AsyncMock(return_value=True))
     bot_user = SimpleNamespace(id=900)
     return bot_user
@@ -62,7 +62,7 @@ async def test_other_bot_respects_existing_ai_and_channel_settings(routing, monk
     if blocked == "global":
         monkeypatch.setattr(messages, "_discord_global_ai_enabled", AsyncMock(return_value=False))
     elif blocked == "guild":
-        monkeypatch.setattr(messages, "_discord_guild_settings", AsyncMock(return_value=DiscordGuildSettings(ai_reply=False)))
+        monkeypatch.setattr(messages, "_discord_guild_settings", AsyncMock(return_value=DiscordGuildSettings(ai_reply=False, reply_to_bots=True)))
     else:
         monkeypatch.setattr(messages, "_channel_allowed", AsyncMock(return_value=False))
     assert await messages._should_wake(incoming(), routing) == (False, "")

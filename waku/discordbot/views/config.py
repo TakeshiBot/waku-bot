@@ -7,7 +7,6 @@ from dataclasses import replace
 
 import discord
 
-from waku.config import app_config
 from waku.i18n import normalize_locale
 from waku.logger import logger
 
@@ -19,7 +18,6 @@ from ..settings import (
     _discord_dm_settings,
     _discord_global_ai_enabled,
     _discord_guild_settings,
-    _r18_mode_label,
     _rotate_discord_history_epoch,
     _set_discord_dm_settings,
     _set_discord_global_ai_enabled,
@@ -118,91 +116,20 @@ class DiscordConfigView(discord.ui.View):
         return True
 
     def embed(self) -> discord.Embed:
-        settings = self.pending_settings
-
-        def on(value):
-            return self._t("Bật", "On") if value else self._t("Tắt", "Off")
-
         scope = (
-            discord.utils.escape_markdown(self.guild.name)[:150]
+            discord.utils.escape_markdown(self.guild.name[:150])
             if self.guild
             else self._t("Cá nhân trong DM", "Personal DM")
         )
+        description = f"**{scope}**\n" + self._t(
+            "Chỉ áp dụng thay đổi khi bấm **Lưu**.",
+            "Changes apply only after **Save**.",
+        )
+        if self.notice:
+            description += "\n" + self.notice.replace("\n", " ")[:180]
         embed = discord_command_embed(
-            self._t(
-                "Bấm nút để thay đổi. Chỉ áp dụng khi bấm **Lưu**.",
-                "Use the buttons to change settings. Changes apply only after **Save**.",
-            )
-            + (f"\n{self.notice}" if self.notice else ""),
+            description,
             title=self._t("Cấu hình Waku", "Waku settings"),
-        )
-        embed.add_field(name=self._t("Phạm vi", "Scope"), value=scope, inline=False)
-        chat = self._t("Trả lời AI: ", "AI replies: ") + f"**{on(settings.ai_reply)}**"
-        if self.guild:
-            chat += (
-                "\n"
-                + self._t("Trả lời bot khác: ", "Replies to other bots: ")
-                + f"**{on(settings.reply_to_bots)}**"
-            )
-        chat += "\n" + self._t(
-            "Lệnh slash vẫn hoạt động khi tắt AI.",
-            "Slash commands remain available when AI is off.",
-        )
-        embed.add_field(
-            name=self._t("AI / trò chuyện", "AI / chat"), value=chat, inline=False
-        )
-        if self.guild:
-            embed.add_field(
-                name=self._t("Bộ nhớ kênh", "Channel memory"),
-                value=f"**{on(settings.group_memory_enabled)}**\n"
-                + self._t(
-                    "Bộ nhớ riêng từng kênh. Lưu thay đổi sẽ làm mới lịch sử AI trong server.",
-                    "Memory is separate per channel. Saving a change resets the server's AI history.",
-                ),
-                inline=False,
-            )
-        embed.add_field(
-            name=self._t("Ảnh / R18", "Images / R18"),
-            value=f"**{_r18_mode_label(settings.setu_enabled, settings.r18_mode)}**\n"
-            + (
-                self._t(
-                    "Nút Ảnh bật/tắt riêng; nút R18 chuyển An toàn → R18 → Cả hai. Ảnh R18 gửi dạng spoiler.",
-                    "Images can be toggled separately; R18 cycles Safe → R18 → Mixed. R18 images are sent as spoilers.",
-                )
-                if self.guild
-                else self._t(
-                    "DM chỉ hỗ trợ ảnh an toàn.", "DM supports safe images only."
-                )
-            ),
-            inline=False,
-        )
-        embed.add_field(
-            name=self._t("Ngôn ngữ", "Language"),
-            value="Tiếng Việt"
-            if normalize_locale(settings.lang) == "vi"
-            else "English",
-            inline=False,
-        )
-        if self._global_access(self.origin.user):
-            embed.add_field(
-                name=self._t("AI Discord toàn bot", "Global Discord AI"),
-                value=f"**{on(self.pending_global_ai)}**\n"
-                + self._t(
-                    "Áp dụng cho mọi server và DM, có hiệu lực sau khi Lưu. Lệnh và menu vẫn hoạt động khi tắt.",
-                    "Applies to all servers and DMs after Save. Commands and menus remain available when off.",
-                ),
-                inline=False,
-            )
-        embed.add_field(
-            name=self._t("Trạng thái", "Status"),
-            value=f"AI: **{on(bool(app_config.agent))}**\n"
-            + self._t("Giới hạn kênh toàn bot: ", "Global channel restrictions: ")
-            + (
-                self._t("Đang bật", "Active")
-                if app_config.discord_channel_allowlist
-                else self._t("Không giới hạn", "Unrestricted")
-            ),
-            inline=False,
         )
         embed.set_footer(
             text=self._t(
@@ -238,7 +165,7 @@ class DiscordConfigView(discord.ui.View):
             self.section = "chat"
         controls = [
             (
-                self._t("Trả lời AI", "AI replies"),
+                self._t("AI trả lời", "AI replies"),
                 settings.ai_reply,
                 self.toggle_ai_reply,
             ),
@@ -258,26 +185,22 @@ class DiscordConfigView(discord.ui.View):
                     ),
                 ]
             )
-        controls.append(
-            (self._t("Ảnh", "Images"), settings.setu_enabled, self.toggle_images)
+        mode = (
+            self._t("Tắt", "Off")
+            if not settings.setu_enabled
+            else [
+                self._t("An toàn", "Safe"),
+                self._t("Chỉ R18", "R18 only"),
+                self._t("Cả hai", "Mixed"),
+            ][settings.r18_mode if self.guild else 0]
         )
-        if self.guild:
-            mode = (
-                self._t("Tắt ảnh", "Images off")
-                if not settings.setu_enabled
-                else [
-                    self._t("An toàn", "Safe"),
-                    self._t("Chỉ R18", "R18 only"),
-                    self._t("Cả hai", "Mixed"),
-                ][settings.r18_mode]
+        controls.append(
+            (
+                self._t("Ảnh: ", "Images: ") + mode,
+                settings.setu_enabled,
+                self.toggle_r18,
             )
-            controls.append(
-                (
-                    f"R18: {mode}",
-                    settings.setu_enabled and settings.r18_mode > 0,
-                    self.cycle_r18_mode,
-                )
-            )
+        )
         language = (
             "Tiếng Việt" if normalize_locale(settings.lang) == "vi" else "English"
         )
@@ -300,7 +223,6 @@ class DiscordConfigView(discord.ui.View):
                 if enabled
                 else discord.ButtonStyle.secondary,
                 row=index // 2,
-                disabled=callback == self.cycle_r18_mode and not settings.setu_enabled,
             )
         dirty = self._dirty()
         for label, callback, style, disabled in [
@@ -384,30 +306,6 @@ class DiscordConfigView(discord.ui.View):
                 field="reply_to_bots",
                 value=lambda: not self.pending_settings.reply_to_bots,
             )
-
-    async def toggle_images(self, interaction):
-        if not await self._ack(interaction):
-            return
-        async with self._lock:
-            if not await self.interaction_check(interaction):
-                return
-            self.pending_settings.setu_enabled = not self.pending_settings.setu_enabled
-            if self.guild is None:
-                self.pending_settings.r18_mode = 0
-            self.notice = ""
-            await self._refresh(interaction)
-
-    async def cycle_r18_mode(self, interaction):
-        if not self.guild or not await self._ack(interaction):
-            return
-        async with self._lock:
-            if not await self.interaction_check(interaction):
-                return
-            if not self.pending_settings.setu_enabled:
-                return
-            self.pending_settings.r18_mode = (self.pending_settings.r18_mode + 1) % 3
-            self.notice = ""
-            await self._refresh(interaction)
 
     async def toggle_global_ai(self, interaction):
         if not await self._ack(interaction):

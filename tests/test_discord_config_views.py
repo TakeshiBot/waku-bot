@@ -85,7 +85,7 @@ async def test_config_opens_privately_for_owner_admin_or_bot_admin(
         assert view.timeout == 900
         assert not view.is_persistent()
         assert len(view.embed()) <= 6000
-        assert button(view, "toggle_ai_reply").label == "✅ Trả lời AI"
+        assert button(view, "toggle_ai_reply").label == "✅ AI trả lời"
         assert all(isinstance(item, discord.ui.Button) for item in view.children)
         view.stop()
     else:
@@ -236,12 +236,22 @@ async def test_reload_and_open_defer_before_storage_io(storage):
 
 
 @pytest.mark.asyncio
-async def test_status_section_uses_actual_current_config(storage):
-    view = menus.DiscordConfigView(interaction(1, guild()), storage)
+async def test_compact_embed_only_scope_note_notice_and_private_footer(storage):
+    server = guild()
+    server.name = "*Server* _test_"
+    view = menus.DiscordConfigView(interaction(1, server), storage)
     view.section = "status"
-    assert any(field.name == "Trạng thái" for field in view.embed().fields)
-    assert any(field.name == "AI / trò chuyện" for field in view.embed().fields)
-    assert len(view.embed()) < 6000
+    embed = view.embed()
+    assert not embed.fields
+    assert (
+        embed.description
+        == "**\\*Server\\* \\_test\\_**\nChỉ áp dụng thay đổi khi bấm **Lưu**."
+    )
+    assert "15 phút" in embed.footer.text and "Chỉ bạn thấy" in embed.footer.text
+    await view.toggle_reply_to_bots(interaction(1, server))
+    view.notice = "Đã tải lại."
+    assert view.embed().description.endswith("\nĐã tải lại.")
+    assert "chưa lưu" in view.embed().footer.text
     view.stop()
 
 
@@ -352,7 +362,7 @@ async def test_global_ai_draft_cancel_save_and_reload_are_separate_from_local_ai
     request = interaction(9, server)
     view = menus.DiscordConfigView(request, storage, global_ai_enabled=True)
     await view._change(interaction(9, server), section="global_ai")
-    assert any(field.name == "AI Discord toàn bot" for field in view.embed().fields)
+    assert button(view, "toggle_global_ai").label == "✅ AI Discord toàn bot"
     await button(view, "toggle_global_ai").callback(interaction(9, server))
     assert view.pending_global_ai is False and view.saved_global_ai is True
     assert view.pending_settings.ai_reply
@@ -532,8 +542,11 @@ async def test_overview_only_native_buttons_fit_sdk_payload_rows_and_ids(
     assert len(custom_ids) == len(set(custom_ids))
     assert has_button(view, "toggle_reply_to_bots") is not dm
     assert has_button(view, "toggle_group_memory") is not dm
-    assert has_button(view, "cycle_r18_mode") is not dm
+    assert has_button(view, "toggle_r18")
+    assert not hasattr(view, "toggle_images") and not hasattr(view, "cycle_r18_mode")
     assert has_button(view, "toggle_global_ai") is bot_admin
+    expected_controls = (4 if bot_admin else 3) if dm else (6 if bot_admin else 5)
+    assert len(view.children) == expected_controls + 4
     for control in view.children:
         if control.row != 4:
             assert control.label.startswith(("✅ ", "❌ "))
@@ -544,6 +557,7 @@ async def test_overview_only_native_buttons_fit_sdk_payload_rows_and_ids(
             )
             assert control.style == expected
     assert len(view.embed()) < 6000
+    assert not view.embed().fields
     view.stop()
 
 
@@ -552,21 +566,21 @@ async def test_bot_reply_button_stages_then_cancel_save_reload(storage):
     server = guild()
     view = menus.DiscordConfigView(interaction(1, server), storage)
     await button(view, "toggle_reply_to_bots").callback(interaction(1, server))
-    assert view.pending_settings.reply_to_bots is False
-    assert storage.reply_to_bots is True and view.saved_settings.reply_to_bots is True
-    assert button(view, "toggle_reply_to_bots").label == "❌ Trả lời bot khác"
-    assert button(view, "toggle_reply_to_bots").style == discord.ButtonStyle.secondary
+    assert view.pending_settings.reply_to_bots is True
+    assert storage.reply_to_bots is False and view.saved_settings.reply_to_bots is False
+    assert button(view, "toggle_reply_to_bots").label == "✅ Trả lời bot khác"
+    assert button(view, "toggle_reply_to_bots").style == discord.ButtonStyle.success
     menus._set_discord_guild_settings.assert_not_awaited()
     await view.cancel_changes(interaction(1, server))
-    assert view.pending_settings.reply_to_bots is True
+    assert view.pending_settings.reply_to_bots is False
     await view.toggle_reply_to_bots(interaction(1, server))
     await view.save_config(interaction(1, server))
-    assert menus._set_discord_guild_settings.await_args.args[1].reply_to_bots is False
-    assert view.saved_settings.reply_to_bots is False and not view._dirty()
+    assert menus._set_discord_guild_settings.await_args.args[1].reply_to_bots is True
+    assert view.saved_settings.reply_to_bots is True and not view._dirty()
     menus._rotate_discord_history_epoch.assert_not_awaited()
     await view.reload_settings(interaction(1, server))
-    assert view.pending_settings.reply_to_bots is True
-    assert button(view, "toggle_reply_to_bots").style == discord.ButtonStyle.success
+    assert view.pending_settings.reply_to_bots is False
+    assert button(view, "toggle_reply_to_bots").style == discord.ButtonStyle.secondary
     view.stop()
 
 
@@ -578,7 +592,7 @@ async def test_bot_reply_mutation_rechecks_guild_permissions_and_is_hidden_in_dm
     view = menus.DiscordConfigView(interaction(2, server, admin=True), storage)
     denied = interaction(2, server)
     await view.toggle_reply_to_bots(denied)
-    assert view.pending_settings.reply_to_bots is True
+    assert view.pending_settings.reply_to_bots is False
     menus._set_discord_guild_settings.assert_not_awaited()
     view.stop()
     dm = menus.DiscordConfigView(interaction(9), storage)
@@ -591,30 +605,66 @@ async def test_bot_reply_mutation_rechecks_guild_permissions_and_is_hidden_in_dm
 
 
 @pytest.mark.asyncio
-async def test_image_toggle_and_r18_mode_are_independent_staged_controls(storage):
+async def test_single_image_button_cycles_all_modes_then_saves_draft(storage):
     server = guild()
-    storage.r18_mode = 2
     view = menus.DiscordConfigView(interaction(1, server), storage)
-    await button(view, "toggle_images").callback(interaction(1, server))
-    assert view.pending_settings.setu_enabled is False
-    assert view.pending_settings.r18_mode == 2
-    assert button(view, "cycle_r18_mode").disabled
-    await view.cycle_r18_mode(interaction(1, server))
-    assert view.pending_settings.r18_mode == 2
-    await button(view, "toggle_images").callback(interaction(1, server))
-    assert (
-        view.pending_settings.setu_enabled
-        and not button(view, "cycle_r18_mode").disabled
-    )
+    assert button(view, "toggle_r18").label == "✅ Ảnh: An toàn"
     observed = []
-    for _ in range(3):
-        await button(view, "cycle_r18_mode").callback(interaction(1, server))
-        observed.append(view.pending_settings.r18_mode)
-        assert view.pending_settings.setu_enabled
-    assert observed == [0, 1, 2]
+    labels = []
+    for _ in range(4):
+        await button(view, "toggle_r18").callback(interaction(1, server))
+        observed.append(
+            (view.pending_settings.setu_enabled, view.pending_settings.r18_mode)
+        )
+        labels.append(button(view, "toggle_r18").label)
+        assert not button(view, "toggle_r18").disabled
+    assert observed == [(True, 1), (True, 2), (False, 0), (True, 0)]
+    assert labels == [
+        "✅ Ảnh: Chỉ R18",
+        "✅ Ảnh: Cả hai",
+        "❌ Ảnh: Tắt",
+        "✅ Ảnh: An toàn",
+    ]
     menus._set_discord_guild_settings.assert_not_awaited()
+    await button(view, "toggle_r18").callback(interaction(1, server))
     await view.save_config(interaction(1, server))
-    assert not view._dirty()  # All controls returned to the saved image state.
+    saved = menus._set_discord_guild_settings.await_args.args[1]
+    assert saved.setu_enabled and saved.r18_mode == 1 and not view._dirty()
+    view.stop()
+
+
+@pytest.mark.asyncio
+async def test_dm_single_image_button_cycles_only_safe_and_off(storage):
+    view = menus.DiscordConfigView(interaction(9), storage)
+    assert button(view, "toggle_r18").label == "✅ Ảnh: An toàn"
+    await button(view, "toggle_r18").callback(interaction(9))
+    assert button(view, "toggle_r18").label == "❌ Ảnh: Tắt"
+    assert view.pending_settings.r18_mode == 0
+    await button(view, "toggle_r18").callback(interaction(9))
+    assert button(view, "toggle_r18").label == "✅ Ảnh: An toàn"
+    assert view.pending_settings.r18_mode == 0
+    menus._set_discord_dm_settings.assert_not_awaited()
+    view.stop()
+
+
+@pytest.mark.asyncio
+async def test_compact_menu_preserves_previously_saved_enabled_bot_reply(storage):
+    storage.reply_to_bots = True
+    storage.setu_enabled = False
+    storage.r18_mode = 2
+    server = guild()
+    view = menus.DiscordConfigView(interaction(1, server), storage)
+    assert button(view, "toggle_reply_to_bots").label == "✅ Trả lời bot khác"
+    assert button(view, "toggle_r18").label == "❌ Ảnh: Tắt"
+    assert not view._dirty()
+    await view.toggle_lang(interaction(1, server))
+    await view.save_config(interaction(1, server))
+    saved = menus._set_discord_guild_settings.await_args.args[1]
+    assert (
+        saved.reply_to_bots is True
+        and saved.setu_enabled is False
+        and saved.r18_mode == 2
+    )
     view.stop()
 
 
@@ -697,7 +747,8 @@ async def test_native_interaction_button_payload_draft_save_cancel_reload(
     view = next(iter(dispatch.values())).view
     assert isinstance(view, menus.DiscordConfigView)
     payload = transport.adapter.edits[-1]
-    assert len(payload["components"]) == 5
+    assert len(payload["components"]) == 4
+    assert not payload["embeds"][0].get("fields")
     assert all(
         component["type"] == 2
         for row in payload["components"]
@@ -706,19 +757,19 @@ async def test_native_interaction_button_payload_draft_save_cancel_reload(
     await button(view, "toggle_reply_to_bots").callback(
         transport.request(component=True)
     )
-    assert view.pending_settings.reply_to_bots is False
+    assert view.pending_settings.reply_to_bots is True
     menus._set_discord_guild_settings.assert_not_awaited()
     await button(view, "cancel_changes").callback(transport.request(component=True))
-    assert view.pending_settings.reply_to_bots is True
+    assert view.pending_settings.reply_to_bots is False
     await button(view, "toggle_reply_to_bots").callback(
         transport.request(component=True)
     )
     await button(view, "save_config").callback(transport.request(component=True))
     saved = menus._set_discord_guild_settings.await_args.args[1]
-    assert saved.reply_to_bots is False and saved is not view.pending_settings
+    assert saved.reply_to_bots is True and saved is not view.pending_settings
     assert not view._dirty()
     await button(view, "reload_settings").callback(transport.request(component=True))
-    assert view.pending_settings.reply_to_bots is True
+    assert view.pending_settings.reply_to_bots is False
     assert all(ack["type"] == 6 for ack in transport.adapter.acks[1:])
     assert all(payload.get("content") is None for payload in transport.adapter.edits)
     await button(view, "close_menu").callback(transport.request(component=True))

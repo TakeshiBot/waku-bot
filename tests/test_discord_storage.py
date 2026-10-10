@@ -264,11 +264,11 @@ async def test_bot_reply_switch_persists_per_server_and_keeps_dm_telegram_and_js
         session.add(DiscordChatData(id=123, title="Old server", config={
             "ai_reply_other_bots_enabled": False, "unknown": "keep",
         }))
-    assert (await settings._discord_guild_settings(first)).reply_to_bots
+    assert not (await settings._discord_guild_settings(first)).reply_to_bots
     await settings._set_discord_guild_settings(first, DiscordGuildSettings(reply_to_bots=False))
     settings.common.memttlcache.delete.assert_awaited_with(settings._discord_settings_cache_key(123))
     assert not (await settings._discord_guild_settings(first)).reply_to_bots
-    assert (await settings._discord_guild_settings(second)).reply_to_bots
+    assert not (await settings._discord_guild_settings(second)).reply_to_bots
     assert not (await settings._discord_dm_settings(user)).reply_to_bots
     async with storage() as session:
         raw = (await session.get(DiscordChatData, 123)).config
@@ -288,8 +288,20 @@ async def test_bot_reply_switch_rejects_non_boolean_storage_updates(storage, inv
     assert not await repository.list_discord_guilds()
 
 
-@pytest.mark.parametrize("raw,expected", [({}, True), ({"discord_reply_to_bots": False}, False), ({"discord_reply_to_bots": "false"}, False)])
+@pytest.mark.parametrize("raw,expected", [({}, False), ({"discord_reply_to_bots": False}, False), ({"discord_reply_to_bots": True}, True), ({"discord_reply_to_bots": "false"}, False)])
 def test_legacy_bot_reply_setting_defaults_and_malformed_values(raw, expected):
     restored = ChatConfig.from_dict(raw)
     assert restored.discord_reply_to_bots is expected
     assert ChatConfig.from_dict(restored.to_dict()).discord_reply_to_bots is expected
+
+
+@pytest.mark.asyncio
+async def test_new_discord_config_defaults_to_safe_images_and_no_bot_chat(storage):
+    guild = SimpleNamespace(id=789, name="New")
+    config = await settings._discord_guild_settings(guild)
+    assert config.setu_enabled and config.r18_mode == 0
+    assert not config.reply_to_bots
+    await settings._set_discord_guild_settings(guild, config)
+    restored = await settings._discord_guild_settings(guild)
+    assert restored.setu_enabled and restored.r18_mode == 0
+    assert not restored.reply_to_bots
