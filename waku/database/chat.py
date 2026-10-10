@@ -10,7 +10,7 @@ from waku.common.memory_store import memttlcache
 from waku.config import runtime_config
 from waku.database import pagination
 
-from .db import with_session, with_tx
+from .db import AsyncSessionFactory, with_session, with_tx
 from .models import ChatConfig, ChatData, UserChatAssociation
 
 # Cache synchronized group snapshots to avoid repeated upserts for each message.
@@ -210,14 +210,26 @@ async def update_chat_config(
     return chat_data.chat_config
 
 
-@with_tx
 async def update_chat_config_fields(
     chat: int | ChatData | Chat,
     fields: dict[str, object],
     session: AsyncSession | None = None,
+    *,
+    expected_fields: dict[str, object] | None = None,
 ) -> ChatConfig:
     """Atomically update selected config fields from the latest database row."""
-    assert session is not None
+    if session is None:
+        async with AsyncSessionFactory() as owned_session:
+            async with owned_session.begin():
+                result = await update_chat_config_fields(
+                    chat, fields, session=owned_session, expected_fields=expected_fields
+                )
+        # Publish only after commit; a failed transaction cannot leak its draft.
+        chat_id = chat if isinstance(chat, int) else chat.id
+        await memttlcache.set(
+            f"{_CHAT_CONFIG_CACHE_PREFIX}{chat_id}", result, _CHAT_CONFIG_CACHE_TTL
+        )
+        return result
 
     if isinstance(chat, ChatData):
         chat_id = chat.id
@@ -230,7 +242,17 @@ async def update_chat_config_fields(
     else:
         raise TypeError("chat must be int, ChatData or Chat")
 
-    chat_data = await session.get(ChatData, chat_id)
+    # Acquire a writer lock before reading, also on SQLite where FOR UPDATE
+    # does nothing. A no-op UPDATE locks the existing row without changing data.
+    await session.execute(
+        sqlalchemy.update(ChatData).where(ChatData.id == chat_id)
+        .values(id=ChatData.id, updated_at=ChatData.updated_at)
+        .execution_options(synchronize_session=False)
+    )
+    chat_data = await session.scalar(
+        sqlalchemy.select(ChatData).where(ChatData.id == chat_id).with_for_update()
+        .execution_options(populate_existing=True)
+    )
     if chat_data is None:
         if isinstance(chat, Chat):
             chat_data = ChatData(id=chat_id, title=chat.title, username=chat.username)
@@ -240,14 +262,19 @@ async def update_chat_config_fields(
             raise ValueError(f"Chat with id {chat_id} not found")
 
     config = chat_data.chat_config
+    if expected_fields and any(
+        not hasattr(config, name) or getattr(config, name) != value
+        for name, value in expected_fields.items()
+    ):
+        raise ValueError("config_conflict")
     for name, value in fields.items():
         if not hasattr(config, name):
             raise ValueError(f"Unknown chat config field: {name}")
         setattr(config, name, value)
     chat_data.chat_config = config
-    await memttlcache.set(
-        f"{_CHAT_CONFIG_CACHE_PREFIX}{chat_id}", config, _CHAT_CONFIG_CACHE_TTL
-    )
+    # Explicit session callers control their commit. Invalidate instead of
+    # publishing data that may still be rolled back.
+    await memttlcache.delete(f"{_CHAT_CONFIG_CACHE_PREFIX}{chat_id}")
     return config
 
 

@@ -61,8 +61,86 @@ def revision(editor):
     return editor.snapshot()[1]
 
 
+def test_effective_candidate_loads_memory_file_like_startup_without_false_pending(
+    editor, tmp_path
+):
+    memory_path = tmp_path / "memory.json"
+    memory_path.write_text('{"memory": "existing"}', encoding="utf-8")
+    values, _ = editor.snapshot()
+    values.update(
+        agent=True,
+        agent_powermem_config_path=str(memory_path),
+        agent_powermem_custom_fact_extraction_prompt="extract",
+    )
+    candidate = editor.effective_candidate(values)
+    assert candidate.agent_powermem_config == {
+        "memory": "existing",
+        "custom_fact_extraction_prompt": "extract",
+    }
+
+
 def read(editor):
     return tomllib.loads(editor.path.read_text(encoding="utf-8"))
+
+
+def test_batch_preview_never_writes_then_atomic_save_preserves_comments(editor):
+    before = editor.path.read_bytes()
+    changes = {
+        "agent_prompt": "new\n<prompt>",
+        "agent_providers.local.url": "https://example.invalid/v1",
+        "agent_model": "local/example",
+    }
+    staged = editor.preview(changes, revision(editor), additions={"local"})
+    assert staged["agent_model"] == "local/example"
+    assert staged["agent_providers"]["local"]["url"] == "https://example.invalid/v1"
+    assert editor.path.read_bytes() == before
+    editor.commit_batch(changes, revision(editor), additions={"local"})
+    assert read(editor)["agent_prompt"] == "new\n<prompt>"
+    assert "# prompt comment" in editor.path.read_text()
+    assert read(editor)["agent_providers"]["default"]["key"] == "example-key"
+
+
+def test_batch_delete_and_model_reference_replacement_are_one_valid_commit(editor):
+    changes = {"agent_model": "local/model", "agent_sticker_embed_model": "local/embed"}
+    old = revision(editor)
+    editor.commit_batch(changes, old, additions={"local"}, deletions={"default"})
+    assert set(read(editor)["agent_providers"]) == {"local"}
+    assert read(editor)["agent_model"] == "local/model"
+    with pytest.raises(SettingsEditError, match="stale_file"):
+        editor.commit_batch({"agent_prompt": "overwrite"}, old)
+    assert read(editor)["agent_prompt"] == "old"
+
+
+def test_invalid_batch_preserves_every_original_value(editor):
+    before = editor.path.read_bytes()
+    with pytest.raises(SettingsEditError, match="provider_in_use"):
+        editor.commit_batch(
+            {"agent_prompt": "must-not-write"}, revision(editor), deletions={"default"}
+        )
+    assert editor.path.read_bytes() == before
+
+
+def test_environment_override_nested_provider_is_preserved_in_effective_candidate(
+    editor, monkeypatch
+):
+    monkeypatch.setenv("WAKU_AGENT_STREAMING", "false")
+    monkeypatch.setenv("WAKU_AGENT_PROVIDERS__default__KEY", "environment-test-key")
+    values = editor.preview({"agent_streaming": "true"}, revision(editor))
+    candidate = editor.effective_candidate(values)
+    assert candidate.agent_streaming is False
+    assert candidate.agent_providers["default"].key == "environment-test-key"
+    assert (
+        candidate.agent_providers["default"].url
+        == values["agent_providers"]["default"]["url"]
+    )
+    assert values["agent_providers"]["default"]["key"] == "example-key"
+
+
+def test_invalid_environment_error_never_contains_secret(editor, monkeypatch):
+    monkeypatch.setenv("WAKU_OWNERS", "private-test-secret")
+    with pytest.raises(SettingsEditError, match="invalid_environment") as error:
+        editor.effective_candidate(editor.snapshot()[0])
+    assert "private-test-secret" not in str(error.value)
 
 
 def test_multiline_prompt_and_root_insert_preserve_comments_and_provider(editor):

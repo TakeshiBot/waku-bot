@@ -1,0 +1,10 @@
+bot:
+  botadmin_private:
+    usage: 'Use /botpromote <Telegram ID> to grant bot-wide admin access, or /botdemote <Telegram ID> to revoke it. These commands work only in DM with the bot.'
+    invalid: Invalid Telegram ID.
+    protected: You cannot change your own or a bot owner’s role with this command.
+    unregistered: This user is unknown to the bot. Ask them to send /start to the bot or a message in a group with the bot, then try again.
+    bot: Bot accounts cannot be granted bot-wide admin access.
+    already: This user already has the requested bot-wide admin status.
+    promoted: 'Granted bot-wide admin access to ID {id}.'
+    demoted: 'Revoked bot-wide admin access from ID {id}.'

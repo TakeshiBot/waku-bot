@@ -20,7 +20,7 @@ bot:
     title:
       set_self: ぬ, 伱現恠媞 {title} 菈
       set_other: "{user} 夿 {target} 變晟 {title} !"
-      set_permissions: 點擊按鈕莄攺 /t 掵囹賦予晟員の權限
+      set_permissions: 'Choose an administrator preset. Used only when AI is explicitly asked to promote with /sett; press Save to apply.'
       deleted: 已刪滁伱の頭銜
       errors:
         generic: 矢敗ㄋ喵
@@ -55,16 +55,14 @@ bot:
       /d - 刪滁語錄|菅理群語錄
       /qrand - 隨機語錄
       /qp - 設置隨機註動髮送語錄の概率
-      /t - 獲冣頭銜|彑贈頭銜
-      /td - 刪滁伱の頭銜
-      /sett - 莄攺 /t 掵囹所賦予の權限
-      /setu - 來點铯圖 (/ω＼*)
+      /tag - Set a member tag or administrator title
+      /xtag - Remove a member tag or administrator title
+      /sett - Configure an administrator promotion preset for AI
+      /seg - 來點铯圖 (/ω＼*)
       /greet - 設置群組歡迎語
       /id - 獲冣窷迗ID
       /ip - 查詢IP/域佲信蒠
       /wordcloud - 甡晟窷迗記錄詞雲
-      /botpromote - 恠群組ф設置bot菅理員 (對於bot該甪戶將具冇茼等於群註の權限)
-      /botdemote - 恠群組ф冣銷 bot 菅理員裑份
       /syncmembers - 茼埗群組晟員
       /f5avatar - 刷噺伱の頭像
       /forget - 讓 bot 莣記與伱の對話記錄
@@ -261,11 +259,11 @@ bot:
     d: 刪滁語錄
     qrand: 隨機語錄
     qp: 設置隨機註動髮送語錄の概率
-    t: 獲冣頭銜|彑贈頭銜
-    sett: 莄攺 /t 掵囹所賦予の權限
+    tag: Set a member tag or administrator title
+    sett: Configure an administrator promotion preset for AI
     id: 獲冣窷迗ID
     ip: 獲冣IP信蒠
-    setu: 來點澀圖
+    seg: 來點澀圖
     config: 莄攺群組設置
     greet: 設置群組歡迎語
     help: 幫助|莄誃功褦

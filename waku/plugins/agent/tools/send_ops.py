@@ -15,6 +15,7 @@ from waku.logger import logger
 from waku.plugins.agent.localization import tr
 from waku.plugins.agent.output import record_tool_reply, text_already_sent
 from waku.plugins.manyacg import manyacg
+from waku.services.telegram_images import image_allowed, telegram_image_settings
 from waku.timezone import BOT_TIMEZONE
 
 from .. import datatype, sticker_memory, sticker_vec
@@ -432,11 +433,13 @@ class AnimePhotoResult:
     data: AnimePhotoInfo | None = None
 
 
-async def _fetch_anime_artwork(keyword: str = "") -> tuple[dict, dict] | None:
+async def _fetch_anime_artwork(
+    keyword: str = "", r18_mode: int = 0
+) -> tuple[dict, dict] | None:
     try:
         if keyword:
             params = {
-                "r18": 2,
+                "r18": r18_mode,
                 "hybrid": app_config.manyacg_hybrid_search,
                 "keyword": keyword,
             }
@@ -447,12 +450,19 @@ async def _fetch_anime_artwork(keyword: str = "") -> tuple[dict, dict] | None:
         else:
             resp = await manyacg.httpx_client.get(
                 url="/artwork/random",
-                params={"r18": 2},
+                params={"r18": r18_mode},
             )
         if resp.status_code != 200:
             logger.error(f"Anime API returned {resp.status_code}")
             return None
-        artwork: dict = random.choice(resp.json()["data"])
+        artworks = [
+            artwork
+            for artwork in resp.json()["data"]
+            if image_allowed(artwork.get("r18"), r18_mode) and artwork.get("pictures")
+        ]
+        if not artworks:
+            return None
+        artwork: dict = random.choice(artworks)
         picture: dict = artwork["pictures"][
             random.randint(0, len(artwork["pictures"]) - 1)
         ]
@@ -475,11 +485,12 @@ async def send_anime_photo(
         return AnimePhotoResult(
             success=False, message=tr("current_context_unavailable")
         )
-    if (
-        ctx.deps.chat_id is not None
-        and ctx.deps.chat_id != ctx.deps.user_id
-        and not (await database.get_chat_config(ctx.deps.chat_id)).setu_enabled
-    ):
+    if ctx.deps.chat_id is None:
+        return AnimePhotoResult(
+            success=False, message=tr("current_context_unavailable")
+        )
+    enabled, image_mode = await telegram_image_settings(ctx.deps.chat_id)
+    if not enabled:
         return AnimePhotoResult(success=False, message=tr("anime_chat_disabled"))
     try:
         ratekey = f"anime_photo_rate_limit:{ctx.deps.chat_id}:{ctx.deps.user_id}"
@@ -494,8 +505,10 @@ async def send_anime_photo(
         count = max(1, min(10, count))
         fetched = []
         for _ in range(count):
-            item = await _fetch_anime_artwork(keyword)
+            item = await _fetch_anime_artwork(keyword, r18_mode=image_mode)
             if item is None:
+                break
+            if not image_allowed(item[0].get("r18"), image_mode):
                 break
             fetched.append(item)
         if not fetched:

@@ -1,0 +1,16 @@
+bot:
+  config:
+    image_safe: '✔️ Images: Safe'
+    image_r18: '✔️ Images: R18'
+    image_mixed: '✔️ Images: Both'
+    image_off: '❌ Images: Off'
+    moderation: AI group moderation
+    save: 💾 Save
+    cancel: ✖️ Cancel
+    reload: ↻ Reload
+    draft: 'Changes apply only after Save, which closes this menu. Open /config again to discard the draft.'
+    saved: 'Group settings saved and applied. This menu will be deleted in 5 seconds.'
+    cancelled: Group settings draft discarded.
+    expired: This menu expired, changed, or belongs to someone else. Open /config again.
+    conflict: 'Someone changed these settings. Open /config again to load the latest values.'
+    moderation_denied: Changing AI moderation or member verification requires the group owner or a current administrator with change-info and restrict-members rights.

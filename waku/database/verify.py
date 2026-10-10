@@ -47,6 +47,21 @@ async def get_verification_session(
     return await session.get(VerificationSession, session_id)
 
 
+@with_session
+async def get_verification_sessions_for_user(
+    chat_id: int, user_id: int, session: AsyncSession | None = None
+) -> list[VerificationSession]:
+    """Read durable receipts even when a session is absent from the local registry."""
+    assert session is not None
+    result = await session.execute(
+        select(VerificationSession).where(
+            VerificationSession.chat_id == chat_id,
+            VerificationSession.user_id == user_id,
+        )
+    )
+    return list(result.scalars().all())
+
+
 @with_tx
 async def delete_verification_session(
     session_id: int, session: AsyncSession | None = None
@@ -142,5 +157,6 @@ __all__ = [
     "delete_verification_sessions_for_user",
     "get_all_verification_sessions",
     "get_verification_session",
+    "get_verification_sessions_for_user",
     "update_verification_session",
 ]

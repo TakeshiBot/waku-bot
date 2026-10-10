@@ -2,6 +2,7 @@
 
 import ast
 import asyncio
+import secrets
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -14,6 +15,8 @@ import pyrogram
 import pytest
 import telegramify_markdown
 from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPart, TextPartDelta
+
+from waku.plugins.agent import generation, rich_output
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -41,19 +44,25 @@ def load_definitions(relative_path, names, namespace):
 
 
 @pytest.fixture
-def delivery():
+def delivery(monkeypatch):
+    monkeypatch.setattr(generation, "_generations", {})
+
     def convert_md(text):
         return telegramify_markdown.convert(text)[0], []
 
     namespace = {
         "asyncio": asyncio,
+        "secrets": secrets,
+        "generation": generation,
+        "OfficialRichDraftStreamer": rich_output.OfficialRichDraftStreamer,
+        "send_generation_message": rich_output.send_generation_message,
         "datetime": datetime,
         "pyrogram": pyrogram,
         "pydantic_ai": pydantic_ai,
         "dataclass": dataclass,
         "field": field,
         "convert_md": convert_md,
-        "convert_md_chunks": lambda text: [convert_md(text)],
+        "convert_md_chunks": lambda text, *_args: [convert_md(text)],
         "logger": MagicMock(),
         "memttlcache": SimpleNamespace(
             get=AsyncMock(return_value=None), set=AsyncMock()
@@ -81,6 +90,8 @@ def delivery():
     load_definitions(
         "waku/plugins/agent/output.py",
         {
+            "DeliveryUncertain",
+            "_FORMAT_REJECTIONS",
             "_text_key",
             "text_already_sent",
             "record_sent_text",
@@ -98,7 +109,16 @@ def delivery():
         namespace,
     )
     client = SimpleNamespace(
-        send_message=AsyncMock(return_value=SimpleNamespace(id=10, text="Hello"))
+        send_message=AsyncMock(return_value=SimpleNamespace(id=10, text="Hello")),
+        resolve_peer=AsyncMock(
+            return_value=pyrogram.raw.types.InputPeerUser(user_id=2, access_hash=0)
+        ),
+        invoke=AsyncMock(
+            return_value=pyrogram.raw.types.UpdateShortSentMessage(
+                id=11, pts=1, pts_count=1, date=1
+            )
+        ),
+        parser=pyrogram.Client("agent-delivery-parser", in_memory=True).parser,
     )
     message = SimpleNamespace(
         id=1,
@@ -137,11 +157,27 @@ async def test_tool_send_and_final_output_deliver_only_once(
     expected_replies,
     use_tool=True,
     tool_text="Hello",
+    pretool_text="",
+    cancel_mid_stream=False,
+    uncertain_delivery=False,
 ):
     """A successful tool send suppresses its echo; new text and failures survive."""
     namespace = delivery.namespace
     if failed:
         delivery.client.send_message.side_effect = RuntimeError("offline")
+    if uncertain_delivery:
+
+        async def invoke(query, **kwargs):
+            if isinstance(query, pyrogram.raw.functions.messages.SendMessage):
+                raise OSError("Lost delivery ACK")
+            return True
+
+        delivery.client.invoke.side_effect = invoke
+        if not streaming:
+            delivery.message.reply_text.side_effect = [
+                OSError("Lost delivery ACK"),
+                SimpleNamespace(id=12),
+            ]
 
     class ModelNode:
         def __init__(self, text=""):
@@ -152,6 +188,8 @@ async def test_tool_send_and_final_output_deliver_only_once(
             async def events():
                 if self.text:
                     yield PartStartEvent(index=0, part=TextPart(self.text[:2]))
+                    if cancel_mid_stream:
+                        raise asyncio.CancelledError
                     yield PartDeltaEvent(index=0, delta=TextPartDelta(self.text[2:]))
 
             yield events()
@@ -160,14 +198,23 @@ async def test_tool_send_and_final_output_deliver_only_once(
         def __init__(self, tool=False):
             self.tool = tool
             self.model_response = SimpleNamespace(
-                parts=[SimpleNamespace(part_kind="tool-call")]
+                parts=[
+                    *([TextPart(pretool_text)] if pretool_text else []),
+                    SimpleNamespace(part_kind="tool-call"),
+                ]
                 if tool
                 else [TextPart(output)]
             )
 
     end = object()
     nodes = (
-        [ModelNode(), ToolsNode(tool=True), ModelNode(output), ToolsNode(), end]
+        [
+            ModelNode(pretool_text),
+            ToolsNode(tool=True),
+            ModelNode(output),
+            ToolsNode(),
+            end,
+        ]
         if use_tool
         else [ModelNode(output), ToolsNode(), end]
     )
@@ -195,7 +242,13 @@ async def test_tool_send_and_final_output_deliver_only_once(
         yield AgentRun()
 
     namespace["app_config"].agent_streaming = streaming
+    # Error delivery uses the separately tested persona status composer. This
+    # runner fixture has no real model, so exercise its API-unavailable fallback.
+    async def reply_agent_status(client, message, **kwargs):
+        await message.reply_text(kwargs["fallback"])
+
     namespace.update(
+        reply_agent_status=reply_agent_status,
         Agent=SimpleNamespace(
             is_end_node=lambda node: node is end,
             is_model_request_node=lambda node: isinstance(node, ModelNode),
@@ -217,6 +270,8 @@ async def test_tool_send_and_final_output_deliver_only_once(
         state=SimpleNamespace(history_key=lambda *_args: "history"),
         log_run_cache_stats=MagicMock(),
         _iter_with_spill_session=fake_iter,
+        _stop_typing_keepalive=AsyncMock(),
+        i18n=SimpleNamespace(t=lambda key, **kwargs: key),
     )
     load_definitions("waku/plugins/agent/runner.py", {"_run_agent_impl"}, namespace)
     await namespace["_run_agent_impl"](
@@ -234,13 +289,26 @@ async def test_tool_send_and_final_output_deliver_only_once(
         subject=None,
         typing_keepalive=SimpleNamespace(),
     )
-    assert delivery.client.send_message.await_count == int(use_tool)
-    assert delivery.message.reply_text.await_count == expected_replies
-    assert all(
-        "error" not in call.kwargs
-        for call in namespace["trace"].mark_trace.call_args_list
+    assert delivery.client.send_message.await_count == int(
+        use_tool and pretool_text != tool_text and not uncertain_delivery
     )
-    namespace["quota"].settle.assert_awaited_once()
+    native_finals = sum(
+        isinstance(call.args[0], pyrogram.raw.functions.messages.SendMessage)
+        for call in delivery.client.invoke.await_args_list
+    )
+    assert delivery.message.reply_text.await_count + native_finals == expected_replies
+    if uncertain_delivery:
+        namespace["quota"].settle.assert_not_awaited()
+        assert (
+            delivery.message.reply_text.await_args.args[0]
+            == "bot.msg.agent.errors.delivery_unverified"
+        )
+    else:
+        assert all(
+            "error" not in call.kwargs
+            for call in namespace["trace"].mark_trace.call_args_list
+        )
+        namespace["quota"].settle.assert_awaited_once()
 
 
 @pytest.mark.parametrize("streaming", [True, False])
@@ -257,6 +325,55 @@ async def test_html_tool_and_markdown_final_use_returned_plain_text(
     await test_tool_send_and_final_output_deliver_only_once(
         delivery, streaming, "**Hello**", False, 0, tool_text="<b>Hello</b>"
     )
+
+
+async def test_pretool_native_final_suppresses_tool_echo_and_final_echo(delivery):
+    await test_tool_send_and_final_output_deliver_only_once(
+        delivery, True, "Hello", False, 1, pretool_text="Hello"
+    )
+    assert not generation._generations
+
+
+async def test_pretool_text_and_distinct_tool_reply_both_preserved(delivery):
+    await test_tool_send_and_final_output_deliver_only_once(
+        delivery, True, "Hello", False, 1, pretool_text="Starting"
+    )
+    assert not generation._generations
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+async def test_uncertain_pretool_send_halts_turn_without_final_echo(
+    delivery, streaming
+):
+    await test_tool_send_and_final_output_deliver_only_once(
+        delivery,
+        streaming,
+        "Hello",
+        False,
+        2,
+        pretool_text="Starting",
+        uncertain_delivery=True,
+    )
+    assert not generation._generations
+
+
+async def test_runner_cancellation_aborts_preview_and_never_finalizes(delivery):
+    with pytest.raises(asyncio.CancelledError):
+        await test_tool_send_and_final_output_deliver_only_once(
+            delivery,
+            True,
+            "Hello",
+            False,
+            0,
+            use_tool=False,
+            cancel_mid_stream=True,
+        )
+    assert not generation._generations
+    assert not any(
+        isinstance(call.args[0], pyrogram.raw.functions.messages.SendMessage)
+        for call in delivery.client.invoke.await_args_list
+    )
+    delivery.message.reply_text.assert_not_awaited()
 
 
 async def test_repeated_send_tool_is_deduplicated_but_other_target_is_allowed(delivery):

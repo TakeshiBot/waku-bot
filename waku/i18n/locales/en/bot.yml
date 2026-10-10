@@ -20,7 +20,7 @@ bot:
     title:
       set_self: Alright, you are now a {title}!
       set_other: "{user} turned {target} into a {title}!"
-      set_permissions: Click the buttons to change the permissions granted by the /t command.
+      set_permissions: 'Choose an administrator preset. Used only when AI is explicitly asked to promote with /sett; press Save to apply.'
       deleted: Your title has been removed.
       errors:
         generic: Oof, that didn't work.
@@ -58,16 +58,14 @@ bot:
       /d - Delete a quote | Manage group quotes
       /qrand - Get a random quote
       /qp - Set the probability of sending random quotes
-      /t - Get a title | Bestow a title
-      /td - Remove your title
-      /sett - Change permissions for the /t command
-      /setu - Gimme some lewds (/ω＼*)
+      /tag - Set a member tag or administrator title
+      /xtag - Remove a member tag or administrator title
+      /sett - Configure an administrator promotion preset for AI
+      /seg - Gimme some lewds (/ω＼*)
       /greet - Set the group welcome message
       /id - Get chat ID
       /ip - Look up IP/domain info
       /wordcloud - Generate a word cloud from chat history
-      /botpromote - Promote a user to bot admin (they will have owner-like permissions for the bot)
-      /botdemote - Demote a bot admin
       /syncmembers - Sync group members
       /f5avatar - Refresh your avatar
       /forget - Make the bot forget your conversation history
@@ -273,6 +271,7 @@ bot:
         model_http: Failed, meow~ Please try again later (HTTP {code})
         too_fast: Too fast! Not yet!
         interrupted: "Output was interrupted ({error})"
+        delivery_unverified: I could not confirm whether the reply was delivered. I will not resend it to avoid duplicates.
       quota:
         calls_today: "AI usage today: {used} calls / {tokens} tokens"
         free_line: "Free allowance: {used}/{limit} tokens"
@@ -473,11 +472,11 @@ bot:
     d: Delete a quote
     qrand: Random quote
     qp: Set quote probability
-    t: Get a title|Bestow a title
-    sett: Set title permissions
+    tag: Set a member tag or administrator title
+    sett: Configure an administrator promotion preset for AI
     id: Get chat ID
     ip: Get IP info
-    setu: Gimme lewds
+    seg: Gimme lewds
     config: Change group settings
     greet: Set welcome message
     quota: AI usage quota

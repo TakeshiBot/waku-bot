@@ -4,17 +4,19 @@ import pyrogram
 from pyrogram.client import Client
 
 from waku import common, database, i18n
+from waku.common.telegram_authority import can_manage_group_settings
 from waku.logger import logger
+from waku.plugins.preference_save import preview_preference
 
 
 @Client.on_message(pyrogram.filters.command("greet") & pyrogram.filters.group, group=0)
 async def set_greeting_command(client: Client, message: pyrogram.types.Message):
     chat = message.chat
-    user = message.sender_chat or message.from_user
+    user = message.from_user
     if not chat or chat.id is None or not user:
         return
     chat_config = await database.get_chat_config(chat)
-    if not await common.can_user_manage_bot_in_chat(user, chat):
+    if not await can_manage_group_settings(client, user.id, chat.id):
         await message.reply(
             i18n.t("bot.msg.no_permission_group", locale=chat_config.lang)
         )
@@ -38,16 +40,20 @@ async def set_greeting_command(client: Client, message: pyrogram.types.Message):
                     i18n.t("bot.msg.greeting.too_long", locale=chat_config.lang)
                 )
                 return
-            chat_config.greeting = greeting_text
-            await database.update_chat_config(chat.id, chat_config)
-            await message.reply(
-                i18n.t("bot.msg.greeting.set_success", locale=chat_config.lang)
+            await preview_preference(
+                message,
+                {"greeting": greeting_text},
+                i18n.t("bot.preference_save.greeting", locale=chat_config.lang)
+                + "\n"
+                + greeting_text,
+                chat_config.lang,
             )
         case "remove":
-            chat_config.greeting = None
-            await database.update_chat_config(chat.id, chat_config)
-            await message.reply(
-                i18n.t("bot.msg.greeting.remove_success", locale=chat_config.lang)
+            await preview_preference(
+                message,
+                {"greeting": None},
+                i18n.t("bot.preference_save.remove_greeting", locale=chat_config.lang),
+                chat_config.lang,
             )
         case "show":
             if chat_config.greeting is None:

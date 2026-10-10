@@ -1,0 +1,13 @@
+bot:
+  preference_save:
+    save: Lưu
+    cancel: Hủy
+    notice: 'Bấm Lưu để áp dụng và đóng menu. Mở lại lệnh để bỏ bản nháp.'
+    saved: 'Đã lưu và áp dụng thay đổi. Menu tự xóa sau 5 giây.'
+    cancelled: Đã hủy thay đổi.
+    denied: Menu đã hết hạn, không thuộc về bạn hoặc bạn không còn đủ quyền.
+    failed: Chưa lưu được. Hãy thử lại hoặc mở lại menu.
+    conflict: Cấu hình đã được đổi ở menu khác. Mở lại lệnh để xem giá trị mới trước khi lưu.
+    language: 'Ngôn ngữ: {lang}'
+    greeting: 'Lời chào đang sửa:'
+    remove_greeting: Xóa lời chào của nhóm?

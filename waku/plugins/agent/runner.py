@@ -28,6 +28,7 @@ from waku.plugins.agent.cache_stats import log_run_cache_stats
 from waku.plugins.agent.datatype import AskUserOutput, EndTurn
 from waku.plugins.agent.localization import localized_argument
 from waku.plugins.agent.output import (
+    DeliveryUncertain,
     StreamingOutput,
     TypingKeepAlive,
     record_sent_text,
@@ -39,6 +40,7 @@ from waku.plugins.agent.prompt import (
     transcribe_multimodal_content,
     transcribe_multimodal_history,
 )
+from waku.plugins.agent.recovery import reply_agent_status
 from waku.plugins.agent.whitelist import is_chat_allowed
 
 
@@ -234,7 +236,17 @@ async def run_agent(
                 err_text = i18n.t(
                     "bot.msg.agent.errors.interrupted", locale=lang
                 ).format(error="Timeout")
-                await message.reply_text(err_text)
+                await reply_agent_status(
+                    client,
+                    message,
+                    model=model,
+                    deps=deps,
+                    lang=lang,
+                    fallback=err_text,
+                    facts="The AI run timed out. Some recorded actions may already have completed; explain the verified moderation results and do not repeat them.",
+                    additional_instructions=additional_instructions,
+                    subject=subject,
+                )
             except Exception as e:
                 logger.error(
                     f"Failed to send timeout notice: {e.__class__.__name__} - {e}"
@@ -267,9 +279,8 @@ async def _run_agent_impl(
 ) -> None:
     """Run the agent; single execution path shared by the wake and follow-up flows.
 
-    Only a run that produced output is metered: the two success branches call
-    `quota.settle` with the run's own usage, and the error handlers below swallow the
-    exception (to reply to the user) without settling, so a failed run costs nothing.
+    Successful main runs settle their actual usage. A failed main run is not
+    settled; a successful persona status reply settles only its own model usage.
     """
 
     if not is_chat_allowed(chat_id):
@@ -391,7 +402,7 @@ async def _run_agent_impl(
                                 )
                                 if has_tool_calls and streaming_output is not None:
                                     await streaming_output.finalize()
-                                    if streaming_output.reply_message_id is not None:
+                                    if streaming_output.delivered:
                                         record_sent_text(
                                             deps,
                                             streaming_output.current_text,
@@ -471,7 +482,7 @@ async def _run_agent_impl(
                                 chat_id, user_id, coverage_meta
                             )
                         log_run_cache_stats(use_model.model_name, agent_run.usage)
-                except Exception:
+                except BaseException:
                     if streaming_output is not None:
                         await streaming_output.abort()
                     raise
@@ -574,6 +585,21 @@ async def _run_agent_impl(
         finally:
             if ctx is not None and ctx_owned:
                 await ctx.__aexit__(None, None, None)
+    except DeliveryUncertain as e:
+        trace.mark_trace(session, status="error", error=e)
+        await _stop_typing_keepalive(typing_keepalive)
+        logger.warning("Agent delivery acknowledgement unavailable; halting turn")
+        await reply_agent_status(
+            client,
+            message,
+            model=use_model,
+            deps=deps,
+            lang=lang,
+            fallback=i18n.t("bot.msg.agent.errors.delivery_unverified", locale=lang),
+            facts="The Telegram acknowledgement for a reply was lost. The original reply may already have arrived. Do not repeat it or any actions.",
+            additional_instructions=additional_instructions,
+            subject=subject,
+        )
     except TypeError as e:
         trace.mark_trace(session, status="error", error=e)
         await _stop_typing_keepalive(typing_keepalive)
@@ -582,7 +608,17 @@ async def _run_agent_impl(
         # https://github.com/pydantic/pydantic-ai/issues/1746
         logger.exception(f"Agent run error: {e}")
         err_text = i18n.t("bot.msg.agent.errors.too_fast", locale=lang)
-        await message.reply_text(err_text)
+        await reply_agent_status(
+            client,
+            message,
+            model=use_model,
+            deps=deps,
+            lang=lang,
+            fallback=err_text,
+            facts="The main AI run could not complete because of an output/type error. Explain any verified moderation results; do not repeat actions.",
+            additional_instructions=additional_instructions,
+            subject=subject,
+        )
     except (
         pydantic_ai.exceptions.ModelHTTPError,
         pydantic_ai.exceptions.ModelAPIError,
@@ -602,23 +638,27 @@ async def _run_agent_impl(
         )
         status_code = getattr(e, "status_code", None)
         if status_code == 400:
-            await message.reply_text(
-                i18n.t("bot.msg.agent.errors.model_http_400", locale=lang),
-                reply_markup=markup,
-            )
+            fallback = i18n.t("bot.msg.agent.errors.model_http_400", locale=lang)
         elif status_code:
-            await message.reply_text(
-                i18n.t("bot.msg.agent.errors.model_http", locale=lang).format(
-                    code=status_code
-                ),
+            fallback = i18n.t("bot.msg.agent.errors.model_http", locale=lang).format(
+                code=status_code
             )
         else:
-            await message.reply_text(
-                i18n.t("bot.msg.agent.errors.interrupted", locale=lang).format(
-                    error="Error"
-                ),
-                reply_markup=markup,
+            fallback = i18n.t("bot.msg.agent.errors.interrupted", locale=lang).format(
+                error="Error"
             )
+        await reply_agent_status(
+            client,
+            message,
+            model=use_model,
+            deps=deps,
+            lang=lang,
+            fallback=fallback,
+            facts=f"The main AI request failed (HTTP status {status_code or 'unknown'}). Do not invent a completed response. Explain any verified moderation results; do not repeat actions.",
+            additional_instructions=additional_instructions,
+            subject=subject,
+            reply_markup=markup,
+        )
     except Exception as e:
         trace.mark_trace(session, status="error", error=e)
         await _stop_typing_keepalive(typing_keepalive)
@@ -626,4 +666,14 @@ async def _run_agent_impl(
         err_text = i18n.t("bot.msg.agent.errors.interrupted", locale=lang).format(
             error="Error"
         )
-        await message.reply_text(err_text)
+        await reply_agent_status(
+            client,
+            message,
+            model=use_model,
+            deps=deps,
+            lang=lang,
+            fallback=err_text,
+            facts="The main AI run was interrupted. Explain any verified moderation results without inventing success or repeating actions.",
+            additional_instructions=additional_instructions,
+            subject=subject,
+        )

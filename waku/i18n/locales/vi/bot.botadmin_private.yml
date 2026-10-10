@@ -1,0 +1,10 @@
+bot:
+  botadmin_private:
+    usage: 'Dùng /botpromote <ID Telegram> để cấp quyền quản trị toàn bot, hoặc /botdemote <ID Telegram> để gỡ quyền. Chỉ dùng trong DM với bot.'
+    invalid: ID Telegram không hợp lệ.
+    protected: Không thể thay đổi quyền của chính bạn hoặc chủ bot bằng lệnh này.
+    unregistered: Người này chưa có trong dữ liệu bot. Hãy nhờ họ gửi /start cho bot hoặc gửi tin trong nhóm có bot, rồi thử lại.
+    bot: Không thể cấp quyền quản trị toàn bot cho tài khoản bot.
+    already: Quyền quản trị toàn bot của người này đã ở trạng thái yêu cầu.
+    promoted: 'Đã cấp quyền quản trị toàn bot cho ID {id}.'
+    demoted: 'Đã gỡ quyền quản trị toàn bot của ID {id}.'

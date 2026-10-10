@@ -20,7 +20,7 @@ async def reload_command(client: Client, message: pyrogram.types.Message):
         await message.reply_text(t("bot.hardcoded.reload.denied", locale=lang))
         return
 
-    success, msg, changed = reload_config(locale=lang)
+    success, msg, changed = await reload_config(locale=lang)
     if success and changed:
         logger.info(
             f"Config reloaded by {user.id}, changed fields: {', '.join(changed)}"
@@ -28,6 +28,4 @@ async def reload_command(client: Client, message: pyrogram.types.Message):
         msg += "\n\n" + t("bot.hardcoded.reload.changed", locale=lang).format(
             count=len(changed), fields=", ".join(changed)
         )
-    elif success:
-        msg += "\n\n" + t("bot.hardcoded.reload.unchanged", locale=lang)
     await message.reply_text(msg)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import httpx
@@ -52,8 +52,11 @@ def _parse_spec(spec: str) -> tuple[str, str]:
     return "default", spec.strip()
 
 
-def _get_provider(name: str) -> ProviderConfig:
-    providers = app_config.agent_providers
+def _get_provider(
+    name: str, providers: Mapping[str, ProviderConfig] | None = None
+) -> ProviderConfig:
+    if providers is None:
+        providers = app_config.agent_providers
     if name in providers:
         return providers[name]
     raise ValueError(
@@ -87,9 +90,15 @@ def _openai_base_url(cfg: ProviderConfig) -> str:
     return cfg.url
 
 
-def _make_openai_provider(provider_name: str) -> OpenAIProvider:
-    cfg = _get_provider(provider_name)
-    http_client = _get_http_client_for_provider(provider_name)
+def _make_openai_provider(
+    provider_name: str,
+    *,
+    providers: Mapping[str, ProviderConfig] | None = None,
+    http_client: httpx.AsyncClient | None = None,
+) -> OpenAIProvider:
+    cfg = _get_provider(provider_name, providers)
+    if providers is None and http_client is None:
+        http_client = _get_http_client_for_provider(provider_name)
     if http_client is not None:
         return OpenAIProvider(
             base_url=_openai_base_url(cfg), api_key=cfg.key, http_client=http_client
@@ -97,18 +106,23 @@ def _make_openai_provider(provider_name: str) -> OpenAIProvider:
     return OpenAIProvider(base_url=_openai_base_url(cfg), api_key=cfg.key)
 
 
-def resolve_spec(spec: str) -> tuple[ProviderConfig, str]:
+def resolve_spec(
+    spec: str, *, providers: Mapping[str, ProviderConfig] | None = None
+) -> tuple[ProviderConfig, str]:
     """Return the provider config and model name of a 'provider/model' spec.
 
     For callers that need the provider's url/key/proxy directly instead of a
     pydantic-ai model object.
     """
     provider_name, model_name = _parse_spec(spec)
-    return _get_provider(provider_name), model_name
+    return _get_provider(provider_name, providers), model_name
 
 
 def make_chat_model(
     spec: str,
+    *,
+    providers: Mapping[str, ProviderConfig] | None = None,
+    http_client: httpx.AsyncClient | None = None,
 ) -> VideoCapableOpenAIChatModel | OpenAIResponsesModel:
     """Build a chat model from a 'provider/model' spec.
 
@@ -117,8 +131,10 @@ def make_chat_model(
     - "responses": returns OpenAIResponsesModel
     """
     provider_name, model_name = _parse_spec(spec)
-    cfg = _get_provider(provider_name)
-    openai_provider = _make_openai_provider(provider_name)
+    cfg = _get_provider(provider_name, providers)
+    openai_provider = _make_openai_provider(
+        provider_name, providers=providers, http_client=http_client
+    )
     if cfg.type == "responses":
         return OpenAIResponsesModel(
             model_name=model_name,
@@ -252,14 +268,16 @@ def make_embed_model(
     )
 
 
-def make_openai_client_args(spec: str) -> dict:
+def make_openai_client_args(
+    spec: str, *, providers: Mapping[str, ProviderConfig] | None = None
+) -> dict:
     """Return kwargs suitable for openai.AsyncOpenAI(**...) from a model spec.
 
     Useful for services (image gen/edit) that use the raw OpenAI client rather
     than pydantic-ai model objects.
     """
     provider_name, model_name = _parse_spec(spec)
-    cfg = _get_provider(provider_name)
+    cfg = _get_provider(provider_name, providers)
     return {
         "api_key": cfg.key,
         "base_url": _openai_base_url(cfg),

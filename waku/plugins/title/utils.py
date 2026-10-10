@@ -1,41 +1,35 @@
-import json
-
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from waku import i18n
 
-
-def _permission_button(
-    permission: str, enabled: bool, lang: str = ""
-) -> InlineKeyboardButton:
-    return InlineKeyboardButton(
-        i18n.t(f"bot.button.title_permissions.{permission}", locale=lang)
-        + ("✅" if enabled else "❌"),
-        callback_data=f"set_title_permissions {permission}",
-    )
+from .permissions import ADMIN_RIGHTS, CHANNEL_ONLY, supported
 
 
 class TitlePermissionsMarkup:
-    def __init__(self, permissions: dict[str, bool] = {}, lang: str = "") -> None:
-        self.lang = lang
-        if isinstance(permissions, str):
-            permissions = json.loads(permissions)
-        self.permissions = permissions
+    def __init__(self, permissions=None, lang="", token="", revision=0):
+        self.permissions = permissions or {}
+        self.lang, self.token = lang, token
+        self.revision = revision
 
-    def build(self) -> InlineKeyboardMarkup:
-        permission_groups = [
-            ["can_change_info", "can_delete_messages", "can_manage_tags"],
-            ["can_restrict_members", "can_invite_users", "can_promote_members"],
-            ["can_post_stories", "can_edit_stories", "can_delete_stories"],
-            ["can_manage_video_chats", "can_manage_topics", "can_pin_messages"],
-        ]
-
-        keyboard = []
-        for row in permission_groups:
-            keyboard_row = []
-            for permission in row:
-                enabled = self.permissions.get(permission, False)
-                keyboard_row.append(_permission_button(permission, enabled, self.lang))
-            keyboard.append(keyboard_row)
-
-        return InlineKeyboardMarkup(keyboard)
+    def build(self):
+        buttons = []
+        for index, name in enumerate(ADMIN_RIGHTS):
+            disabled = name in CHANNEL_ONLY or not supported(name)
+            enabled = name == "can_manage_chat" or self.permissions.get(name) is True
+            mark = "⚠" if disabled else "✅" if enabled else "❌"
+            buttons.append(
+                InlineKeyboardButton(
+                    mark + " " + i18n.t(f"title_menu.rights.{name}", locale=self.lang),
+                    callback_data=f"sett:{self.token}:{self.revision}:{index}",
+                )
+            )
+        rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    i18n.t("title_menu.save", locale=self.lang),
+                    callback_data=f"sett:{self.token}:{self.revision}:save",
+                )
+            ]
+        )
+        return InlineKeyboardMarkup(rows)

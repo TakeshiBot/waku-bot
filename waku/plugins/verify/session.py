@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
+from pyrogram import enums, raw
 from pyrogram.client import Client
 from pyrogram.errors import RPCError
 from pyrogram.raw.functions.messages.edit_message import EditMessage
@@ -24,16 +25,194 @@ from waku.bot.client import client
 from waku.database.models import ChatConfig, VerificationSession
 from waku.i18n import i18n
 from waku.logger import logger
+from waku.plugins.agent.tools import moderation_permissions as native_permissions
+from waku.plugins.title.authority import has_right
 from waku.plugins.verify.challenge import (
-    RESTORE_PERMISSIONS_KEY,
     _challenge_markup,
     build_challenge_text,
     make_emoji_challenge,
     make_math_challenge,
     make_math_hard_challenge,
     make_qa_challenge,
-    restore_permissions_for_session,
 )
+
+NATIVE_RESTORE_KEY = "_native_restore_permissions"
+NATIVE_APPLIED_KEY = "_native_applied_permissions"
+ACTION_RECEIPTS_KEY = "_verification_action_receipts"
+
+
+async def verification_authorized(
+    bot, chat_id, user_id, *, actor_id=None, allow_banned=False
+):
+    """Current Telegram roles only; bot configuration roles grant no punishments."""
+    if (
+        type(chat_id) is not int
+        or chat_id >= 0
+        or type(user_id) is not int
+        or user_id <= 0
+        or user_id == 1087968824
+    ):
+        return False
+    if actor_id is not None and (
+        type(actor_id) is not int
+        or actor_id <= 0
+        or actor_id == 1087968824
+        or actor_id == user_id
+    ):
+        return False
+    try:
+        me = bot.me or await bot.get_me()
+        if user_id == me.id:
+            return False
+        target = await bot.get_chat_member(chat_id, user_id)
+        if (
+            target.user is None
+            or target.user.id != user_id
+            or target.status
+            in (enums.ChatMemberStatus.OWNER, enums.ChatMemberStatus.ADMINISTRATOR)
+        ):
+            return False
+        allowed = (enums.ChatMemberStatus.MEMBER, enums.ChatMemberStatus.RESTRICTED)
+        if allow_banned:
+            allowed += (enums.ChatMemberStatus.BANNED, enums.ChatMemberStatus.LEFT)
+        if target.status not in allowed or (
+            target.status == enums.ChatMemberStatus.RESTRICTED
+            and target.is_member is False
+            and not allow_banned
+        ):
+            return False
+        own = await bot.get_chat_member(chat_id, me.id)
+        if (
+            own.status == enums.ChatMemberStatus.ADMINISTRATOR
+            and own.privileges is None
+        ):
+            from waku.plugins.agent.tools.moderation import _basic_bot_privileges
+
+            await _basic_bot_privileges(bot, chat_id, own)
+        if not has_right(own, "can_restrict_members"):
+            return False
+        if actor_id is not None:
+            actor = await bot.get_chat_member(chat_id, actor_id)
+            if (
+                actor.user is None
+                or actor.user.id != actor_id
+                or actor.user.is_bot
+                or not has_right(actor, "can_restrict_members")
+            ):
+                return False
+    except Exception:
+        return False
+    return True
+
+
+async def capture_restore_snapshot(bot, chat_id, user_id):
+    """Capture authoritative individual raw flags; failed reads never mean unrestricted."""
+    if not await verification_authorized(bot, chat_id, user_id):
+        raise ValueError("verification_authority")
+    return await native_permissions.member_rights(bot, chat_id, user_id)
+
+
+async def _verification_mutate(
+    bot, session_row, action, *, actor_id=None, rights=None, expected=None
+):
+    """One dispatch per persisted action, retaining uncertain receipts for staff review."""
+    payload = dict(session_row.payload or {})
+    receipts = dict(payload.get(ACTION_RECEIPTS_KEY) or {})
+    if (
+        "pending" in receipts.values()
+        or payload.get("_verification_manual_review") is True
+    ):
+        return False
+    if receipts.get(action) == "done":
+        return True
+    dispatched = False
+    try:
+        peer = await bot.resolve_peer(session_row.chat_id)
+        participant = await bot.resolve_peer(session_row.user_id)
+        if action == "kick" and isinstance(peer, raw.types.InputPeerChat):
+            query = raw.functions.messages.DeleteChatUser(
+                chat_id=peer.chat_id, user_id=participant
+            )
+        else:
+            if not isinstance(peer, raw.types.InputPeerChannel):
+                return (
+                    False  # Basic-group ban is only a kick; never label it permanent.
+                )
+            if action in ("ban", "kick"):
+                native = raw.types.ChatBannedRights(until_date=0, view_messages=True)
+            elif action == "unban":
+                native = raw.types.ChatBannedRights(until_date=0)
+            else:
+                native = native_permissions.to_native(rights)
+            query = raw.functions.channels.EditBanned(
+                channel=peer, participant=participant, banned_rights=native
+            )
+        if not await verification_authorized(
+            bot,
+            session_row.chat_id,
+            session_row.user_id,
+            actor_id=actor_id,
+            allow_banned=action == "unban",
+        ):
+            return False
+        if (
+            expected is not None
+            and await native_permissions.member_rights(
+                bot, session_row.chat_id, session_row.user_id
+            )
+            != expected
+        ):
+            return False
+        receipts[action] = "pending"
+        payload[ACTION_RECEIPTS_KEY] = receipts
+        if action == "restrict":
+            payload[NATIVE_APPLIED_KEY] = native_permissions.snapshot(
+                query.banned_rights
+            )
+        session_row.payload = payload
+        await database.update_verification_session(session_row)
+        # Database IO cannot turn an earlier permission snapshot into current authority.
+        if not await verification_authorized(
+            bot,
+            session_row.chat_id,
+            session_row.user_id,
+            actor_id=actor_id,
+            allow_banned=action == "unban",
+        ):
+            raise ValueError("verification_authority")
+        if (
+            expected is not None
+            and await native_permissions.member_rights(
+                bot, session_row.chat_id, session_row.user_id
+            )
+            != expected
+        ):
+            raise ValueError("verification_permissions_changed")
+        dispatched = True
+        result = await bot.invoke(query, retries=1, sleep_threshold=0)
+        if result is None or result is False:
+            return False
+        receipts[action] = "done"
+        session_row.payload = {**payload, ACTION_RECEIPTS_KEY: receipts}
+        await database.update_verification_session(session_row)
+        return True
+    except Exception as error:
+        if (
+            not dispatched
+            or isinstance(error, RPCError)
+            and 0 < getattr(error, "CODE", 500) < 500
+        ):
+            receipts.pop(action, None)
+            session_row.payload = {**payload, ACTION_RECEIPTS_KEY: receipts}
+            try:
+                await database.update_verification_session(session_row)
+            except Exception:
+                pass
+        logger.warning(
+            "Verification {} not confirmed: {}", action, type(error).__name__
+        )
+        return False
+
 
 RESULT_MESSAGE_TTL = 30
 
@@ -47,17 +226,26 @@ _sessions: dict[int, VerificationSession] = {}
 _by_user: dict[tuple[int, int], int] = {}
 _user_locks: dict[tuple[int, int], asyncio.Lock] = {}
 _user_lock_refs: dict[tuple[int, int], int] = {}
+_user_lock_owners: dict[tuple[int, int], asyncio.Task] = {}
 
 
 @asynccontextmanager
 async def verification_lock(chat_id: int, user_id: int):
     """Serialize session creation and completion for one chat member."""
     key = (chat_id, user_id)
+    task = asyncio.current_task()
+    if task is not None and _user_lock_owners.get(key) is task:
+        yield
+        return
     lock = _user_locks.setdefault(key, asyncio.Lock())
     _user_lock_refs[key] = _user_lock_refs.get(key, 0) + 1
     try:
         async with lock:
-            yield
+            _user_lock_owners[key] = task
+            try:
+                yield
+            finally:
+                _user_lock_owners.pop(key, None)
     finally:
         refs = _user_lock_refs[key] - 1
         if refs == 0:
@@ -88,6 +276,24 @@ def _get_for(chat_id: int, user_id: int) -> VerificationSession | None:
     return _sessions.get(session_id)
 
 
+async def resolve_session(session_row):
+    """Read the current durable row under the member lock; removed rows stay removed."""
+    try:
+        current = await database.get_verification_session(session_row.id)
+    except Exception as error:
+        logger.warning("Verification session read failed: {}", type(error).__name__)
+        return None
+    if current is None or (current.chat_id, current.user_id) != (
+        session_row.chat_id,
+        session_row.user_id,
+    ):
+        if current is None:
+            _unregister(session_row.id)
+        return None
+    _register(current)
+    return current
+
+
 async def capture_restore_permissions(
     bot: Client,
     chat_id: int,
@@ -100,7 +306,7 @@ async def capture_restore_permissions(
         logger.warning(
             f"verify: failed to read permissions for {user_id} in {chat_id}: {e}"
         )
-        return None
+        raise ValueError("verification_snapshot_unavailable") from e
     return getattr(member, "permissions", None)
 
 
@@ -110,6 +316,7 @@ async def _cleanup_session(session_row: VerificationSession) -> None:
         await database.delete_verification_session(session_row.id)
     except Exception as e:
         logger.error(f"verify: failed to delete session {session_row.id}: {e}")
+        return
     _unregister(session_row.id)
 
 
@@ -169,6 +376,14 @@ async def _delete_user_messages_in_window(session_row: VerificationSession) -> N
         return
     try:
         for start in range(0, len(message_ids), 100):
+            if not await verification_authorized(
+                client, session_row.chat_id, session_row.user_id, allow_banned=True
+            ):
+                return
+            me = client.me or await client.get_me()
+            own = await client.get_chat_member(session_row.chat_id, me.id)
+            if not has_right(own, "can_delete_messages"):
+                return
             await client.delete_messages(
                 session_row.chat_id, message_ids[start : start + 100]
             )
@@ -197,21 +412,67 @@ def _is_expired(session_row: VerificationSession) -> bool:
 
 
 async def restore_member_permissions(
-    bot: Client, session_row: VerificationSession
-) -> None:
+    bot: Client, session_row: VerificationSession, *, actor_id=None
+) -> bool:
     """Restore the pre-verification permissions without granting new rights."""
-    permissions = restore_permissions_for_session(session_row)
-    if permissions is None:
-        return
     try:
-        await bot.restrict_chat_member(
-            session_row.chat_id, session_row.user_id, permissions
+        payload = session_row.payload or {}
+        receipts = payload.get(ACTION_RECEIPTS_KEY) or {}
+        if (
+            "pending" in receipts.values()
+            or payload.get("_verification_manual_review") is True
+        ):
+            return False
+        if session_row.method == "sticker":
+            return await verification_authorized(
+                bot, session_row.chat_id, session_row.user_id, actor_id=actor_id
+            )
+        if receipts.get("restore") == "done":
+            return await verification_authorized(
+                bot, session_row.chat_id, session_row.user_id, actor_id=actor_id
+            )
+        current = await native_permissions.member_rights(
+            bot, session_row.chat_id, session_row.user_id
         )
-    except Exception as e:
-        logger.error(
-            f"verify: failed to restore permissions for {session_row.user_id} "
-            f"in {session_row.chat_id}: {e}"
+        defaults = await native_permissions.default_rights(bot, session_row.chat_id)
+        saved = payload.get(NATIVE_RESTORE_KEY)
+        applied = payload.get(NATIVE_APPLIED_KEY)
+        if saved is not None and applied is None:
+            return False
+        if saved is None:
+            # Legacy ChatPermissions aggregated four flags using ANY and omitted
+            # native flags/expiry. Their original restrictions cannot be inferred.
+            session_row.payload = {**payload, "_verification_manual_review": True}
+            await database.update_verification_session(session_row)
+            return False
+        native_permissions.to_native(saved)
+        if applied is not None:
+            native_permissions.to_native(applied)
+            if current != applied:
+                return False
+        if saved["until_date"] and saved["until_date"] <= int(
+            datetime.now(UTC).timestamp()
+        ):
+            saved = native_permissions.snapshot(None)
+        elif (
+            saved["until_date"]
+            and not 30
+            <= saved["until_date"] - int(datetime.now(UTC).timestamp())
+            <= 366 * 86400
+        ):
+            return False  # Never turn a nearly expired temporary restriction permanent.
+        restored = native_permissions.clamp_to_defaults(saved, defaults)
+        return await _verification_mutate(
+            bot,
+            session_row,
+            "restore",
+            actor_id=actor_id,
+            rights=restored,
+            expected=current,
         )
+    except Exception as error:
+        logger.warning("Verification restore not confirmed: {}", type(error).__name__)
+        return False
 
 
 # --------------------------------------------------------------------------- Lifecycle.
@@ -239,6 +500,13 @@ async def verify_sweep() -> None:
         return
     for session_row in sessions:
         try:
+            if (
+                "pending"
+                in ((session_row.payload or {}).get(ACTION_RECEIPTS_KEY) or {}).values()
+            ):
+                continue  # Unknown external outcomes require manual review, never automatic resends.
+            if (session_row.payload or {}).get("_verification_manual_review") is True:
+                continue
             config = await _chat_config(session_row.chat_id)
             if config is None:
                 # Silently clean up the deleted chat.
@@ -255,15 +523,28 @@ async def verify_sweep() -> None:
 
 async def handle_user_left(chat_id: int, user_id: int) -> None:
     """On leaving or banning, delete the DB row and remove the session from the registry."""
-    try:
-        await database.delete_verification_sessions_for_user(chat_id, user_id)
-    except Exception as e:
-        logger.error(
-            f"verify: failed to delete sessions for {user_id} in {chat_id}: {e}"
-        )
-    session_id = _by_user.pop((chat_id, user_id), None)
-    if session_id is not None:
-        _unregister(session_id)
+    async with verification_lock(chat_id, user_id):
+        try:
+            rows = await database.get_verification_sessions_for_user(chat_id, user_id)
+        except Exception as error:
+            logger.warning("Verification leave read failed: {}", type(error).__name__)
+            return
+        for row in rows:
+            receipts = (row.payload or {}).get(ACTION_RECEIPTS_KEY) or {}
+            if "pending" in receipts.values() or (
+                receipts.get("kick") == "done" and receipts.get("unban") != "done"
+            ):
+                return  # Own kick's BANNED update must not erase unfinished unban.
+        try:
+            await database.delete_verification_sessions_for_user(chat_id, user_id)
+        except Exception as error:
+            logger.warning(
+                "Verification leave cleanup failed: {}", type(error).__name__
+            )
+            return
+        session_id = _by_user.pop((chat_id, user_id), None)
+        if session_id is not None:
+            _unregister(session_id)
 
 
 def _to_rich_html(text: str) -> str:
@@ -340,114 +621,138 @@ async def _edit_challenge_message(
         )
 
 
-async def _fail_session(session_row: VerificationSession, reason: str) -> None:
-    """On timeout or exhausted attempts, delete the challenge, apply the configured member action and notify."""
-    config = await _chat_config(session_row.chat_id)
-    if config is None:
-        await _cleanup_session(session_row)
-        return
-    lang = config.lang
-    action = config.verify_fail_action
-
-    if session_row.challenge_message_id is not None:
+async def _fail_session(session_row: VerificationSession, reason: str) -> bool:
+    """Announce only acknowledged policy actions; unknown results stay for staff review."""
+    async with verification_lock(session_row.chat_id, session_row.user_id):
+        session_row = await resolve_session(session_row)
+        if session_row is None:
+            return False
+        config = await _chat_config(session_row.chat_id)
+        if config is None:
+            await _cleanup_session(session_row)
+            return False
+        action, lang = config.verify_fail_action, config.lang
+        if action == "kick":
+            if not await _verification_mutate(client, session_row, "kick"):
+                return False
+            peer = await client.resolve_peer(session_row.chat_id)
+            if isinstance(peer, raw.types.InputPeerChannel):
+                if not await _verification_mutate(client, session_row, "unban"):
+                    return False
+        elif action == "ban":
+            if not await _verification_mutate(client, session_row, "ban"):
+                return False
+        elif not await restore_member_permissions(client, session_row):
+            return False
+        if session_row.challenge_message_id is not None:
+            try:
+                await client.delete_messages(
+                    session_row.chat_id, session_row.challenge_message_id
+                )
+            except Exception as error:
+                logger.debug(
+                    "Verification challenge cleanup failed: {}", type(error).__name__
+                )
+        if session_row.method == "sticker":
+            await _delete_user_messages_in_window(session_row)
         try:
-            await client.delete_messages(
-                session_row.chat_id, session_row.challenge_message_id
+            prefix = i18n.t(f"bot.msg.verify.{reason}_prefix", locale=lang).format(
+                user=await _user_mention(session_row.user_id)
             )
-        except RPCError as e:
-            logger.debug(f"verify: failed to delete challenge {session_row.id}: {e}")
-
-    if session_row.method == "sticker":
-        # Sticker verification permits speech; on failure remove messages sent during the verification window.
-        await _delete_user_messages_in_window(session_row)
-
-    if action == "kick":
-        # ban + unban removes without blacklisting; rejoining permits another verification.
-        try:
-            await client.ban_chat_member(session_row.chat_id, session_row.user_id)
-        except RPCError as e:
-            logger.error(f"verify: kick ban failed for {session_row.user_id}: {e}")
-        try:
-            await client.unban_chat_member(session_row.chat_id, session_row.user_id)
-        except RPCError as e:
-            logger.error(f"verify: kick unban failed for {session_row.user_id}: {e}")
-    elif action == "ban":
-        try:
-            await client.ban_chat_member(session_row.chat_id, session_row.user_id)
-        except RPCError as e:
-            logger.error(f"verify: ban failed for {session_row.user_id}: {e}")
-    else:  # unrestrict
-        await restore_member_permissions(client, session_row)
-
-    try:
-        prefix = i18n.t(f"bot.msg.verify.{reason}_prefix", locale=lang).format(
-            user=await _user_mention(session_row.user_id)
-        )
-        suffix = i18n.t(f"bot.msg.verify.action_{action}", locale=lang)
-        notice = await client.send_message(session_row.chat_id, prefix + suffix)
-        _schedule_result_delete(session_row.chat_id, notice.id)
-    except (RPCError, ValueError) as e:
-        logger.debug(f"verify: failed to notify failure for {session_row.id}: {e}")
-
-    await _cleanup_session(session_row)
+            suffix = i18n.t(f"bot.msg.verify.action_{action}", locale=lang)
+            notice = await client.send_message(session_row.chat_id, prefix + suffix)
+            _schedule_result_delete(session_row.chat_id, notice.id)
+        except Exception as error:
+            logger.debug("Verification result notice failed: {}", type(error).__name__)
+        await _cleanup_session(session_row)
+        return True
 
 
 async def _cancel_session(session_row: VerificationSession) -> None:
     """When group verification is disabled, remove verification restrictions, delete the challenge and clear the session."""
-    await restore_member_permissions(client, session_row)
-    if session_row.challenge_message_id is not None:
+    async with verification_lock(session_row.chat_id, session_row.user_id):
+        session_row = await resolve_session(session_row)
+        if session_row is None:
+            return False
+        if not await restore_member_permissions(client, session_row):
+            return
+        if session_row.challenge_message_id is not None:
+            try:
+                await client.delete_messages(
+                    session_row.chat_id, session_row.challenge_message_id
+                )
+            except RPCError as e:
+                logger.debug(
+                    f"verify: failed to delete challenge {session_row.id}: {e}"
+                )
+        await _cleanup_session(session_row)
+
+
+async def _succeed_session(
+    session_row: VerificationSession, lang: str, *, actor_id=None
+) -> bool:
+    """Restore first; never report approval before permissions are acknowledged."""
+    async with verification_lock(session_row.chat_id, session_row.user_id):
+        session_row = await resolve_session(session_row)
+        if session_row is None:
+            return False
+        if not await restore_member_permissions(client, session_row, actor_id=actor_id):
+            return False
         try:
-            await client.delete_messages(
-                session_row.chat_id, session_row.challenge_message_id
-            )
-        except RPCError as e:
-            logger.debug(f"verify: failed to delete challenge {session_row.id}: {e}")
-    await _cleanup_session(session_row)
+            await database.mark_user_verified(session_row.chat_id, session_row.user_id)
+        except Exception as error:
+            logger.warning("Verification approval DB failure: {}", type(error).__name__)
+            return False
+        if session_row.challenge_message_id is not None:
+            try:
+                await _edit_challenge_message(
+                    client,
+                    session_row,
+                    i18n.t("bot.msg.verify.success", locale=lang).format(
+                        user=await _user_mention(session_row.user_id)
+                    ),
+                    None,
+                )
+            except Exception as error:
+                logger.debug(
+                    "Verification success notice failure: {}", type(error).__name__
+                )
+        _schedule_result_delete(session_row.chat_id, session_row.challenge_message_id)
+        await _cleanup_session(session_row)
+        return True
 
 
-async def _succeed_session(session_row: VerificationSession, lang: str) -> None:
-    """On success or administrator approval, update the notice, remove restrictions and clear the session."""
-    if session_row.challenge_message_id is not None:
-        try:
-            await _edit_challenge_message(
-                client,
-                session_row,
-                i18n.t("bot.msg.verify.success", locale=lang).format(
-                    user=await _user_mention(session_row.user_id)
-                ),
-                None,
-            )
-        except RPCError as e:
-            logger.debug(f"verify: failed to edit challenge {session_row.id}: {e}")
-    _schedule_result_delete(session_row.chat_id, session_row.challenge_message_id)
-    await restore_member_permissions(client, session_row)
-    try:
-        await database.mark_user_verified(session_row.chat_id, session_row.user_id)
-    except Exception as e:
-        logger.error(f"verify: failed to mark verified {session_row.id}: {e}")
-    await _cleanup_session(session_row)
-
-
-async def _admin_ban_session(session_row: VerificationSession, lang: str) -> None:
-    """Administrator ban action, always permanent."""
-    if session_row.challenge_message_id is not None:
-        try:
-            await _edit_challenge_message(
-                client,
-                session_row,
-                i18n.t("bot.msg.verify.admin_banned", locale=lang).format(
-                    user=await _user_mention(session_row.user_id)
-                ),
-                None,
-            )
-        except RPCError as e:
-            logger.debug(f"verify: failed to edit challenge {session_row.id}: {e}")
-    _schedule_result_delete(session_row.chat_id, session_row.challenge_message_id)
-    try:
-        await client.ban_chat_member(session_row.chat_id, session_row.user_id)
-    except RPCError as e:
-        logger.error(f"verify: admin ban failed for {session_row.user_id}: {e}")
-    await _cleanup_session(session_row)
+async def _admin_ban_session(
+    session_row: VerificationSession, lang: str, *, actor_id=None
+) -> bool:
+    """Permanent ban with current human authority; report only after native ACK."""
+    if actor_id is None:
+        return False
+    async with verification_lock(session_row.chat_id, session_row.user_id):
+        session_row = await resolve_session(session_row)
+        if session_row is None:
+            return False
+        if not await _verification_mutate(
+            client, session_row, "ban", actor_id=actor_id
+        ):
+            return False
+        if session_row.challenge_message_id is not None:
+            try:
+                await _edit_challenge_message(
+                    client,
+                    session_row,
+                    i18n.t("bot.msg.verify.admin_banned", locale=lang).format(
+                        user=await _user_mention(session_row.user_id)
+                    ),
+                    None,
+                )
+            except Exception as error:
+                logger.debug(
+                    "Verification ban notice failure: {}", type(error).__name__
+                )
+        _schedule_result_delete(session_row.chat_id, session_row.challenge_message_id)
+        await _cleanup_session(session_row)
+        return True
 
 
 # --------------------------------------------------------------------------- Internal helpers.
@@ -461,39 +766,49 @@ async def _wrong_answer(
     edit_message: Message | None = None,
 ) -> None:
     """On a wrong answer, consume an attempt; fail if exhausted, otherwise create a new question and update the notice."""
-    session_row.attempts_left -= 1
-    if session_row.attempts_left <= 0:
-        await _fail_session(session_row, "failed")
-        return
-    new_payload: dict = {}
-    if session_row.method == "math_easy":
-        new_payload = make_math_challenge()
-    elif session_row.method == "math_hard":
-        new_payload = make_math_hard_challenge(lang)
-    elif session_row.method == "emoji":
-        new_payload = make_emoji_challenge()
-    elif session_row.method == "custom_qa":
-        new_payload = make_qa_challenge(config.verify_questions, lang)
-    restore_permissions = (session_row.payload or {}).get(RESTORE_PERMISSIONS_KEY)
-    if restore_permissions is not None:
-        new_payload[RESTORE_PERMISSIONS_KEY] = restore_permissions
-    session_row.payload = new_payload
-    await database.update_verification_session(session_row)
-    if edit_message is not None:
-        try:
-            await _edit_challenge_message(
-                client,
-                session_row,
-                build_challenge_text(
-                    config,
-                    session_row.method,
-                    session_row.payload or {},
-                    session_row.attempts_left,
-                    wrong_prefix=True,
-                    lang=lang,
-                    user_mention=await _user_mention(session_row.user_id),
-                ),
-                _challenge_markup(session_row, lang),
-            )
-        except RPCError as e:
-            logger.debug(f"verify: failed to refresh challenge {session_row.id}: {e}")
+    async with verification_lock(session_row.chat_id, session_row.user_id):
+        session_row = await resolve_session(session_row)
+        if session_row is None:
+            return
+        session_row.attempts_left -= 1
+        if session_row.attempts_left <= 0:
+            await _fail_session(session_row, "failed")
+            return
+        new_payload: dict = {}
+        if session_row.method == "math_easy":
+            new_payload = make_math_challenge()
+        elif session_row.method == "math_hard":
+            new_payload = make_math_hard_challenge(lang)
+        elif session_row.method == "emoji":
+            new_payload = make_emoji_challenge()
+        elif session_row.method == "custom_qa":
+            new_payload = make_qa_challenge(config.verify_questions, lang)
+        new_payload.update(
+            {
+                key: value
+                for key, value in (session_row.payload or {}).items()
+                if key.startswith("_")
+            }
+        )
+        session_row.payload = new_payload
+        await database.update_verification_session(session_row)
+        if edit_message is not None:
+            try:
+                await _edit_challenge_message(
+                    client,
+                    session_row,
+                    build_challenge_text(
+                        config,
+                        session_row.method,
+                        session_row.payload or {},
+                        session_row.attempts_left,
+                        wrong_prefix=True,
+                        lang=lang,
+                        user_mention=await _user_mention(session_row.user_id),
+                    ),
+                    _challenge_markup(session_row, lang),
+                )
+            except RPCError as e:
+                logger.debug(
+                    f"verify: failed to refresh challenge {session_row.id}: {e}"
+                )

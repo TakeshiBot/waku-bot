@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 from typing import Any, TypeVar
@@ -179,6 +180,7 @@ class _AppConfig(pydantic.BaseModel):
     manyacg_channel: str = "MoreACG"
     manyacg_bot: str = "kirakabot"
     manyacg_setu_cd: int = 1
+    manyacg_r18_mode: int = pydantic.Field(default=0, ge=0, le=2)
     manyacg_randavatar_cd: int = 5
     manyacg_hybrid_search: bool = True
 
@@ -332,7 +334,9 @@ class _AppConfig(pydantic.BaseModel):
     agent_sticker_warmup_count: int | None = 30
     agent_sticker_db_path: str = "data/sticker_vec.db"
     agent_sticker_ttl: int = 86400 * 7
-    agent_sticker_min_keep_count: int = 100  # Keep expired stickers below this stock count.
+    agent_sticker_min_keep_count: int = (
+        100  # Keep expired stickers below this stock count.
+    )
     # Embedding model spec: "provider/model". Falls back to agent_model provider.
     agent_sticker_embed_model: str = "default/text-embedding-3-small"
     agent_sticker_embed_dimensions: int = 1024
@@ -506,7 +510,9 @@ class _AppConfig(pydantic.BaseModel):
     coin_add_chance_on_message: float = 0.02
     coin_add_chance_for_quote_user: float = 0.7
     coin_add_chance_for_user_make_quote: float = 0.5
-    coin_add_on_randquote_max_pb: float = 0.4  # Cap excessive proactive-quote probabilities.
+    coin_add_on_randquote_max_pb: float = (
+        0.4  # Cap excessive proactive-quote probabilities.
+    )
     coin_add_chance_on_randquote: float = 0.5
     coin_add_chance_on_slash: float = 0.05
     coin_add_chance_on_be_slash: float = 0.05
@@ -653,71 +659,59 @@ def _get_runtime_config() -> _InternalConfig:
 runtime_config = _get_runtime_config()
 
 
-def reload_config(locale: str | None = None) -> tuple[bool, str, list[str]]:
-    """Reload configuration from settings files.
+def _read_config_candidate() -> _AppConfig:
+    """Read settings without changing objects used by the running bot."""
+    _settings.reload()
+    candidate = _get_typed_config(_AppConfig)
+    _apply_legacy_health_aliases(candidate)
+    if candidate.agent and candidate.agent_powermem_config_path:
+        with open(candidate.agent_powermem_config_path, encoding="utf-8") as stream:
+            candidate.agent_powermem_config = json.load(stream)
+        if not isinstance(candidate.agent_powermem_config, dict):
+            raise ValueError("invalid_memory_config")
+        if candidate.agent_powermem_custom_fact_extraction_prompt is not None:
+            candidate.agent_powermem_config["custom_fact_extraction_prompt"] = (
+                candidate.agent_powermem_custom_fact_extraction_prompt
+            )
+    elif not candidate.agent:
+        candidate.agent_powermem_config = None
+    return candidate
 
-    Returns:
-        (success, message, changed_fields) tuple.
-    """
+
+async def reload_config(locale: str | None = None) -> tuple[bool, str, list[str]]:
+    """Apply safe live changes; retain startup resources until an explicit restart."""
+    from waku.services.settings_runtime import (
+        SETTINGS_APPLICATION_LOCK,
+        prepare_settings_application,
+    )
+
     try:
-        _settings.reload()
-        new_config = _get_typed_config(_AppConfig)
-        _apply_legacy_health_aliases(new_config)
-
-        # Validate critical fields haven't changed
-        critical_fields = [
-            "token",
-            "db_url",
-            "api_id",
-            "api_hash",
-            "session_name",
-            "discord_enabled",
-            "discord_token",
-            # Rebinding the HTTP listener needs a restart.
-            "webapp_host",
-            "webapp_port",
-        ]
-        for field in critical_fields:
-            if getattr(new_config, field) != getattr(app_config, field):
-                return (
-                    False,
-                    i18n.t("bot.config.reload_restart", locale=locale).format(
-                        field=field
-                    ),
-                    [],
+        async with SETTINGS_APPLICATION_LOCK:
+            candidate = await asyncio.to_thread(_read_config_candidate)
+            changed = {
+                key
+                for key in _AppConfig.model_fields
+                if getattr(candidate, key) != getattr(app_config, key)
+            }
+            plan = await prepare_settings_application(candidate, changed)
+            await plan.activate()
+            message = i18n.t("bot.config.reload_success", locale=locale)
+            if plan.discord_status == "error":
+                message += "\n" + i18n.t(
+                    "bot.private_config.discord_failed", locale=locale
                 )
-
-        # Reload powermem config if path is set
-        if new_config.agent and new_config.agent_powermem_config_path:
-            with open(new_config.agent_powermem_config_path, encoding="utf-8") as f:
-                new_config.agent_powermem_config = json.load(f)
-            if new_config.agent_powermem_config is None:
-                return (
-                    False,
-                    i18n.t("bot.config.reload_empty_memory", locale=locale),
-                    [],
-                )
-            if new_config.agent_powermem_custom_fact_extraction_prompt is not None:
-                new_config.agent_powermem_config["custom_fact_extraction_prompt"] = (
-                    new_config.agent_powermem_custom_fact_extraction_prompt
-                )
-        elif not new_config.agent:
-            new_config.agent_powermem_config = None
-
-        # Diff and update app_config in-place to preserve references
-        changed: list[str] = []
-        for field in _AppConfig.model_fields:
-            old_val = getattr(app_config, field)
-            new_val = getattr(new_config, field)
-            if old_val != new_val:
-                changed.append(field)
-            setattr(app_config, field, new_val)
-
-        return True, i18n.t("bot.config.reload_success", locale=locale), changed
-    except Exception as e:
+            if plan.restart_fields:
+                message += "\n" + i18n.t(
+                    "bot.private_config.restart_pending", locale=locale
+                ).format(count=len(plan.restart_fields))
+            return True, message, sorted(plan.live_fields)
+    except Exception as error:
+        # Original validation/client errors may contain credentials.
         return (
             False,
-            i18n.t("bot.config.reload_failed", locale=locale).format(error=e),
+            i18n.t("bot.config.reload_failed", locale=locale).format(
+                error=type(error).__name__
+            ),
             [],
         )
 

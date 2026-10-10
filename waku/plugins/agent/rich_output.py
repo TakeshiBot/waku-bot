@@ -1,17 +1,23 @@
-"""Business-aware rich draft previews using the installed Kurigram raw API."""
+"""Native Telegram generation drafts and Business-aware output adapters."""
 
 import asyncio
 import secrets
+from collections import OrderedDict
 from collections.abc import Callable
 
 import pyrogram
 from pyrogram import raw, utils
 from pyrogram.client import Client
 
+from waku.common.rich_message import sent_message_id
 from waku.logger import logger
+from waku.plugins.agent.styling import convert_md_chunks, convert_rich_md
 
 # Draft support belongs to an account connection and peer, not the bot chat alone.
-_OFFICIAL_DRAFT_UNSUPPORTED_PEERS: set[tuple[str | None, int]] = set()
+_OFFICIAL_DRAFT_UNSUPPORTED_PEERS: set[tuple[int, str | None, int]] = set()
+# Multiple forum topics share a peer's typing quota. Reserve at most one
+# preview per second across those streams, with bounded account/peer state.
+_DRAFT_PEER_NEXT_SEND: OrderedDict[tuple[int, str | None, int], float] = OrderedDict()
 
 
 def bind_business_message(source, result):
@@ -95,64 +101,183 @@ async def edit_business_message_text(
 
 
 class OfficialRichDraftStreamer:
+    """Native private-chat drafts, never edits of already-delivered messages."""
+
     UPDATE_INTERVAL = 1.0
-    MAX_DRAFT_LENGTH = 8192
+    REFRESH_INTERVAL = 10.0
+    MAX_DRAFT_LENGTH = 4000
+    MAX_TRANSIENT_FAILURES = 3
 
     def __init__(
-        self,
-        client: Client,
-        message: pyrogram.types.Message,
-        should_send: Callable[[], bool] | None = None,
+        self, client, message, should_send=None, *, rich=False, max_duration=None
     ):
         self.client = client
         self.message = message
         self.current_text = ""
-        self.random_id = secrets.randbits(63)
-        self._task: asyncio.Task | None = None
+        self.random_id = secrets.randbits(63) or 1
+        self.rich = rich
+        self._task = None
         self._stop = False
-        self.supported: bool | None = None
+        self.supported = None
         self.should_send = should_send
+        self._last_text = None
+        self._last_send = 0.0
+        self._next_send = 0.0
+        self._started_at = 0.0
+        self.max_duration = max_duration
+        self._transient_failures = 0
+        self._empty_rich_text = None
 
-    async def _send_draft(self) -> bool:
+    async def _send_draft(self, *, force_text=False, thinking=False) -> bool:
         chat = self.message.chat
-        if chat is None or not self.current_text.strip():
+        if chat is None or self._stop:
             return False
         if self.should_send is not None and not self.should_send():
             return False
         connection_id = getattr(self.message, "business_connection_id", None)
-        peer_key = (connection_id, chat.id)
+        peer_key = (id(self.client), connection_id, chat.id)
         if peer_key in _OFFICIAL_DRAFT_UNSUPPORTED_PEERS:
             self.supported = False
             return False
+        now = asyncio.get_running_loop().time()
+        if now < self._next_send:
+            return True
+        if (
+            self.current_text == self._last_text
+            and now - self._last_send < self.REFRESH_INTERVAL
+        ):
+            return True
+        draft_text = self.current_text
         try:
             peer = await self.client.resolve_peer(chat.id)
+            if not isinstance(peer, raw.types.InputPeerUser):
+                self.supported = False
+                return False
             if self.should_send is not None and not self.should_send():
                 return False
-            await self.client.invoke(
+            chunks = convert_md_chunks(draft_text, self.MAX_DRAFT_LENGTH)
+            text, entities = chunks[0] if chunks else ("", [])
+            # Incomplete Markdown (e.g. a leading heading or code fence)
+            # can render no blocks. Empty text drafts are officially the
+            # Thinking placeholder; empty rich drafts are rejected instead.
+            thinking = thinking or draft_text == self._empty_rich_text
+            if self.rich and not force_text and not thinking and text.strip():
+                payloads = convert_rich_md(draft_text)
+                if payloads:
+                    action = raw.types.InputSendMessageRichMessageDraftAction(
+                        random_id=self.random_id,
+                        rich_message=payloads[0].write(),
+                        can_stop=True,
+                    )
+                else:
+                    action = None
+            else:
+                action = None
+            if action is None:
+                if thinking:
+                    text, entities = "", []
+                elif force_text:
+                    entities = []
+                parsed = await utils.parse_text_entities(
+                    self.client,
+                    text,
+                    pyrogram.enums.ParseMode.DISABLED,
+                    entities,
+                )
+                action = raw.types.SendMessageTextDraftAction(
+                    random_id=self.random_id,
+                    text=raw.types.TextWithEntities(
+                        text=parsed["message"],
+                        entities=parsed["entities"] or [],
+                    ),
+                    can_stop=True,
+                )
+            if self._stop or (self.should_send is not None and not self.should_send()):
+                return False
+            now = asyncio.get_running_loop().time()
+            if now < _DRAFT_PEER_NEXT_SEND.get(peer_key, 0):
+                return True
+            _DRAFT_PEER_NEXT_SEND[peer_key] = now + self.UPDATE_INTERVAL
+            _DRAFT_PEER_NEXT_SEND.move_to_end(peer_key)
+            if len(_DRAFT_PEER_NEXT_SEND) > 4096:
+                _DRAFT_PEER_NEXT_SEND.popitem(last=False)
+            result = await self.client.invoke(
                 raw.functions.messages.SetTyping(
                     peer=peer,
-                    action=raw.types.InputSendMessageRichMessageDraftAction(
-                        random_id=self.random_id,
-                        rich_message=raw.types.InputRichMessageMarkdown(
-                            markdown=self.current_text[: self.MAX_DRAFT_LENGTH]
-                        ),
-                    ),
-                    top_msg_id=self.message.message_thread_id,
+                    action=action,
+                    top_msg_id=getattr(self.message, "message_thread_id", None),
                 ),
                 business_connection_id=connection_id,
             )
+            if not result:
+                self.supported = False
+                return False
             self.supported = True
+            self._transient_failures = 0
+            self._last_text = draft_text
+            self._last_send = now
+            self._next_send = now + self.UPDATE_INTERVAL
             return True
-        except Exception as error:
+        except pyrogram.errors.FloodWait as error:
+            # FloodWait means supported but temporarily throttled, not an
+            # unsupported peer. Coalesce new deltas during the cooldown.
+            self._next_send = now + max(1, error.value)
+            _DRAFT_PEER_NEXT_SEND[peer_key] = self._next_send
+            return True
+        except pyrogram.errors.RichMessageUnsupported:
+            if self.rich and not force_text:
+                self.rich = False
+                _DRAFT_PEER_NEXT_SEND.pop(peer_key, None)
+                return await self._send_draft()
             self.supported = False
-            if type(error).__name__ == "TextdraftPeerInvalid":
+            return False
+        except Exception as error:
+            # Kurigram 2.2.25 has no named RICH_MESSAGE_EMPTY exception;
+            # unknown 400 errors carry the exact server code in .value.
+            empty_rich = (
+                isinstance(error, pyrogram.errors.BadRequest)
+                and error.value == "[400 RICH_MESSAGE_EMPTY]"
+            )
+            format_rejected = isinstance(
+                error,
+                (
+                    pyrogram.errors.EntityBoundsInvalid,
+                    pyrogram.errors.EntitiesTooLong,
+                    pyrogram.errors.MessageTooLong,
+                ),
+            )
+            if not force_text and (empty_rich or format_rejected):
+                if empty_rich:
+                    self._empty_rich_text = draft_text
+                _DRAFT_PEER_NEXT_SEND.pop(peer_key, None)
+                logger.debug("Native draft format rejected; continuing with text draft")
+                return await self._send_draft(force_text=True, thinking=empty_rich)
+            # Drafts are ephemeral and idempotent by random_id. A transient
+            # lost ACK may be retried with that same ID, unlike final sends.
+            transient = isinstance(error, (OSError, TimeoutError)) or (
+                isinstance(error, pyrogram.errors.RPCError) and error.CODE >= 500
+            )
+            if transient and self._transient_failures < self.MAX_TRANSIENT_FAILURES:
+                self._transient_failures += 1
+                self._next_send = now + 2**self._transient_failures
+                _DRAFT_PEER_NEXT_SEND[peer_key] = self._next_send
+                logger.debug(f"Native draft retry scheduled: {type(error).__name__}")
+                return True
+            self.supported = False
+            if isinstance(error, pyrogram.errors.TextdraftPeerInvalid):
                 _OFFICIAL_DRAFT_UNSUPPORTED_PEERS.add(peer_key)
-            logger.debug(f"Rich draft unavailable: {type(error).__name__}")
+            logger.debug(f"Native draft unavailable: {type(error).__name__}")
             return False
 
     async def _loop(self):
         while not self._stop:
             await asyncio.sleep(self.UPDATE_INTERVAL)
+            if (
+                self.max_duration
+                and asyncio.get_running_loop().time() - self._started_at
+                >= self.max_duration
+            ):
+                break
             if self._stop or not await self._send_draft():
                 break
 
@@ -161,7 +286,8 @@ class OfficialRichDraftStreamer:
             return self.supported is not False
         if not await self._send_draft():
             return False
-        self._task = asyncio.create_task(self._loop(), name="business-rich-draft")
+        self._started_at = asyncio.get_running_loop().time()
+        self._task = asyncio.create_task(self._loop(), name="telegram-native-draft")
         return True
 
     def update(self, text: str) -> None:
@@ -175,3 +301,57 @@ class OfficialRichDraftStreamer:
                 await self._task
             except asyncio.CancelledError:
                 pass
+
+
+async def send_generation_message(
+    client,
+    source,
+    random_id,
+    *,
+    text="",
+    entities=None,
+    rich_message=None,
+    should_send=None,
+):
+    """Persist a draft using the same random ID and SDK reply/topic builder.
+
+    RPC retries reuse this exact request. Unknown send errors never trigger a
+    second formatting attempt: the first request may already be delivered.
+    """
+    if source.chat is None or (should_send is not None and not should_send()):
+        return None
+    peer = await client.resolve_peer(source.chat.id)
+    reply_to = await utils.get_reply_to(
+        client,
+        pyrogram.types.ReplyParameters(message_id=source.id),
+        getattr(source, "message_thread_id", None),
+        getattr(source, "direct_messages_topic_id", None),
+    )
+    parsed = (
+        await utils.parse_text_entities(
+            client,
+            text,
+            pyrogram.enums.ParseMode.DISABLED,
+            entities,
+        )
+        if rich_message is None
+        else {"message": "", "entities": None}
+    )
+    query = raw.functions.messages.SendMessage(
+        peer=peer,
+        random_id=random_id,
+        reply_to=reply_to,
+        message=parsed["message"],
+        entities=parsed["entities"],
+        rich_message=rich_message.write() if rich_message is not None else None,
+    )
+    while should_send is None or should_send():
+        try:
+            result = await client.invoke(
+                query,
+                business_connection_id=getattr(source, "business_connection_id", None),
+            )
+            return sent_message_id(result)
+        except pyrogram.errors.FloodWait as error:
+            await asyncio.sleep(max(1, error.value))
+    return None

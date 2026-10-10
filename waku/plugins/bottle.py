@@ -44,7 +44,7 @@ async def _bottle_reply_filter(_, client: Client, message: types.Message) -> boo
 bottle_reply_filter = filters.create(_bottle_reply_filter)
 
 
-@Client.on_message(filters.command(["bottle", "throwbottle"]), group=0)
+@Client.on_message(filters.command("nemchai"), group=0)
 async def throw_bottle(client: Client, message: types.Message):
     # Use text following the command as the message in a bottle.
     # Alternatively, reply to a message to use its content as the bottle message.
@@ -152,7 +152,7 @@ async def throw_bottle(client: Client, message: types.Message):
     )
 
 
-@Client.on_message(filters.command("pickbottle"), group=0)
+@Client.on_message(filters.command("nhatchai"), group=0)
 async def pick_bottle(client: Client, message: types.Message):
     if message.chat is None:
         return

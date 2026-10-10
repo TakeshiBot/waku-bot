@@ -19,6 +19,7 @@ from waku.services.manyacg import (
     FetchedVideo,
     manyacg_client,
 )
+from waku.services.telegram_images import image_allowed, telegram_image_settings
 
 from . import utils
 
@@ -74,6 +75,9 @@ async def parse_artwork(client: PyrogramClient, message: pyrogram.types.Message)
         return
     artwork = resp.data
     assert artwork is not None, "Artwork data is None but status is 200"
+    _, image_mode = await telegram_image_settings(chat.id)
+    if not image_allowed(artwork.r18, image_mode):
+        return
     try:
         medias: list[FetchedVideo | FetchedPicture] = []
         if artwork.pictures:
@@ -148,7 +152,7 @@ async def parse_artwork(client: PyrogramClient, message: pyrogram.types.Message)
         logger.error(f"parse_artwork error: {e.__class__.__name__}:{e}")
 
 
-@PyrogramClient.on_message(pyrogram.filters.command("setu"), group=0)
+@PyrogramClient.on_message(pyrogram.filters.command("seg"), group=0)
 async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
     if not manyacg_client:
         return
@@ -169,6 +173,7 @@ async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
     else:
         user_config = await database.get_user_config(user.id)
         lang = user_config.lang
+    _, image_mode = await telegram_image_settings(chat.id)
     if await common.memttlcache.get(
         f"setu_cd:{user.id}",
         default=False,
@@ -183,7 +188,7 @@ async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
         ttl=app_config.manyacg_setu_cd,
     )
     try:
-        resp = await manyacg_client.random_artwork(limit=1, r18=2)
+        resp = await manyacg_client.random_artwork(limit=1, r18=image_mode)
         if resp.status != 200:
             await message.reply(
                 i18n.t("bot.msg.manyacg.setu_error", locale=lang),
@@ -191,6 +196,9 @@ async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
             return
         assert resp.data is not None, "Random artwork data is None but status is 200"
         artwork = resp.data[0]
+        if not image_allowed(artwork.r18, image_mode):
+            await message.reply(i18n.t("bot.msg.manyacg.setu_error", locale=lang))
+            return
         picture = artwork.pictures[random.randint(0, len(artwork.pictures) - 1)]
         detail_link = artwork.source_url
         await message.reply_photo(
@@ -242,6 +250,7 @@ async def randavatar_command(client: PyrogramClient, message: pyrogram.types.Mes
     else:
         user_config = await database.get_user_config(user.id)
         lang = user_config.lang
+    _, image_mode = await telegram_image_settings(chat.id)
     if await common.memttlcache.get(
         f"setu_cd:{user.id}",
         default=False,
@@ -256,7 +265,7 @@ async def randavatar_command(client: PyrogramClient, message: pyrogram.types.Mes
         ttl=app_config.manyacg_randavatar_cd,
     )
     try:
-        resp = await manyacg_client.random_artwork(limit=1, r18=2)
+        resp = await manyacg_client.random_artwork(limit=1, r18=image_mode)
         if resp.status != 200:
             await message.reply(
                 i18n.t("bot.msg.manyacg.setu_error", locale=lang),
@@ -264,6 +273,9 @@ async def randavatar_command(client: PyrogramClient, message: pyrogram.types.Mes
             return
         assert resp.data is not None, "Random artwork data is None but status is 200"
         artwork = resp.data[0]
+        if not image_allowed(artwork.r18, image_mode):
+            await message.reply(i18n.t("bot.msg.manyacg.setu_error", locale=lang))
+            return
         picture = artwork.pictures[random.randint(0, len(artwork.pictures) - 1)]
         detail_link = artwork.source_url
         async with httpx.AsyncClient(timeout=30) as http_client:

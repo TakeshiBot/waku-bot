@@ -3,6 +3,7 @@ from pyrogram import filters
 from pyrogram.client import Client
 
 from waku.common.memory_store import memttlcache
+from waku.common.rich_message import message_plain_text
 from waku.common.utils import is_explicit_reply
 from waku.config import app_config
 
@@ -13,9 +14,9 @@ _REPLY_INTENT_PREFIX = "bottle_reply_intent:"
 async def base_filter_func(_, __, message: pyrogram.types.Message) -> bool:
     if not message:
         return False
-    text = message.text or message.caption or ""
+    text = message_plain_text(message)
     if (
-        message.entities is not None
+        message.entities
         and message.entities[0].type == pyrogram.enums.MessageEntityType.BOT_COMMAND
     ):
         return False
@@ -43,7 +44,7 @@ async def reply_me_filter_func(
 async def mention_me_filter_func(
     _, client: Client, message: pyrogram.types.Message
 ) -> bool:
-    text = message.text or message.caption or ""
+    text = message_plain_text(message)
     if not text:
         return False
     if app_config.nickname and app_config.nickname in text:

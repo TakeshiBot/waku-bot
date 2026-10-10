@@ -9,13 +9,13 @@ from pyrogram.client import Client
 from pyrogram.errors import RPCError
 from pyrogram.types import CallbackQuery
 
-from waku import common, database, enums
+from waku import database, enums
 from waku.common.locale import message_locale
+from waku.common.utils import get_reply_target
 from waku.database.models import ChatConfig, VerificationSession
 from waku.i18n import i18n
 from waku.logger import logger
 from waku.plugins.verify.challenge import (
-    RESTORE_PERMISSIONS_KEY,
     VerifyContext,
     _callback_data,
     _challenge_markup,
@@ -23,10 +23,10 @@ from waku.plugins.verify.challenge import (
     _is_multi_answer,
     make_challenge_payload,
     restrict_permissions,
-    serialize_permissions,
     strategy_matches,
 )
 from waku.plugins.verify.session import (
+    NATIVE_RESTORE_KEY,
     _admin_ban_session,
     _chat_config,
     _cleanup_session,
@@ -38,9 +38,12 @@ from waku.plugins.verify.session import (
     _sessions,
     _succeed_session,
     _user_mention,
+    _verification_mutate,
     _wrong_answer,
-    capture_restore_permissions,
+    capture_restore_snapshot,
+    resolve_session,
     restore_member_permissions,
+    verification_authorized,
     verification_lock,
 )
 
@@ -98,6 +101,28 @@ async def on_new_members(client: Client, message: pyrogram.types.Message) -> Non
 
 @Client.on_callback_query(pyrogram.filters.regex(r"^verify:"), group=0)
 async def on_verify_callback(client: Client, callback_query: CallbackQuery) -> None:
+    data = _callback_data(callback_query)
+    try:
+        row = _sessions.get(int(data[1])) if len(data) == 3 else None
+    except ValueError:
+        row = None
+    if row is None:
+        await callback_query.answer(
+            i18n.t("bot.msg.verify.expired", locale="vi"), show_alert=True
+        )
+        return
+    async with verification_lock(row.chat_id, row.user_id):
+        if await resolve_session(row) is None:
+            await callback_query.answer(
+                i18n.t("bot.msg.verify.expired", locale="vi"), show_alert=True
+            )
+            return
+        await _on_verify_callback_locked(client, callback_query)
+
+
+async def _on_verify_callback_locked(
+    client: Client, callback_query: CallbackQuery
+) -> None:
     """Answer callbacks: validate ownership, handle expiry, then check correctness."""
     lang = (
         await message_locale(callback_query.message)
@@ -129,7 +154,11 @@ async def on_verify_callback(client: Client, callback_query: CallbackQuery) -> N
             i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
         )
         return
-    if session_row.chat_id != chat.id or user.id != session_row.user_id:
+    if (
+        session_row.chat_id != chat.id
+        or user.id != session_row.user_id
+        or message.id != session_row.challenge_message_id
+    ):
         # Unauthorized button press.
         await callback_query.answer(
             i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
@@ -211,7 +240,29 @@ async def on_verify_callback(client: Client, callback_query: CallbackQuery) -> N
 async def on_verify_admin_callback(
     client: Client, callback_query: CallbackQuery
 ) -> None:
-    """Administrator approve/ban buttons use the shared bot-management permission check."""
+    data = _callback_data(callback_query)
+    try:
+        row = _sessions.get(int(data[1])) if len(data) == 3 else None
+    except ValueError:
+        row = None
+    if row is None:
+        await callback_query.answer(
+            i18n.t("bot.msg.verify.expired", locale="vi"), show_alert=True
+        )
+        return
+    async with verification_lock(row.chat_id, row.user_id):
+        if await resolve_session(row) is None:
+            await callback_query.answer(
+                i18n.t("bot.msg.verify.expired", locale="vi"), show_alert=True
+            )
+            return
+        await _on_verify_admin_callback_locked(client, callback_query)
+
+
+async def _on_verify_admin_callback_locked(
+    client: Client, callback_query: CallbackQuery
+) -> None:
+    """Administrator buttons require current Telegram actor and bot restrict rights."""
     lang = (
         await message_locale(callback_query.message)
         if callback_query.message is not None
@@ -240,7 +291,7 @@ async def on_verify_admin_callback(
             i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
         )
         return
-    if session_row.chat_id != chat.id:
+    if session_row.chat_id != chat.id or message.id != session_row.challenge_message_id:
         await callback_query.answer(
             i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
         )
@@ -248,10 +299,9 @@ async def on_verify_admin_callback(
     user = callback_query.from_user
     if user is None:
         return
-    try:
-        can_manage = await common.can_user_manage_bot_in_chat(user, chat)
-    except ValueError:
-        can_manage = False
+    can_manage = not user.is_bot and await verification_authorized(
+        client, session_row.chat_id, session_row.user_id, actor_id=user.id
+    )
     if not can_manage:
         try:
             user_config = await database.get_user_config(user)
@@ -278,11 +328,17 @@ async def on_verify_admin_callback(
         )
         return
     if data[2] == "approve":
-        await _succeed_session(session_row, lang)
-        await callback_query.answer()
+        result = await _succeed_session(session_row, lang, actor_id=user.id)
+        await callback_query.answer(
+            None if result else i18n.t("title_menu.error", locale=lang),
+            show_alert=not result,
+        )
     elif data[2] == "ban":
-        await _admin_ban_session(session_row, lang)
-        await callback_query.answer()
+        result = await _admin_ban_session(session_row, lang, actor_id=user.id)
+        await callback_query.answer(
+            None if result else i18n.t("title_menu.error", locale=lang),
+            show_alert=not result,
+        )
     else:
         await callback_query.answer(
             i18n.t("bot.msg.verify.expired", locale=lang), show_alert=True
@@ -294,6 +350,18 @@ async def on_verify_admin_callback(
     group=-50,
 )
 async def on_verify_sticker_answer(
+    client: Client, message: pyrogram.types.Message
+) -> None:
+    if message.chat is None or message.from_user is None:
+        return
+    async with verification_lock(message.chat.id, message.from_user.id):
+        row = _get_for(message.chat.id, message.from_user.id)
+        if row is None or await resolve_session(row) is None:
+            return
+        await _on_verify_sticker_answer_locked(client, message)
+
+
+async def _on_verify_sticker_answer_locked(
     client: Client, message: pyrogram.types.Message
 ) -> None:
     """Any sticker passes; only timeout can fail. group=-50 runs before the agent."""
@@ -329,6 +397,8 @@ async def maybe_verify(client: Client, ctx: VerifyContext) -> bool:
     config = await _chat_config(ctx.chat_id)
     if config is None or not config.verify_enabled:
         return False
+    if not await verification_authorized(client, ctx.chat_id, ctx.user_id):
+        return False
     async with verification_lock(ctx.chat_id, ctx.user_id):
         ctx.has_active_session = _get_for(ctx.chat_id, ctx.user_id) is not None
         if ctx.has_active_session:
@@ -344,22 +414,29 @@ async def _start_verification(
     chat_id: int,
     user: pyrogram.types.User | pyrogram.types.Chat,
     config: ChatConfig,
+    *,
+    actor_id=None,
 ) -> bool:
     """Create a session and restrict the member; restore external state on each failure path where possible."""
     user_id = user.id
     if user_id is None:
         return False
+    if not await verification_authorized(client, chat_id, user_id, actor_id=actor_id):
+        return False
     permissions = restrict_permissions(config.verify_method)
     restore_permissions = None
     if permissions is not None:
-        restore_permissions = await capture_restore_permissions(
-            client, chat_id, user_id
-        )
+        try:
+            restore_permissions = await capture_restore_snapshot(
+                client, chat_id, user_id
+            )
+        except Exception:
+            return False
     payload = make_challenge_payload(
         config.verify_method, config.verify_questions, lang=config.lang
     )
     if restore_permissions is not None:
-        payload[RESTORE_PERMISSIONS_KEY] = serialize_permissions(restore_permissions)
+        payload[NATIVE_RESTORE_KEY] = restore_permissions
     session_row = VerificationSession(
         chat_id=chat_id,
         user_id=user_id,
@@ -378,11 +455,25 @@ async def _start_verification(
         return False
 
     if permissions is not None:
-        try:
-            await client.restrict_chat_member(chat_id, user_id, permissions)
-        except Exception as e:
-            logger.warning(f"verify: failed to restrict {user_id} in {chat_id}: {e}")
-            await _cleanup_session(session_row)
+        from waku.plugins.agent.tools import moderation_permissions
+
+        if not await _verification_mutate(
+            client,
+            session_row,
+            "restrict",
+            rights=moderation_permissions.muted(restore_permissions),
+            expected=restore_permissions,
+            actor_id=actor_id,
+        ):
+            if (
+                "pending"
+                in (
+                    session_row.payload.get("_verification_action_receipts") or {}
+                ).values()
+            ):
+                _register(session_row)
+            else:
+                await _cleanup_session(session_row)
             return False
     _register(session_row)
 
@@ -408,8 +499,14 @@ async def _start_verification(
                     f"verify: failed to delete orphan challenge {session_row.id}: "
                     f"{delete_error}"
                 )
-        await restore_member_permissions(client, session_row)
-        await _cleanup_session(session_row)
+        if await restore_member_permissions(client, session_row):
+            await _cleanup_session(session_row)
+        else:
+            session_row.payload = {
+                **(session_row.payload or {}),
+                "_verification_manual_review": True,
+            }
+            await database.update_verification_session(session_row)
         return False
     return True
 
@@ -418,7 +515,11 @@ async def _test_verify_target(
     client: Client, message: pyrogram.types.Message
 ) -> pyrogram.types.User | pyrogram.types.Chat | None:
     """Test command target priority: replied-to user/channel, argument ID/username, then command sender."""
-    reply = message.reply_to_message
+    reply = get_reply_target(message)
+    if reply is not None and (
+        reply.chat is None or message.chat is None or reply.chat.id != message.chat.id
+    ):
+        return None
     if reply is not None:
         if (
             reply.from_user is not None
@@ -463,7 +564,7 @@ async def test_verify_command(client: Client, message: pyrogram.types.Message) -
     config = await _chat_config(chat_id)
     if config is None:
         return
-    actor = message.sender_chat or message.from_user
+    actor = message.from_user if message.sender_chat is None else None
     if actor is None or actor.id is None:
         return
     db_actor = await database.get_user_by_id(actor.id)
@@ -486,10 +587,17 @@ async def test_verify_command(client: Client, message: pyrogram.types.Message) -
     target_id = target.id
     if target_id is None:
         return
+    if not await verification_authorized(client, chat_id, target_id, actor_id=actor.id):
+        await message.reply_text(
+            i18n.t("bot.msg.no_permission_group", locale=config.lang)
+        )
+        return
     existing = _get_for(chat_id, target_id)
     if existing is not None:
         await _cleanup_session(existing)
-    if not await _start_verification(client, chat_id, target, config):
+    if not await _start_verification(
+        client, chat_id, target, config, actor_id=actor.id
+    ):
         await message.reply_text(
             i18n.t("bot.msg.verify.test_verify_failed", locale=config.lang)
         )

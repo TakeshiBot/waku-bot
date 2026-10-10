@@ -44,9 +44,9 @@ async def unpin_channel(client: PyrogramClient, message: pyrogram.types.Message)
         # Without admin rights every channel forward would produce one more
         # pointless unpin request; turn the feature off for this chat.
         try:
-            chat_config = await database.get_chat_config(chat)
-            chat_config.unpin_channel_pin_enabled = False
-            await database.update_chat_config(chat, chat_config)
+            await database.update_chat_config_fields(
+                chat, {"unpin_channel_pin_enabled": False}
+            )
         except Exception as e:
             logger.warning(
                 f"Failed to disable unpin_channel_pin_enabled for chat "

@@ -1,6 +1,7 @@
 """Native Kurigram output methods, with only Telegram transport replaced."""
 
 import asyncio
+from collections import OrderedDict
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -10,7 +11,7 @@ from pyrogram import raw
 from pyrogram.types import Chat, Message, User
 
 from waku.common.rich_message import sent_message_id
-from waku.plugins.agent import output, rich_output
+from waku.plugins.agent import generation, output, rich_output
 
 
 def business_updates(
@@ -57,6 +58,9 @@ def test_native_business_sent_id_envelopes(wrapper):
 
 @pytest.fixture
 def transport(monkeypatch):
+    monkeypatch.setattr(generation, "_generations", {})
+    monkeypatch.setattr(rich_output, "_OFFICIAL_DRAFT_UNSUPPORTED_PEERS", set())
+    monkeypatch.setattr(rich_output, "_DRAFT_PEER_NEXT_SEND", OrderedDict())
     client = pyrogram.Client("business-output-test", in_memory=True)
     calls = []
     failures = SimpleNamespace(
@@ -69,9 +73,13 @@ def transport(monkeypatch):
         calls.append((query, business_connection_id))
         if isinstance(query, raw.functions.messages.SetTyping):
             if failures.draft and isinstance(
-                query.action, raw.types.InputSendMessageRichMessageDraftAction
+                query.action,
+                (
+                    raw.types.InputSendMessageRichMessageDraftAction,
+                    raw.types.SendMessageTextDraftAction,
+                ),
             ):
-                raise RuntimeError("draft unsupported")
+                raise pyrogram.errors.TextdraftPeerInvalid()
             return True
         if isinstance(query, raw.functions.messages.EditMessage):
             if failures.edit:
@@ -104,10 +112,10 @@ def transport(monkeypatch):
                 seq=1,
             )
         if getattr(query, "rich_message", None) and failures.rich:
-            raise RuntimeError("rich unsupported")
+            raise pyrogram.errors.RichMessageUnsupported()
         if getattr(query, "entities", None) and failures.entity:
             failures.entity = False
-            raise RuntimeError("entity unsupported")
+            raise pyrogram.errors.EntityBoundsInvalid()
         if getattr(query, "rich_message", None) and failures.business_result:
             return business_updates(failures.business_result)
         return raw.types.UpdateShortSentMessage(
@@ -173,19 +181,21 @@ async def test_raw_rich_send_and_plain_fallback_stay_on_account(
 async def test_real_business_rich_delivery_id_can_finalize_stream(
     transport, monkeypatch, wrapper
 ):
+
     monkeypatch.setattr(output.app_config, "agent_rich_output", True)
     monkeypatch.setattr(output.memttlcache, "get", AsyncMock(return_value=False))
     monkeypatch.setattr(output.memttlcache, "delete", AsyncMock())
     transport.failures.business_result = wrapper
     stream = output.StreamingOutput(transport.client, transport.message())
-    await stream._send_new_message("Preview")
-    assert stream.reply_message_id == 10
-    assert stream.delivered
+    await stream.append_delta("Preview")
+    assert not stream.delivered
     stream.current_text = "Final"
     assert await stream.finalize()
+    assert stream.reply_message_id == 10
+    assert stream.delivered
     assert [type(query).__name__ for query, _ in transport.calls] == [
+        "SetTyping",
         "SendMessage",
-        "EditMessage",
     ]
     assert all(account == "business-a" for _, account in transport.calls)
 
@@ -218,35 +228,30 @@ async def test_failed_rich_tail_reports_incomplete_without_resending_head(
         return await original(query, business_connection_id=business_connection_id)
 
     monkeypatch.setattr(transport.client, "invoke", invoke)
-    assert not await output.reply_output(
-        transport.client, transport.message(), "Head\n\nTail"
-    )
-    assert len(transport.calls) == 3
+    with pytest.raises(output.DeliveryUncertain):
+        await output.reply_output(transport.client, transport.message(), "Head\n\nTail")
+    assert len(transport.calls) == 2
     assert all(account == "business-a" for _, account in transport.calls)
     assert [bool(query.rich_message) for query, _ in transport.calls] == [
         True,
         True,
-        False,
     ]
 
 
 @pytest.mark.asyncio
-async def test_business_stream_edit_and_final_message_binding(transport):
+async def test_business_draft_and_final_stay_on_bound_account(transport):
+
     stream = output.StreamingOutput(transport.client, transport.message())
-    await stream._send_new_message("First")
-    assert stream.reply_message.business_connection_id == "business-a"
-    await stream._do_edit("Second")
-    assert stream.reply_message.business_connection_id == "business-a"
-    stream.current_text = "Final"
+    await stream.append_delta("First")
+    await stream.append_delta(" Second")
     assert await stream.finalize()
     assert stream.delivered
-    assert stream.reply_message.business_connection_id == "business-a"
     assert [type(query).__name__ for query, _ in transport.calls] == [
+        "SetTyping",
         "SendMessage",
-        "EditMessage",
-        "EditMessage",
     ]
     assert all(account == "business-a" for _, account in transport.calls)
+    assert transport.calls[-1][0].random_id == transport.calls[0][0].action.random_id
 
 
 @pytest.mark.asyncio
@@ -311,13 +316,23 @@ async def test_business_edit_native_response_keeps_entities_and_account_without_
 
 
 @pytest.mark.asyncio
-async def test_failed_final_edit_does_not_resend_delivered_preview(transport):
+async def test_uncertain_final_send_is_never_retried(transport):
+
     stream = output.StreamingOutput(transport.client, transport.message())
-    await stream._send_new_message("Preview")
-    transport.failures.edit = True
+    await stream.append_delta("Preview")
+    original = transport.client.invoke
+
+    async def invoke(query, *, business_connection_id=None):
+        if isinstance(query, raw.functions.messages.SendMessage):
+            transport.calls.append((query, business_connection_id))
+            raise OSError("delivery acknowledgement lost")
+        return await original(query, business_connection_id=business_connection_id)
+
+    transport.client.invoke = invoke
     stream.current_text = "Final"
+    with pytest.raises(output.DeliveryUncertain):
+        await stream.finalize()
     assert not await stream.finalize()
-    assert stream.delivered
     assert (
         sum(
             isinstance(query, raw.functions.messages.SendMessage)
@@ -333,7 +348,7 @@ async def test_business_draft_uses_native_invoke_and_final_sends_once(transport)
     await stream.append_delta("Hello")
     assert not stream.delivered
     assert isinstance(
-        transport.calls[0][0].action, raw.types.InputSendMessageRichMessageDraftAction
+        transport.calls[0][0].action, raw.types.SendMessageTextDraftAction
     )
     assert transport.calls[0][1] == "business-a"
     assert await stream.finalize()
@@ -373,11 +388,11 @@ async def test_native_invoke_wraps_draft_in_business_connection(transport, monke
 
 
 @pytest.mark.asyncio
-async def test_unsupported_draft_falls_back_to_original_preview_then_edit(transport):
+async def test_unsupported_draft_buffers_then_sends_final_once(transport):
     transport.failures.draft = True
     stream = output.StreamingOutput(transport.client, transport.message())
     await stream.append_delta("Preview")
-    await stream._start_task
+    assert not stream.delivered
     await stream.append_delta(" final")
     assert await stream.finalize()
     assert (
@@ -395,7 +410,7 @@ async def test_unsupported_draft_long_plain_answer_delivers_entire_tail_once(tra
     transport.failures.draft = True
     stream = output.StreamingOutput(transport.client, transport.message())
     await stream.append_delta("Preview")
-    await stream._start_task
+    assert not stream.delivered
     stream.current_text = "**" + "\U0001f642" * 2600 + "**"
     assert await stream.finalize()
     writes = [
@@ -408,12 +423,11 @@ async def test_unsupported_draft_long_plain_answer_delivers_entire_tail_once(tra
     ]
     assert [type(query).__name__ for query in writes] == [
         "SendMessage",
-        "EditMessage",
         "SendMessage",
     ]
-    assert writes[1].message + writes[2].message == "\U0001f642" * 2600
+    assert writes[0].message + writes[1].message == "\U0001f642" * 2600
     assert all(len(query.message.encode("utf-16-le")) // 2 <= 4000 for query in writes)
-    assert writes[1].entities and writes[2].entities
+    assert writes[0].entities and writes[1].entities
     assert all(account == "business-a" for _, account in transport.calls)
 
 
@@ -421,23 +435,28 @@ async def test_unsupported_draft_long_plain_answer_delivers_entire_tail_once(tra
 async def test_failed_plain_stream_tail_reports_incomplete_without_resending_head(
     transport, monkeypatch
 ):
+
     stream = output.StreamingOutput(transport.client, transport.message())
-    await stream._send_new_message("Preview")
-    stream.current_text = "x" * 5000
+    await stream.append_delta("x" * 5000)
     original = transport.client.invoke
+    count = 0
 
     async def invoke(query, *, business_connection_id=None):
+        nonlocal count
         if isinstance(query, raw.functions.messages.SendMessage):
-            transport.calls.append((query, business_connection_id))
-            raise RuntimeError("tail failed")
+            count += 1
+            if count > 1:
+                transport.calls.append((query, business_connection_id))
+                raise RuntimeError("tail failed")
         return await original(query, business_connection_id=business_connection_id)
 
     monkeypatch.setattr(transport.client, "invoke", invoke)
+    with pytest.raises(output.DeliveryUncertain):
+        await stream.finalize()
     assert not await stream.finalize()
     assert stream.delivered
     assert [type(query).__name__ for query, _ in transport.calls] == [
-        "SendMessage",
-        "EditMessage",
+        "SetTyping",
         "SendMessage",
         "SendMessage",
     ]
@@ -457,10 +476,9 @@ async def test_failed_plain_chunk_after_success_reports_incomplete(
         return await original(query, business_connection_id=business_connection_id)
 
     monkeypatch.setattr(transport.client, "invoke", invoke)
-    assert not await output.reply_output(
-        transport.client, transport.message(), "x" * 5000
-    )
-    assert len(transport.calls) == 3
+    with pytest.raises(output.DeliveryUncertain):
+        await output.reply_output(transport.client, transport.message(), "x" * 5000)
+    assert len(transport.calls) == 2
 
 
 @pytest.mark.asyncio
@@ -512,6 +530,6 @@ async def test_typing_action_uses_business_account(transport):
 
 def test_unsupported_draft_cache_is_separate_for_each_account(monkeypatch):
     monkeypatch.setattr(
-        rich_output, "_OFFICIAL_DRAFT_UNSUPPORTED_PEERS", {("business-a", 2)}
+        rich_output, "_OFFICIAL_DRAFT_UNSUPPORTED_PEERS", {(123, "business-a", 2)}
     )
-    assert ("business-b", 2) not in rich_output._OFFICIAL_DRAFT_UNSUPPORTED_PEERS
+    assert (123, "business-b", 2) not in rich_output._OFFICIAL_DRAFT_UNSUPPORTED_PEERS

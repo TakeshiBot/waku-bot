@@ -19,6 +19,7 @@ from waku.common.tgmethod import can_user_manage_bot_in_chat
 from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.panel import chat_panel_button, panel_available
+from waku.plugins.preference_save import preview_preference
 from waku.services import rss as rss_service
 from waku.services.rss import redact_url
 from waku.webapp.errors import ApiError
@@ -294,13 +295,7 @@ async def _rss_interval(
 async def _rss_agent_toggle(
     message: _T.Message, lang: str, command: list[str], field: str
 ) -> None:
-    """Shared implementation of /rss digest on|off and /rss broadcast on|off.
-
-    Reads the current ChatConfig, flips the given field, and writes it back
-    (update_chat_config refreshes the memttlcache, so the change takes effect
-    immediately). The Chat object is passed to get/update so a chat without a
-    ChatData row (e.g. a private chat) is upserted instead of raising.
-    """
+    """Preview digest/broadcast changes; apply only after the owner presses Save."""
     if message.chat is None:
         return
     if len(command) < 3 or command[2].lower() not in ("on", "off"):
@@ -312,27 +307,13 @@ async def _rss_agent_toggle(
         return
     on = command[2].lower() == "on"
 
-    try:
-        chat_config = await database.get_chat_config(message.chat)
-        if field == "rss_agent_summary":
-            chat_config.rss_agent_summary = on
-            base = "digest"
-        else:
-            chat_config.rss_agent_broadcast = on
-            base = "broadcast"
-        await database.update_chat_config(message.chat, chat_config)
-    except Exception as e:
-        # A chat without a ChatData row (e.g. a private chat) cannot hold a
-        # ChatConfig; fail with a hint instead of crashing the handler.
-        logger.warning(
-            f"rss: toggle {field} failed for chat {message.chat.id}: "
-            f"{e.__class__.__name__}: {e}"
-        )
-        await message.reply(i18n.t("bot.msg.rss.toggle_failed", locale=lang))
-        return
-
-    await message.reply(
-        i18n.t(f"bot.msg.rss.{base}_{'on' if on else 'off'}", locale=lang)
+    base = "digest" if field == "rss_agent_summary" else "broadcast"
+    await preview_preference(
+        message,
+        {field: on},
+        i18n.t(f"bot.msg.rss.{base}_{'on' if on else 'off'}", locale=lang),
+        lang,
+        chat_config_private=message.chat.type == pyrogram.enums.ChatType.PRIVATE,
     )
 
 

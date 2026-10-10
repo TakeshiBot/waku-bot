@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import html
-import os
 import secrets
-import signal
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,22 +24,45 @@ from waku import common, database
 from waku.config import ProviderConfig, _AppConfig, _resolve_settings_files, app_config
 from waku.i18n import t
 from waku.logger import logger
+from waku.plugins.menu_cleanup import schedule_saved_menu_cleanup
 from waku.services.settings_editor import (
     SettingsEditError,
     SettingsEditor,
     display_value,
 )
-from waku.timezone import BOT_TIMEZONE
+from waku.services.settings_runtime import SETTINGS_APPLICATION_LOCK
 
 _PREFIX = "pcfg"
 _SESSION_TTL = 15 * 60
 _EDIT_TTL = 120
 _PAGE_SIZE = 8
 _MAX_SESSIONS = 100
-_BUSINESS_SETTING_LOCK = asyncio.Lock()
-_GROUPS = ("base", "agent", "webapp", "rss", "services", "cache", "economy", "business")
+_SETTINGS_SAVE_LOCK = SETTINGS_APPLICATION_LOCK
+_RESTART_PENDING: set[str] = set()
+_GROUPS = (
+    "base",
+    "agent",
+    "discord",
+    "webapp",
+    "rss",
+    "services",
+    "cache",
+    "economy",
+    "business",
+)
+_ESSENTIAL_FIELDS = {
+    "agent",
+    "agent_model",
+    "agent_prompt",
+    "agent_group_prompt",
+    "agent_streaming",
+    "agent_rich_output",
+    "business_chat_enabled",
+    "manyacg_r18_mode",
+}
 _MENU_GROUPS = tuple(group for group in _GROUPS if group != "business") + (
-    "providers", "business"
+    "providers",
+    "business",
 )
 _SESSIONS: dict[str, ConfigSession] = {}
 
@@ -59,6 +80,12 @@ class ConfigSession:
     pending: str | None = None
     pending_until: float = 0
     dirty: set[str] = field(default_factory=set)
+    changes: dict[str, str] = field(default_factory=dict)
+    additions: set[str] = field(default_factory=set)
+    deletions: set[str] = field(default_factory=set)
+    values: dict = field(default_factory=dict)
+    baseline: dict = field(default_factory=dict)
+    field_keys: set[str] = field(default_factory=set)
     view: int = 0
     confirmation: str | None = None
     location: str = "home"
@@ -67,6 +94,7 @@ class ConfigSession:
     provider_name: str | None = None
     provider_parent: str = "providers:0"
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    command_message_id: int | None = None
 
 
 def _tr(translation_key: str, session: ConfigSession | None = None, **values) -> str:
@@ -110,9 +138,13 @@ def _footer(
     if previous:
         row.append(_button("◀️", token, previous))
     row.append(_button(_tr("back", session), token, session.back))
-    if session.dirty:
-        row.append(_button("🔄", token, "restart"))
-    row.append(_button(_tr("close", session), token, "close"))
+    row.append(_button(_tr("save", session), token, "save"))
+    if (
+        session.dirty
+        and not _draft_count(session)
+        and session.confirmation != "restart"
+    ):
+        row.append(_button(_tr("restart", session), token, "restart"))
     if following:
         row.append(_button("▶️", token, following))
     return row
@@ -137,7 +169,7 @@ def _entry_value(values: dict, key: str):
 
 def _label(key: str, value, session: ConfigSession) -> str:
     status = "✅ " if value is True else "❌ " if value is False else ""
-    changed = "🔄 " if key in session.dirty else ""
+    changed = "📝 " if key in session.changes else "🔄 " if key in session.dirty else ""
     return changed + status + key.rsplit(".", 1)[-1]
 
 
@@ -163,6 +195,8 @@ def _group(key: str) -> str:
         return "business"
     if key.startswith("agent"):
         return "agent"
+    if key.startswith("discord"):
+        return "discord"
     if key.startswith("webapp") or key.startswith("health_check"):
         return "webapp"
     if key.startswith(("rss", "fxembed")):
@@ -176,37 +210,184 @@ def _group(key: str) -> str:
     return "base"
 
 
-def _apply_live_setting(session: ConfigSession, key: str, value) -> str | None:
-    """Business uses its switch for each reply; other settings require restart."""
-    if key != "business_chat_enabled":
-        session.dirty.add(key)
-        return None
-    app_config.business_chat_enabled = value
-    session.dirty.discard(key)
-    if value and not (app_config.agent and app_config.agent_model):
-        return _tr("business_requires_agent", session)
-    return _tr("business_saved", session)
+def _draft_count(session: ConfigSession) -> int:
+    return len(session.changes) + len(session.additions) + len(session.deletions)
 
 
-async def _save_setting(session: ConfigSession, key: str, text: str) -> str | None:
-    async def save():
-        await asyncio.to_thread(
-            session.editor.set_value, key, text, session.revision
+def _draft_values(session: ConfigSession) -> dict:
+    if not session.values:
+        values, revision = session.editor.snapshot()
+        if session.revision and session.revision != revision:
+            raise SettingsEditError("stale_file")
+        session.revision = revision
+        session.values = values
+        session.baseline = values
+        session.field_keys = session.editor.configured_keys() | _ESSENTIAL_FIELDS
+    return session.values
+
+
+async def _stage_setting(session: ConfigSession, key: str, text: str) -> None:
+    _draft_values(session)
+    changes = {**session.changes, key: text}
+    values = await asyncio.to_thread(
+        session.editor.preview,
+        changes,
+        session.revision,
+        additions=session.additions,
+        deletions=session.deletions,
+    )
+    # Toggling back to the baseline should leave no pending change.
+    if _entry_value(values, key) == _entry_value(session.baseline, key):
+        changes.pop(key)
+    session.changes, session.values = changes, values
+
+
+async def _stage_provider(session: ConfigSession, name: str, *, delete: bool = False):
+    _draft_values(session)
+    additions, deletions = set(session.additions), set(session.deletions)
+    changes = dict(session.changes)
+    if delete:
+        if name in additions:
+            additions.remove(name)
+        else:
+            deletions.add(name)
+        changes = {
+            key: text
+            for key, text in changes.items()
+            if not key.startswith(f"agent_providers.{name}.")
+        }
+    else:
+        if name in session.values.get("agent_providers", {}):
+            raise SettingsEditError("provider_exists")
+        if name in deletions:
+            deletions.remove(name)
+        else:
+            additions.add(name)
+    values = await asyncio.to_thread(
+        session.editor.preview,
+        changes,
+        session.revision,
+        additions=additions,
+        deletions=deletions,
+    )
+    session.changes, session.additions, session.deletions, session.values = (
+        changes,
+        additions,
+        deletions,
+        values,
+    )
+
+
+def _reset_draft(session: ConfigSession):
+    session.changes.clear()
+    session.additions.clear()
+    session.deletions.clear()
+    session.values, session.revision = session.editor.snapshot()
+    session.baseline = session.values
+    session.field_keys = session.editor.configured_keys() | _ESSENTIAL_FIELDS
+
+
+def _visible_groups(session: ConfigSession):
+    return [
+        group
+        for group in _MENU_GROUPS
+        if group == "providers"
+        or any(_group(key) == group for key in session.field_keys)
+    ]
+
+
+async def _refresh_restart_pending(session: ConfigSession):
+    from waku.services.settings_runtime import settings_restart_fields
+
+    candidate = session.editor.effective_candidate(_draft_values(session))
+    changed = {
+        key
+        for key in _AppConfig.model_fields
+        if getattr(candidate, key) != getattr(app_config, key)
+    }
+    pending = await asyncio.to_thread(settings_restart_fields, candidate, changed)
+    _RESTART_PENDING.clear()
+    _RESTART_PENDING.update(pending)
+    session.dirty = set(pending)
+
+
+async def _commit_draft(session: ConfigSession) -> str:
+    async with _SETTINGS_SAVE_LOCK:
+        if not await _is_admin(session.user_id):
+            raise SettingsEditError("permission_changed")
+        values = await asyncio.to_thread(
+            session.editor.preview,
+            session.changes,
+            session.revision,
+            additions=session.additions,
+            deletions=session.deletions,
         )
-        value = _entry_value(session.editor.snapshot()[0], key)
-        return _apply_live_setting(session, key, value)
+        # The runtime plan prepares cached clients/models before persistence;
+        # Saved bindings and optional Discord lifecycle changes activate after commit.
+        from waku.services.settings_runtime import prepare_settings_application
 
-    if key == "business_chat_enabled":
-        # Serialize persistence and runtime changes across separate admin menus.
-        async with _BUSINESS_SETTING_LOCK:
-            return await save()
-    return await save()
+        candidate = session.editor.effective_candidate(values)
+        changed = set(session.changes)
+        if session.additions or session.deletions:
+            changed.add("agent_providers")
+        try:
+            plan = await prepare_settings_application(candidate, changed)
+        except Exception:
+            raise SettingsEditError("runtime_prepare_failed") from None
+        try:
+            if not await _is_admin(session.user_id):
+                raise SettingsEditError("permission_changed")
+            await asyncio.to_thread(
+                session.editor.commit_batch,
+                session.changes,
+                session.revision,
+                additions=session.additions,
+                deletions=session.deletions,
+            )
+        except BaseException:
+            await plan.discard()
+            raise
+        await plan.activate()
+        _RESTART_PENDING.update(plan.restart_fields)
+        _RESTART_PENDING.difference_update(
+            {key.split(".", 1)[0] for key in changed} - plan.restart_fields
+        )
+        session.dirty = set(_RESTART_PENDING)
+        _reset_draft(session)
+        notice = (
+            _tr("saved_restart", session, count=len(session.dirty))
+            if session.dirty
+            else _tr("saved", session)
+        )
+        if any(
+            candidate.model_dump()[key.split(".", 1)[0]] != values[key.split(".", 1)[0]]
+            for key in changed
+        ):
+            notice += "\n" + _tr("environment_override", session)
+        if (
+            "business_chat_enabled" in changed
+            and app_config.business_chat_enabled
+            and not (app_config.agent and app_config.agent_model)
+        ):
+            notice += "\n" + _tr("business_requires_agent", session)
+        if plan.discord_status is not None:
+            notice += "\n" + _tr(
+                "discord_failed"
+                if plan.discord_status == "error"
+                else "discord_stopped"
+                if not app_config.discord_enabled
+                else "discord_starting",
+                session,
+            )
+        return notice
 
 
 def _menu(token: str, session: ConfigSession, action: str = "home"):
+    session.dirty = set(_RESTART_PENDING)
     session.view += 1
     session.confirmation = None
-    values, session.revision = session.editor.snapshot()
+    values = _draft_values(session)
+    visible_groups = _visible_groups(session)
     rows = []
     session.location = action
     previous = following = None
@@ -218,19 +399,26 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
             "summary",
             session,
             file=html.escape(session.editor.path.name),
-            timezone=html.escape(str(BOT_TIMEZONE)),
-            model=html.escape(display_value("agent_model", app_config.agent_model)),
-            count=len(session.dirty),
+            count=_draft_count(session),
         )
+        if session.dirty:
+            text += "\n" + _tr("restart_pending", session, count=len(session.dirty))
         rows.append(
             [
                 _button(_tr("open_settings", session), token, "groups:0"),
-                _button(_tr("close", session), token, "close"),
+            ]
+        )
+        session.back = "home"
+        rows.append(
+            [
+                button
+                for button in _footer(token, session)
+                if not button.callback_data.endswith(":home")
             ]
         )
         return text, InlineKeyboardMarkup(rows)
     elif action.startswith("groups:"):
-        page, pages = _page(action.split(":")[1], len(_GROUPS) + 1)
+        page, pages = _page(action.split(":")[1], len(visible_groups))
         session.entries = []
         session.provider_name = None
         session.back = "home"
@@ -240,15 +428,20 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
             + _tr(
                 "groups_summary",
                 session,
-                count=len(_GROUPS) + 1,
+                count=len(visible_groups),
                 page=page + 1,
                 pages=pages,
-                changed=len(session.dirty),
+                changed=_draft_count(session),
             )
         )
         groups = [
-            (group, _tr("providers" if group == "providers" else "groups." + group, session))
-            for group in _MENU_GROUPS
+            (
+                group,
+                _tr(
+                    "providers" if group == "providers" else "groups." + group, session
+                ),
+            )
+            for group in visible_groups
         ]
         for group, label in groups[page * _PAGE_SIZE : (page + 1) * _PAGE_SIZE]:
             destination = "providers:0" if group == "providers" else f"group:{group}:0"
@@ -261,13 +454,13 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
             raise SettingsEditError("invalid_value")
         keys = sorted(
             key
-            for key in _AppConfig.model_fields
+            for key in session.field_keys
             if key not in {"agent_providers", "agent_powermem_config"}
             and _group(key) == group
         )
         session.entries = keys
         session.provider_name = None
-        session.back = f"groups:{_MENU_GROUPS.index(group) // _PAGE_SIZE}"
+        session.back = f"groups:{visible_groups.index(group) // _PAGE_SIZE}"
         page, pages = _page(page_text, len(keys))
         session.entry_parent = f"group:{group}:{page}"
         page_keys = keys[page * _PAGE_SIZE : (page + 1) * _PAGE_SIZE]
@@ -296,7 +489,7 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
     elif action == "providers" or action.startswith("providers:"):
         session.entries = sorted(values.get("agent_providers", {}))
         session.provider_name = None
-        session.back = "groups:0"
+        session.back = f"groups:{visible_groups.index('providers') // _PAGE_SIZE}"
         page, pages = _page(
             action.split(":")[1] if ":" in action else "0", len(session.entries)
         )
@@ -407,6 +600,8 @@ async def private_config_command(client: Client, message: Message):
             lambda: app_config.model_dump(),
         )
         session = ConfigSession(user.id, message.chat.id, 0, config.lang, editor)
+        session.command_message_id = message.id
+        await _refresh_restart_pending(session)
         token = secrets.token_hex(5)
         _SESSIONS[token] = session
         text, markup = _menu(token, session)
@@ -452,6 +647,14 @@ async def private_config_callback(client: Client, query: CallbackQuery):
         return
     token, view, action = parts[1:]
     async with session.lock:
+        if _SESSIONS.get(token) is not session or session.expires <= time.monotonic():
+            await query.answer(_tr("expired", session), show_alert=True)
+            return
+        # A queued callback may have lost authority while waiting for the menu.
+        if not await _is_admin(user.id):
+            _SESSIONS.pop(token, None)
+            await query.answer(_tr("denied", session), show_alert=True)
+            return
         if int(view) != session.view:
             await query.answer(_tr("expired", session), show_alert=True)
             return
@@ -466,6 +669,12 @@ async def private_config_callback(client: Client, query: CallbackQuery):
             session.provider_parent,
             session.pending,
             session.confirmation,
+            dict(session.changes),
+            set(session.additions),
+            set(session.deletions),
+            session.values,
+            session.baseline,
+            set(session.field_keys),
         )
         session.view += 1
         session.pending = None
@@ -483,17 +692,43 @@ async def private_config_callback(client: Client, query: CallbackQuery):
                 except Exception:
                     await _edit(message, _tr("closed", session))
                 return
-            if action.startswith(("edit:", "toggle:")):
+            if action == "save":
+                # Discord connection shutdown can take several seconds. Clear
+                # Telegram's button spinner before committing/activating services.
+                await query.answer()
+                answered = True
+                notice = (
+                    await _commit_draft(session)
+                    if _draft_count(session)
+                    else (
+                        _tr("saved_restart", session, count=len(session.dirty))
+                        if session.dirty
+                        else _tr("saved", session)
+                    )
+                )
+                _SESSIONS.pop(token, None)
+                committed = True
+                try:
+                    await _edit(message, notice)
+                finally:
+                    schedule_saved_menu_cleanup(
+                        client, message, session.command_message_id
+                    )
+                return
+            elif action in {"discard", "reload"}:
+                _reset_draft(session)
+                await _refresh_restart_pending(session)
+                action = "home"
+            elif action.startswith(("edit:", "toggle:")):
                 index = int(action.split(":")[1])
                 key = session.entries[index]
                 if action.startswith("toggle:"):
-                    values, revision = session.editor.snapshot()
+                    values = _draft_values(session)
                     value = _entry_value(values, key)
-                    if not isinstance(value, bool) or revision != session.revision:
+                    if not isinstance(value, bool):
                         raise SettingsEditError("stale_file")
-                    notice = await _save_setting(session, key, str(not value).lower())
-                    committed = True
-                    await query.answer(notice or _tr("saved", session), show_alert=True)
+                    await _stage_setting(session, key, str(not value).lower())
+                    await query.answer(_tr("staged", session), show_alert=True)
                     answered = True
                     action = (
                         session.location
@@ -549,15 +784,13 @@ async def private_config_callback(client: Client, query: CallbackQuery):
                     return
                 if session.confirmation != "delete":
                     raise SettingsEditError("stale_file")
-                await asyncio.to_thread(
-                    session.editor.delete_provider, name, session.revision
-                )
-                session.dirty.add("agent_providers." + name)
-                committed = True
-                await query.answer(_tr("saved", session), show_alert=True)
+                await _stage_provider(session, name, delete=True)
+                await query.answer(_tr("staged", session), show_alert=True)
                 answered = True
                 action = session.provider_parent
             elif action in {"restart", "restart_confirm"}:
+                if _draft_count(session):
+                    raise SettingsEditError("save_first")
                 if action == "restart":
                     session.confirmation = "restart"
                     await query.answer()
@@ -622,15 +855,21 @@ async def private_config_callback(client: Client, query: CallbackQuery):
                     session.provider_parent,
                     session.pending,
                     session.confirmation,
+                    session.changes,
+                    session.additions,
+                    session.deletions,
+                    session.values,
+                    session.baseline,
+                    session.field_keys,
                 ) = previous_state
             logger.error(f"private config menu failed: {exc.__class__.__name__}")
             if not answered:
                 await query.answer(_tr("errors.menu_failed", session), show_alert=True)
 
 
-@Client.on_message(filters.private & filters.text, group=-110)
+@Client.on_message(filters.private, group=-110)
 async def private_config_input(client: Client, message: Message):
-    if message.from_user is None or message.chat is None or not message.text:
+    if message.from_user is None or message.chat is None:
         return
     _prune()
     pair = next(
@@ -647,14 +886,18 @@ async def private_config_input(client: Client, message: Message):
         return
     token, session = pair
     async with session.lock:
-        notice = None
         try:
+            if _SESSIONS.get(token) is not session:
+                return
             if not await _is_admin(message.from_user.id):
                 _SESSIONS.pop(token, None)
                 return
+            value_text = common.message_plain_text(message)
+            if not value_text:
+                raise SettingsEditError("invalid_value")
             key = session.pending
             session.pending = None
-            if message.text == "/cancel":
+            if value_text == "/cancel":
                 await client.edit_message_text(
                     session.chat_id,
                     session.message_id,
@@ -665,17 +908,14 @@ async def private_config_input(client: Client, message: Message):
             if session.pending_until <= time.monotonic():
                 raise SettingsEditError("edit_expired")
             if key == "+provider":
-                await asyncio.to_thread(
-                    session.editor.add_provider, message.text.strip(), session.revision
-                )
-                session.dirty.add("agent_providers")
+                await _stage_provider(session, value_text.strip())
             elif key:
-                notice = await _save_setting(session, key, message.text)
+                await _stage_setting(session, key, value_text)
             text, markup = _menu(token, session, session.entry_parent)
             await client.edit_message_text(
                 session.chat_id,
                 session.message_id,
-                (notice or _tr("saved", session)) + "\n\n" + text,
+                _tr("staged", session) + "\n\n" + text,
                 reply_markup=markup,
                 parse_mode=enums.ParseMode.HTML,
             )
@@ -697,6 +937,6 @@ async def private_config_input(client: Client, message: Message):
 
 async def _restart() -> None:
     await asyncio.sleep(2)
-    # Matches process supervisors (Docker restart policy/systemd). Direct Python
-    # runs must be launched again; the UI states this before confirmation.
-    os.kill(os.getpid(), signal.SIGINT)
+    from waku.services.process_restart import request_restart
+
+    request_restart()

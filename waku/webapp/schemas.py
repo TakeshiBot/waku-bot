@@ -13,26 +13,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from waku.enums import VerifyFailAction, VerifyMethod, VerifyTrigger
 from waku.i18n import i18n
+from waku.plugins.title.permissions import ADMIN_RIGHTS, group_preset
 from waku.webapp.i18n import LocalizedValidationError, validation_text
 
-# Keys accepted by /t, matching plugins/title/utils.py exactly. A stricter set
-# than "any bool" so a typo cannot silently create a permission that is never read.
-TITLE_PERMISSION_KEYS: frozenset[str] = frozenset(
-    {
-        "can_change_info",
-        "can_delete_messages",
-        "can_manage_tags",
-        "can_restrict_members",
-        "can_invite_users",
-        "can_promote_members",
-        "can_post_stories",
-        "can_edit_stories",
-        "can_delete_stories",
-        "can_manage_video_chats",
-        "can_manage_topics",
-        "can_pin_messages",
-    }
-)
+# Share the exact rights mapping with Telegram /sett. Channel-only grants are
+# rejected by group_preset, while their existing false values remain readable.
+TITLE_PERMISSION_KEYS: frozenset[str] = frozenset(ADMIN_RIGHTS)
 
 # The economy floor mirrors `cost_user_coins`, which clamps at -144*16.
 COINS_MIN = -144 * 16
@@ -384,6 +370,10 @@ class TitlePermissionsIn(ApiModel):
         unknown = set(value) - TITLE_PERMISSION_KEYS
         if unknown:
             raise LocalizedValidationError(validation_text("permissions"))
+        try:
+            group_preset(value)
+        except ValueError:
+            raise LocalizedValidationError(validation_text("permissions")) from None
         return value
 
 

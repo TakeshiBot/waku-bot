@@ -6,7 +6,7 @@ import inspect
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from pyrogram import Client
@@ -335,6 +335,9 @@ async def test_repository_pagination_excludes_private_chats_and_clamps(monkeypat
     monkeypatch.setitem(sys.modules, package.__name__, package)
     db = ModuleType("_info_repo.db")
     db.with_session = db.with_tx = lambda function: function
+    # Pagination uses its supplied session; the new atomic settings writer's
+    # factory is imported but must not be called by this repository test.
+    db.AsyncSessionFactory = Mock(side_effect=AssertionError("unexpected session"))
     monkeypatch.setitem(sys.modules, db.__name__, db)
     models = _load("_info_repo.models", "waku/database/models.py", monkeypatch)
     pager = _load("_info_repo.pagination", "waku/database/pagination.py", monkeypatch)

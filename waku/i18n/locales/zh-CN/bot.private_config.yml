@@ -10,15 +10,8 @@ bot:
     providers_summary: "│\n┟ <b>Total</b> → {count}\n┖ <b>Default</b> → {default}"
     provider_title: "⌬ <b>Provider: {name}</b>"
     entry_summary: "⌬ <b>Config variable</b>\n│\n┟ <b>Key</b> → <code>{key}</code>\n┠ <b>Type</b> → <code>{type}</code>\n┖ <b>Value</b> → <pre>{value}</pre>"
-    summary: 'Editing: <code>{file}</code>
-
-      Timezone: {timezone}
-
-      Running model: <code>{model}</code>
-
-      Saved this session: {count} fields. Restart to fully apply changes.
-
-      Environment overrides still take precedence after restart.'
+    summary: 'File: <code>{file}</code> · Changed: {count} fields. Save to apply and close.'
+    restart_pending: '{count} saved settings are waiting for a restart.'
     denied: Only bot owners and global administrators can use private settings.
     expired: This menu expired or belongs to another user. Open /config again.
     back: ↩️
@@ -30,31 +23,45 @@ bot:
     add_provider: ➕ Add provider
     delete_provider: 🗑 Delete provider
     restart: 🔄 Restart to apply
-    saved: Saved safely to the settings file. Restart to fully apply changes.
+    save: 💾 Save
+    discard: ✖️ Discard draft
+    reload: ↻ Reload
+    staged: Draft updated. Save to apply.
+    saved: 'Saved and applied live settings. This menu will be deleted in 5 seconds.'
+    saved_restart: 'Saved. {count} settings require a restart. Open /config and press Restart to apply them. This menu will be deleted in 5 seconds.'
+    discord_stopped: Discord is now off. Telegram remains running.
+    discord_starting: Discord is enabled and connecting.
+    discord_failed: Settings saved, but Discord could not connect. Check its token and AI settings.
+    environment_override: Some settings still use environment overrides; the new values were saved to the file.
     send_value: Send a new value for <code>{key}</code> within 2 minutes. Send strings/prompts as plain text, lists/objects
       as JSON or TOML, or null to clear an optional value. /cancel aborts. The input message will be deleted if
       possible.
     send_provider: Send a new provider name (1–48 letters, numbers, hyphens or underscores) within 2 minutes. /cancel
       aborts.
     confirm_delete: Delete provider <code>{name}</code>? A provider referenced by a model cannot be removed.
-    confirm_restart: Restart to apply settings and rebuild models/clients. The bot will exit after confirmation;
-      Docker/systemd must be configured to restart it. For a direct Python run, start the bot again manually. Continue?
-    restarting: Settings validated. Restarting; for a direct Python run, start the bot again manually.
+    confirm_restart: 'Restart to apply saved settings? The bot will start again after closing its current connections.'
+    restarting: 'The bot is restarting and will reconnect automatically.'
     cancelled: Edit cancelled.
     groups:
       base: General and runtime
       agent: AI, models and prompts
+      discord: Discord
       webapp: Mini App and HTTP
       rss: RSS and linked content
       services: Services and connections
       cache: Cache and avatars
       economy: Coins and costs
+      business: Telegram Business
     errors:
       menu_failed: Could not update the menu. Try the button again or reopen /config.
       missing_file: No active settings file was found.
       invalid_file: The settings file cannot be read or contains invalid TOML. Check it locally.
       invalid_value: The value does not match the current base configuration/type. Reopen the entry to retry.
-      stale_file: The file changed after you opened this entry. Reopen it before editing.
+      stale_file: 'The file changed. Open /config again to load the latest settings before editing. The file was not overwritten.'
+      save_first: 'Save before restarting, or open /config again to discard the draft.'
+      invalid_environment: Environment overrides are incompatible with this configuration. Check them locally; nothing was saved.
+      runtime_prepare_failed: Could not prepare models or services for these settings. Check providers locally; nothing was saved.
+      permission_changed: Your administrator rights changed. The draft was not saved.
       write_failed: The settings file could not be written. The original file was preserved.
       invalid_name: Invalid provider name. Use 1–48 letters, numbers, - or _.
       provider_exists: This provider already exists.

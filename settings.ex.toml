@@ -58,6 +58,9 @@ manyacg_api_key = ""
 manyacg_channel = "MoreACG"
 manyacg_bot = "kirakabot"
 manyacg_setu_cd = 1
+# Telegram private/Business images: 0 = safe, 1 = R18, 2 = both.
+# Groups choose their own image mode in /config.
+manyacg_r18_mode = 0
 
 # Infographic API https://github.com/krau/infographic-api
 # infographic = false

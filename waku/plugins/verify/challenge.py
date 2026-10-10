@@ -45,39 +45,6 @@ PERMISSION_FIELDS = (
 )
 
 
-def _unrestricted_permissions() -> ChatPermissions:
-    return ChatPermissions(**{name: True for name in PERMISSION_FIELDS})
-
-
-def serialize_permissions(permissions: ChatPermissions) -> dict[str, bool]:
-    """Store permissions in the JSON session payload."""
-    return {name: bool(getattr(permissions, name)) for name in PERMISSION_FIELDS}
-
-
-def deserialize_permissions(raw: Any) -> ChatPermissions:
-    """Restore permissions; missing/invalid fields fall back to full unrestriction."""
-    fallback = _unrestricted_permissions()
-    values = {
-        name: (
-            raw[name]
-            if isinstance(raw, dict) and isinstance(raw.get(name), bool)
-            else bool(getattr(fallback, name))
-        )
-        for name in PERMISSION_FIELDS
-    }
-    return ChatPermissions(**values)
-
-
-def restore_permissions_for_session(
-    session_row: VerificationSession,
-) -> ChatPermissions | None:
-    """Return permissions to restore; sticker verification does not change them, and no custom restrictions means allow all."""
-    if session_row.method == "sticker":
-        return None
-    payload = session_row.payload or {}
-    return deserialize_permissions(payload.get(RESTORE_PERMISSIONS_KEY))
-
-
 def restrict_permissions(method: str) -> ChatPermissions | None:
     """Permissions restricted for new members; sticker verification returns None (unrestricted)."""
     if method == "sticker":

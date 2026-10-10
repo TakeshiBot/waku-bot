@@ -1,4 +1,5 @@
 import asyncio
+import secrets
 from collections.abc import Callable
 from datetime import datetime
 
@@ -15,17 +16,29 @@ from waku.common.rich_message import (
 from waku.common.utils import GROUP_CHAT_TYPES
 from waku.config import app_config
 from waku.logger import logger
-from waku.plugins.agent import datatype, state
+from waku.plugins.agent import datatype, generation, state
 from waku.plugins.agent.rich_output import (
     OfficialRichDraftStreamer,
     bind_business_message,
-    edit_business_message_text,
+    send_generation_message,
 )
 from waku.plugins.agent.styling import (
     convert_md,
     convert_md_chunks,
     convert_rich_md,
     split_plain_text,
+)
+
+
+class DeliveryUncertain(RuntimeError):
+    """A send may be delivered, or only a prefix was delivered; halt the turn."""
+
+
+_FORMAT_REJECTIONS = (
+    pyrogram.errors.RichMessageUnsupported,
+    pyrogram.errors.EntityBoundsInvalid,
+    pyrogram.errors.EntitiesTooLong,
+    pyrogram.errors.MessageTooLong,
 )
 
 # A rich send that keeps failing (unsupported client, server-side outage) is
@@ -111,18 +124,21 @@ async def _note_rich_result(sent: bool, message=None) -> None:
     suffix = f":business:{connection_id}" if connection_id else ""
     failure_key = _RICH_FAILURE_KEY + suffix
     disabled_key = _RICH_DISABLED_KEY + suffix
-    if sent:
-        await memttlcache.delete(failure_key)
-        await memttlcache.delete(disabled_key)
-        return
-    failures = int(await memttlcache.get(failure_key, 0) or 0) + 1
-    await memttlcache.set(failure_key, failures, ttl=_RICH_FAILURE_TTL)
-    if failures >= _RICH_FAILURE_LIMIT:
-        logger.warning(
-            f"Rich message output paused for {_RICH_FAILURE_TTL}s after "
-            f"{failures} consecutive send failures"
-        )
-        await memttlcache.set(disabled_key, True, ttl=_RICH_FAILURE_TTL)
+    try:
+        if sent:
+            await memttlcache.delete(failure_key)
+            await memttlcache.delete(disabled_key)
+            return
+        failures = int(await memttlcache.get(failure_key, 0) or 0) + 1
+        await memttlcache.set(failure_key, failures, ttl=_RICH_FAILURE_TTL)
+        if failures >= _RICH_FAILURE_LIMIT:
+            logger.warning(
+                f"Rich message output paused for {_RICH_FAILURE_TTL}s after "
+                f"{failures} consecutive send failures"
+            )
+            await memttlcache.set(disabled_key, True, ttl=_RICH_FAILURE_TTL)
+    except Exception as error:
+        logger.warning(f"Rich circuit cache failed: {type(error).__name__}")
 
 
 async def _send_rich_payloads(
@@ -156,10 +172,18 @@ async def _send_rich_payloads(
                 direct_messages_topic_id=message.direct_messages_topic_id,
                 **business_kwargs,
             )
-        except Exception as e:
-            logger.warning(f"Rich message send failed: {e.__class__.__name__} - {e}")
+            if last_id is None:
+                raise DeliveryUncertain("Missing rich delivery receipt")
+        except _FORMAT_REJECTIONS as e:
+            logger.warning(f"Rich format rejected: {e.__class__.__name__}")
             await _note_rich_result(False, message)
             return index, last_id
+        except pyrogram.errors.RPCError as e:
+            if index:
+                raise DeliveryUncertain("Partial rich delivery") from e
+            raise
+        except Exception as e:
+            raise DeliveryUncertain("Unconfirmed rich delivery") from e
     await _note_rich_result(True, message)
     return len(payloads), last_id
 
@@ -172,7 +196,9 @@ async def _send_rich_tail_plain(
     text = "\n\n".join(
         part
         for part in (
-            rich_html_plain_text(payload.html or payload.markdown or "")
+            rich_html_plain_text(payload.html)
+            if payload.html
+            else convert_md(payload.markdown or "")[0]
             for payload in payloads
         )
         if part
@@ -183,14 +209,18 @@ async def _send_rich_tail_plain(
         if should_send is not None and not should_send():
             return False
         try:
-            result = await message.reply_text(chunk)
+            result = await message.reply_text(
+                chunk, parse_mode=pyrogram.enums.ParseMode.DISABLED
+            )
+            if result is None:
+                raise DeliveryUncertain("Missing rich fallback receipt")
             if getattr(message, "business_connection_id", None):
                 bind_business_message(message, result)
-        except Exception as e:
-            logger.error(
-                f"Failed to send rich fallback text: {e.__class__.__name__} - {e}"
-            )
+        except pyrogram.errors.RPCError as e:
+            logger.error(f"Rich fallback rejected: {e.__class__.__name__}")
             return False
+        except Exception as e:
+            raise DeliveryUncertain("Unconfirmed rich fallback delivery") from e
     return True
 
 
@@ -201,40 +231,45 @@ async def _send_plain_reply(
 ) -> pyrogram.types.Message | None:
     """Send markdown as plain text + entities.
 
-    Only splits when the converted text exceeds Telegram's per-message limit;
-    a chunk that fails twice is skipped so later chunks still go out. Returns
-    the last delivered message, and raises when nothing could be delivered.
+    Fallback is permitted only after an explicit format rejection. Any
+    unconfirmed send stops the turn; subsequent chunks are not attempted.
     """
     last_msg: pyrogram.types.Message | None = None
-    last_error: Exception | None = None
-    incomplete_error: Exception | None = None
     for plain, entities in convert_md_chunks(markdown):
         if should_send is not None and not should_send():
             return last_msg
         try:
-            last_msg = await message.reply_text(plain, entities=entities)
+            last_msg = await message.reply_text(
+                plain, entities=entities, parse_mode=pyrogram.enums.ParseMode.DISABLED
+            )
+            if last_msg is None:
+                raise DeliveryUncertain("Missing delivery receipt")
             if getattr(message, "business_connection_id", None):
                 bind_business_message(message, last_msg)
-            last_error = None
-        except Exception as e:
-            logger.warning(f"Send failed: {e.__class__.__name__} - {e}")
+        except _FORMAT_REJECTIONS as e:
+            logger.warning(f"Plain format rejected: {e.__class__.__name__}")
             if should_send is not None and not should_send():
                 return last_msg
             try:
-                last_msg = await message.reply_text(plain)
+                last_msg = await message.reply_text(
+                    plain, parse_mode=pyrogram.enums.ParseMode.DISABLED
+                )
+                if last_msg is None:
+                    raise DeliveryUncertain("Missing fallback delivery receipt")
                 if getattr(message, "business_connection_id", None):
                     bind_business_message(message, last_msg)
-                last_error = None
+            except pyrogram.errors.RPCError as e:
+                if last_msg is not None:
+                    raise DeliveryUncertain("Partial plain delivery") from e
+                raise
             except Exception as e:
-                logger.error(f"Send failed: {e.__class__.__name__} - {e}")
-                last_error = e
-                incomplete_error = e
-    if incomplete_error is not None and getattr(
-        message, "business_connection_id", None
-    ):
-        raise incomplete_error
-    if last_msg is None and last_error is not None:
-        raise last_error
+                raise DeliveryUncertain("Unconfirmed plain fallback delivery") from e
+        except pyrogram.errors.RPCError as e:
+            if last_msg is not None:
+                raise DeliveryUncertain("Partial plain delivery") from e
+            raise
+        except Exception as e:
+            raise DeliveryUncertain("Unconfirmed plain delivery") from e
     return last_msg
 
 
@@ -268,7 +303,7 @@ async def reply_output(
                 if not await _send_rich_tail_plain(
                     message, payloads[sent_count:], should_send=should_send
                 ):
-                    return False
+                    raise DeliveryUncertain("Partial rich delivery")
         if not last_reply_text:
             last_reply_msg = await _send_plain_reply(
                 message, text, should_send=should_send
@@ -297,12 +332,17 @@ async def reply_output(
             _chat = message.chat
             _chat_id = _chat.id if _chat else None
             if _chat_id:
-                await memttlcache.set(
-                    state.bot_last_reply_key(_chat_id),
-                    bot_reply,
-                    ttl=300,
-                )
+                try:
+                    await memttlcache.set(
+                        state.bot_last_reply_key(_chat_id), bot_reply, ttl=300
+                    )
+                except Exception as error:
+                    logger.warning(
+                        f"Reply context cache failed: {type(error).__name__}"
+                    )
         return bool(last_reply_id or last_reply_msg or sent_count)
+    except DeliveryUncertain:
+        raise
     except Exception as e:
         logger.error(f"Error replying message: {e.__class__.__name__} - {e}")
         return False
@@ -334,6 +374,21 @@ class TypingKeepAlive:
                     if self._stop:
                         break
                 first = False
+                if generation.has_live_generation(self.client, self.message):
+                    continue
+                topic = getattr(self.message, "message_thread_id", None)
+                if topic is not None:
+                    await self.client.invoke(
+                        pyrogram.raw.functions.messages.SetTyping(
+                            peer=await self.client.resolve_peer(chat_id),
+                            action=pyrogram.raw.types.SendMessageTypingAction(),
+                            top_msg_id=topic,
+                        ),
+                        business_connection_id=getattr(
+                            self.message, "business_connection_id", None
+                        ),
+                    )
+                    continue
                 await self.client.send_chat_action(
                     chat_id=chat_id,
                     action=pyrogram.enums.ChatAction.TYPING,
@@ -369,363 +424,207 @@ class TypingKeepAlive:
 
 
 class StreamingOutput:
-    STREAM_EDIT_INTERVAL = 1.5
+    """Native ephemeral drafts plus one persistent final response.
+
+    Unsupported peers and group chats buffer text without sending/editing a
+    preview. Long final responses still split at Telegram's payload limits.
+    """
+
     MAX_MESSAGE_LENGTH = 4000
-    MAX_EDIT_COUNT = 20
     MAX_TOTAL_TIME = float(app_config.agent_streaming_max_time)
 
-    def __init__(
-        self,
-        client: PyrogramClient,
-        message: pyrogram.types.Message,
-        should_send: Callable[[], bool] | None = None,
-    ):
+    def __init__(self, client, message, should_send=None):
         self.client = client
         self.message = message
         self.should_send = should_send
         self.current_text = ""
-        self._last_sent_text = ""
-        self.reply_message_id: int | None = None
-        self.reply_message: pyrogram.types.Message | None = None
+        self.reply_message_id = None
         self.delivered = False
-        self._rich = False
-        self.last_edit_time = 0.0
-        self.edit_count = 0
-        self.start_time = 0.0
         self.is_group_chat = (
             message.chat is not None and message.chat.type in GROUP_CHAT_TYPES
         )
         self.user = message.sender_chat or message.from_user
-        self._edit_task: asyncio.Task | None = None
-        self._start_task: asyncio.Task | None = None
         self._stop = False
         self.official_draft = (
-            OfficialRichDraftStreamer(client, message, should_send=should_send)
-            if getattr(message, "business_connection_id", None)
+            OfficialRichDraftStreamer(
+                client,
+                message,
+                should_send=should_send,
+                max_duration=self.MAX_TOTAL_TIME,
+            )
+            if message.chat and message.chat.type == pyrogram.enums.ChatType.PRIVATE
             else None
         )
+        self.random_id = (
+            self.official_draft.random_id
+            if self.official_draft
+            else (secrets.randbits(63) or 1)
+        )
         self._draft_attempted = False
+        self._registered = False
+        self._cancelled = False
+        self._finalized = False
+        self._completion_success = False
 
-    def _is_within_limits(self) -> bool:
-        current_time = asyncio.get_event_loop().time()
-        if self.start_time == 0.0:
-            self.start_time = current_time
-        elapsed = current_time - self.start_time
-        if elapsed > self.MAX_TOTAL_TIME:
-            logger.warning(f"Streaming output exceeded max time {self.MAX_TOTAL_TIME}s")
-            return False
-        if self.edit_count >= self.MAX_EDIT_COUNT:
-            logger.warning(
-                f"Streaming output exceeded max edit count {self.MAX_EDIT_COUNT}"
-            )
-            return False
-        return True
+    def request_stop(self):
+        """Called synchronously before cancelling the model generation task."""
+        self._cancelled = True
+        self._stop = True
+        if self.official_draft is not None:
+            self.official_draft._stop = True
+            if self.official_draft._task is not None:
+                self.official_draft._task.cancel()
 
-    async def _edit_message(self, chat_id, message_id, text=None, **kwargs):
-        if getattr(self.message, "business_connection_id", None):
-            kwargs.pop("business_connection_id", None)
-            return await edit_business_message_text(
-                self.client,
-                self.message,
-                message_id,
-                text,
-                should_send=self.should_send,
-                **kwargs,
-            )
-        return await self.client.edit_message_text(chat_id, message_id, text, **kwargs)
+    def _may_send(self):
+        return not self._cancelled and (self.should_send is None or self.should_send())
 
-    async def _do_edit(self, text: str):
-        if self.should_send is not None and not self.should_send():
-            return
-        chat = self.message.chat
-        if self.reply_message_id is None or chat is None or chat.id is None:
-            return
-        chat_id = chat.id
-        try:
-            if self._rich:
-                payloads = convert_rich_md(text)
-                if not payloads:
-                    return
-                result = await self._edit_message(
-                    chat_id,
-                    self.reply_message_id,
-                    rich_message=payloads[0],
-                    business_connection_id=getattr(
-                        self.message, "business_connection_id", None
-                    ),
-                )
-            else:
-                # During streaming, send plain text without entities to avoid
-                # rendering partially-formed markdown. Entities applied at finalize.
-                result = await self._edit_message(
-                    chat_id,
-                    self.reply_message_id,
-                    text[: self.MAX_MESSAGE_LENGTH],
-                    parse_mode=pyrogram.enums.ParseMode.DISABLED,
-                    business_connection_id=getattr(
-                        self.message, "business_connection_id", None
-                    ),
-                )
-            if getattr(self.message, "business_connection_id", None):
-                self.reply_message = bind_business_message(self.message, result)
-            self._last_sent_text = text
-            self.last_edit_time = asyncio.get_event_loop().time()
-            self.edit_count += 1
-        except pyrogram.errors.exceptions.bad_request_400.MessageNotModified:
-            self._last_sent_text = text
-        except pyrogram.errors.exceptions.bad_request_400.MessageTooLong:
-            await self._send_new_message(text)
-        except Exception as e:
-            logger.error(f"Error editing message: {e.__class__.__name__} - {e}")
-
-    async def _send_new_message(self, text: str):
-        if self.should_send is not None and not self.should_send():
-            return
-        self._rich = await _rich_output_enabled(self.message)
-        if self._rich:
-            # Only the first payload opens the stream; the overflow of a
-            # >32768-byte answer goes out once at finalize instead of being
-            # sent twice.
-            payloads = convert_rich_md(text)[:1]
-            sent_count, message_id = await _send_rich_payloads(
-                self.client, self.message, payloads, should_send=self.should_send
-            )
-            if sent_count:
-                self.delivered = True
-                if message_id is None:
-                    # Without the id the stream can neither edit nor finalize.
-                    raise RuntimeError("Rich streaming reply message was not returned")
-                self.reply_message_id = message_id
-                self._last_sent_text = text
-                self.last_edit_time = asyncio.get_event_loop().time()
-                self.edit_count += 1
-                return
-            self._rich = False
-        plain, entities = convert_md(text)
-        if getattr(self.message, "business_connection_id", None):
-            chunks = convert_md_chunks(text, self.MAX_MESSAGE_LENGTH)
-            if not chunks:
-                return
-            plain, entities = chunks[0]
-        if self.should_send is not None and not self.should_send():
-            return
-        try:
-            reply_message = await self.message.reply_text(
-                plain[: self.MAX_MESSAGE_LENGTH],
-                entities=entities,
-            )
-        except Exception as e:
-            logger.error(f"Send failed in streaming: {e}")
-            raise
-        if reply_message is None or reply_message.id is None:
-            raise RuntimeError("Streaming reply message was not returned")
-        self.reply_message_id = reply_message.id
-        self.reply_message = reply_message
-        if getattr(self.message, "business_connection_id", None):
-            bind_business_message(self.message, reply_message)
-        self.delivered = True
-        self._last_sent_text = text
-        self.last_edit_time = asyncio.get_event_loop().time()
-        self.edit_count += 1
-
-    async def _edit_loop(self):
-        while not self._stop:
-            await asyncio.sleep(self.STREAM_EDIT_INTERVAL)
-            if self._stop:
-                break
-            if not self._is_within_limits():
-                break
-            text = self.current_text
-            if not text.strip() or text == self._last_sent_text:
-                continue
-            await self._do_edit(text)
-
-    async def _start(self):
-        await self._send_new_message(self.current_text)
-        if self.should_send is not None and not self.should_send():
-            return
-        self._edit_task = asyncio.create_task(self._edit_loop())
+    def _unregister(self):
+        if self._registered:
+            generation.unregister_generation(self.client, self.message, self.random_id)
+            self._registered = False
 
     async def append_delta(self, delta: str):
-        if not delta:
-            return
-        if self.should_send is not None and not self.should_send():
+        if not delta or self._finalized or not self._may_send():
             return
         self.current_text += delta
-        if self.official_draft is not None:
-            self.official_draft.update(self.current_text)
-            if not self._draft_attempted:
-                self._draft_attempted = True
-                if await self.official_draft.start():
-                    return
-            elif self.official_draft.supported is not False:
-                return
-        if self.start_time == 0.0 and self.current_text.strip():
-            self.start_time = asyncio.get_event_loop().time()
-            self._stop = False
-            self._start_task = asyncio.create_task(self._start())
+        if self.official_draft is None:
+            # Telegram does not support native drafts in groups. Buffer the
+            # answer and persist it once instead of repeatedly editing it.
+            return
+        self.official_draft.update(self.current_text)
+        if self._draft_attempted:
+            return
+        self._draft_attempted = True
+        self.official_draft.rich = await _rich_output_enabled(self.message)
+        generation.register_generation(
+            self.client, self.message, self.random_id, self.request_stop
+        )
+        self._registered = True
+        if not await self.official_draft.start():
+            self._unregister()
 
-    async def _finalize_rich(self, text: str) -> bool:
-        if self.should_send is not None and not self.should_send():
-            return False
-        chat = self.message.chat
-        if chat is None or chat.id is None or self.reply_message_id is None:
-            return False
-        chat_id = chat.id
-        payloads = convert_rich_md(text)
-        if not payloads:
-            return False
-        complete = True
+    async def _finalize_generation(self):
+        if self._finalized:
+            return self._completion_success
+        self._finalized = True
         try:
-            result = await self._edit_message(
-                chat_id,
-                self.reply_message_id,
-                rich_message=payloads[0],
-                business_connection_id=getattr(
-                    self.message, "business_connection_id", None
-                ),
+            if self.official_draft is not None:
+                await self.official_draft.stop()
+            if not self.current_text.strip() or not self._may_send():
+                return False
+            payloads = (
+                convert_rich_md(self.current_text)
+                if await _rich_output_enabled(self.message)
+                else []
             )
-            if getattr(self.message, "business_connection_id", None):
-                self.reply_message = bind_business_message(self.message, result)
-            self._last_sent_text = text
-        except pyrogram.errors.exceptions.bad_request_400.MessageNotModified:
-            pass
-        except Exception as e:
-            logger.error(f"Error editing final message: {e.__class__.__name__} - {e}")
-            complete = False
-        # Long answers are split at Telegram's rich message limits; the
-        # overflow goes out even when the final edit failed, so no content is
-        # dropped.
-        if len(payloads) > 1:
-            sent_count, _ = await _send_rich_payloads(
-                self.client, self.message, payloads[1:], should_send=self.should_send
-            )
-            if sent_count < len(payloads) - 1:
-                complete = (
-                    await _send_rich_tail_plain(
-                        self.message,
-                        payloads[1 + sent_count :],
-                        should_send=self.should_send,
-                    )
-                    and complete
-                )
-        return complete
-
-    async def finalize(self):
-        self._stop = True
-        if self.should_send is not None and not self.should_send():
-            await self.abort()
-            return False
-        if self.official_draft is not None:
-            await self.official_draft.stop()
-            if not self.delivered and not self._start_task and self.current_text:
-                self.delivered = await reply_output(
-                    self.client,
-                    self.message,
-                    self.current_text,
-                    should_send=self.should_send,
-                )
-                return self.delivered
-        if self._start_task and not self._start_task.done():
-            await self._start_task
-        if self._edit_task and not self._edit_task.done():
-            self._edit_task.cancel()
-            try:
-                await self._edit_task
-            except asyncio.CancelledError:
-                pass
-        chat = self.message.chat
-        complete = self.delivered
-        if (
-            self.reply_message_id is not None
-            and chat is not None
-            and chat.id is not None
-            and self.current_text
-        ):
-            chat_id = chat.id
-            text = self.current_text
-            if self._rich:
-                complete = await self._finalize_rich(text)
+            if payloads:
+                chunks = [(None, payload) for payload in payloads]
             else:
-                plain, entities = convert_md(text)
-                business_chunks = []
-                if getattr(self.message, "business_connection_id", None):
-                    business_chunks = convert_md_chunks(text, self.MAX_MESSAGE_LENGTH)
-                    if business_chunks:
-                        plain, entities = business_chunks[0]
-                if text != self._last_sent_text or entities:
-                    try:
-                        if self.should_send is not None and not self.should_send():
-                            return False
-                        result = await self._edit_message(
-                            chat_id,
-                            self.reply_message_id,
-                            plain[: self.MAX_MESSAGE_LENGTH],
+                chunks = [
+                    (chunk, None)
+                    for chunk in convert_md_chunks(
+                        self.current_text, self.MAX_MESSAGE_LENGTH
+                    )
+                ]
+            for index, (plain_chunk, payload) in enumerate(chunks):
+                if not self._may_send():
+                    return False
+                chunk_id = self.random_id if index == 0 else (secrets.randbits(63) or 1)
+                try:
+                    sent_id = await send_generation_message(
+                        self.client,
+                        self.message,
+                        chunk_id,
+                        text=plain_chunk[0] if plain_chunk else "",
+                        entities=plain_chunk[1] if plain_chunk else None,
+                        rich_message=payload,
+                        should_send=self._may_send,
+                    )
+                except (
+                    pyrogram.errors.RichMessageUnsupported,
+                    pyrogram.errors.EntityBoundsInvalid,
+                    pyrogram.errors.EntitiesTooLong,
+                ) as error:
+                    # These RPC errors explicitly reject delivery. Retry only
+                    # the rejected chunk; an unknown transport error might
+                    # already have delivered it and must never cause a resend.
+                    if payload is not None:
+                        original = getattr(payload, "markdown", None)
+                        plain = (
+                            convert_md_chunks(original, self.MAX_MESSAGE_LENGTH)
+                            if original
+                            else [
+                                (part, [])
+                                for part in split_plain_text(
+                                    rich_html_plain_text(payload.html or ""),
+                                    self.MAX_MESSAGE_LENGTH,
+                                )
+                            ]
+                        )
+                    else:
+                        plain = [(plain_chunk[0], [])]
+                    sent_id = None
+                    for tail_index, (text, entities) in enumerate(plain):
+                        sent_id = await send_generation_message(
+                            self.client,
+                            self.message,
+                            chunk_id
+                            if tail_index == 0
+                            else (secrets.randbits(63) or 1),
+                            text=text,
                             entities=entities,
-                            business_connection_id=getattr(
-                                self.message, "business_connection_id", None
-                            ),
+                            should_send=self._may_send,
                         )
-                        if getattr(self.message, "business_connection_id", None):
-                            self.reply_message = bind_business_message(
-                                self.message, result
+                        if sent_id is None:
+                            if not self._may_send():
+                                return False
+                            raise DeliveryUncertain(
+                                "Missing generation fallback receipt"
                             )
-                        self._last_sent_text = text
-                    except (
-                        pyrogram.errors.exceptions.bad_request_400.MessageNotModified
-                    ):
-                        pass
-                    except Exception as e:
-                        logger.error(f"Error editing final message: {e}")
-                        complete = False
-                # A fallback preview contains only the first chunk. Deliver
-                # the final overflow once, preserving its UTF-16 entities.
-                for chunk, chunk_entities in business_chunks[1:]:
-                    if self.should_send is not None and not self.should_send():
+                        self.delivered = True
+                        self.reply_message_id = sent_id
+                    logger.debug(f"Generation format fallback: {type(error).__name__}")
+                if sent_id is None:
+                    if not self._may_send():
                         return False
-                    try:
-                        result = await self.message.reply_text(
-                            chunk, entities=chunk_entities
-                        )
-                    except Exception:
-                        if self.should_send is not None and not self.should_send():
-                            return False
-                        try:
-                            result = await self.message.reply_text(chunk)
-                        except Exception as e:
-                            logger.error(
-                                f"Final overflow send failed: {e.__class__.__name__}"
-                            )
-                            complete = False
-                            break
-                    bind_business_message(self.message, result)
-        if self.reply_message_id and self.is_group_chat and self.user and self.user.id:
-            bot_reply = datatype.BotLastReply(
-                message_id=self.reply_message_id,
-                reply_to_user_id=self.user.id,
-                reply_to_message_id=self.message.id,
-                reply_text=self.current_text,
-                original_user_message=message_plain_text(self.message),
-                timestamp=datetime.now().timestamp(),
-            )
-            chat = self.message.chat
-            chat_id = chat.id if chat else None
-            if chat_id:
-                await memttlcache.set(
-                    state.bot_last_reply_key(chat_id),
-                    bot_reply,
-                    ttl=300,
-                )
-        return complete
+                    raise DeliveryUncertain("Missing generation delivery receipt")
+                self.delivered = True
+                self.reply_message_id = sent_id
+            if self.reply_message_id and self.is_group_chat and self.user:
+                try:
+                    await memttlcache.set(
+                        state.bot_last_reply_key(self.message.chat.id),
+                        datatype.BotLastReply(
+                            message_id=self.reply_message_id,
+                            reply_to_user_id=self.user.id,
+                            reply_to_message_id=self.message.id,
+                            reply_text=self.current_text,
+                            original_user_message=message_plain_text(self.message),
+                            timestamp=datetime.now().timestamp(),
+                        ),
+                        ttl=300,
+                    )
+                except Exception as error:
+                    logger.warning(
+                        f"Reply context cache failed: {type(error).__name__}"
+                    )
+            self._completion_success = True
+            return True
+        except pyrogram.errors.RPCError as error:
+            if self.delivered:
+                raise DeliveryUncertain("Partial generation delivery") from error
+            logger.error(f"Generation final send failed: {type(error).__name__}")
+            return False
+        except Exception as error:
+            raise DeliveryUncertain("Unconfirmed generation delivery") from error
+        finally:
+            self._unregister()
+
+    async def finalize(self) -> bool:
+        return await self._finalize_generation()
 
     async def abort(self):
-        self._stop = True
+        self.request_stop()
+        self._unregister()
         if self.official_draft is not None:
             await self.official_draft.stop()
-        for task in (self._start_task, self._edit_task):
-            if task and not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass

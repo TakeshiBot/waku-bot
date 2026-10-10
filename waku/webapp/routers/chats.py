@@ -7,10 +7,14 @@ a chat the caller has already been proven able to manage.
 
 from __future__ import annotations
 
+import copy
+
 from fastapi import APIRouter, Path, Query, Request
 
 from waku import common, database
+from waku.bot.client import client
 from waku.common import ops
+from waku.common.telegram_authority import can_manage_group_settings
 from waku.config import app_config
 from waku.database.models import ChatConfig
 from waku.logger import logger
@@ -42,6 +46,18 @@ from waku.webapp.schemas import (
 from waku.webapp.serializers import chat_config_out, quote_out, rss_subscription_out
 
 router = APIRouter(prefix="/api/chats", tags=["chats"])
+
+
+async def _save_config_fields(chat_id, fields, *, expected_fields):
+    try:
+        return await database.update_chat_config_fields(
+            chat_id, fields, expected_fields=expected_fields
+        )
+    except ValueError as error:
+        if str(error) == "config_conflict":
+            raise ApiError(ErrorCode.CONFLICT, status_code=409) from None
+        raise
+
 
 # Mirrors the bot-side result codes onto HTTP semantics.
 _BOT_ADMIN_ERRORS = {
@@ -89,61 +105,29 @@ async def read_chat(ctx: ChatAdminCtx) -> ChatDetailOut:
 async def update_chat_config(
     request: Request, ctx: ChatAdminCtx, payload: ChatConfigIn
 ) -> ChatConfigOut:
-    """Replace the chat configuration.
-
-    Whole-document writes rather than a patch: the config is one JSON column that
-    the inline /config keyboard also writes, and full replacement makes the
-    last writer's intent unambiguous instead of interleaving partial updates.
-
-    `title_permissions` and `verify_questions` are deliberately not part of this
-    payload - each has its own endpoint, so saving the toggles page cannot wipe
-    the permissions page or the question bank.
-    """
+    """Update the panel's fields while preserving other Telegram/Discord settings."""
     write_limiter.check(client_key(request, ctx.user.id))
 
     current = ctx.chat.chat_config
-    new_config = ChatConfig(
-        waifu_enabled=payload.waifu_enabled,
-        delete_events_enabled=payload.delete_events_enabled,
-        unpin_channel_pin_enabled=payload.unpin_channel_pin_enabled,
-        quote_probability=payload.quote_probability,
-        quote_pin_message=payload.quote_pin_message,
-        title_permissions=current.title_permissions,
-        greeting=payload.greeting,
-        ai_reply=payload.ai_reply,
-        ai_reply_other_bots_enabled=payload.ai_reply_other_bots_enabled,
-        ai_comment=payload.ai_comment,
-        setu_enabled=payload.setu_enabled,
-        convert_b23_enabled=payload.convert_b23_enabled,
-        parse_artwork_enabled=payload.parse_artwork_enabled,
-        parse_sites_enabled=payload.parse_sites_enabled,
-        pick_bottle_enabled=payload.pick_bottle_enabled,
-        group_memory_enabled=payload.group_memory_enabled,
-        sticker_memory_enabled=payload.sticker_memory_enabled,
-        parse_wechat_enabled=payload.parse_wechat_enabled,
-        rss_agent_summary=payload.rss_agent_summary,
-        rss_agent_broadcast=payload.rss_agent_broadcast,
-        verify_enabled=payload.verify_enabled,
-        verify_strategy=payload.verify_strategy,
-        verify_method=payload.verify_method,
-        verify_max_attempts=payload.verify_max_attempts,
-        verify_timeout_seconds=payload.verify_timeout_seconds,
-        verify_fail_action=payload.verify_fail_action,
-        verify_questions=current.verify_questions,
-        lang=payload.lang,
-    )
+    new_config = copy.deepcopy(current)
+    fields = payload.model_dump()
+    for name, value in fields.items():
+        setattr(new_config, name, value)
 
     changes = [
         audit.FieldChange(field=name, old=old, new=new)
         for name, old, new in _diff_config(current, new_config)
     ]
-    saved = await database.update_chat_config_fields(
+    if any(
+        change.field.startswith("verify_") for change in changes
+    ) and not await can_manage_group_settings(
+        client, ctx.user.id, ctx.chat.id, require_restrict_members=True
+    ):
+        raise forbidden(ErrorCode.FORBIDDEN)
+    saved = await _save_config_fields(
         ctx.chat.id,
-        {
-            name: getattr(new_config, name)
-            for name in new_config.to_dict()
-            if name not in {"title_permissions", "verify_questions"}
-        },
+        {change.field: change.new for change in changes},
+        expected_fields={change.field: change.old for change in changes},
     )
 
     if changes:
@@ -176,14 +160,20 @@ def _diff_config(old: ChatConfig, new: ChatConfig):
 async def update_title_permissions(
     request: Request, ctx: ChatAdminCtx, payload: TitlePermissionsIn
 ) -> ChatConfigOut:
-    """Set which admin rights the /t command grants.
+    """Save the /sett promotion preset without changing anyone's Telegram rights.
 
     Unlisted keys default to false, so the payload is the complete desired state.
     """
     write_limiter.check(client_key(request, ctx.user.id))
 
+    from waku.bot.client import client
+    from waku.plugins.title.authority import can_set_preset
+
+    if not await can_set_preset(client, ctx.chat.id, ctx.user.id):
+        raise forbidden(ErrorCode.FORBIDDEN)
+
     config = ctx.chat.chat_config
-    old_permissions = config.title_permissions or {}
+    old_permissions = chat_config_out(config).title_permissions
     permissions = {
         key: bool(payload.permissions.get(key, False))
         for key in sorted(TITLE_PERMISSION_KEYS)
@@ -232,8 +222,14 @@ async def update_verify_questions(
     config = ctx.chat.chat_config
     old = config.verify_questions
     new = [q.model_dump() for q in payload.questions]
-    saved = await database.update_chat_config_fields(
-        ctx.chat.id, {"verify_questions": new}
+    if old != new and not await can_manage_group_settings(
+        client, ctx.user.id, ctx.chat.id, require_restrict_members=True
+    ):
+        raise forbidden(ErrorCode.FORBIDDEN)
+    saved = await _save_config_fields(
+        ctx.chat.id,
+        {"verify_questions": new},
+        expected_fields={"verify_questions": old},
     )
 
     audit.record(

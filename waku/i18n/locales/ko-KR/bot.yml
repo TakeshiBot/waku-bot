@@ -20,7 +20,7 @@ bot:
     title:
       set_self: 좋아요, 이제 당신은 {title}이에요!
       set_other: "{user}님이 {target}님을 {title}(으)로 만들었어요!"
-      set_permissions: 버튼을 눌러 /t 명령어로 부여할 권한을 변경하세요.
+      set_permissions: 'Choose an administrator preset. Used only when AI is explicitly asked to promote with /sett; press Save to apply.'
       deleted: 당신의 칭호가 삭제되었어요.
       errors:
         generic: 실패했어요, 냥...
@@ -55,16 +55,14 @@ bot:
       /d - 인용 삭제 | 그룹 인용 관리
       /qrand - 랜덤 인용
       /qp - 랜덤 인용 전송 확률 설정
-      /t - 칭호 얻기 | 칭호 선물하기
-      /td - 내 칭호 삭제
-      /sett - /t 명령어 권한 변경
-      /setu - 숭한 짤 좀... (/ω＼*)
+      /tag - Set a member tag or administrator title
+      /xtag - Remove a member tag or administrator title
+      /sett - Configure an administrator promotion preset for AI
+      /seg - 숭한 짤 좀... (/ω＼*)
       /greet - 그룹 환영 메시지 설정
       /id - 채팅 ID 얻기
       /ip - IP/도메인 정보 조회
       /wordcloud - 채팅 기록으로 워드 클라우드 생성
-      /botpromote - 유저를 봇 관리자로 지정 (봇에 대한 소유자급 권한 부여)
-      /botdemote - 봇 관리자 권한 해제
       /syncmembers - 그룹 멤버 동기화
       /f5avatar - 내 프로필 사진 새로고침
       /forget - 봇이 나와의 대화 기록을 잊게 합니다
@@ -260,11 +258,11 @@ bot:
     d: 인용 삭제
     qrand: 랜덤 인용
     qp: 인용 확률 설정
-    t: 칭호 얻기|칭호 주기
-    sett: 칭호 권한 변경
+    tag: Set a member tag or administrator title
+    sett: Configure an administrator promotion preset for AI
     id: 채팅 ID 얻기
     ip: IP 정보 얻기
-    setu: 숭한 짤
+    seg: 숭한 짤
     config: 그룹 설정 변경
     greet: 환영 메시지 설정
     help: 도움말|더보기

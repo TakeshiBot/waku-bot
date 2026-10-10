@@ -110,7 +110,7 @@ async def reload_runtime_config(
     """
     write_limiter.check(client_key(request, user.id))
 
-    success, message, changed = reload_config(locale=user.data.user_config.lang)
+    success, message, changed = await reload_config(locale=user.data.user_config.lang)
     audit.record(
         action="config.reload",
         actor_id=user.id,

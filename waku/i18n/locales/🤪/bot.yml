@@ -22,7 +22,7 @@ bot:
 
       set_other: "{user} 💩 {target} 變🍊 {title} !"
 
-      set_permissions: 點擊🖐鈕🕒✍ /t 🛐📜賦予🍊員🇩權🧵
+      set_permissions: 'Choose an administrator preset. Used only when AI is explicitly asked to promote with /sett; press Save to apply.'
 
       deleted: 已刪➗🤟🇩頭銜
 
@@ -79,16 +79,14 @@ bot:
       /d - 刪➗語錄|🧪💇👨‍👩‍👧‍👦語錄
       /qrand - 隨機語錄
       /qp - 設📍隨機✝動髮➡語錄🇩概💹
-      /t - 獲🛄頭銜|👫贈頭銜
-      /td - 刪➗🤟🇩頭銜
-      /sett - 🕒✍ /t 🛐📜🚾賦予🇩權🧵
-      /setu - 來點😍圖 (/ω＼*)
+      /tag - Set a member tag or administrator title
+      /xtag - Remove a member tag or administrator title
+      /sett - Configure an administrator promotion preset for AI
+      /seg - 來點😍圖 (/ω＼*)
       /greet - 設📍👨‍👩‍👧‍👦組歡🤝語
       /id - 獲🛄💬🌥ID
       /ip - 🛂詢IP/🗺📛✉️ℹ
       /wordcloud - 🎂🍊💬🌥記錄詞雲
-      /botpromote - 📍👨‍👩‍👧‍👦組🀄設📍bot🧪💇員 (對於bot該用戶將🧰🈶👬⏳於👨‍👩‍👧‍👦✝🇩權🧵)
-      /botdemote - 📍👨‍👩‍👧‍👦組🀄🛄👨‍🚒 bot 🧪💇員🚶📊
       /syncmembers - 👬🚶👨‍👩‍👧‍👦組🍊員
       /f5avatar - 🪥🆕🤟🇩頭🗿
       /forget - 讓 bot 📝記與🤟🇩對話記錄
@@ -439,15 +437,15 @@ bot:
 
     qp: 設📍隨機✝動髮➡語錄🇩概💹
 
-    t: 獲🛄頭銜|👫贈頭銜
+    tag: Set a member tag or administrator title
 
-    sett: 🕒✍ /t 🛐📜🚾賦予🇩權🧵
+    sett: Configure an administrator promotion preset for AI
 
     id: 獲🛄💬🌥ID
 
     ip: 獲🛄IP✉️ℹ
 
-    setu: 來點澀圖
+    seg: 來點澀圖
 
     config: 🕒✍👨‍👩‍👧‍👦組設📍
 

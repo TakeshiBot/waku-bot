@@ -282,13 +282,19 @@ async def get_input_prompt(
             return m.media, m
         return None, None
 
+    dm_media_remaining = min(50, input_format._effective_budget())
+    dm_rich_seen: dict[str, int] = {}
+    dm_next_number = 1
+
     async def build_contents_from_message(
         msg: pyrogram.types.Message,
         ctx_text: str | None = None,
         include_media: bool = True,
     ) -> list[UserContent]:
+        nonlocal dm_media_remaining, dm_next_number
         contents: list[UserContent] = []
         media_included = False
+        rich_count = 0
         raw_text = msg.text or msg.caption or ""
         entities = msg.entities or msg.caption_entities
         if not raw_text:
@@ -299,6 +305,21 @@ async def get_input_prompt(
         text_part = f"{ctx_text or ''}\n{formatted_text}".strip()
         if text_part:
             contents.append(text_part)
+
+        if include_media and getattr(msg, "rich_message", None) is not None:
+            from .input_format import rich_media_contents
+
+            rich_lines, rich_binaries, rich_metadata = await rich_media_contents(
+                client, [msg], initial_seen=dm_rich_seen,
+                start_number=dm_next_number, limit=dm_media_remaining,
+            )
+            if rich_lines:
+                contents.append("\n".join(rich_lines))
+            contents.extend(rich_binaries)
+            rich_count = len(rich_binaries)
+            dm_media_remaining -= rich_count
+            dm_rich_seen.update(rich_metadata)
+            dm_next_number += rich_count
 
         media, media_message = get_media_and_message(msg)
 
@@ -353,7 +374,11 @@ async def get_input_prompt(
                                 media_included = True
                             except UnicodeDecodeError:
                                 pass
-            if app_config.agent_multimodal:
+            known_media_number = dm_rich_seen.get(input_format.file_unique_id_of(msg) or "")
+            if known_media_number and not media_included:
+                contents.append(f"    - <media message_id={msg.id} referenced_media={known_media_number} >")
+                media_included = True
+            if app_config.agent_multimodal and dm_media_remaining > 0 and not known_media_number:
                 match media:
                     case pyrogram.enums.MessageMediaType.PHOTO:
                         photo = media_message.photo
@@ -531,6 +556,15 @@ async def get_input_prompt(
             )
         ):
             contents.append(_media_omitted_note(media, media_message))
+        ordinary_count = sum(isinstance(item, BinaryContent) for item in contents) - rich_count
+        dm_media_remaining -= ordinary_count
+        if ordinary_count:
+            unique = input_format.file_unique_id_of(msg)
+            if unique:
+                dm_rich_seen[unique] = dm_next_number
+            first_binary = next(index for index, item in enumerate(contents) if isinstance(item, BinaryContent))
+            contents.insert(first_binary, f"    - <media message_id={msg.id} image_number={dm_next_number} >")
+            dm_next_number += ordinary_count
         return contents
 
     user_prompt: list[UserContent] = []
@@ -577,22 +611,6 @@ async def get_input_prompt(
         if is_history_chain:
             reply_chain = reply_chain[-1:]
 
-    # Include media only in the final reply-chain message, directly replied to by the current message.
-    if reply_chain:
-        last_idx = len(reply_chain) - 1
-        for idx, reply_msg in enumerate(reply_chain):
-            if reply_msg.id in seen_msg_ids:
-                continue
-            seen_msg_ids.add(reply_msg.id)
-            sender_name = sender_label(reply_msg.from_user or reply_msg.sender_chat)
-            user_prompt.extend(
-                await build_contents_from_message(
-                    reply_msg,
-                    tr("quoted_message_label", p0=sender_name, p1=reply_msg.id),
-                    include_media=(idx == last_idx),
-                )
-            )
-
     if ctx is None:
         ctx_str = ""
     elif isinstance(ctx, datatype.ContextInfo):
@@ -608,11 +626,26 @@ async def get_input_prompt(
     sender = message.sender_chat or message.from_user
     current_label = tr("current_message_label", p0=sender_label(sender), p1=message.id)
     ctx_text = f"{current_label}\n{ctx_str}" if ctx_str else current_label
-    user_prompt.extend(
-        await build_contents_from_message(
-            message, ctx_text=ctx_text, include_media=True
-        )
+    # Allocate current media first, while preserving chronological prompt text.
+    current_contents = await build_contents_from_message(
+        message, ctx_text=ctx_text, include_media=True
     )
+    # Only the direct reply can consume the remainder of this turn's budget.
+    if reply_chain:
+        last_idx = len(reply_chain) - 1
+        for idx, reply_msg in enumerate(reply_chain):
+            if reply_msg.id in seen_msg_ids:
+                continue
+            seen_msg_ids.add(reply_msg.id)
+            sender_name = sender_label(reply_msg.from_user or reply_msg.sender_chat)
+            user_prompt.extend(
+                await build_contents_from_message(
+                    reply_msg,
+                    tr("quoted_message_label", p0=sender_name, p1=reply_msg.id),
+                    include_media=(idx == last_idx),
+                )
+            )
+    user_prompt.extend(current_contents)
     needs_multimodal = any(
         isinstance(item, (ImageUrl, AudioUrl, DocumentUrl, VideoUrl, BinaryContent))
         for item in user_prompt

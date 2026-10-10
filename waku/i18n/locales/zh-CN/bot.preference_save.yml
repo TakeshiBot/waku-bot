@@ -1,0 +1,13 @@
+bot:
+  preference_save:
+    save: Save
+    cancel: Cancel
+    notice: 'Save to apply and close. Open this command again to discard the draft.'
+    saved: 'Changes saved and applied. This menu will be deleted in 5 seconds.'
+    cancelled: Changes cancelled.
+    denied: This menu expired, belongs to another user, or your rights changed.
+    failed: Could not save. Try again or reopen the menu.
+    conflict: Another menu changed this setting. Reopen the command to review the current value before saving.
+    language: 'Language: {lang}'
+    greeting: 'Greeting draft:'
+    remove_greeting: Remove this group greeting?

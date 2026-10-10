@@ -7,14 +7,14 @@ bot:
     d: 删除语录
     qrand: 随机语录
     qp: 设置随机主动发送语录的概率
-    t: 获取头衔|互赠头衔
-    td: 删除你的头衔
-    sett: 更改 /t 命令所赋予的权限
+    tag: Set a member tag or administrator title
+    xtag: Remove a member tag or administrator title
+    sett: Configure an administrator promotion preset for AI
     id: 获取聊天ID
     ip: 获取IP信息
-    setu: 来点涩图
-    throwbottle: 扔一个漂流瓶
-    pickbottle: 捡一个漂流瓶
+    seg: 来点涩图
+    nemchai: 扔一个漂流瓶
+    nhatchai: 捡一个漂流瓶
     wordcloud: 生成聊天记录词云
     config: 更改群组设置
     panel: 在管理面板中配置本群
@@ -25,8 +25,8 @@ bot:
     buygift: 购买礼物
     gift: 送礼物给 Bot
     syncmembers: 同步群组成员
-    botpromote: 设置 bot 管理员
-    botdemote: 取消 bot 管理员
+    botpromote: Grant bot-wide admin access by Telegram ID (DM)
+    botdemote: Revoke bot-wide admin access by Telegram ID (DM)
     help: 帮助|更多功能
     randmyavatar: 立刻更换 bot 头像
     reload: 重载配置文件

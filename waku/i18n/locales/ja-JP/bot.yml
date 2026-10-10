@@ -20,7 +20,7 @@ bot:
     title:
       set_self: "はい、あなたは今 {title} ですよ"
       set_other: "{user} さんが {target} を {title} にしました！"
-      set_permissions: "ボタンをクリックして /t コマンドの権限を変更してください"
+      set_permissions: 'Choose an administrator preset. Used only when AI is explicitly asked to promote with /sett; press Save to apply.'
       deleted: "あなたの称号を削除しました"
       errors:
         generic: "失敗しましたにゃん"
@@ -55,16 +55,14 @@ bot:
       /d - 名言を削除|グループ名言を管理
       /qrand - ランダム名言
       /qp - ランダム名言送信確率を設定
-      /t - 称号を取得|称号を交換
-      /td - あなたの称号を削除
-      /sett - /t コマンドの権限を変更
-      /setu - エッチな画像をお届け (／ω＼)
+      /tag - Set a member tag or administrator title
+      /xtag - Remove a member tag or administrator title
+      /sett - Configure an administrator promotion preset for AI
+      /seg - エッチな画像をお届け (／ω＼)
       /greet - グループウェルカムメッセージを設定
       /id - チャットIDを取得
       /ip - IP/ドメイン情報をクエリ
       /wordcloud - チャット記録のワードクラウドを生成
-      /botpromote - グループでBot管理者を設定 (Botに対してグループオーナーと同等の権限)
-      /botdemote - グループでBot管理者権限を解除
       /syncmembers - グループメンバーを同期
       /f5avatar - あなたのアバターを更新
       /forget - Botとの会話記録を消去
@@ -261,11 +259,11 @@ bot:
     d: "名言を削除"
     qrand: "ランダム名言"
     qp: "ランダム名言送信確率を設定"
-    t: "称号を取得|称号を交換"
-    sett: "/t コマンドの権限を変更"
+    tag: Set a member tag or administrator title
+    sett: Configure an administrator promotion preset for AI
     id: "チャットIDを取得"
     ip: "IP情報を取得"
-    setu: "エッチな画像をお届け"
+    seg: "エッチな画像をお届け"
     config: "グループ設定を変更"
     greet: "グループウェルカムメッセージを設定"
     help: "ヘルプ|その他の機能"

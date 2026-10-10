@@ -38,9 +38,8 @@ def _chat_id(peer) -> int | None:
 
 
 _FEATURE_COMMANDS = {
-    "bottle": "bottle_throw",
-    "throwbottle": "bottle_throw",
-    "pickbottle": "bottle_pick",
+    "nemchai": "bottle_throw",
+    "nhatchai": "bottle_pick",
     "config": "group_config",
     "syncmembers": "member_sync",
     "infographic": "infographic",

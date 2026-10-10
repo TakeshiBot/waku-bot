@@ -154,6 +154,18 @@ class SettingsEditor:
             raise SettingsEditError("invalid_file") from None
         return values, revision
 
+    def configured_keys(self) -> set[str]:
+        """Editable fields explicitly present in the active TOML layers."""
+        try:
+            return {
+                key.lower()
+                for path in self.paths
+                for key in tomllib.loads(path.read_text(encoding="utf-8-sig"))
+                if key.lower() in self.schema.model_fields
+            }
+        except (OSError, ValueError):
+            raise SettingsEditError("invalid_file") from None
+
     def _key(self, document, name: str) -> str:
         return next((key for key in document if key.lower() == name), name)
 
@@ -241,7 +253,7 @@ class SettingsEditor:
         document, _ = self._read()
         self._validate(document)
 
-    def set_value(self, key: str, text: str, revision: str) -> None:
+    def _value_change(self, key: str, text: str) -> Callable:
         if key.startswith("agent_providers."):
             name, field = key.removeprefix("agent_providers.").rsplit(".", 1)
             if field not in self.provider_schema.model_fields:
@@ -299,28 +311,140 @@ class SettingsEditor:
                         value_to_write = value
                     document[name] = value_to_write
 
-        self._write(revision, change)
+        return change
 
-    def add_provider(self, name: str, revision: str) -> None:
+    def set_value(self, key: str, text: str, revision: str) -> None:
+        self._write(revision, self._value_change(key, text))
+
+    def _provider_add_change(self, name: str) -> Callable:
         if not _PROVIDER_NAME.fullmatch(name):
             raise SettingsEditError("invalid_name")
 
         def change(document):
             values, _ = self.snapshot()
-            if name in values.get("agent_providers", {}):
+            if name in values.get("agent_providers", {}) or name in document.get(
+                self._key(document, "agent_providers"), {}
+            ):
                 raise SettingsEditError("provider_exists")
             key = self._key(document, "agent_providers")
             if key not in document:
                 document[key] = self._toml_providers(values.get("agent_providers", {}))
             document[key][name] = self.provider_schema().model_dump(exclude_none=True)
 
-        self._write(revision, change)
+        return change
 
-    def delete_provider(self, name: str, revision: str) -> None:
+    def add_provider(self, name: str, revision: str) -> None:
+        self._write(revision, self._provider_add_change(name))
+
+    def _provider_delete_change(self, name: str) -> Callable:
         def change(document):
             key = self._key(document, "agent_providers")
             if name not in document.get(key, {}):
                 raise SettingsEditError("inherited_value")
             del document[key][name]
 
-        self._write(revision, change)
+        return change
+
+    def delete_provider(self, name: str, revision: str) -> None:
+        self._write(revision, self._provider_delete_change(name))
+
+    def _batch_change(
+        self,
+        changes: Mapping[str, str],
+        additions: set[str],
+        deletions: set[str],
+    ) -> Callable:
+        # Add first so new provider fields can be edited in the same draft.
+        operations = [self._provider_add_change(name) for name in sorted(additions)]
+        operations += [self._value_change(key, text) for key, text in changes.items()]
+        operations += [self._provider_delete_change(name) for name in sorted(deletions)]
+
+        def change(document):
+            for operation in operations:
+                operation(document)
+
+        return change
+
+    def preview(
+        self,
+        changes: Mapping[str, str],
+        revision: str,
+        *,
+        additions: set[str] | None = None,
+        deletions: set[str] | None = None,
+    ) -> dict[str, Any]:
+        """Validate a complete draft without writing or changing the runtime."""
+        with _WRITE_LOCK:
+            document, current_revision = self._read()
+            if revision != current_revision:
+                raise SettingsEditError("stale_file")
+            self._batch_change(changes, additions or set(), deletions or set())(
+                document
+            )
+            self._validate(document)
+            values = self._defaults()
+            for path in self.paths[:-1]:
+                values.update(
+                    {
+                        key.lower(): value
+                        for key, value in tomllib.loads(
+                            path.read_text(encoding="utf-8-sig")
+                        ).items()
+                    }
+                )
+            values.update(
+                {key.lower(): value for key, value in document.unwrap().items()}
+            )
+            return self.schema.model_validate(values).model_dump()
+
+    def commit_batch(
+        self,
+        changes: Mapping[str, str],
+        revision: str,
+        *,
+        additions: set[str] | None = None,
+        deletions: set[str] | None = None,
+    ) -> None:
+        """Commit all approved changes with one validated atomic replacement."""
+        self._write(
+            revision,
+            self._batch_change(changes, additions or set(), deletions or set()),
+        )
+
+    def effective_candidate(self, file_values: Mapping[str, Any]) -> pydantic.BaseModel:
+        """Resolve the same environment precedence without reloading live config."""
+        from dynaconf import Dynaconf
+
+        try:
+            settings = Dynaconf(
+                envvar_prefix="KMUA,WAKU",
+                settings_files=[],
+                environments=False,
+                load_dotenv=False,
+                **dict(file_values),
+            )
+            candidate = self.schema.model_validate(
+                {
+                    key: getattr(settings, key)
+                    for key in self.schema.model_fields
+                    if hasattr(settings, key)
+                }
+            )
+            memory_path = getattr(candidate, "agent_powermem_config_path", None)
+            if getattr(candidate, "agent", False) and memory_path:
+                with open(memory_path, encoding="utf-8") as stream:
+                    memory = json.load(stream)
+                if not isinstance(memory, dict):
+                    raise SettingsEditError("invalid_value")
+                prompt = getattr(
+                    candidate, "agent_powermem_custom_fact_extraction_prompt", None
+                )
+                if prompt is not None:
+                    memory["custom_fact_extraction_prompt"] = prompt
+                candidate.agent_powermem_config = memory
+            elif hasattr(candidate, "agent_powermem_config") and not candidate.agent:
+                candidate.agent_powermem_config = None
+            return candidate
+        except Exception:
+            # Never include Dynaconf/Pydantic diagnostics with secret values.
+            raise SettingsEditError("invalid_environment") from None

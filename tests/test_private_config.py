@@ -7,11 +7,12 @@ import inspect
 import os
 import secrets
 import signal
+import sys
 import time
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from zoneinfo import ZoneInfo
 
@@ -41,15 +42,41 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
-def panel(tmp_path, schemas):  # noqa: F811
+def panel(tmp_path, schemas, monkeypatch):  # noqa: F811
     path = tmp_path / "settings.toml"
     path.write_text('token="test"\nowners=[1]\nagent_prompt="before"\n')
     schema, provider = schemas
     runtime = schema(token="test", owners=[1])
     editor = SettingsEditor([path], schema, provider, runtime.model_dump)
+    runtime_module = ModuleType("waku.services.settings_runtime")
+
+    async def prepare(candidate, changed):
+        roots = {key.split(".", 1)[0] for key in changed}
+        restart = roots & {"debug", "token", "db_url"}
+
+        def apply():
+            for key in roots - restart:
+                setattr(runtime, key, getattr(candidate, key))
+
+        return SimpleNamespace(
+            apply=apply,
+            activate=AsyncMock(side_effect=apply),
+            discord_status=None,
+            restart_fields=restart,
+            live_fields=roots - restart,
+            discard=AsyncMock(),
+        )
+
+    runtime_module.prepare_settings_application = AsyncMock(side_effect=prepare)
+    runtime_module.SETTINGS_APPLICATION_LOCK = asyncio.Lock()
+    runtime_module.settings_restart_fields = lambda candidate, changed: (
+        changed & {"debug", "token", "db_url"}
+    )
+    monkeypatch.setitem(sys.modules, runtime_module.__name__, runtime_module)
     namespace = {
         "__name__": "__main__",
         "asyncio": asyncio,
+        "SETTINGS_APPLICATION_LOCK": runtime_module.SETTINGS_APPLICATION_LOCK,
         "html": html,
         "os": os,
         "secrets": secrets,
@@ -74,8 +101,11 @@ def panel(tmp_path, schemas):  # noqa: F811
             get_user_by_id=AsyncMock(return_value=None),
             get_user_config=AsyncMock(return_value=SimpleNamespace(lang="vi")),
         ),
-        "common": SimpleNamespace(spawn=MagicMock()),
+        "common": SimpleNamespace(
+            spawn=MagicMock(), message_plain_text=lambda message: message.text
+        ),
         "logger": MagicMock(),
+        "schedule_saved_menu_cleanup": MagicMock(),
         "BOT_TIMEZONE": ZoneInfo("Asia/Ho_Chi_Minh"),
         "_resolve_settings_files": lambda: [str(path)],
     }
@@ -154,6 +184,8 @@ async def test_callback_rechecks_revoked_admin(panel):
 
 
 async def test_callback_old_view_cannot_edit_different_entry(panel):
+    with panel.editor.path.open("a") as target:
+        target.write("\nbtts=false\n")
     panel.ns["_menu"]("test", panel.session, "group:agent:0")
     old_view = panel.session.view
     panel.ns["_menu"]("test", panel.session, "group:services:0")
@@ -162,39 +194,61 @@ async def test_callback_old_view_cannot_edit_different_entry(panel):
     assert panel.session.pending is None
 
 
-async def test_toggle_saves_and_answers_callback_once(panel):
+async def test_toggle_stages_until_save_and_answers_callback_once(panel):
     panel.session.entries = ["debug"]
     values, panel.session.revision = panel.editor.snapshot()
     request = query(panel, "toggle:0")
     await panel.ns["private_config_callback"](panel.client, request)
-    assert panel.editor.snapshot()[0]["debug"] is not values["debug"]
+    assert panel.editor.snapshot()[0]["debug"] is values["debug"]
+    assert panel.session.values["debug"] is not values["debug"]
     request.answer.assert_awaited_once()
+    save_request = query(panel, "save")
+    prepare = sys.modules["waku.services.settings_runtime"].prepare_settings_application
+    original_prepare = prepare.side_effect
+
+    async def prepare_after_ack(candidate, changed):
+        # A slow Discord reconnect must not leave an unanswered callback.
+        save_request.answer.assert_awaited_once()
+        assert panel.editor.snapshot()[0]["debug"] is values["debug"]
+        return await original_prepare(candidate, changed)
+
+    prepare.side_effect = prepare_after_ack
+    await panel.ns["private_config_callback"](panel.client, save_request)
+    assert panel.editor.snapshot()[0]["debug"] is not values["debug"]
+    assert panel.session.dirty == {"debug"}
+    assert not panel.session.changes
 
 
-async def test_failed_edit_has_usable_back_button(panel):
+async def test_failed_edit_instructs_reopen_and_has_no_redundant_buttons(panel):
     panel.session.entries = ["debug"]
     panel.session.revision = "stale"
     request = query(panel, "toggle:0")
     await panel.ns["private_config_callback"](panel.client, request)
     markup = panel.message.edit_text.call_args.kwargs["reply_markup"]
-    back = markup.inline_keyboard[0][0]
-    assert back.callback_data == f"pcfg:test:{panel.session.view}:home"
-    request.data = back.callback_data
-    await panel.ns["private_config_callback"](panel.client, request)
-    assert "stale" not in str(panel.message.edit_text.call_args)
-    assert panel.session.revision == panel.editor.snapshot()[1]
+    actions = [
+        b.callback_data.rsplit(":", 1)[-1]
+        for row in markup.inline_keyboard
+        for b in row
+    ]
+    assert "save" in actions
+    assert not set(actions) & {"reload", "close", "discard"}
+    assert "/config" in panel.message.edit_text.call_args.args[0]
 
 
-async def test_input_saved_and_stopped_before_ai_even_with_slash(panel):
+async def test_input_staged_and_stopped_before_ai_even_with_slash(panel):
     panel.session.pending = "agent_prompt"
     panel.session.pending_until = time.monotonic() + 120
     panel.session.revision = panel.editor.snapshot()[1]
     panel.message.text = "/root/absolute/path\nnew prompt"
     with pytest.raises(pyrogram.StopPropagation):
         await panel.ns["private_config_input"](panel.client, panel.message)
-    assert panel.editor.snapshot()[0]["agent_prompt"] == panel.message.text
+    assert panel.editor.snapshot()[0]["agent_prompt"] == "before"
+    assert panel.session.values["agent_prompt"] == panel.message.text
     panel.message.delete.assert_awaited_once()
     assert panel.session.pending is None
+    await panel.ns["private_config_callback"](panel.client, query(panel, "save"))
+    assert panel.editor.snapshot()[0]["agent_prompt"] == panel.message.text
+    assert panel.ns["app_config"].agent_prompt == panel.message.text
 
 
 async def test_secret_input_error_contains_no_value_and_is_consumed(panel):
@@ -265,12 +319,16 @@ def test_input_handler_precedes_debug_logging_middleware():
 
 
 async def test_restart_requests_normal_sigint_shutdown(panel, monkeypatch):
+    from waku.services import process_restart
+
+    monkeypatch.setattr(process_restart, "_requested", False)
     sleep = AsyncMock()
     kill = MagicMock()
     monkeypatch.setattr(asyncio, "sleep", sleep)
     monkeypatch.setattr(os, "kill", kill)
     await panel.ns["_restart"]()
     kill.assert_called_once_with(os.getpid(), signal.SIGINT)
+    assert process_restart._requested
 
 
 @pytest.fixture
@@ -353,10 +411,15 @@ async def test_native_command_first_and_second_tap_and_entry_edit(native_panel):
     panel = native_panel
     await open_native_panel(panel)
     root_rows = panel.message.reply_markup.inline_keyboard
-    assert len(root_rows) == 1 and len(root_rows[0]) == 2
+    assert [
+        button.callback_data.split(":", 3)[3] for row in root_rows for button in row
+    ] == ["groups:0", "save"]
     assert root_rows[0][0].text == "⚙️ Cài đặt"
     await panel.click("groups:0", raw_bytes=True)
-    assert len(panel.message.reply_markup.inline_keyboard) == 9
+    assert (
+        len(panel.message.reply_markup.inline_keyboard)
+        == len(panel.ns["_visible_groups"](panel.session)) + 1
+    )
     await panel.click("group:base:0")
     assert all(len(row) <= 2 for row in panel.message.reply_markup.inline_keyboard[:-1])
     non_boolean = next(
@@ -429,43 +492,45 @@ async def test_native_direct_toggle_preserves_group_page_and_shows_changed(
     native_panel,
 ):
     panel = native_panel
+    with panel.editor.path.open("a") as target:
+        target.write("\ndebug=false\n")
     await open_native_panel(panel)
     keys = sorted(
-        key
-        for key in panel.ns["_AppConfig"].model_fields
-        if panel.ns["_group"](key) == "base"
+        key for key in panel.session.field_keys if panel.ns["_group"](key) == "base"
     )
     page = keys.index("debug") // panel.ns["_PAGE_SIZE"]
     text, markup = panel.ns["_menu"](panel.token, panel.session, f"group:base:{page}")
     panel.message.text, panel.message.reply_markup = text, markup
     prior = panel.editor.snapshot()[0]["debug"]
     await panel.click(f"toggle:{keys.index('debug')}")
-    assert panel.editor.snapshot()[0]["debug"] is not prior
+    assert panel.editor.snapshot()[0]["debug"] is prior
+    assert panel.session.values["debug"] is not prior
     assert panel.session.location == f"group:base:{page}"
-    assert "🔄" in panel.message.text
+    assert "📝" in panel.message.text
     assert any(
-        button.callback_data.endswith(":restart")
+        button.callback_data.endswith(":save")
         for button in panel.message.reply_markup.inline_keyboard[-1]
     )
     panel.ns["logger"].error.assert_not_called()
 
 
-@pytest.mark.parametrize("delete_fails", [False, True])
-async def test_native_close_deletes_menu_or_falls_back_to_closed_notice(
-    native_panel, delete_fails
+@pytest.mark.parametrize("edit_fails", [False, True])
+async def test_native_save_closes_session_and_schedules_exact_message_cleanup(
+    native_panel, edit_fails
 ):
     panel = native_panel
     await open_native_panel(panel)
-    if delete_fails:
-        panel.client.delete_messages.side_effect = RuntimeError("cannot delete")
-    await panel.click("close")
+    if edit_fails:
+        panel.client.edit_message_text.side_effect = RuntimeError("cannot edit")
+    await panel.click("save")
     assert panel.token not in panel.ns["_SESSIONS"]
-    panel.client.delete_messages.assert_awaited_once()
-    if delete_fails:
+    panel.client.delete_messages.assert_not_awaited()
+    panel.ns["schedule_saved_menu_cleanup"].assert_called_once_with(
+        panel.client, panel.message, panel.command.id
+    )
+    if not edit_fails:
         assert panel.message.reply_markup is None
-        assert panel.message.text == panel.ns["_tr"]("closed", panel.session)
-    else:
-        panel.client.edit_message_text.assert_not_awaited()
+        assert panel.message.text == panel.ns["_tr"]("saved", panel.session)
     panel.client.answer_callback_query.assert_awaited_once()
 
 
@@ -481,13 +546,12 @@ async def test_business_group_available_without_setting_and_preserves_provider_p
         for button in row
     ]
     assert "providers:0" in actions
-    await panel.click("groups:1")
     await panel.click("group:business:0")
     assert "Telegram Business" in panel.message.text
     assert panel.session.entries == ["business_chat_enabled"]
     assert panel.editor.snapshot()[0]["business_chat_enabled"] is False
-    assert panel.session.back == "groups:1"
-    await panel.click("groups:1")
+    assert panel.session.back == "groups:0"
+    await panel.click("groups:0")
     assert any(
         button.callback_data.endswith(":group:business:0")
         for row in panel.message.reply_markup.inline_keyboard
@@ -495,7 +559,9 @@ async def test_business_group_available_without_setting_and_preserves_provider_p
     )
 
 
-async def test_business_native_toggle_applies_and_persists_without_restart(native_panel):
+async def test_business_native_toggle_applies_and_persists_without_restart(
+    native_panel,
+):
     panel = native_panel
     panel.ns["app_config"].agent = True
     panel.ns["app_config"].agent_model = "default/example"
@@ -503,13 +569,21 @@ async def test_business_native_toggle_applies_and_persists_without_restart(nativ
     text, markup = panel.ns["_menu"](panel.token, panel.session, "group:business:0")
     panel.message.text, panel.message.reply_markup = text, markup
     for expected in (True, False):
+        await open_native_panel(panel)
+        text, markup = panel.ns["_menu"](panel.token, panel.session, "group:business:0")
+        panel.message.text, panel.message.reply_markup = text, markup
         await panel.click("toggle:0")
+        assert panel.ns["app_config"].business_chat_enabled is not expected
+        await panel.click("save")
         assert panel.ns["app_config"].business_chat_enabled is expected
-        assert tomllib.loads(panel.editor.path.read_text())["business_chat_enabled"] is expected
+        assert (
+            tomllib.loads(panel.editor.path.read_text())["business_chat_enabled"]
+            is expected
+        )
         assert "business_chat_enabled" not in panel.session.dirty
-        assert panel.session.location == "group:business:0"
-        notice = panel.client.answer_callback_query.await_args.kwargs["text"]
-        assert notice == panel.ns["_tr"]("business_saved", panel.session)
+        assert panel.token not in panel.ns["_SESSIONS"]
+        assert panel.message.reply_markup is None
+        assert not panel.session.changes
     panel.ns["logger"].error.assert_not_called()
 
 
@@ -518,23 +592,29 @@ async def test_business_toggle_reports_missing_agent(panel):
     panel.ns["_menu"]("test", panel.session, "group:business:0")
     request = query(panel, "toggle:0")
     await panel.ns["private_config_callback"](panel.client, request)
+    assert panel.ns["app_config"].business_chat_enabled is False
+    await panel.ns["private_config_callback"](panel.client, query(panel, "save"))
     assert panel.ns["app_config"].business_chat_enabled is True
-    request.answer.assert_awaited_once_with(
-        panel.ns["_tr"]("business_requires_agent", panel.session), show_alert=True
+    assert (
+        panel.ns["_tr"]("business_requires_agent", panel.session)
+        in panel.message.edit_text.call_args.args[0]
     )
 
 
 @pytest.mark.parametrize("error", ["stale_file", "write_failed"])
 async def test_business_failed_save_does_not_enable_runtime(panel, monkeypatch, error):
     panel.ns["_menu"]("test", panel.session, "group:business:0")
+    await panel.ns["private_config_callback"](panel.client, query(panel, "toggle:0"))
     if error == "stale_file":
         with panel.editor.path.open("a") as target:
             target.write("\n# external edit\n")
     else:
-        def fail_write(*args):
+
+        def fail_write(*args, **kwargs):
             raise SettingsEditError("write_failed")
-        monkeypatch.setattr(panel.editor, "set_value", fail_write)
-    request = query(panel, "toggle:0")
+
+        monkeypatch.setattr(panel.editor, "commit_batch", fail_write)
+    request = query(panel, "save")
     await panel.ns["private_config_callback"](panel.client, request)
     assert panel.ns["app_config"].business_chat_enabled is False
     assert panel.editor.snapshot()[0]["business_chat_enabled"] is False
@@ -548,6 +628,190 @@ async def test_business_typed_switch_also_applies_live_and_consumes_input(panel)
     panel.message.text = "true"
     with pytest.raises(pyrogram.StopPropagation):
         await panel.ns["private_config_input"](panel.client, panel.message)
+    assert panel.ns["app_config"].business_chat_enabled is False
+    assert panel.editor.snapshot()[0]["business_chat_enabled"] is False
+    await panel.ns["private_config_callback"](panel.client, query(panel, "save"))
     assert panel.ns["app_config"].business_chat_enabled is True
     assert panel.editor.snapshot()[0]["business_chat_enabled"] is True
     assert "business_chat_enabled" not in panel.session.dirty
+
+
+async def test_discard_and_close_never_commit_staged_values(panel):
+    panel.ns["_menu"]("test", panel.session, "group:business:0")
+    await panel.ns["private_config_callback"](panel.client, query(panel, "toggle:0"))
+    await panel.ns["private_config_callback"](panel.client, query(panel, "discard"))
+    assert not panel.session.changes
+    assert panel.editor.snapshot()[0]["business_chat_enabled"] is False
+    panel.ns["_menu"]("test", panel.session, "group:business:0")
+    await panel.ns["private_config_callback"](panel.client, query(panel, "toggle:0"))
+    await panel.ns["private_config_callback"](panel.client, query(panel, "close"))
+    assert panel.editor.snapshot()[0]["business_chat_enabled"] is False
+    assert panel.ns["app_config"].business_chat_enabled is False
+
+
+async def test_queued_save_rechecks_role_after_lock(panel):
+    panel.ns["_menu"]("test", panel.session, "group:business:0")
+    await panel.ns["private_config_callback"](panel.client, query(panel, "toggle:0"))
+    await panel.session.lock.acquire()
+    try:
+        task = asyncio.create_task(
+            panel.ns["private_config_callback"](panel.client, query(panel, "save"))
+        )
+        await asyncio.sleep(0)
+        panel.ns["app_config"].owners = []
+    finally:
+        panel.session.lock.release()
+    await task
+    assert panel.editor.snapshot()[0]["business_chat_enabled"] is False
+    assert "test" not in panel.ns["_SESSIONS"]
+
+
+async def test_queued_save_cannot_resurrect_a_closed_draft(panel):
+    panel.ns["_menu"]("test", panel.session, "group:business:0")
+    await panel.ns["private_config_callback"](panel.client, query(panel, "toggle:0"))
+    await panel.session.lock.acquire()
+    try:
+        task = asyncio.create_task(
+            panel.ns["private_config_callback"](panel.client, query(panel, "save"))
+        )
+        await asyncio.sleep(0)
+        panel.ns["_SESSIONS"].pop("test")
+    finally:
+        panel.session.lock.release()
+    await task
+    assert panel.editor.snapshot()[0]["business_chat_enabled"] is False
+
+
+async def test_global_save_lock_rechecks_admin_when_another_menu_revokes_owner(panel):
+    panel.ns["_menu"]("test", panel.session, "group:business:0")
+    await panel.ns["private_config_callback"](panel.client, query(panel, "toggle:0"))
+    lock = panel.ns["_SETTINGS_SAVE_LOCK"]
+    await lock.acquire()
+    try:
+        task = asyncio.create_task(
+            panel.ns["private_config_callback"](panel.client, query(panel, "save"))
+        )
+        await asyncio.sleep(0)
+        panel.ns["app_config"].owners = []
+    finally:
+        lock.release()
+    await task
+    assert panel.editor.snapshot()[0]["business_chat_enabled"] is False
+    assert panel.ns["app_config"].business_chat_enabled is False
+
+
+async def test_provider_add_edit_delete_are_all_staged_and_saved_together(panel):
+    await panel.ns["_stage_provider"](panel.session, "local")
+    await panel.ns["_stage_setting"](
+        panel.session, "agent_providers.local.url", "https://example.invalid/v1"
+    )
+    await panel.ns["_stage_setting"](panel.session, "agent_model", "local/example")
+    assert "local" not in panel.editor.snapshot()[0]["agent_providers"]
+    await panel.ns["private_config_callback"](panel.client, query(panel, "save"))
+    assert panel.editor.snapshot()[0]["agent_model"] == "local/example"
+    await panel.ns["private_config_command"](panel.client, panel.message)
+    token, panel.session = next(iter(panel.ns["_SESSIONS"].items()))
+    # This non-native unit fixture uses a fixed token for its callback helper.
+    panel.ns["_SESSIONS"]["test"] = panel.ns["_SESSIONS"].pop(token)
+    await panel.ns["_stage_setting"](panel.session, "agent_model", "default/example")
+    await panel.ns["_stage_provider"](panel.session, "local", delete=True)
+    assert "local" in panel.editor.snapshot()[0]["agent_providers"]
+    await panel.ns["private_config_callback"](panel.client, query(panel, "save"))
+    assert "local" not in panel.editor.snapshot()[0]["agent_providers"]
+
+
+async def test_runtime_preparation_failure_preserves_file_and_masks_diagnostics(panel):
+    panel.ns["_menu"]("test", panel.session, "group:business:0")
+    await panel.ns["private_config_callback"](panel.client, query(panel, "toggle:0"))
+    runtime = sys.modules["waku.services.settings_runtime"]
+    runtime.prepare_settings_application.side_effect = RuntimeError(
+        "private-provider-secret"
+    )
+    before = panel.editor.path.read_bytes()
+    await panel.ns["private_config_callback"](panel.client, query(panel, "save"))
+    assert panel.editor.path.read_bytes() == before
+    assert panel.ns["app_config"].business_chat_enabled is False
+    assert panel.session.changes
+    assert "private-provider-secret" not in str(panel.message.edit_text.call_args)
+
+
+def test_menu_only_shows_configured_fields_and_essential_current_features(panel):
+    panel.ns["_menu"]("test", panel.session, "group:agent:0")
+    assert "agent_prompt" in panel.session.entries
+    assert "agent_rich_output" in panel.session.entries
+    assert "agent_landrun_path" not in panel.session.entries
+    groups = panel.ns["_visible_groups"](panel.session)
+    assert groups == ["base", "agent", "services", "providers", "business"]
+    panel.ns["_menu"]("test", panel.session, "group:services:0")
+    assert "manyacg_r18_mode" in panel.session.entries
+
+
+async def test_rich_only_private_edit_is_consumed_without_saving_or_leaking_to_ai(
+    panel,
+):
+    from pyrogram.types import RichBlockParagraph, RichMessage
+
+    from waku.common.rich_message import message_plain_text
+
+    panel.ns["common"].message_plain_text = message_plain_text
+    panel.session.pending = "token"
+    panel.session.pending_until = time.monotonic() + 120
+    panel.message = Message(
+        id=23,
+        chat=Chat(id=1, type=enums.ChatType.PRIVATE),
+        from_user=User(id=1, first_name="Admin"),
+        rich_message=RichMessage(
+            blocks=[RichBlockParagraph(text="private-token-value")]
+        ),
+    )
+    panel.message.delete = AsyncMock()
+    panel.message.stop_propagation = MagicMock(side_effect=pyrogram.StopPropagation)
+    with pytest.raises(pyrogram.StopPropagation):
+        await panel.ns["private_config_input"](panel.client, panel.message)
+    assert panel.editor.snapshot()[0]["token"] == "test"
+    assert panel.session.changes["token"] == "private-token-value"
+    assert "private-token-value" not in str(panel.client.edit_message_text.call_args)
+    panel.message.delete.assert_awaited_once()
+
+
+async def test_nontext_message_in_pending_secret_edit_is_consumed_without_ai(panel):
+    from waku.common.rich_message import message_plain_text
+
+    panel.ns["common"].message_plain_text = message_plain_text
+    panel.session.pending = "token"
+    panel.session.pending_until = time.monotonic() + 120
+    panel.message = Message(
+        id=23,
+        chat=Chat(id=1, type=enums.ChatType.PRIVATE),
+        from_user=User(id=1, first_name="Admin"),
+    )
+    panel.message.delete = AsyncMock()
+    panel.message.stop_propagation = MagicMock(side_effect=pyrogram.StopPropagation)
+    with pytest.raises(pyrogram.StopPropagation):
+        await panel.ns["private_config_input"](panel.client, panel.message)
+    assert panel.editor.snapshot()[0]["token"] == "test"
+    panel.message.delete.assert_awaited_once()
+
+
+async def test_new_menu_detects_effective_pending_restart_then_reopen_clears_revert(
+    native_panel,
+):
+    panel = native_panel
+    panel.editor.path.write_text(
+        'token="startup-token"\nowners=[1]\nagent_prompt="before"\n'
+    )
+    await open_native_panel(panel)
+    assert panel.session.dirty == {"token"}
+    assert any(
+        button.callback_data.endswith(":restart")
+        for row in panel.message.reply_markup.inline_keyboard
+        for button in row
+    )
+    panel.editor.path.write_text('token="test"\nowners=[1]\nagent_prompt="before"\n')
+    await open_native_panel(panel)
+    assert not panel.session.dirty
+    assert not any(
+        b.callback_data.endswith(":restart")
+        for row in panel.message.reply_markup.inline_keyboard
+        for b in row
+    )

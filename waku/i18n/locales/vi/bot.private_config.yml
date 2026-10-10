@@ -10,15 +10,8 @@ bot:
     providers_summary: "│\n┟ <b>Tổng số</b> → {count}\n┖ <b>Default</b> → {default}"
     provider_title: "⌬ <b>Nhà cung cấp: {name}</b>"
     entry_summary: "⌬ <b>Biến cấu hình</b>\n│\n┟ <b>Key</b> → <code>{key}</code>\n┠ <b>Kiểu</b> → <code>{type}</code>\n┖ <b>Giá trị</b> → <pre>{value}</pre>"
-    summary: 'File đang sửa: <code>{file}</code>
-
-      Múi giờ: {timezone}
-
-      Model đang chạy: <code>{model}</code>
-
-      Đã lưu trong phiên: {count} mục. Thay đổi có hiệu lực đầy đủ sau khi khởi động lại.
-
-      Biến môi trường vẫn được ưu tiên khi khởi động lại.'
+    summary: 'File: <code>{file}</code> · Đã sửa: {count} mục. Lưu để áp dụng và đóng menu.'
+    restart_pending: '{count} cài đặt đã lưu đang chờ khởi động lại.'
     denied: Chỉ chủ bot hoặc quản trị viên toàn cục được dùng cấu hình riêng tư.
     expired: Menu đã hết hạn hoặc không thuộc về bạn. Mở lại /config.
     back: ↩️
@@ -30,7 +23,16 @@ bot:
     add_provider: ➕ Thêm provider
     delete_provider: 🗑 Xoá provider
     restart: 🔄 Khởi động lại để áp dụng
-    saved: Đã lưu an toàn vào file cấu hình. Khởi động lại để áp dụng đầy đủ.
+    save: 💾 Lưu
+    discard: ✖️ Huỷ bản nháp
+    reload: ↻ Đọc lại
+    staged: Đã sửa bản nháp. Bấm Lưu để áp dụng.
+    saved: 'Đã lưu và áp dụng các cài đặt có thể đổi ngay. Menu tự xóa sau 5 giây.'
+    saved_restart: 'Đã lưu. Có {count} cài đặt cần khởi động lại. Mở /config và bấm Khởi động lại để áp dụng. Menu tự xóa sau 5 giây.'
+    discord_stopped: Đã tắt Discord ngay. Telegram vẫn hoạt động.
+    discord_starting: Đã bật Discord; bot đang kết nối.
+    discord_failed: Đã lưu cấu hình nhưng Discord chưa kết nối được. Kiểm tra token và cấu hình AI.
+    environment_override: Một số mục vẫn dùng giá trị biến môi trường; giá trị mới đã được lưu vào file.
     business_saved: Đã lưu và áp dụng công tắc Telegram Business ngay.
     business_requires_agent: Đã bật Business, nhưng cần bật agent và cấu hình agent_model để chat.
     send_value: 'Gửi giá trị mới cho <code>{key}</code> trong 2 phút. Prompt/chuỗi: gửi nguyên văn; danh sách/object:
@@ -40,13 +42,13 @@ bot:
       để huỷ.'
     confirm_delete: Xác nhận xoá provider <code>{name}</code>? Provider đang được model tham chiếu sẽ không được
       xoá.
-    confirm_restart: Khởi động lại để áp dụng settings và tạo lại model/client. Bot sẽ thoát sau khi xác nhận; Docker/systemd
-      cần có chính sách tự khởi động lại. Nếu chạy Python trực tiếp, bạn phải chạy lại bot. Tiếp tục?
-    restarting: Đã kiểm tra cấu hình. Bot đang khởi động lại; nếu chạy trực tiếp bằng Python, hãy chạy lại bot.
+    confirm_restart: 'Khởi động lại để áp dụng cài đặt đã lưu? Bot sẽ tự chạy lại sau khi đóng các kết nối hiện tại.'
+    restarting: 'Bot đang khởi động lại và sẽ tự kết nối lại.'
     cancelled: Đã huỷ sửa giá trị.
     groups:
       base: Cơ bản và vận hành
       agent: AI, model và prompt
+      discord: Discord
       webapp: Mini App và HTTP
       rss: RSS và nội dung liên kết
       services: Dịch vụ và kết nối
@@ -58,7 +60,11 @@ bot:
       missing_file: Không tìm thấy file settings đang được bot sử dụng.
       invalid_file: Không đọc được file hoặc TOML không hợp lệ. Kiểm tra file trên máy.
       invalid_value: Giá trị không hợp lệ với kiểu dữ liệu/cấu hình của base hiện tại. Mở lại mục để thử.
-      stale_file: File đã thay đổi sau khi mở mục này. Mở lại mục rồi sửa để tránh ghi đè.
+      stale_file: 'File đã thay đổi. Mở lại /config để lấy cấu hình mới rồi chỉnh sửa; chưa ghi đè file.'
+      save_first: 'Bấm Lưu trước khi khởi động lại, hoặc mở lại /config để bỏ bản nháp.'
+      invalid_environment: Biến môi trường không hợp lệ với cấu hình mới. Kiểm tra trên máy; chưa lưu thay đổi.
+      runtime_prepare_failed: Không tạo được model hoặc dịch vụ cho cấu hình mới. Kiểm tra provider trên máy; chưa lưu thay đổi.
+      permission_changed: Quyền quản trị của bạn đã thay đổi. Bản nháp chưa được lưu.
       write_failed: Không ghi được file cấu hình. File gốc được giữ nguyên.
       invalid_name: Tên provider không hợp lệ. Dùng 1–48 ký tự chữ, số, - hoặc _.
       provider_exists: Provider này đã tồn tại.

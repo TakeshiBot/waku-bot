@@ -162,13 +162,13 @@ $
         qp = 1.0
     elif qp < 0:
         qp = -1.0
-    chat_config.quote_probability = qp
-    await database.update_chat_config(chat=chat, config=chat_config)
-    await message.reply_text(
-        i18n.t(
-            "bot.msg.group_config_saved",
-            locale=chat_config.lang,
-        )
+    from waku.plugins.preference_save import preview_preference
+
+    await preview_preference(
+        message,
+        {"quote_probability": qp},
+        f"/qp: {qp}",
+        chat_config.lang,
     )
 
 

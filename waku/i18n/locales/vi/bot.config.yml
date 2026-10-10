@@ -1,0 +1,16 @@
+bot:
+  config:
+    image_safe: '✔️ Ảnh: An toàn'
+    image_r18: '✔️ Ảnh: R18'
+    image_mixed: '✔️ Ảnh: Cả hai'
+    image_off: '❌ Ảnh: Tắt'
+    moderation: AI quản lý nhóm
+    save: 💾 Lưu
+    cancel: ✖️ Huỷ
+    reload: ↻ Đọc lại
+    draft: 'Thay đổi chỉ áp dụng khi bấm Lưu. Lưu sẽ đóng menu; mở lại /config để bỏ bản nháp.'
+    saved: 'Đã lưu và áp dụng cấu hình nhóm. Menu tự xóa sau 5 giây.'
+    cancelled: Đã huỷ bản nháp cấu hình nhóm.
+    expired: Menu đã hết hạn, đã thay đổi hoặc không thuộc về bạn. Mở lại /config.
+    conflict: 'Cấu hình đã được người khác sửa. Mở lại /config để lấy cấu hình mới.'
+    moderation_denied: Cần là chủ nhóm hoặc quản trị viên hiện tại có quyền sửa thông tin và hạn chế thành viên để đổi AI quản trị hoặc xác minh thành viên.

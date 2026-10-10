@@ -161,6 +161,9 @@ class ContextDeps:
     # Successful text deliveries in this run, shared by tools and the runner.
     # Never carried into conversation history: the next user turn may repeat text.
     sent_texts: set[str] = field(default_factory=set)
+    # Turn-local moderation receipts prevent repeating successful mutations.
+    side_effects_started: bool = False
+    moderation_results: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

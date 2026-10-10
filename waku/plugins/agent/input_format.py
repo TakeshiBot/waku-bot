@@ -15,7 +15,7 @@ import pyrogram
 from pydantic_ai import BinaryContent, UserContent
 
 from waku import enums
-from waku.common.rich_message import message_plain_text
+from waku.common.rich_message import message_plain_text, rich_media_messages
 from waku.common.utils import is_explicit_reply
 from waku.config import app_config
 from waku.logger import logger
@@ -219,7 +219,7 @@ class Budget:
     """Allocated image numbering over the assembled messages.
 
     numbered maps message id -> image_number (globally monotonic across the
-    conversation: 1 is the oldest image the conversation ever delivered);
+    conversation: 1 is the first image the conversation delivered);
     binaries holds the downloads in the same order, so the N-th binary
     corresponds to the N-th fresh image. Messages whose media was already
     delivered (this turn or in an earlier turn) carry a referenced_image_number
@@ -238,6 +238,7 @@ async def allocate_budget(
     current_message_id: int | None,
     initial_seen: dict[str, int] | None = None,
     start_number: int = 1,
+    limit: int | None = None,
 ) -> Budget:
     """Pick which media messages get their image delivered: newest-first
     selection, deduped by file_unique_id, numbered chronologically. Later
@@ -249,7 +250,7 @@ async def allocate_budget(
     ``start_number`` (the conversation's next free number), so references
     (older numbers) can never collide with them.
     """
-    limit = _effective_budget()
+    limit = _effective_budget() if limit is None else max(0, limit)
     result = Budget()
     if not media_messages:
         return result
@@ -363,6 +364,86 @@ async def _download(
         return BinaryContent(data=data.getvalue(), media_type="image/webp")
     media_type = getattr(payload, "mime_type", None) or "application/octet-stream"
     return BinaryContent(data=data.getvalue(), media_type=media_type)
+
+
+async def rich_media_contents(
+    client: pyrogram.client.Client,
+    messages: list[pyrogram.types.Message],
+    *,
+    initial_seen: dict[str, int] | None = None,
+    start_number: int = 1,
+    limit: int | None = None,
+) -> tuple[list[str], list[BinaryContent], dict[str, int]]:
+    """Bounded rich attachments using the ordinary native media pipeline."""
+    available = min(50, _effective_budget() if limit is None else max(0, limit))
+    attachments = [
+        (source, index, media)
+        for source in sorted(messages, key=lambda item: item.id or 0)
+        for index, media in enumerate(rich_media_messages(source), 1)
+    ]
+    # Bound the whole prompt turn, including historical rich messages, rather
+    # than only each individual rich message's native 50-attachment limit.
+    attachments = attachments[-50:]
+    seen = dict(initial_seen or {})
+    next_number = max(start_number, max(seen.values(), default=0) + 1)
+    selected: set[tuple[int, int]] = set()
+    selected_unique: set[str] = set()
+    for source, index, media in reversed(attachments):
+        unique = file_unique_id_of(media)
+        if unique and (unique in seen or unique in selected_unique):
+            continue
+        payload = getattr(media, media.media.name.lower())
+        cap = _SIZE_CAPS.get(media.media, 10 * 1024 * 1024)
+        size = getattr(payload, "file_size", None)
+        if not is_deliverable(media) or (size is not None and size > cap):
+            continue
+        if len(selected) >= available:
+            continue
+        selected.add((source.id, index))
+        if unique:
+            selected_unique.add(unique)
+    lines: list[str] = []
+    binaries: list[BinaryContent] = []
+    metadata: dict[str, int] = {}
+    # Download selected winners first, then render duplicate references. This
+    # handles an older occurrence referring to a newer selected attachment.
+    fresh_numbers: dict[tuple[int, int], int] = {}
+    for source, index, media in attachments:
+        key = (source.id, index)
+        if key not in selected:
+            continue
+        data = await _download(client, media)
+        cap = _SIZE_CAPS.get(media.media, 10 * 1024 * 1024)
+        if data is None or len(data.data) > cap:
+            continue
+        number = next_number
+        next_number += 1
+        fresh_numbers[key] = number
+        binaries.append(data)
+        unique = file_unique_id_of(media)
+        if unique:
+            seen[unique] = number
+            metadata[unique] = number
+    # Fresh entries precede references so transcriptions line up with binaries.
+    attachments.sort(
+        key=lambda item: (
+            (item[0].id, item[1]) not in fresh_numbers,
+            item[0].id,
+            item[1],
+        )
+    )
+    for source, index, media in attachments:
+        key = (source.id, index)
+        unique = file_unique_id_of(media)
+        attrs = f"message_id={source.id} block={index} media_type={_quote(media_type_name(media.media))} "
+        if key in fresh_numbers:
+            attrs += f"image_number={fresh_numbers[key]} "
+        elif unique and unique in seen:
+            attrs += f"referenced_media={seen[unique]} "
+        else:
+            attrs += f"unprocessed={_quote(tr('unavailable_content'))} "
+        lines.append(f"    - <rich_media {attrs}>")
+    return lines, binaries, metadata
 
 
 def _service_text(message: pyrogram.types.Message) -> str:
@@ -650,15 +731,53 @@ async def build_group_prompt(
         for m in (*history, reply_msg, message)
         if m is not None and m.media and keep_media(m)
     ]
+    (
+        current_rich_lines,
+        current_rich_binaries,
+        current_rich_meta,
+    ) = await rich_media_contents(
+        client,
+        [message],
+        initial_seen=initial_seen,
+        start_number=coverage.next_number if coverage else 1,
+    )
+    known_media = {**(initial_seen or {}), **current_rich_meta}
     budget = await allocate_budget(
         client,
         media_messages,
         message.id,
-        initial_seen=initial_seen,
-        start_number=coverage.next_number if coverage else 1,
+        initial_seen=known_media,
+        start_number=max(
+            coverage.next_number if coverage else 1,
+            max(known_media.values(), default=0) + 1,
+        ),
+        limit=max(0, _effective_budget() - len(current_rich_binaries)),
+    )
+    ordinary_meta = _budget_media_meta(media_messages, budget)
+    rich_lines, rich_binaries, rich_meta = await rich_media_contents(
+        client,
+        [m for m in (*history, reply_msg) if m is not None and keep_media(m)],
+        initial_seen={**known_media, **ordinary_meta},
+        start_number=max(
+            budget.numbered.values(),
+            default=(coverage.next_number - 1 if coverage else 0),
+        )
+        + 1,
+        limit=min(
+            50 - len(current_rich_binaries),
+            max(
+                0,
+                _effective_budget() - len(current_rich_binaries) - len(budget.binaries),
+            ),
+        ),
     )
 
     parts: list[str] = [_env_header(message, ctx)]
+    # Attachment descriptors follow binary delivery order; human message text
+    # below still follows history/current chronology. Transcription relies on
+    # the image_number occurrence order, not the numeric value alone.
+    if current_rich_lines:
+        parts.append("\n".join(current_rich_lines))
 
     if history:
         parts.append(tr("history_heading"))
@@ -699,10 +818,15 @@ async def build_group_prompt(
                 )
         current_lines.append(tr("reply_id", p0=reply_msg.id))
     parts.append("\n".join(current_lines))
+    if rich_lines:
+        parts.append("\n".join(rich_lines))
 
     markdown = "\n\n".join(parts)
-    meta = _budget_media_meta(media_messages, budget)
-    return [markdown, *budget.binaries], meta
+    return [markdown, *current_rich_binaries, *budget.binaries, *rich_binaries], {
+        **current_rich_meta,
+        **ordinary_meta,
+        **rich_meta,
+    }
 
 
 # An image_number= attribute (not referenced_media=): negative lookbehind so

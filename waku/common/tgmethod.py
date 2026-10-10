@@ -4,10 +4,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 import pyrogram
-from pyrogram.enums import ChatMemberStatus, ChatType
+from pyrogram.enums import ChatType
 from pyrogram.types import Chat, User
 
-from waku import database, enums
+from waku import database
 from waku.bot import client
 from waku.config import app_config
 from waku.database.models import ChatData, UserData
@@ -191,6 +191,9 @@ async def mention_html(chat: User | Chat | UserData | ChatData) -> str:
 async def can_user_manage_bot_in_chat(
     user: User | Chat | int, chat: Chat | int
 ) -> bool:
+    """Check explicit bot roles or current Telegram settings rights, without stale grants."""
+    from waku.common.telegram_authority import can_manage_bot_settings
+
     if isinstance(chat, Chat):
         if chat.type == ChatType.PRIVATE:
             raise ValueError("Chat must not be private")
@@ -198,33 +201,7 @@ async def can_user_manage_bot_in_chat(
     chat_id = chat.id if isinstance(chat, Chat) else chat
     if not user_id or not chat_id:
         raise ValueError("User ID and Chat ID must not be None")
-    if user_id == enums.ChatID.ANONYMOUS_ADMIN:
-        return True
-    db_user = await database.get_user_by_id(user_id)
-    if db_user is None:
-        raise ValueError("User not found")
-    if db_user.is_bot_global_admin:
-        return True
-    association = await database.get_association(user_id, chat_id)
-    if association is None:
-        return False
-    if association.is_bot_admin:
-        return True
-    if await memttlcache.get(f"can_manage_bot:{user_id}:{chat_id}", None):
-        return True
-    chat_member = await client.get_chat_member(chat_id, user_id)
-    if chat_member.status == ChatMemberStatus.OWNER:
-        association.is_bot_admin = True
-        await database.update_association(association)
-        return True
-    if chat_member.status == ChatMemberStatus.ADMINISTRATOR:
-        if (
-            chat_member.privileges is not None
-            and chat_member.privileges.can_promote_members
-        ):
-            await memttlcache.set(f"can_manage_bot:{user_id}:{chat_id}", True, ttl=3600)
-            return True
-    return False
+    return await can_manage_bot_settings(client, user_id, chat_id)
 
 
 def get_message_origin(

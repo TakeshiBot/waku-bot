@@ -144,14 +144,11 @@ async def init_bot(client: Client = client):
             i18n.t("bot.cmd.start", locale=app_config.lang),
         ),
         BotCommand("help", i18n.t("bot.cmd.help", locale=app_config.lang)),
-        BotCommand("setu", i18n.t("bot.cmd.setu", locale=app_config.lang)),
+        BotCommand("seg", i18n.t("bot.cmd.seg", locale=app_config.lang)),
         BotCommand(
-            "throwbottle", i18n.t("bot.cmd.throwbottle", locale=app_config.lang)
+            "nemchai", i18n.t("bot.cmd.nemchai", locale=app_config.lang)
         ),
-        BotCommand("pickbottle", i18n.t("bot.cmd.pickbottle", locale=app_config.lang)),
-        BotCommand("id", i18n.t("bot.cmd.id", locale=app_config.lang)),
-        BotCommand("f5avatar", i18n.t("bot.cmd.f5avatar", locale=app_config.lang)),
-        BotCommand("rss", i18n.t("bot.cmd.rss", locale=app_config.lang)),
+        BotCommand("nhatchai", i18n.t("bot.cmd.nhatchai", locale=app_config.lang)),
     ]
     if app_config.agent:
         common_commands.append(
@@ -166,8 +163,8 @@ async def init_bot(client: Client = client):
         BotCommand("d", i18n.t("bot.cmd.d", locale=app_config.lang)),
         BotCommand("qrand", i18n.t("bot.cmd.qrand", locale=app_config.lang)),
         BotCommand("qp", i18n.t("bot.cmd.qp", locale=app_config.lang)),
-        BotCommand("t", i18n.t("bot.cmd.t", locale=app_config.lang)),
-        BotCommand("td", i18n.t("bot.cmd.td", locale=app_config.lang)),
+        BotCommand("tag", i18n.t("bot.cmd.tag", locale=app_config.lang)),
+        BotCommand("xtag", i18n.t("bot.cmd.xtag", locale=app_config.lang)),
         BotCommand("wordcloud", i18n.t("bot.cmd.wordcloud", locale=app_config.lang)),
     ]
     group_admin_commands = [
@@ -175,8 +172,6 @@ async def init_bot(client: Client = client):
         BotCommand(
             "syncmembers", i18n.t("bot.cmd.syncmembers", locale=app_config.lang)
         ),
-        BotCommand("botpromote", i18n.t("bot.cmd.botpromote", locale=app_config.lang)),
-        BotCommand("botdemote", i18n.t("bot.cmd.botdemote", locale=app_config.lang)),
         BotCommand("config", i18n.t("bot.cmd.config", locale=app_config.lang)),
         BotCommand("greet", i18n.t("bot.cmd.greet", locale=app_config.lang)),
     ]
@@ -191,9 +186,8 @@ async def init_bot(client: Client = client):
         BotCommand("gift", i18n.t("bot.cmd.gift", locale=app_config.lang)),
     ]
     owner_commands = [
-        BotCommand(
-            "randmyavatar", i18n.t("bot.cmd.randmyavatar", locale=app_config.lang)
-        ),
+        BotCommand("botpromote", i18n.t("bot.cmd.botpromote", locale=app_config.lang)),
+        BotCommand("botdemote", i18n.t("bot.cmd.botdemote", locale=app_config.lang)),
         BotCommand("reload", i18n.t("bot.cmd.reload", locale=app_config.lang)),
         BotCommand("config", i18n.t("bot.cmd.config", locale=app_config.lang)),
         BotCommand(
@@ -416,4 +410,9 @@ if __name__ == "__main__":
     app_config.workdir.mkdir(parents=True, exist_ok=True)
     if app_config.automigrate:
         db.migrate_db()
-    client.loop.run_until_complete(main())
+    from waku.services.process_restart import replace_process_if_requested
+
+    try:
+        client.loop.run_until_complete(main())
+    finally:
+        replace_process_if_requested()

@@ -1,213 +1,276 @@
+"""Group configuration drafts bound to the requesting administrator."""
+
+import asyncio
+import copy
+import secrets
+import time
+from dataclasses import dataclass, field
+
 import pyrogram
 from pyrogram.client import Client
+from pyrogram.errors import MessageNotModified
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from waku import common, database
+from waku import database
+from waku.common.telegram_authority import (
+    can_manage_bot_settings,
+    can_manage_group_settings,
+)
+from waku.common.utils import GROUP_CHAT_TYPES
 from waku.database.models import ChatConfig
 from waku.i18n import i18n
+from waku.plugins.menu_cleanup import schedule_saved_menu_cleanup
 from waku.plugins.panel import chat_panel_button
+from waku.services.telegram_images import normalize_image_mode
+
+_FIELDS = (
+    ("waifu", "waifu_enabled"),
+    ("delete_events", "delete_events_enabled"),
+    ("quote_pin_message", "quote_pin_message"),
+    ("ai_reply", "ai_reply"),
+    ("ai_comment", "ai_comment"),
+    ("group_memory_enabled", "group_memory_enabled"),
+    ("setu_enabled", "setu_enabled"),
+    ("unpin_channel_pin_enabled", "unpin_channel_pin_enabled"),
+    ("convert_b23_enabled", "convert_b23_enabled"),
+    ("parse_artwork_enabled", "parse_artwork_enabled"),
+    ("pick_bottle_enabled", "pick_bottle_enabled"),
+    ("ai_reply_other_bots_enabled", "ai_reply_other_bots_enabled"),
+    ("verify", "verify_enabled"),
+    ("moderation", "agent_moderation_enabled"),
+)
+_TTL = 15 * 60
+_SESSIONS = {}
+
+
+@dataclass
+class GroupConfigSession:
+    user_id: int
+    chat_id: int
+    message_id: int
+    baseline: ChatConfig
+    draft: ChatConfig
+    expires: float = field(default_factory=lambda: time.monotonic() + _TTL)
+    revision: int = 0
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    command_message_id: int | None = None
+
+    def changes(self):
+        return {
+            name: getattr(self.draft, name)
+            for name in [*(name for _, name in _FIELDS), "telegram_r18_mode"]
+            if getattr(self.draft, name) != getattr(self.baseline, name)
+        }
+
+
+def _tr(key, locale):
+    return i18n.t("bot.config." + key, locale=locale)
+
+
+def _prune():
+    for token, session in list(_SESSIONS.items()):
+        if session.expires <= time.monotonic():
+            _SESSIONS.pop(token, None)
+    while len(_SESSIONS) >= 100:
+        _SESSIONS.pop(next(iter(_SESSIONS)))
 
 
 class ChatConfigMarkup:
-    def __init__(
-        self,
-        chat_config: ChatConfig,
-        lang: str = "",
-        chat_id: int | None = None,
-    ):
-        self.chat_config = chat_config
-        self.lang = lang
-        self.chat_id = chat_id
+    def __init__(self, chat_config, lang="", chat_id=None, token="", revision=0):
+        self.chat_config, self.lang, self.chat_id = chat_config, lang, chat_id
+        self.token, self.revision = token, revision
 
-    def get_status_emoji(self, boolean: bool):
-        if boolean:
-            return "✔️"
-        return "❌"
-
-    def get_callback_data(self, key: str):
-        return f"config_chat toggle {key}"
-
-    def build(self):
-        return InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton(
-                        f"{i18n.t('bot.button.chat_config.waifu', locale=self.lang)} {self.get_status_emoji(self.chat_config.waifu_enabled)}",
-                        callback_data=self.get_callback_data("waifu_enabled"),
-                    ),
-                    InlineKeyboardButton(
-                        f"{i18n.t('bot.button.chat_config.delete_events', locale=self.lang)} {self.get_status_emoji(self.chat_config.delete_events_enabled)}",
-                        callback_data=self.get_callback_data("delete_events_enabled"),
-                    ),
-                    InlineKeyboardButton(
-                        f"{i18n.t('bot.button.chat_config.quote_pin_message', locale=self.lang)} {self.get_status_emoji(self.chat_config.quote_pin_message)}",
-                        callback_data=self.get_callback_data("quote_pin_message"),
-                    ),
-                ],
-                [
-                    InlineKeyboardButton(
-                        f"{i18n.t('bot.button.chat_config.ai_reply', locale=self.lang)} {self.get_status_emoji(self.chat_config.ai_reply)}",
-                        callback_data=self.get_callback_data("ai_reply"),
-                    ),
-                    InlineKeyboardButton(
-                        f"{i18n.t('bot.button.chat_config.ai_comment', locale=self.lang)} {self.get_status_emoji(self.chat_config.ai_comment)}",
-                        callback_data=self.get_callback_data("ai_comment"),
-                    ),
-                    InlineKeyboardButton(
-                        f"{i18n.t('bot.button.chat_config.group_memory_enabled', locale=self.lang)} {self.get_status_emoji(self.chat_config.group_memory_enabled)}",
-                        callback_data=self.get_callback_data("group_memory_enabled"),
-                    ),
-                ],
-                [
-                    InlineKeyboardButton(
-                        f"{i18n.t('bot.button.chat_config.setu_enabled', locale=self.lang)} {self.get_status_emoji(self.chat_config.setu_enabled)}",
-                        callback_data=self.get_callback_data("setu_enabled"),
-                    ),
-                    InlineKeyboardButton(
-                        f"{i18n.t('bot.button.chat_config.unpin_channel_pin_enabled', locale=self.lang)} {self.get_status_emoji(self.chat_config.unpin_channel_pin_enabled)}",
-                        callback_data=self.get_callback_data(
-                            "unpin_channel_pin_enabled"
-                        ),
-                    ),
-                    InlineKeyboardButton(
-                        f"{i18n.t('bot.button.chat_config.convert_b23_enabled', locale=self.lang)} {self.get_status_emoji(self.chat_config.convert_b23_enabled)}",
-                        callback_data=self.get_callback_data("convert_b23_enabled"),
-                    ),
-                ],
-                [
-                    InlineKeyboardButton(
-                        f"{i18n.t('bot.button.chat_config.parse_artwork_enabled', locale=self.lang)} {self.get_status_emoji(self.chat_config.parse_artwork_enabled)}",
-                        callback_data=self.get_callback_data("parse_artwork_enabled"),
-                    ),
-                    InlineKeyboardButton(
-                        f"{i18n.t('bot.button.chat_config.pick_bottle_enabled', locale=self.lang)} {self.get_status_emoji(self.chat_config.pick_bottle_enabled)}",
-                        callback_data=self.get_callback_data("pick_bottle_enabled"),
-                    ),
-                ],
-                [
-                    InlineKeyboardButton(
-                        f"{i18n.t('bot.button.chat_config.ai_reply_other_bots_enabled', locale=self.lang)} {self.get_status_emoji(self.chat_config.ai_reply_other_bots_enabled)}",
-                        callback_data=self.get_callback_data(
-                            "ai_reply_other_bots_enabled"
-                        ),
-                    ),
-                ],
-                [
-                    InlineKeyboardButton(
-                        f"{i18n.t('bot.button.chat_config.verify', locale=self.lang)} {self.get_status_emoji(self.chat_config.verify_enabled)}",
-                        callback_data=self.get_callback_data("verify_enabled"),
-                    ),
-                ],
-                [
-                    InlineKeyboardButton(
-                        i18n.t("bot.button.chat_config.save", locale=self.lang),
-                        callback_data="config_chat save",
-                    ),
-                ],
-            ]
-            + self._panel_row()
+    def _button(self, label, action):
+        return InlineKeyboardButton(
+            label, callback_data=f"config_chat:{self.token}:{self.revision}:{action}"
         )
 
-    def _panel_row(self) -> list[list[InlineKeyboardButton]]:
-        """A deep link to this chat's page in the Mini App panel.
+    def build(self):
+        buttons = []
+        for index, (label, name) in enumerate(_FIELDS):
+            if name == "setu_enabled":
+                mode = (
+                    ("image_safe", "image_r18", "image_mixed")[
+                        normalize_image_mode(self.chat_config.telegram_r18_mode)
+                    ]
+                    if self.chat_config.setu_enabled
+                    else "image_off"
+                )
+                buttons.append(self._button(_tr(mode, self.lang), f"toggle:{index}"))
+                continue
+            title = (
+                _tr("moderation", self.lang)
+                if label == "moderation"
+                else i18n.t("bot.button.chat_config." + label, locale=self.lang)
+            )
+            status = "✔️" if getattr(self.chat_config, name) else "❌"
+            buttons.append(self._button(f"{title} {status}", f"toggle:{index}"))
+        rows = [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
+        rows.append([self._button(_tr("save", self.lang), "save")])
+        if self.chat_id is not None:
+            button = chat_panel_button(self.chat_id, self.lang)
+            if button:
+                rows.append([button])
+        return InlineKeyboardMarkup(rows)
 
-        Built by `plugins.panel`, which owns the link format and is also what
-        /panel replies with, so the two entry points cannot drift apart.
-        """
-        if self.chat_id is None:
-            return []
-        button = chat_panel_button(self.chat_id, self.lang)
-        return [[button]] if button else []
+
+def _markup(token, session):
+    return ChatConfigMarkup(
+        session.draft, session.draft.lang, session.chat_id, token, session.revision
+    ).build()
 
 
 @Client.on_message(pyrogram.filters.command("config") & pyrogram.filters.group, group=0)
-async def config_chat_cmd(client: Client, message: pyrogram.types.Message):
-    user = message.sender_chat or message.from_user
-    chat = message.chat
+async def config_chat_cmd(client, message):
+    user, chat = message.from_user, message.chat
     if not user or not chat:
         return
-    if not await common.can_user_manage_bot_in_chat(user, chat):
-        chat_config = await database.get_chat_config(chat)
-        lang = chat_config.lang
-        await message.reply(
-            text=i18n.t("bot.msg.no_permission_group", locale=lang),
+    config = await database.get_chat_config(chat)
+    if not await can_manage_bot_settings(client, user.id, chat.id):
+        await message.reply_text(
+            i18n.t("bot.msg.no_permission_group", locale=config.lang)
         )
         return
-    chat_config = await database.get_chat_config(chat)
-    lang = chat_config.lang
-    await message.reply(
-        text=i18n.t("bot.msg.group_config", locale=lang),
-        reply_markup=ChatConfigMarkup(chat_config, lang, chat.id).build(),
+    _prune()
+    for token, session in list(_SESSIONS.items()):
+        if (session.user_id, session.chat_id) == (user.id, chat.id):
+            _SESSIONS.pop(token, None)
+    token = secrets.token_hex(5)
+    session = GroupConfigSession(
+        user.id, chat.id, 0, copy.deepcopy(config), copy.deepcopy(config)
     )
-
-
-@Client.on_callback_query(pyrogram.filters.regex("^config_chat"), group=0)
-async def config_chat(client: Client, callback_query: pyrogram.types.CallbackQuery):
-    message = callback_query.message
-    if not message or not message.chat:
-        return
-    chat = message.chat
-    user = callback_query.from_user
-    if not await common.can_user_manage_bot_in_chat(user, chat):
-        user_config = await database.get_user_config(user)
-        await callback_query.answer(
-            text=i18n.t("bot.msg.no_permission_group", locale=user_config.lang),
-            show_alert=True,
-            cache_time=10,
+    session.command_message_id = message.id
+    _SESSIONS[token] = session
+    try:
+        reply = await message.reply_text(
+            _tr("draft", config.lang), reply_markup=_markup(token, session)
         )
+        session.message_id = reply.id
+    except Exception:
+        _SESSIONS.pop(token, None)
+        raise
+
+
+@Client.on_callback_query(pyrogram.filters.regex(r"^config_chat"), group=0)
+async def config_chat(client, query):
+    _prune()
+    data = (
+        query.data.decode("utf-8", errors="replace")
+        if isinstance(query.data, bytes)
+        else str(query.data)
+    )
+    parts = data.split(":", 3)
+    session = (
+        _SESSIONS.get(parts[1]) if len(parts) == 4 and parts[2].isdigit() else None
+    )
+    message, user = query.message, query.from_user
+    if (
+        session is None
+        or message is None
+        or message.chat is None
+        or user is None
+        or message.chat.type not in GROUP_CHAT_TYPES
+        or (user.id, message.chat.id, message.id)
+        != (session.user_id, session.chat_id, session.message_id)
+    ):
+        await query.answer(_tr("expired", ""), show_alert=True)
         return
-    chat_config = await database.get_chat_config(chat)
-    lang = chat_config.lang
-    data = str(callback_query.data).split(" ")
-    if data[1] == "toggle":
-        match data[2]:
-            case "waifu_enabled":
-                chat_config.waifu_enabled = not chat_config.waifu_enabled
-            case "delete_events_enabled":
-                chat_config.delete_events_enabled = (
-                    not chat_config.delete_events_enabled
-                )
-            case "unpin_channel_pin_enabled":
-                chat_config.unpin_channel_pin_enabled = (
-                    not chat_config.unpin_channel_pin_enabled
-                )
-            case "quote_pin_message":
-                chat_config.quote_pin_message = not chat_config.quote_pin_message
-            case "ai_reply":
-                chat_config.ai_reply = not chat_config.ai_reply
-            case "setu_enabled":
-                chat_config.setu_enabled = not chat_config.setu_enabled
-            case "convert_b23_enabled":
-                chat_config.convert_b23_enabled = not chat_config.convert_b23_enabled
-            case "parse_artwork_enabled":
-                chat_config.parse_artwork_enabled = (
-                    not chat_config.parse_artwork_enabled
-                )
-            case "pick_bottle_enabled":
-                chat_config.pick_bottle_enabled = not chat_config.pick_bottle_enabled
-            case "ai_comment":
-                chat_config.ai_comment = not chat_config.ai_comment
-            case "group_memory_enabled":
-                chat_config.group_memory_enabled = not chat_config.group_memory_enabled
-            case "ai_reply_other_bots_enabled":
-                chat_config.ai_reply_other_bots_enabled = (
-                    not chat_config.ai_reply_other_bots_enabled
-                )
-            case "verify_enabled":
-                chat_config.verify_enabled = not chat_config.verify_enabled
-            case _:
-                await callback_query.answer(
-                    text=i18n.t("bot.msg.unknown_operation", locale=lang),
-                )
+    token, revision, action = parts[1:]
+    async with session.lock:
+        locale = session.draft.lang
+        if _SESSIONS.get(token) is not session or session.expires <= time.monotonic():
+            await query.answer(_tr("expired", locale), show_alert=True)
+            return
+        if int(revision) != session.revision:
+            await query.answer(_tr("expired", locale), show_alert=True)
+            return
+        if not await can_manage_bot_settings(client, user.id, session.chat_id):
+            _SESSIONS.pop(token, None)
+            await query.answer(
+                i18n.t("bot.msg.no_permission_group", locale=locale), show_alert=True
+            )
+            return
+        previous = copy.deepcopy(session.draft)
+        previous_baseline = copy.deepcopy(session.baseline)
+        session.expires = time.monotonic() + _TTL
+        if action == "cancel":
+            _SESSIONS.pop(token, None)
+            await query.answer()
+            await query.edit_message_text(_tr("cancelled", locale), reply_markup=None)
+            return
+        if action == "reload":
+            config = await database.get_chat_config(message.chat)
+            session.baseline = copy.deepcopy(config)
+            session.draft = copy.deepcopy(config)
+        elif action == "save":
+            changes = session.changes()
+            if changes.keys() & {
+                "agent_moderation_enabled",
+                "verify_enabled",
+            } and not await can_manage_group_settings(
+                client, user.id, session.chat_id, require_restrict_members=True
+            ):
+                await query.answer(_tr("moderation_denied", locale), show_alert=True)
                 return
-        chat_config = await database.update_chat_config(chat, chat_config)
-        await callback_query.edit_message_reply_markup(
-            ChatConfigMarkup(chat_config, lang, chat.id).build()
-        )
-        return
-    if data[1] == "save":
-        await callback_query.edit_message_text(
-            text=i18n.t("bot.msg.group_config_saved", locale=lang),
-            reply_markup=None,  # type: ignore
-        )
-        return
+            try:
+                if changes:
+                    await database.update_chat_config_fields(
+                        message.chat,
+                        changes,
+                        expected_fields={
+                            name: getattr(session.baseline, name) for name in changes
+                        },
+                    )
+            except ValueError as exc:
+                if str(exc) != "config_conflict":
+                    raise
+                await query.answer(_tr("conflict", locale), show_alert=True)
+                return
+            _SESSIONS.pop(token, None)
+            try:
+                await query.answer()
+                await query.edit_message_text(_tr("saved", locale), reply_markup=None)
+            finally:
+                schedule_saved_menu_cleanup(client, message, session.command_message_id)
+            return
+        elif action.startswith("toggle:"):
+            try:
+                index = int(action.split(":")[1])
+                if not 0 <= index < len(_FIELDS):
+                    raise ValueError
+                name = _FIELDS[index][1]
+            except (ValueError, IndexError):
+                await query.answer(_tr("expired", locale), show_alert=True)
+                return
+            if name in {
+                "agent_moderation_enabled",
+                "verify_enabled",
+            } and not await can_manage_group_settings(
+                client, user.id, session.chat_id, require_restrict_members=True
+            ):
+                await query.answer(_tr("moderation_denied", locale), show_alert=True)
+                return
+            if name == "setu_enabled":
+                index = (
+                    normalize_image_mode(session.draft.telegram_r18_mode) + 1
+                    if session.draft.setu_enabled
+                    else 0
+                )
+                index = (index + 1) % 4
+                session.draft.setu_enabled = index != 0
+                session.draft.telegram_r18_mode = max(0, index - 1)
+            else:
+                setattr(session.draft, name, not getattr(session.draft, name))
+        else:
+            await query.answer(_tr("expired", locale), show_alert=True)
+            return
+        session.revision += 1
+        await query.answer()
+        try:
+            await query.edit_message_reply_markup(_markup(token, session))
+        except MessageNotModified:
+            pass
+        except Exception:
+            session.draft, session.baseline = previous, previous_baseline
+            session.revision -= 1
+            raise

@@ -1,82 +1,74 @@
+"""Grant/revoke bot-wide administrator access by numeric Telegram ID in DM."""
+
+import asyncio
+
 import pyrogram
 from pyrogram.client import Client
 
-from waku import common, database, i18n
-from waku.common import ops
-from waku.common.utils import is_explicit_reply
+from waku import database, i18n
+from waku.common.ops import RESERVED_USER_IDS
 from waku.config import app_config
 
-_RESULT_MESSAGE_KEYS = {
-    ops.BotAdminResult.INVALID_TARGET: "bot.msg.botadmin.invalid_user",
-    ops.BotAdminResult.TARGET_IS_UPSTREAM: "bot.msg.botadmin.target_is_upstream",
-    ops.BotAdminResult.USER_NOT_FOUND: "bot.msg.botadmin.user_not_found",
-    ops.BotAdminResult.USER_IS_BOT: "bot.msg.botadmin.user_is_bot",
-    ops.BotAdminResult.USER_NOT_IN_CHAT: "bot.msg.botadmin.user_not_in_chat",
-    ops.BotAdminResult.ALREADY_SET: "bot.msg.botadmin.already_set",
-}
+_ROLE_LOCK = asyncio.Lock()
 
 
 @Client.on_message(
-    (pyrogram.filters.command("botpromote") | pyrogram.filters.command("botdemote"))
-    & pyrogram.filters.group,
+    pyrogram.filters.command(["botpromote", "botdemote"]) & pyrogram.filters.private,
     group=0,
 )
-async def set_user_bot_admin_in_chat(client: Client, message: pyrogram.types.Message):
-    user = message.sender_chat or message.from_user
-    chat = message.chat
-    if not chat or chat.id is None or not user or user.id is None:
+async def set_user_bot_admin(client: Client, message: pyrogram.types.Message):
+    actor, chat = message.from_user, message.chat
+    if (
+        not actor
+        or actor.is_bot
+        or not chat
+        or chat.type != pyrogram.enums.ChatType.PRIVATE
+        or chat.id != actor.id
+        or getattr(message, "business_connection_id", None)
+    ):
         return
-    chat_config = await database.get_chat_config(chat)
-    if not await common.can_user_manage_bot_in_chat(user, chat):
-        await message.reply(
-            i18n.t("bot.msg.no_permission_group", locale=chat_config.lang)
-        )
-        return
-    if not message.command:
-        return
-    try:
-        reply_target = message.reply_to_message if is_explicit_reply(message) else None
-        target_user_id = (
-            (reply_target.sender_chat or reply_target.from_user).id  # type: ignore
-            if reply_target
-            else int(message.command[1])
-            if (len(message.command) > 1 and message.command[1].isdigit())
-            else None
-        )
-    except (ValueError, IndexError):
-        await message.reply(
-            i18n.t("bot.msg.botadmin.invalid_user", locale=chat_config.lang)
-        )
-        return
-    if not target_user_id:
-        await message.reply(
-            i18n.t("bot.msg.botadmin.invalid_user", locale=chat_config.lang)
-        )
-        return
+    async with _ROLE_LOCK:
+        # Recheck within the lock: a queued command cannot retain a revoked role.
+        current_actor = await database.get_user_by_id(actor.id)
+        if actor.id not in app_config.owners and not (
+            current_actor
+            and current_actor.is_bot_global_admin
+            and not getattr(current_actor, "is_blocked", False)
+        ):
+            return
+        lang = (await database.get_user_config(actor.id)).lang
 
-    demote = message.command[0] == "botdemote"
-    db_actor = await database.get_user_by_id(user.id)
-    actor_is_privileged = user.id in app_config.owners or bool(
-        db_actor and db_actor.is_bot_global_admin
-    )
+        async def reply(key, **values):
+            await message.reply_text(
+                i18n.t("bot.botadmin_private." + key, locale=lang).format(**values)
+            )
 
-    result = await ops.set_bot_admin(
-        chat_id=chat.id,
-        actor_id=user.id,
-        target_id=target_user_id,
-        promote=not demote,
-        actor_is_privileged=actor_is_privileged,
-    )
-    if result is not ops.BotAdminResult.OK:
-        await message.reply(
-            i18n.t(_RESULT_MESSAGE_KEYS[result], locale=chat_config.lang)
-        )
-        return
-
-    target = await database.get_user_by_id(target_user_id)
-    await message.reply(
-        i18n.t("bot.msg.botadmin.success", locale=chat_config.lang).format(
-            user=target.full_name if target else target_user_id,
-            status=not demote,
-        )
-    )
+        args = message.command or []
+        if (
+            len(args) != 2
+            or not args[1].isascii()
+            or not args[1].isdigit()
+            or len(args[1]) > 19
+        ):
+            await reply("usage")
+            return
+        target_id = int(args[1])
+        if not 0 < target_id < 2**63 or target_id in RESERVED_USER_IDS:
+            await reply("invalid")
+            return
+        if target_id == actor.id or target_id in app_config.owners:
+            await reply("protected")
+            return
+        target = await database.get_user_by_id(target_id)
+        if target is None:
+            await reply("unregistered")
+            return
+        if target.is_bot:
+            await reply("bot")
+            return
+        promote = args[0].split("@", 1)[0].lower() == "botpromote"
+        if target.is_bot_global_admin == promote:
+            await reply("already")
+            return
+        await database.set_user_global_admin(target_id, promote)
+        await reply("promoted" if promote else "demoted", id=target_id)

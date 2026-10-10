@@ -330,7 +330,7 @@ bot:
     title:
       set_self: Được rồi, danh hiệu của bạn giờ là {title}.
       set_other: '{user} đã đặt danh hiệu {title} cho {target}!'
-      set_permissions: Nhấn nút để thay đổi quyền mà lệnh /t cấp cho thành viên.
+      set_permissions: 'Chọn mẫu quyền admin. Chỉ áp dụng khi yêu cầu AI bổ nhiệm theo /sett; bấm Lưu để cập nhật.'
       deleted: Đã xóa danh hiệu của bạn.
       errors:
         generic: Thao tác thất bại.
@@ -368,22 +368,20 @@ bot:
       /d - Xóa trích dẫn | Quản lý trích dẫn nhóm
       /qrand - Trích dẫn ngẫu nhiên
       /qp - Đặt xác suất tự gửi trích dẫn
-      /t - Nhận danh hiệu | Tặng danh hiệu
-      /td - Xóa danh hiệu của bạn
-      /sett - Thay đổi quyền mà lệnh /t cấp
-      /setu - Gửi ảnh gợi cảm (/ω＼*)
+      /tag - Đặt tag cho thành viên hoặc danh hiệu admin
+      /xtag - Xóa tag hoặc danh hiệu
+      /sett - Cấu hình mẫu quyền bổ nhiệm admin cho AI
+      /seg - Gửi ảnh gợi cảm (/ω＼*)
       /greet - Đặt lời chào thành viên mới
       /id - Xem ID cuộc trò chuyện
       /ip - Tra cứu IP hoặc tên miền
       /wordcloud - Tạo đám mây từ trong lịch sử trò chuyện
-      /botpromote - Bổ nhiệm quản trị viên của bot trong nhóm (có quyền tương đương chủ nhóm đối với bot)
-      /botdemote - Gỡ quyền quản trị viên của bot trong nhóm
       /syncmembers - Đồng bộ thành viên nhóm
       /f5avatar - Làm mới ảnh đại diện
       /forget - Xóa lịch sử trò chuyện với bot
       /quota - Xem hạn mức sử dụng AI
-      /throwbottle - Thả chai ra biển
-      /pickbottle - Nhặt chai trôi dạt
+      /nemchai - Thả chai ra biển
+      /nhatchai - Nhặt chai trôi dạt
       /buygift - Mua quà
       /gift - Tặng quà cho bot
       /rss - Quản lý đăng ký RSS
@@ -446,6 +444,7 @@ bot:
         model_http: Không thành công, hãy thử lại sau (HTTP {code}).
         too_fast: Nhanh quá! Hãy đợi một chút.
         interrupted: Phản hồi bị gián đoạn ({error}).
+        delivery_unverified: Không xác minh được việc gửi câu trả lời. Mình sẽ không gửi lại để tránh trùng tin nhắn.
       quota:
         calls_today: 'Sử dụng AI hôm nay: {used} lượt / {tokens} token'
         free_line: 'Hạn mức miễn phí: {used}/{limit} token'
@@ -667,14 +666,14 @@ bot:
     d: Xóa trích dẫn
     qrand: Trích dẫn ngẫu nhiên
     qp: Đặt xác suất tự gửi trích dẫn
-    t: Nhận danh hiệu | Tặng danh hiệu
-    td: Xóa danh hiệu của bạn
-    sett: Đặt quyền được cấp bởi lệnh /t
+    tag: Đặt tag cho thành viên hoặc danh hiệu admin
+    xtag: Xóa tag hoặc danh hiệu
+    sett: Cấu hình mẫu quyền bổ nhiệm admin cho AI
     id: Xem ID cuộc trò chuyện
     ip: Tra cứu IP hoặc tên miền
-    setu: Gửi ảnh gợi cảm
-    throwbottle: Thả chai ra biển
-    pickbottle: Nhặt chai trôi dạt
+    seg: Gửi ảnh gợi cảm
+    nemchai: Thả chai ra biển
+    nhatchai: Nhặt chai trôi dạt
     wordcloud: Tạo đám mây từ trong lịch sử trò chuyện
     config: Thay đổi cài đặt nhóm
     panel: Cấu hình nhóm trong bảng quản trị
@@ -685,8 +684,8 @@ bot:
     buygift: Mua quà
     gift: Tặng quà cho bot
     syncmembers: Đồng bộ thành viên nhóm
-    botpromote: Bổ nhiệm quản trị viên của bot
-    botdemote: Gỡ quyền quản trị viên của bot
+    botpromote: Cấp quyền quản trị toàn bot bằng ID (DM)
+    botdemote: Gỡ quyền quản trị toàn bot bằng ID (DM)
     help: Trợ giúp | Các tính năng khác
     randmyavatar: Đổi ảnh đại diện của bot ngay
     reload: Tải lại cấu hình

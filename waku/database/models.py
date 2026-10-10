@@ -61,7 +61,9 @@ class ChatConfig:
     ai_reply: bool = True
     ai_reply_other_bots_enabled: bool = False
     ai_comment: bool = False
+    agent_moderation_enabled: bool = False
     setu_enabled: bool = True
+    telegram_r18_mode: int = 0
     convert_b23_enabled: bool = True
     parse_links_enabled: bool = True
     parse_artwork_enabled: bool = True
@@ -110,12 +112,14 @@ class ChatConfig:
             ai_reply=data.get("ai_reply", True),
             ai_reply_other_bots_enabled=data.get("ai_reply_other_bots_enabled", False),
             setu_enabled=data.get("setu_enabled", True),
+            telegram_r18_mode=data.get("telegram_r18_mode", 0),
             convert_b23_enabled=data.get("convert_b23_enabled", False),
             parse_links_enabled=data.get("parse_links_enabled", True),
             parse_artwork_enabled=data.get("parse_artwork_enabled", True),
             parse_sites_enabled=data.get("parse_sites_enabled") or {},
             pick_bottle_enabled=data.get("pick_bottle_enabled", True),
             ai_comment=data.get("ai_comment", False),
+            agent_moderation_enabled=data.get("agent_moderation_enabled", False) is True,
             group_memory_enabled=data.get("group_memory_enabled", True),
             sticker_memory_enabled=data.get("sticker_memory_enabled", True),
             parse_wechat_enabled=data.get("parse_wechat_enabled", True),
@@ -147,6 +151,20 @@ class ChatConfig:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+class GroupModerationState(Base):
+    """Durable AI moderation state; user_id=0 stores group-wide snapshots."""
+
+    __tablename__ = "group_moderation_state"
+
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    state: Mapped[dict] = mapped_column(JSON, default=dict)
+    state_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class UserChatAssociation(Base):

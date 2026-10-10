@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Which admin rights the /t command grants.
+ * Administrator promotion preset shared with /sett; tags never grant rights.
  *
  * Its own page rather than a section of the config page, for two reasons: the API
  * stores it under a separate endpoint, and twelve more switches on an already long

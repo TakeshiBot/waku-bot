@@ -62,9 +62,12 @@ export const TOGGLES_WITH_HINTS: ReadonlySet<ChatToggleKey> = new Set<ChatToggle
   "sticker_memory_enabled",
 ]);
 
-/** The 12 /t permission keys, in the order they are rendered. */
+/** Group administrator rights used by the AI promotion preset in /sett. */
 export const TITLE_PERMISSION_KEYS = [
   "can_change_info",
+  "can_manage_chat",
+  "is_anonymous",
+  "can_send_welcome_messages",
   "can_delete_messages",
   "can_manage_tags",
   "can_pin_messages",

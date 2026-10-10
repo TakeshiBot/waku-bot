@@ -16,6 +16,7 @@ from pyrogram import filters
 from pyrogram.client import Client as PyrogramClient
 
 from waku import common, database, i18n
+from waku.common.rich_message import message_plain_text
 from waku.common.utils import GROUP_CHAT_TYPES
 from waku.config import app_config
 from waku.logger import logger
@@ -37,6 +38,7 @@ from . import (
 )
 from .history import compact_history
 from .model_log import ModelActivityLog
+from .moderation_prompt import group_moderation_instructions
 from .output import TypingKeepAlive
 from .prompt import build_ctx_info, get_input_prompt
 from .runner import (
@@ -47,6 +49,7 @@ from .runner import (
     set_chat_prompt_override,
 )
 from .simple_reply import word_reply
+from .tools import moderation
 from .whitelist import is_chat_allowed
 
 agent = None
@@ -104,7 +107,7 @@ async def _queue_interjection(
     - carries it. Falls back to the steering queue while a run is starting
     or winding down.
     """
-    text = (message.text or message.caption or "").strip()
+    text = message_plain_text(message).strip()
     if not text:
         return
     if state.enqueue_interjection(chat_id, user_id, text):
@@ -237,6 +240,14 @@ if app_config.agent and app_config.agent_model:
         model_settings=provider.make_model_settings(app_config.agent_model_options),
         output_type=[str, datatype.EndTurn, tools.ask_user],
         tools=[
+            *[
+                Tool(
+                    getattr(moderation, name),
+                    prepare=moderation.prepare_group_moderation,
+                    sequential=True,
+                )
+                for name in moderation.MODERATION_RIGHTS
+            ],
             Tool(
                 tools.image_ops,
                 prepare=tools.prepare_image_tools,
@@ -292,6 +303,9 @@ if app_config.agent and app_config.agent_model:
         capabilities=safety.build_agent_capabilities(history_processor),
         retries=5,
     )
+    logger.info(
+        "Telegram AI moderation tools registered: {}", len(moderation.MODERATION_RIGHTS)
+    )
 
     @agent.instructions
     async def _dynamic_instructions(ctx: RunContext[datatype.ContextDeps]) -> str:
@@ -299,6 +313,8 @@ if app_config.agent and app_config.agent_model:
             ctx.deps.instructions
             + "\n\n"
             + tr("output_language", locale=ctx.deps.locale or None)
+            + "\n\n"
+            + group_moderation_instructions(ctx.deps.locale or app_config.lang)
         )
 
     memory_agent = Agent(
