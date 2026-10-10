@@ -236,7 +236,12 @@ class SettingsEditor:
                     dir=self.path.parent, prefix=".settings-editor-", delete=False
                 ) as stream:
                     temp_path = Path(stream.name)
-                    os.chmod(temp_path, self.path.stat().st_mode & 0o777)
+                    original_stat = self.path.stat()
+                    os.chmod(temp_path, original_stat.st_mode & 0o777)
+                    # A root Docker process must not turn a host user's 0600
+                    # config into a root-owned file after an atomic replacement.
+                    if hasattr(os, "fchown") and os.geteuid() == 0:
+                        os.fchown(stream.fileno(), original_stat.st_uid, original_stat.st_gid)
                     stream.write(payload)
                     stream.flush()
                     os.fsync(stream.fileno())

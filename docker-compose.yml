@@ -1,29 +1,47 @@
+name: ${WAKU_PROJECT_NAME:-waku-bot}
+
 services:
   waku:
-    build: .
-    image: waku-bot:local
-    container_name: waku-bot
+    build:
+      context: .
+      args:
+        WAKU_VERSION: ${WAKU_VERSION:-local}
+        WAKU_COMMIT: ${WAKU_COMMIT:-unknown}
+    image: ${WAKU_IMAGE_NAME:-waku-bot:local}
     restart: unless-stopped
+    stop_signal: SIGINT
+    stop_grace_period: 60s
     # Cap the container's process count so a runaway agent shell (fork bomb)
     # is contained instead of exhausting the host. Requires tini as PID 1,
     # which the image entrypoint already provides.
     pids_limit: 256
-    # Health check and the Mini App panel share this port.
-    # Note: `network_mode: host` below makes this mapping a no-op - the container
-    # already uses the host's network stack, so the port is reachable directly.
-    # Keep it firewalled and let a TLS-terminating reverse proxy publish the panel.
-    ports:
-      - "8180:8180"
+    # Linux VPS: preserve host networking, including localhost DB/proxy access.
+    # Listen on loopback; publish the Mini App through an HTTPS reverse proxy.
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-      - ./settings.toml:/app/settings.toml
+      - ./.agentfs:/app/.agentfs
+      # Mount a directory so /config can atomically replace settings.toml.
+      # run.sh init migrates the root file and keeps a root symlink to it.
+      - type: bind
+        source: ./config
+        target: /app/config
+        bind:
+          create_host_path: false
     environment:
-      - TZ=Asia/Ho_Chi_Minh
+      TZ: Asia/Ho_Chi_Minh
+      WAKU_WEBAPP_HOST: ${WAKU_BIND_ADDRESS:-127.0.0.1}
+      WAKU_WEBAPP_PORT: ${WAKU_PORT:-8180}
+      WAKU_HEALTH_CHECK_ENABLED: "true"
     network_mode: host
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8180/health"]
-      interval: 30s
+      test: ["CMD-SHELL", "curl --fail --silent --show-error --max-time 5 http://127.0.0.1:$$WAKU_WEBAPP_PORT/ready >/dev/null"]
+      interval: 15s
       timeout: 10s
       retries: 3
       start_period: 60s  # Allow time for bot to start and connect

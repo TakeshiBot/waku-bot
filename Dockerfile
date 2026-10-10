@@ -31,14 +31,22 @@ RUN apt-get update && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # landrun: landlock sandbox for the agent shell (pinned version).
-RUN curl -fsSL -o /usr/local/bin/landrun \
-      https://github.com/Zouuup/landrun/releases/download/v0.1.17/landrun-linux-amd64 \
+RUN arch="$(dpkg --print-architecture)" && \
+    case "$arch" in amd64|arm64) ;; *) echo "Unsupported landrun architecture: $arch" >&2; exit 1 ;; esac && \
+    curl -fsSL -o /usr/local/bin/landrun \
+      "https://github.com/Zouuup/landrun/releases/download/v0.1.17/landrun-linux-${arch}" \
     && chmod +x /usr/local/bin/landrun
 
 COPY . .
 RUN .venv/bin/python -m compileall -q -j 0 waku
 # Where the FastAPI app looks for the bundle by default.
 COPY --from=webui /build/waku/webapp/dist /app/waku/webapp/dist
+
+ARG WAKU_VERSION=local
+ARG WAKU_COMMIT=unknown
+LABEL org.opencontainers.image.title="waku-bot" \
+      org.opencontainers.image.version="${WAKU_VERSION}" \
+      org.opencontainers.image.revision="${WAKU_COMMIT}"
 
 # Health check and Mini App panel share this port
 EXPOSE 8180

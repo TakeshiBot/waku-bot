@@ -1,6 +1,7 @@
 """Settings edits exercise real TOML and the new base schema, without bot IO."""
 
 import ast
+import os
 import tomllib
 from pathlib import Path
 from typing import Any, Literal
@@ -17,6 +18,49 @@ from waku.services.settings_editor import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() != 0,
+    reason="Requires a root process to simulate Docker's bind-mount ownership.",
+)
+def test_atomic_save_preserves_host_user_ownership(editor):
+    os.chown(editor.path, 12345, 12345)
+    editor.path.chmod(0o600)
+    editor.set_value("nickname", "after-docker-save", editor.snapshot()[1])
+    info = editor.path.stat()
+    assert (info.st_uid, info.st_gid, info.st_mode & 0o777) == (12345, 12345, 0o600)
+
+
+def test_config_root_symlink_survives_atomic_save(editor, monkeypatch):
+    root_link = editor.path
+    target = root_link.parent / "config" / "settings.toml"
+    target.parent.mkdir()
+    root_link.rename(target)
+    root_link.symlink_to("config/settings.toml")
+    tree = ast.parse((ROOT / "waku/config/__init__.py").read_text(encoding="utf-8"))
+    resolver = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_resolve_settings_files"
+    )
+    namespace = {
+        "Path": Path,
+        "__file__": str(root_link.parent / "waku/config/__init__.py"),
+    }
+    monkeypatch.chdir(root_link.parent)
+    exec(
+        compile(ast.Module(body=[resolver], type_ignores=[]), "resolver", "exec"),
+        namespace,
+    )
+    paths = namespace["_resolve_settings_files"]()
+    assert paths == [str(target.resolve())]
+    editor.path = Path(paths[0])
+    editor.paths = [editor.path]
+    editor.set_value("nickname", "new-name", editor.snapshot()[1])
+    assert root_link.is_symlink()
+    assert tomllib.loads(root_link.read_text())["nickname"] == "new-name"
+    assert "# Keep this comment" in target.read_text()
 
 
 @pytest.fixture

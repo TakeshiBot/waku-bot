@@ -28,7 +28,7 @@ hãy đọc lịch sử commit và sao lưu cấu hình, cơ sở dữ liệu, d
 Tạo cấu hình riêng từ [settings.ex.toml](settings.ex.toml):
 
 ```bash
-cp settings.ex.toml settings.toml
+bash run.sh init
 ```
 
 Điền `token` và `owners` trong `settings.toml`, rồi chạy từ thư mục dự án.
@@ -36,12 +36,15 @@ File cấu hình riêng và các file env được Git bỏ qua; chỉ đưa cá
 bỏ thông tin riêng lên repository.
 
 ```bash
-docker compose up -d --build
-docker compose logs -f waku
+bash run.sh deploy
+bash run.sh logs
 ```
 
-Docker Compose build image `waku-bot:local` từ source hiện tại. Hướng dẫn chạy trực
-tiếp bằng Python 3.13 và các điều kiện triển khai nằm trong tài liệu triển khai.
+`run.sh` có menu khi gọi bằng `bash run.sh`, hỗ trợ cập nhật bằng `bash run.sh update`,
+sao lưu, khởi động lại và thiết lập HTTPS cho Mini App. Docker build cả bot và frontend;
+VPS không cần cài Python hay Node riêng. `settings.toml` trỏ tới `config/settings.toml`
+để bot có thể lưu cấu hình trong Docker. Xem [hướng dẫn triển khai](docs/docs/self-host.md)
+cho các lệnh và điều kiện chạy trực tiếp bằng Python 3.13.
 
 Múi giờ mặc định là `Asia/Ho_Chi_Minh` (UTC+7). Ngôn ngữ mặc định là `vi`; dữ liệu
 ngôn ngữ đã lưu của người dùng và nhóm được giữ lại, có thể đổi bằng `/lang`.

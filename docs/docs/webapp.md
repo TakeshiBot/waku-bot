@@ -39,12 +39,15 @@ webapp_short_name = "panel"
 ## Khởi động
 
 ```bash
-docker compose up -d --build
-docker compose logs -f waku
+bash run.sh init
+bash run.sh deploy
+bash run.sh logs
 ```
 
 API và health check dùng chung cổng `8180`. Cấu hình reverse proxy cung cấp
 HTTPS cho tên miền của bảng quản trị và chuyển yêu cầu đến cổng này.
+Trên VPS dùng Nginx/Certbot, `bash run.sh miniapp panel.example.com` có thể thiết lập
+HTTPS và lưu cấu hình Mini App; xem [hướng dẫn triển khai](self-host.md).
 
 ## Các tùy chọn cấu hình
 

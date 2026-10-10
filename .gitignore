@@ -85,6 +85,12 @@ pnpm-debug.log*
 /site/
 /docs/site/
 
+# VPS deployment settings and private backups managed by run.sh.
+/config/
+/.backups/
+/.run.lock
+/.dev-notes-nginx-*
+
 # Local assistant state and working notes, including private config backups.
 .agentfs/
 .dev-notes/

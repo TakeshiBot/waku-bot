@@ -35,6 +35,11 @@ dist/
 **/.agentfs/
 .dev-notes/
 **/.dev-notes/
+config/
+.backups/
+.run.lock
+.dev-notes-nginx-*
+run.sh
 .settings-editor-*
 .secret*
 **/.secret*

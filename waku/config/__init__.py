@@ -581,7 +581,9 @@ def _resolve_settings_files() -> list[str]:
             candidates = (root / name, root / "config" / name)
             found = next((path for path in candidates if path.is_file()), None)
             if found is not None:
-                resolved.append(str(found))
+                # run.sh keeps a root symlink for convenient editing. Resolve it
+                # so atomic settings saves update the target, preserving the link.
+                resolved.append(str(found.resolve()))
                 break
     return resolved
 
