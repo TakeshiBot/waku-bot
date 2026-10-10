@@ -11,12 +11,18 @@ bot ngay trong Telegram.
 
 Khi build bằng Docker, frontend được đóng gói sẵn trong image.
 
-Từ `/config` hoặc `/panel` trong nhóm, bấm **Mở Mini App** để chuyển sang
-chat riêng, rồi bấm nút mở Mini App. Bot kiểm tra quyền quản trị nhóm trước khi
-hiện nút; bảng quản trị tiếp tục kiểm tra quyền khi đọc và lưu cấu hình.
-Luồng này giữ đúng nhóm cần sửa và không yêu cầu đăng ký short name.
+Từ `/config` hoặc `/panel` trong nhóm, bấm nút bảng quản trị để mở Mini App
+ngay trong nhóm. Liên kết `startapp` giữ đúng nhóm cần sửa; bảng quản trị
+kiểm tra quyền khi đọc và lưu cấu hình. Cần đăng ký Mini App trong BotFather
+theo một trong hai cách dưới đây; chỉ đặt nút menu DM chưa đủ.
 
-## Đăng ký Mini App trực tiếp (tuỳ chọn)
+## Đăng ký Mini App trực tiếp
+
+Cách 1: trong BotFather, mở **Bot Settings → Configure Mini App → Enable
+Mini App**, đặt URL HTTPS của bảng quản trị làm **Main Mini App** và để
+`webapp_short_name = ""`. Nút nhóm dùng `https://t.me/<bot>?startapp=...`.
+
+Cách 2: đăng ký Mini App có short name:
 
 Gửi `/newapp` trong [@BotFather](https://t.me/BotFather), chọn bot, rồi điền:
 
@@ -62,7 +68,7 @@ HTTPS và lưu cấu hình Mini App; xem [hướng dẫn triển khai](self-host
 | `webapp_host` | `"0.0.0.0"` | Địa chỉ lắng nghe |
 | `webapp_port` | `8180` | Cổng lắng nghe |
 | `webapp_url` | `""` | URL HTTPS công khai, bắt buộc khi bật bảng quản trị |
-| `webapp_short_name` | `"panel"` | Short name cho liên kết Mini App đã đăng ký trong BotFather; không bắt buộc cho nút mở từ nhóm |
+| `webapp_short_name` | `"panel"` | Short name Mini App đăng ký bằng `/newapp`; để trống nếu đã bật Main Mini App |
 | `webapp_menu_button` | `true` | Cho nút menu trong cuộc trò chuyện mở bảng quản trị |
 | `webapp_jwt_secret` | `""` | Khóa ký token phiên; để trống thì tạo từ token của bot |
 | `webapp_jwt_ttl` | `21600` | Thời hạn phiên, tính bằng giây |

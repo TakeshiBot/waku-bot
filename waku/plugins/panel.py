@@ -1,8 +1,8 @@
 """Entry points into the Mini App panel.
 
-Group links route through /start in private chat, where a real web_app button can
-launch the configured HTTPS URL. This also works without a registered BotFather
-app short name. The group hint is navigation only; API permissions remain checked.
+Group links open the registered Mini App directly in the current chat. The group
+hint is navigation only; API permissions remain checked. Legacy private /start
+links remain supported for previously sent menus.
 """
 
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -41,7 +41,9 @@ def chat_panel_url(chat_id: int) -> str | None:
         return None
     bot_username = client.me.username if client.me else None
     start_param = build_chat_start_param(chat_id)
-    return f"https://t.me/{bot_username}?start=panel_{start_param}"
+    short_name = app_config.webapp_short_name.strip()
+    app_path = f"/{short_name}" if short_name else ""
+    return f"https://t.me/{bot_username}{app_path}?startapp={start_param}"
 
 
 def private_chat_panel_button(chat_id: int, lang: str) -> InlineKeyboardButton | None:

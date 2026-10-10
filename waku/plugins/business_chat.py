@@ -136,9 +136,9 @@ def _text_history(messages: list[ModelMessage]) -> list[ModelMessage]:
 
 
 def _new_streaming_output(client: Client, message: Message, revision: int):
-    from waku.plugins.agent.output import StreamingOutput
+    from waku.plugins.agent.business_output import BusinessStreamingOutput
 
-    return StreamingOutput(
+    return BusinessStreamingOutput(
         client, message, should_send=lambda: _still_authorized(message, revision)
     )
 

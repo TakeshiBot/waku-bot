@@ -52,9 +52,11 @@ cho cuộc chat riêng có tin đến trong 24 giờ gần nhất. Xem
   chủ tài khoản đã kết nối, như phần Business của bản mod.
 - Lịch sử AI được tách theo kết nối Business và cuộc chat, không dùng lịch sử DM
   thường, nhóm Telegram hoặc Discord.
-- Khi bật streaming, gửi native draft nếu Telegram hỗ trợ; nếu không, hiển thị
-  trạng thái đang nhập rồi gửi kết quả hoàn chỉnh. Nội dung cuối cùng và rich message vẫn được gửi qua đúng
-  kết nối Business.
+- Khi bật streaming, gửi phần văn bản đầu tiên ngay khi AI sinh ra và sửa cùng
+  tin đó khoảng 2 giây một lần. Kết quả cuối thay thế tin xem trước, giữ rich
+  message nếu bật; chỉ gửi tin bổ sung khi nội dung vượt giới hạn Telegram.
+  Mọi thao tác gửi/sửa đều đi qua đúng kết nối Business. Cách này không phụ
+  thuộc vào khả năng hiển thị native draft của ứng dụng Telegram.
 - Tắt công tắc hoặc thu hồi quyền kết nối sẽ ngăn bot tiếp tục trả lời. Chỉ tin mới
   được xử lý; phần này không tự trả lời lại tin đã sửa hoặc đã xoá.
 
