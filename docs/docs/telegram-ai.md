@@ -21,8 +21,15 @@ Gọi tên/tag Waku, hoặc dùng `/chat`, rồi yêu cầu bằng ngôn ngữ t
 - Reply tin cần xóa: `waku, xóa tin này`.
 - `waku, đổi tên nhóm thành Hội bạn Waku`.
 
-Mục tiêu phải là người gửi tin đang reply, @username hoặc ID được nêu rõ trong
-tin ra lệnh. Bot không đoán từ tên hiển thị hoặc tác giả gốc của tin chuyển tiếp.
+Mục tiêu ưu tiên @username/ID được nêu rõ trong tin ra lệnh; nếu không có thì
+dùng người gửi tin đang reply. Reply tin của Waku kèm `@bot_khac` vẫn tác động
+đến `@bot_khac`, không chọn Waku. Bot khác là đối tượng quản trị hợp lệ,
+bao gồm mute, ban/kick và bổ nhiệm admin nhóm, theo quyền/trạng thái Telegram.
+Bot không đoán từ tên hiển thị hoặc tác giả gốc của tin chuyển tiếp.
+Khi reply câu trả lời gần nhất của Waku cho chính mình trong 5 phút, câu tiếp
+nối như `cho lên admin` có thể dùng mục tiêu duy nhất đã ghi trong yêu cầu gốc.
+Backend đối chiếu người gọi, nhóm, ID tin reply và thời gian; không lấy mục tiêu
+từ nội dung AI tự tạo, reply của người khác hoặc lịch sử tùy ý.
 Khi yêu cầu chưa rõ, AI phải hỏi lại trước khi thực hiện.
 Khi thao tác và đối tượng đã rõ, bot gọi tool ngay; không yêu cầu xác nhận thêm.
 Tool kiểm tra quyền thực tế ngay trước khi gửi thao tác.

@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from io import BytesIO
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pyrogram
@@ -11,6 +12,24 @@ from pyrogram import types
 
 from waku.common.rich_message import rich_media_messages
 from waku.plugins.agent import input_format, prompt
+
+
+@pytest.mark.asyncio
+async def test_bot_sender_keeps_actual_group_administrator_status(monkeypatch):
+    from waku.common import tgmethod
+
+    lookup = AsyncMock(
+        return_value=SimpleNamespace(
+            status=pyrogram.enums.ChatMemberStatus.ADMINISTRATOR
+        )
+    )
+    monkeypatch.setattr(tgmethod, "get_chat_member", lookup)
+    source = message([], chat_type=pyrogram.enums.ChatType.SUPERGROUP)
+    source.from_user.is_bot = True
+    sender = await input_format.resolve_sender(None, source.chat.id, source)
+    lookup.assert_awaited_once_with(None, source.chat.id, source.from_user.id)
+    assert sender.kind == "Bot"
+    assert sender.status == input_format.tr("administrator")
 
 
 def photo(unique="photo-a", *, size=10, file_id="native-file-a"):

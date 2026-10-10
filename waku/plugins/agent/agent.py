@@ -315,6 +315,8 @@ if app_config.agent and app_config.agent_model:
             + tr("output_language", locale=ctx.deps.locale or None)
             + "\n\n"
             + group_moderation_instructions(ctx.deps.locale or app_config.lang)
+            + "\n\n"
+            + await moderation.group_moderation_context(ctx)
         )
 
     memory_agent = Agent(

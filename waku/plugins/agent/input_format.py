@@ -192,8 +192,7 @@ async def resolve_sender(
                 name, user_id_str, tr("anonymous_admin"), tr("administrator")
             )
         return SenderInfo(name, user_id_str, tr("anonymous_admin"), tr("administrator"))
-    if getattr(message.from_user, "is_bot", False):
-        return SenderInfo(name, user_id_str, "Bot", tr("member"))
+    sender_type = "Bot" if getattr(message.from_user, "is_bot", False) else tr("human")
     status = tr("member")
     if user_id is not None:
         try:
@@ -206,7 +205,7 @@ async def resolve_sender(
                 f"member status lookup failed for {user_id} in {chat_id}: "
                 f"{e.__class__.__name__}"
             )
-    return SenderInfo(name, user_id_str, tr("human"), status)
+    return SenderInfo(name, user_id_str, sender_type, status)
 
 
 def _quote(value: str) -> str:

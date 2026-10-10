@@ -113,9 +113,17 @@ _TEXT = {
         "Hãy reply thành viên hoặc ghi chính xác @username/ID của họ trong yêu cầu.",
         "Reply to the member or explicitly include their exact @username/ID in your request.",
     ),
+    "reference": (
+        'Tham chiếu mục tiêu đã được backend xác minh: {target}. Người gửi hiện tại đang reply đúng câu trả lời gần nhất của Waku cho chính họ, và đã nêu duy nhất đối tượng này trong yêu cầu gốc. Nếu yêu cầu mới đã rõ (ví dụ cho lên admin), gọi tool với target="{target}" ngay; không hỏi lại tên đối tượng. Chỉ kế thừa danh tính đối tượng, không kế thừa lệnh hay quyền; tool vẫn kiểm tra quyền Telegram hiện tại.',
+        'Backend-verified target reference: {target}. This sender is replying to Waku\'s exact most recent answer to this same sender, whose original request uniquely named this target. For a clear new action, call the tool with target="{target}" immediately without asking for the target again. Only identity is referenced, not past actions or authority; tools recheck current Telegram rights.',
+    ),
     "protected": (
-        "Không thể tác động đến chủ nhóm, quản trị viên, chính bạn hoặc bot.",
-        "The owner, administrators, yourself and the bot are protected.",
+        "Không thể ban/mute/kick chủ nhóm, quản trị viên hoặc chính người ra lệnh. Tài khoản bot khác không tự được bảo vệ chỉ vì là bot.",
+        "The owner, administrators and requesting user are protected from ban/mute/kick. Other bot accounts are not protected merely for being bots.",
+    ),
+    "self": (
+        "Mục tiêu được chọn là chính bot đang thực thi yêu cầu. Đây không phải lệnh cấm quản trị các bot khác; hãy chọn đúng @username/ID của đối tượng người dùng đã yêu cầu.",
+        "The selected target is this executing bot itself, which is protected. This is not a ban on managing other bot accounts; select the exact requested username/ID.",
     ),
     "member": (
         "Không xác minh được thành viên phù hợp trong nhóm này.",
@@ -373,12 +381,99 @@ def _request_text(ctx) -> str:
 
 
 def _explicit_token(ctx, token: str) -> bool:
+    return _token_in_text(_request_text(ctx), token)
+
+
+def _token_in_text(text: str, token: str) -> bool:
     return (
-        re.search(
-            r"(?<![\w@])" + re.escape(token) + r"(?!\w)", _request_text(ctx), re.I
-        )
-        is not None
+        re.search(r"(?<![\w@])" + re.escape(token) + r"(?!\w)", text, re.I) is not None
     )
+
+
+def _named_targets(ctx, text: str) -> list[str]:
+    """Exact mentions take precedence over a reply author; ignore a leading wake tag."""
+    me = getattr(ctx.deps.client, "me", None)
+    own_names = {
+        (getattr(me, "username", None) or "").casefold(),
+        *(
+            name.username.casefold()
+            for name in (getattr(me, "usernames", None) or [])
+            if name.active is True
+        ),
+    }
+    names = []
+    for match in re.finditer(r"(?<![\w@/])@[A-Za-z][A-Za-z0-9_]{3,31}(?!\w)", text):
+        name = match[0].casefold()
+        if name[1:] in own_names and not text[: match.start()].strip():
+            continue
+        if name not in names:
+            names.append(name)
+    return names
+
+
+def _explicit_target_hint(ctx) -> bool:
+    text = _request_text(ctx)
+    return bool(
+        _named_targets(ctx, text)
+        or _mention_ids(ctx)
+        or re.search(r"(?<!\w)[1-9]\d*(?!\w)", text)
+    )
+
+
+async def _reply_target_evidence(ctx, reply, bot_id: int) -> str:
+    """Use only our exact recent reply to this sender, never arbitrary bot prose/history."""
+    if (
+        reply is None
+        or reply.from_user is None
+        or reply.from_user.id != bot_id
+        or reply.sender_chat is not None
+        or getattr(reply, "forward_origin", None) is not None
+    ):
+        return ""
+    from waku.common.memory_store import memttlcache
+
+    from ..state import bot_last_reply_key
+
+    try:
+        last = await memttlcache.get(bot_last_reply_key(ctx.deps.chat_id))
+        if (
+            isinstance(last, datatype.BotLastReply)
+            and last.message_id == reply.id
+            and last.reply_to_user_id == ctx.deps.user_id
+            and 0 <= _now().timestamp() - last.timestamp <= 300
+        ):
+            return last.original_user_message
+    except Exception as error:
+        logger.debug(
+            "Moderation reply target lookup unavailable: {}", type(error).__name__
+        )
+    return ""
+
+
+async def group_moderation_context(ctx) -> str:
+    """Expose only a verified reference identity so AI can handle a new follow-up."""
+    message = ctx.deps.message
+    if (
+        message is None
+        or message.chat is None
+        or message.chat.id != ctx.deps.chat_id
+        or message.chat.type not in _GROUPS
+        or message.from_user is None
+        or message.from_user.id != ctx.deps.user_id
+        or message.from_user.is_bot
+        or message.sender_chat is not None
+        or getattr(message, "business_connection_id", None)
+        or _explicit_target_hint(ctx)
+    ):
+        return ""
+    reply = get_reply_target(message)
+    if reply is None or reply.chat is None or reply.chat.id != ctx.deps.chat_id:
+        return ""
+    if not await _moderation_enabled(ctx.deps.chat_id):
+        return ""
+    evidence = await _reply_target_evidence(ctx, reply, await _identity(ctx))
+    names = _named_targets(ctx, evidence)
+    return _text(ctx, "reference", target=names[0]) if len(names) == 1 else ""
 
 
 def _mention_ids(ctx) -> set[int]:
@@ -399,14 +494,39 @@ async def _target(
     reply_user = (
         reply.from_user if reply is not None and reply.sender_chat is None else None
     )
-    if user_id is not None and target.strip():
-        raise ModerationDenied("target")
+    bot_id = await _identity(ctx)
+    source_text = _request_text(ctx)
+    names = _named_targets(ctx, source_text)
+    if not names and not _explicit_target_hint(ctx):
+        evidence = await _reply_target_evidence(ctx, reply, bot_id)
+        candidates = _named_targets(ctx, evidence)
+        if len(candidates) == 1:
+            source_text, names = evidence, candidates
+    target = target.strip()
+    if not target and not (
+        user_id is not None
+        and (_explicit_token(ctx, str(user_id)) or user_id in _mention_ids(ctx))
+    ):
+        # A model may accidentally pass the ID of our replied message's author.
+        # The sender's unique named target is stronger evidence than that ID.
+        if len(names) == 1:
+            target, user_id = names[0], None
+        elif len(names) > 1 and user_id is None:
+            raise ModerationDenied("target")
+        elif len(_mention_ids(ctx)) == 1:
+            user_id = next(iter(_mention_ids(ctx)))
+    supplied_id = user_id if target else None
     if target.strip():
         value = target.strip()
         if re.fullmatch(r"[1-9]\d{0,18}", value):
             user_id = int(value)
         elif re.fullmatch(r"@[A-Za-z][A-Za-z0-9_]{3,31}", value):
-            if not _explicit_token(ctx, value):
+            if not (
+                _explicit_token(ctx, value)
+                or len(names) == 1
+                and names[0] == value.casefold()
+                and _token_in_text(source_text, value)
+            ):
                 raise ModerationDenied("target")
             user = await ctx.deps.client.get_users(value)
             if user is None or not any(
@@ -424,6 +544,15 @@ async def _target(
             user_id = user.id
         else:
             raise ModerationDenied("target")
+    if (
+        supplied_id is not None
+        and supplied_id != user_id
+        and (_explicit_token(ctx, str(supplied_id)) or supplied_id in _mention_ids(ctx))
+    ):
+        # Distinct IDs explicitly named by the sender are ambiguous. An ID
+        # invented by the model (e.g. the reply bot's ID) cannot override the
+        # exact username we just resolved from the sender's request.
+        raise ModerationDenied("target")
     if user_id is None:
         if reply_user is None:
             ids = _mention_ids(ctx)
@@ -442,10 +571,19 @@ async def _target(
         (reply_user is not None and reply_user.id == user_id)
         or user_id in _mention_ids(ctx)
         or _explicit_token(ctx, str(user_id))
-        or (target.startswith("@") and _explicit_token(ctx, target))
+        or (
+            target.startswith("@")
+            and (
+                _explicit_token(ctx, target)
+                or len(names) == 1
+                and names[0] == target.casefold()
+            )
+        )
     ):
         raise ModerationDenied("target")
-    if user_id in (ctx.deps.user_id, await _identity(ctx)):
+    if user_id == bot_id:
+        raise ModerationDenied("self")
+    if user_id == ctx.deps.user_id:
         raise ModerationDenied("protected")
     key = f"member:{_active_action.get()}:{user_id}"
     _canonical_key.set(key)
@@ -475,7 +613,9 @@ def _mark(ctx, *, completed=False) -> None:
 
 
 async def _verify_target(ctx, user_id: int, *, allow_absent=False, allow_admin=False):
-    if user_id in (ctx.deps.user_id, await _identity(ctx)):
+    if user_id == await _identity(ctx):
+        raise ModerationDenied("self")
+    if user_id == ctx.deps.user_id:
         raise ModerationDenied("protected")
     member = await ctx.deps.client.get_chat_member(ctx.deps.chat_id, user_id)
     if member.user is None or member.user.id != user_id:
