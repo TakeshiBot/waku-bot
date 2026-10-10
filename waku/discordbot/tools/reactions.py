@@ -35,8 +35,12 @@ async def send_discord_reaction(
 
     target = message
     if target_message_id is not None and target_message_id != message.id:
-        if not _can_read_message_history(message.channel, message.guild, requester=message.author):
-            return DiscordReactionResult(success=False, message="Cannot access that message history.")
+        if not _can_read_message_history(
+            message.channel, message.guild, requester=message.author
+        ):
+            return DiscordReactionResult(
+                success=False, message="Cannot access that message history."
+            )
         try:
             target = await message.channel.fetch_message(target_message_id)
         except Exception as e:
@@ -58,17 +62,6 @@ async def send_discord_reaction(
             reaction_emoji = discord.PartialEmoji.from_str(emoji_text)
         await target.add_reaction(reaction_emoji)
         ctx.deps.side_effects_started = True
-        await _remember_discord_reaction_style(message)
-        logger.info(
-            "Discord reaction sent: "
-            f"guild={_guild_name(message)!r} channel={_channel_name(message)!r} "
-            f"user={message.author.id} target_message_id={target.id} emoji={emoji_text!r}"
-        )
-        return DiscordReactionResult(
-            success=True,
-            emoji=emoji_text,
-            target_message_id=target.id,
-        )
     except Exception as e:
         logger.warning(
             "Discord reaction failed: "
@@ -81,3 +74,22 @@ async def send_discord_reaction(
             emoji=emoji_text,
             target_message_id=target.id,
         )
+    try:
+        await _remember_discord_reaction_style(target, sent_emoji=emoji_text)
+    except Exception as error:
+        logger.debug(
+            f"Discord reaction style cache unavailable: {type(error).__name__}"
+        )
+    try:
+        logger.info(
+            "Discord reaction sent: "
+            f"guild={_guild_name(message)!r} channel={_channel_name(message)!r} "
+            f"user={message.author.id} target_message_id={target.id} emoji={emoji_text!r}"
+        )
+    except Exception:
+        pass
+    return DiscordReactionResult(
+        success=True,
+        emoji=emoji_text,
+        target_message_id=target.id,
+    )

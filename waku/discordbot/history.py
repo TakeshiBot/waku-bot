@@ -29,19 +29,30 @@ from .constants import (
     DISCORD_COMMAND_PREFIX,
 )
 from .models import DiscordGroupMemoryMessage
-from .permissions import _can_read_message_history, _channel_allowed
-from .settings import _discord_global_ai_enabled, _discord_guild_settings
+from .permissions import (
+    _can_read_message_history,
+    _channel_allowed,
+    _is_discord_user_bot_admin,
+)
+from .settings import (
+    _discord_dm_settings,
+    _discord_global_ai_enabled,
+    _discord_guild_settings,
+)
 from .utilities import _author_name, _clean_content, _message_text
 
 
 def _discord_group_memory_user_id(guild_id: int, channel_id: int) -> str:
     return f"discord_group_{guild_id}_channel_{channel_id}"
 
+
 def _discord_group_messages_key(guild_id: int, channel_id: int) -> str:
     return f"discord_group_messages:{guild_id}:{channel_id}"
 
+
 def _discord_group_memory_update_key(guild_id: int, channel_id: int) -> str:
     return f"discord_group_memory_last_update:{guild_id}:{channel_id}"
+
 
 def _get_powermemory():
     try:
@@ -51,17 +62,21 @@ def _get_powermemory():
         return None
     return powermemory
 
+
 def _emoji_key(message: discord.Message) -> str:
     guild_part = message.guild.id if message.guild else "dm"
     return f"discord_emoji_style:{guild_part}:{message.author.id}"
+
 
 def _reaction_key(message: discord.Message) -> str:
     guild_part = message.guild.id if message.guild else "dm"
     return f"discord_reaction_style:{guild_part}:{message.author.id}"
 
+
 def _reaction_counter_key(message: discord.Message) -> str:
     channel_id = getattr(message.channel, "id", "dm")
     return f"discord_periodic_reaction_counter:{channel_id}:{message.author.id}"
+
 
 def _discord_reaction_candidates(message: discord.Message) -> list[str]:
     content = _message_text(message)
@@ -74,7 +89,28 @@ def _discord_reaction_candidates(message: discord.Message) -> list[str]:
             candidates.append(str(emoji))
     return candidates
 
+
+async def _can_learn_discord_style(message: discord.Message) -> bool:
+    if message.author.bot or not await _discord_global_ai_enabled():
+        return False
+    if message.guild is None:
+        if not isinstance(
+            message.channel, discord.DMChannel
+        ) or not _is_discord_user_bot_admin(message.author):
+            return False
+        settings = await _discord_dm_settings(message.author)
+    else:
+        if not await _channel_allowed(message):
+            return False
+        settings = await _discord_guild_settings(message.guild)
+    return bool(settings.ai_reply) and _can_read_message_history(
+        message.channel, message.guild, requester=message.author
+    )
+
+
 async def _remember_discord_emojis(message: discord.Message) -> None:
+    if not await _can_learn_discord_style(message):
+        return
     content = _message_text(message)
     emojis = _CUSTOM_EMOJI_RE.findall(content) + _EMOJI_RE.findall(content)
     if not emojis:
@@ -84,14 +120,22 @@ async def _remember_discord_emojis(message: discord.Message) -> None:
     merged = (existing + emojis)[-40:]
     await common.memttlcache.set(key, merged, ttl=7 * 24 * 60 * 60)
 
-async def _remember_discord_reaction_style(message: discord.Message) -> None:
-    reactions = _discord_reaction_candidates(message)
+
+async def _remember_discord_reaction_style(
+    message: discord.Message, *, sent_emoji: str | None = None
+) -> None:
+    if not await _can_learn_discord_style(message):
+        return
+    # add_reaction does not update Message.reactions locally. Explicit sends
+    # record just that acknowledged emoji under the actual target's author.
+    reactions = [sent_emoji] if sent_emoji else _discord_reaction_candidates(message)
     if not reactions:
         return
     key = _reaction_key(message)
     existing: list[str] = await common.memttlcache.get(key, [])
     merged = (existing + reactions)[-60:]
     await common.memttlcache.set(key, merged, ttl=7 * 24 * 60 * 60)
+
 
 async def _discord_emoji_hint(message: discord.Message) -> str | None:
     emojis: list[str] = await common.memttlcache.get(_emoji_key(message), [])
@@ -102,6 +146,7 @@ async def _discord_emoji_hint(message: discord.Message) -> str | None:
         return None
     return "User/server emoji style: " + " ".join(common_emojis)
 
+
 async def _discord_reaction_hint(message: discord.Message) -> str | None:
     reactions: list[str] = await common.memttlcache.get(_reaction_key(message), [])
     if not reactions:
@@ -110,6 +155,7 @@ async def _discord_reaction_hint(message: discord.Message) -> str | None:
     if not common_reactions:
         return None
     return "Discord reaction style: " + " ".join(common_reactions)
+
 
 async def _record_discord_group_memory(message: discord.Message) -> None:
     guild = message.guild
@@ -125,14 +171,18 @@ async def _record_discord_group_memory(message: discord.Message) -> None:
     settings = await _discord_guild_settings(guild)
     if not settings.ai_reply or not settings.group_memory_enabled:
         return
-    if not await _channel_allowed(message) or not _can_read_message_history(message.channel, guild, requester=message.author):
+    if not await _channel_allowed(message) or not _can_read_message_history(
+        message.channel, guild, requester=message.author
+    ):
         return
     powermemory = _get_powermemory()
     if powermemory is None or not app_config.agent_group_memory:
         return
 
     key = _discord_group_messages_key(guild.id, message.channel.id)
-    group_messages: list[DiscordGroupMemoryMessage] = await common.memttlcache.get(key, [])
+    group_messages: list[DiscordGroupMemoryMessage] = await common.memttlcache.get(
+        key, []
+    )
     group_messages.append(
         DiscordGroupMemoryMessage(
             guild_id=guild.id,
@@ -148,7 +198,9 @@ async def _record_discord_group_memory(message: discord.Message) -> None:
         group_messages = group_messages[-_DISCORD_GROUP_MEMORY_BATCH_SIZE:]
         update_key = _discord_group_memory_update_key(guild.id, message.channel.id)
         retry_key = f"{update_key}:retry"
-        if not await common.memttlcache.get(update_key) and not await common.memttlcache.get(retry_key):
+        if not await common.memttlcache.get(
+            update_key
+        ) and not await common.memttlcache.get(retry_key):
             memory_text = "Discord server message log:\n" + "\n".join(
                 f"{item.sender_name}({item.sender_id}) in #{item.channel_id}: {item.text}"
                 for item in group_messages
@@ -158,7 +210,9 @@ async def _record_discord_group_memory(message: discord.Message) -> None:
                     powermemory.add(
                         memory_text,
                         infer=True,
-                        user_id=_discord_group_memory_user_id(guild.id, message.channel.id),
+                        user_id=_discord_group_memory_user_id(
+                            guild.id, message.channel.id
+                        ),
                         prompt=(
                             "You are Waku's Discord server memory. Extract useful facts, "
                             "member preferences, relationships, recurring topics, jokes, "
@@ -186,6 +240,7 @@ async def _record_discord_group_memory(message: discord.Message) -> None:
         ttl=_DISCORD_GROUP_MEMORY_TTL,
     )
 
+
 def _sanitize_discord_history(messages: list[ModelMessage]) -> list[ModelMessage]:
     """Remove previous tool messages before reusing Discord history.
 
@@ -201,19 +256,28 @@ def _sanitize_discord_history(messages: list[ModelMessage]) -> list[ModelMessage
     for msg in messages:
         if isinstance(msg, ModelResponse):
             # Preserve final text even when the same response contains tool calls.
-            parts = [part for part in msg.parts if isinstance(part, TextPart) and part.content.strip()]
+            parts = [
+                part
+                for part in msg.parts
+                if isinstance(part, TextPart) and part.content.strip()
+            ]
         else:
             parts = [
-                part for part in msg.parts
-                if getattr(part, "part_kind", "") not in {"tool-call", "tool-return", "retry-prompt"}
+                part
+                for part in msg.parts
+                if getattr(part, "part_kind", "")
+                not in {"tool-call", "tool-return", "retry-prompt"}
             ]
         if len(parts) != len(msg.parts):
             removed += 1
         if parts:
-            cleaned.append(msg if len(parts) == len(msg.parts) else replace(msg, parts=parts))
+            cleaned.append(
+                msg if len(parts) == len(msg.parts) else replace(msg, parts=parts)
+            )
     if removed:
         logger.debug(f"Discord history sanitized: removed {removed} tool messages")
     return cleaned
+
 
 async def _prepare_discord_history(messages, model, deps, agent):
     """Apply the new base's context limits without reusing stale tool internals."""
@@ -224,6 +288,7 @@ async def _prepare_discord_history(messages, model, deps, agent):
     effective_model = model if model is not None else getattr(agent, "model", None)
     compacted = await compact_history(cleaned, effective_model, deps=deps, agent=agent)
     return _sanitize_discord_history(compacted)
+
 
 def _strip_multimodal_history_for_text_model(
     history: list[ModelMessage],
@@ -249,7 +314,9 @@ def _strip_multimodal_history_for_text_model(
                 content = []
                 for item in part.content:
                     if isinstance(item, MULTI_MODAL_CONTENT_TYPES):
-                        content.append("[multimodal content omitted from text-model history]")
+                        content.append(
+                            "[multimodal content omitted from text-model history]"
+                        )
                         changed = True
                         replaced += 1
                     else:
@@ -261,7 +328,12 @@ def _strip_multimodal_history_for_text_model(
             ):
                 changed = True
                 replaced += 1
-                parts.append(replace(part, content="[multimodal tool content omitted from text-model history]"))
+                parts.append(
+                    replace(
+                        part,
+                        content="[multimodal tool content omitted from text-model history]",
+                    )
+                )
             else:
                 parts.append(part)
         sanitized.append(replace(msg, parts=parts) if changed else msg)

@@ -24,6 +24,8 @@ discord_admin_users = []
 discord_channel_allowlist = []
 # Omit keywords to use the bot nickname; keep prefix commands such as !waku.
 # discord_keywords = ["waku"]
+# Discord-only periodic reaction hint; 0 disables it. Omit to inherit agent_periodic_reaction_interval.
+discord_periodic_reaction_interval = 5
 
 # Telegram Mini App management panel.
 # webapp = false

@@ -69,6 +69,8 @@ class _AppConfig(pydantic.BaseModel):
     discord_keywords: list[str] | None = None
     discord_channel_allowlist: list[int] = []
     discord_admin_users: list[int] = []
+    # None inherits the shared interval; 0 disables Discord periodic reactions.
+    discord_periodic_reaction_interval: int | None = pydantic.Field(default=None, ge=0)
 
     # health check server for container monitoring
     #

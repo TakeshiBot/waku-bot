@@ -14,6 +14,8 @@ from waku.timezone import BOT_TIMEZONE
 
 from . import state
 from .constants import (
+    _CUSTOM_EMOJI_RE,
+    _EMOJI_RE,
     _KEYWORD_SEPARATORS,
     _SEG_COMMANDS,
     DISCORD_REPLY_DELAY_MAX,
@@ -361,6 +363,15 @@ def _split_reply(text: str) -> list[str]:
             split_at = remaining.rfind(" ", 0, limit + 1)
         if split_at < limit // 2:
             split_at = limit
+            # Keep the legacy break priorities; only adjust a forced boundary
+            # that would cut Discord markup or an emoji grapheme in two.
+            for pattern in (_CUSTOM_EMOJI_RE, _EMOJI_RE):
+                for match in pattern.finditer(remaining):
+                    if match.start() >= split_at:
+                        break
+                    if 0 < match.start() < split_at < match.end():
+                        split_at = match.start()
+                        break
 
         fragment = remaining[:split_at]
         for match in re.finditer(r"(?m)^```([^\n`]*)", fragment):
@@ -388,14 +399,21 @@ async def _send_reply(message: discord.Message, text: str) -> None:
         return
     delay_min = DISCORD_REPLY_DELAY_MIN
     delay_max = DISCORD_REPLY_DELAY_MAX
-    for index, chunk in enumerate(chunks):
-        await message.channel.send(
-            chunk,
-            reference=message if index == 0 else None,
-            mention_author=False,
-            allowed_mentions=discord.AllowedMentions(
-                users=True, roles=False, everyone=False, replied_user=False
-            ),
-        )
-        if index < len(chunks) - 1:
-            await asyncio.sleep(random.uniform(delay_min, delay_max) + len(chunk) / 900)
+    reference = discord.MessageReference(
+        message_id=message.id,
+        channel_id=message.channel.id,
+        guild_id=getattr(message.guild, "id", None),
+        fail_if_not_exists=False,
+    )
+    async with message.channel.typing():
+        for index, chunk in enumerate(chunks):
+            await message.channel.send(
+                chunk,
+                reference=reference if index == 0 else None,
+                mention_author=False,
+                allowed_mentions=discord.AllowedMentions(
+                    users=True, roles=False, everyone=False, replied_user=False
+                ),
+            )
+            if index < len(chunks) - 1:
+                await asyncio.sleep(random.uniform(delay_min, delay_max) + len(chunk) / 900)

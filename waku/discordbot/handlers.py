@@ -35,6 +35,7 @@ from .messages import (
     _build_prompt,
     _is_seg_command,
     _seg_command_keyword,
+    _send_reply,
 )
 from .permissions import _is_discord_user_bot_admin
 from .settings import (
@@ -116,7 +117,7 @@ async def _handle_message(message: discord.Message, user_prompt: str) -> None:
             if not already_waiting:
                 await common.memstore.set(waiting_key, True)
         if already_waiting:
-            await message.channel.send("Thinking...", reference=message)
+            await _send_reply(message, "Thinking...")
             return
         try:
             await _handle_discord_message_turn(message, user_prompt)
@@ -133,10 +134,13 @@ async def _handle_discord_message_turn(message: discord.Message, user_prompt: st
     history: list[ModelMessage] = await common.memttlcache.get(history_key, [])
     history = _sanitize_discord_history(history)
     periodic_reaction_nudge = ""
-    if app_config.agent_periodic_reaction_interval > 0:
+    reaction_interval = getattr(app_config, "discord_periodic_reaction_interval", None)
+    if reaction_interval is None:
+        reaction_interval = app_config.agent_periodic_reaction_interval
+    if reaction_interval > 0:
         reaction_ctr: int = await common.memstore.get(_reaction_counter_key(message), 0)
         await common.memstore.set(_reaction_counter_key(message), reaction_ctr + 1)
-        if reaction_ctr > 0 and reaction_ctr % app_config.agent_periodic_reaction_interval == 0:
+        if reaction_ctr > 0 and reaction_ctr % reaction_interval == 0:
             periodic_reaction_nudge = (
                 "\n\nDiscord reaction nudge: if appropriate, call send_discord_reaction "
                 "exactly once this turn with an emoji that matches the user's message."
@@ -171,7 +175,7 @@ async def _handle_discord_message_turn(message: discord.Message, user_prompt: st
                 f"guild={_guild_name(message)!r} channel={_channel_name(message)!r} "
                 f"user={message.author.id} limit={_discord_agent_limit()}"
             )
-            await message.channel.send(random.choice(_DISCORD_BUSY_REPLIES), reference=message)
+            await _send_reply(message, random.choice(_DISCORD_BUSY_REPLIES))
             return
 
         try:
@@ -198,7 +202,7 @@ async def _handle_discord_message_turn(message: discord.Message, user_prompt: st
             )
             if not _is_discord_history_error(first_error):
                 reply = await _discord_recovery_reply(message, user_prompt, first_error)
-                await message.channel.send(reply, reference=message)
+                await _send_reply(message, reply)
                 return
 
             await common.memttlcache.delete(history_key)
@@ -239,7 +243,7 @@ async def _handle_discord_message_turn(message: discord.Message, user_prompt: st
                 if _is_discord_history_error(retry_error):
                     await common.memttlcache.delete(history_key)
                 reply = await _discord_recovery_reply(message, user_prompt, retry_error)
-                await message.channel.send(reply, reference=message)
+                await _send_reply(message, reply)
     finally:
         if acquired_gate:
             gate.release()

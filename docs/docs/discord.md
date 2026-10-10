@@ -103,3 +103,25 @@ scheduler hiện tại, múi giờ `Asia/Ho_Chi_Minh` (UTC+7), có namespace ri�
 Settings server, cấu hình DM của admin và công tắc AI toàn Discord được lưu riêng
 trong bảng `discord_chat_data`, không dùng bảng nhóm Telegram. Bot không tự chép
 dữ liệu chạy hoặc credentials từ source cũ.
+
+## Cách trả lời và dùng biểu cảm
+
+Bot giữ cách gửi của bản Discord cũ: phản hồi AI là tin nhắn thường, tin dài được
+chia theo đoạn/dòng, giữ khối code, tối đa 7 tin và có khoảng nghỉ giữa các tin.
+Chỉ tin đầu reply vào tin người gọi, không ping người gọi; các tin sau gửi nối tiếp.
+Nếu tin gốc bị xoá, phản hồi vẫn gửi được. Thông báo bot bận/lỗi dùng cùng cách gửi.
+
+AI dùng emoji/biểu cảm tự nhiên theo ngữ cảnh, thường 1–3 trong hội thoại thân mật.
+Bot học emoji và reaction của cuộc trò chuyện trong phạm vi AI đang bật, giữ cả
+emoji ghép như `❤️`, `👍🏽`, `👩‍💻` và emoji custom. Reaction đã được Discord thêm
+thành công vẫn được ghi nhận thành công khi cache học biểu cảm gặp lỗi.
+
+Nhắc AI cân nhắc reaction định kỳ riêng cho Discord bằng:
+
+```toml
+discord_periodic_reaction_interval = 5
+```
+
+Đặt `0` để tắt; bỏ mục này để dùng `agent_periodic_reaction_interval` chung.
+Mục riêng không đổi nhịp reaction Telegram. Đây là nhắc AI chọn reaction phù hợp,
+không ép gắn emoji vào mọi tin hoặc nội dung nghiêm túc.

@@ -1,6 +1,6 @@
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -10,7 +10,10 @@ from waku.discordbot.agent import DiscordPostRunError
 
 @pytest.fixture(autouse=True)
 def global_ai_enabled(monkeypatch):
-    monkeypatch.setattr(handlers, "_discord_global_ai_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        handlers, "_discord_global_ai_enabled", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(handlers.app_config, "discord_periodic_reaction_interval", None)
 
 
 @pytest.mark.asyncio
@@ -32,11 +35,17 @@ async def test_discord_does_not_retry_failed_or_completed_model_turns(
     )
     monkeypatch.setattr(state, "discord_agent", object())
     monkeypatch.setattr(handlers.app_config, "agent_periodic_reaction_interval", 0)
-    monkeypatch.setattr(handlers, "_history_key", AsyncMock(return_value="discord:test:987"))
-    monkeypatch.setattr(handlers, "_build_prompt", AsyncMock(return_value=(["prompt"], False)))
+    monkeypatch.setattr(
+        handlers, "_history_key", AsyncMock(return_value="discord:test:987")
+    )
+    monkeypatch.setattr(
+        handlers, "_build_prompt", AsyncMock(return_value=(["prompt"], False))
+    )
     monkeypatch.setattr(handlers.common.memttlcache, "get", AsyncMock(return_value=[]))
     monkeypatch.setattr(handlers, "_is_discord_history_error", lambda error: False)
     run_once = AsyncMock(side_effect=run_error)
+    send_reply = AsyncMock()
+    monkeypatch.setattr(handlers, "_send_reply", send_reply)
     recovery = AsyncMock(return_value="Thử lại sau nhé")
     monkeypatch.setattr(handlers, "_run_discord_agent_once", run_once)
     monkeypatch.setattr(handlers, "_discord_recovery_reply", recovery)
@@ -51,9 +60,11 @@ async def test_discord_does_not_retry_failed_or_completed_model_turns(
     if expected_reply is None:
         recovery.assert_not_awaited()
         channel.send.assert_not_awaited()
+        send_reply.assert_not_awaited()
     else:
         recovery.assert_awaited_once()
-        channel.send.assert_awaited_once_with(expected_reply, reference=message)
+        send_reply.assert_awaited_once_with(message, expected_reply)
+        channel.send.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -62,7 +73,9 @@ async def test_discord_serializes_same_user_before_prompt_preparation(monkeypatc
     release = asyncio.Event()
     channel = SimpleNamespace(id=123, name="test", send=AsyncMock())
     message = SimpleNamespace(
-        author=SimpleNamespace(id=988), guild=SimpleNamespace(id=10, name="test"), channel=channel
+        author=SimpleNamespace(id=988),
+        guild=SimpleNamespace(id=10, name="test"),
+        channel=channel,
     )
 
     async def slow_prompt(*args):
@@ -72,10 +85,14 @@ async def test_discord_serializes_same_user_before_prompt_preparation(monkeypatc
 
     monkeypatch.setattr(state, "discord_agent", object())
     monkeypatch.setattr(handlers.app_config, "agent_periodic_reaction_interval", 0)
-    monkeypatch.setattr(handlers, "_history_key", AsyncMock(return_value="discord:test:988"))
+    monkeypatch.setattr(
+        handlers, "_history_key", AsyncMock(return_value="discord:test:988")
+    )
     monkeypatch.setattr(handlers, "_build_prompt", slow_prompt)
     monkeypatch.setattr(handlers.common.memttlcache, "get", AsyncMock(return_value=[]))
     run_once = AsyncMock()
+    send_reply = AsyncMock()
+    monkeypatch.setattr(handlers, "_send_reply", send_reply)
     monkeypatch.setattr(handlers, "_run_discord_agent_once", run_once)
     waiting_key = handlers._waiting_key(message.author.id)
 
@@ -83,7 +100,8 @@ async def test_discord_serializes_same_user_before_prompt_preparation(monkeypatc
     try:
         await asyncio.wait_for(entered.wait(), timeout=1)
         await handlers._handle_message(message, "second")
-        channel.send.assert_awaited_once_with("Thinking...", reference=message)
+        send_reply.assert_awaited_once_with(message, "Thinking...")
+        channel.send.assert_not_awaited()
         assert run_once.await_count == 0
         release.set()
         await asyncio.wait_for(first_turn, timeout=1)
@@ -97,3 +115,121 @@ async def test_discord_serializes_same_user_before_prompt_preparation(monkeypatc
             except asyncio.CancelledError:
                 pass
         await handlers.common.memstore.delete(waiting_key)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "override,legacy,expected",
+    [
+        (None, 5, [False] * 5 + [True]),
+        (0, 5, [False] * 6),
+        (2, 0, [False, False, True, False, True, False]),
+    ],
+)
+async def test_discord_reaction_interval_override_zero_and_legacy_inheritance(
+    monkeypatch, override, legacy, expected
+):
+    config = SimpleNamespace(
+        discord_periodic_reaction_interval=override,
+        agent_periodic_reaction_interval=legacy,
+        agent_model_multimodal=None,
+    )
+    monkeypatch.setattr(handlers, "app_config", config)
+    channel = SimpleNamespace(id=123, name="test", send=AsyncMock())
+    message = SimpleNamespace(
+        author=SimpleNamespace(id=700),
+        guild=SimpleNamespace(id=10, name="test"),
+        channel=channel,
+    )
+    counter = {}
+
+    async def get(key, default=None):
+        return counter.get(key, default)
+
+    async def set_value(key, value):
+        counter[key] = value
+
+    monkeypatch.setattr(handlers.common.memstore, "get", get)
+    monkeypatch.setattr(handlers.common.memstore, "set", set_value)
+    monkeypatch.setattr(handlers.common.memttlcache, "get", AsyncMock(return_value=[]))
+    monkeypatch.setattr(handlers, "_history_key", AsyncMock(return_value="history"))
+    prompts = []
+
+    async def build(_message, prompt):
+        prompts.append(prompt)
+        return ([prompt], False)
+
+    monkeypatch.setattr(handlers, "_build_prompt", build)
+    monkeypatch.setattr(handlers, "_run_discord_agent_once", AsyncMock())
+    for _ in expected:
+        await handlers._handle_discord_message_turn(message, "hello")
+    assert ["Discord reaction nudge" in prompt for prompt in prompts] == expected
+    assert handlers._run_discord_agent_once.await_count == len(expected)
+
+
+@pytest.mark.asyncio
+async def test_busy_timeout_uses_shared_reply_helper_before_any_model_run(monkeypatch):
+    channel = SimpleNamespace(id=123, name="test", send=AsyncMock())
+    message = SimpleNamespace(
+        author=SimpleNamespace(id=701),
+        guild=SimpleNamespace(id=10, name="test"),
+        channel=channel,
+    )
+    monkeypatch.setattr(handlers.app_config, "agent_periodic_reaction_interval", 0)
+    monkeypatch.setattr(handlers, "_history_key", AsyncMock(return_value="history"))
+    monkeypatch.setattr(handlers.common.memttlcache, "get", AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        handlers, "_build_prompt", AsyncMock(return_value=(["prompt"], False))
+    )
+
+    async def blocked():
+        await asyncio.Event().wait()
+
+    gate = SimpleNamespace(acquire=blocked, release=Mock())
+    monkeypatch.setattr(handlers, "_discord_agent_gate", lambda: gate)
+    monkeypatch.setattr(handlers, "_discord_agent_busy_timeout", lambda: 0.001)
+    monkeypatch.setattr(handlers, "_run_discord_agent_once", AsyncMock())
+    monkeypatch.setattr(handlers, "_send_reply", AsyncMock())
+    await handlers._handle_discord_message_turn(message, "hello")
+    handlers._send_reply.assert_awaited_once()
+    assert handlers._send_reply.await_args.args[0] is message
+    assert handlers._send_reply.await_args.args[1] in handlers._DISCORD_BUSY_REPLIES
+    handlers._run_discord_agent_once.assert_not_awaited()
+    channel.send.assert_not_awaited()
+    gate.release.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_recovery_after_one_clean_history_retry_uses_shared_reply_helper(
+    monkeypatch,
+):
+    message = SimpleNamespace(
+        author=SimpleNamespace(id=702),
+        guild=SimpleNamespace(id=10, name="test"),
+        channel=SimpleNamespace(id=123, name="test", send=AsyncMock()),
+    )
+    monkeypatch.setattr(handlers.app_config, "agent_periodic_reaction_interval", 0)
+    monkeypatch.setattr(handlers, "_history_key", AsyncMock(return_value="history"))
+    monkeypatch.setattr(handlers.common.memttlcache, "get", AsyncMock(return_value=[]))
+    monkeypatch.setattr(handlers.common.memttlcache, "delete", AsyncMock())
+    monkeypatch.setattr(
+        handlers, "_build_prompt", AsyncMock(return_value=(["prompt"], False))
+    )
+    first = TypeError("message history broken")
+    second = TimeoutError("model timed out")
+    monkeypatch.setattr(
+        handlers, "_is_discord_history_error", lambda error: error is first
+    )
+    monkeypatch.setattr(
+        handlers, "_run_discord_agent_once", AsyncMock(side_effect=[first, second])
+    )
+    monkeypatch.setattr(
+        handlers, "_discord_recovery_reply", AsyncMock(return_value="Try again")
+    )
+    monkeypatch.setattr(handlers, "_send_reply", AsyncMock())
+    await handlers._handle_discord_message_turn(message, "hello")
+    assert handlers._run_discord_agent_once.await_count == 2
+    assert handlers._run_discord_agent_once.await_args.args[3] == []
+    handlers.common.memttlcache.delete.assert_awaited_once_with("history")
+    handlers._send_reply.assert_awaited_once_with(message, "Try again")
+    message.channel.send.assert_not_awaited()
