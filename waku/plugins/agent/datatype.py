@@ -147,6 +147,14 @@ class AskUserOutput:
 
 
 @dataclass
+class ModerationReference:
+    """A target named by the sender or resolved by the backend, never AI prose."""
+
+    target: str
+    timestamp: float
+
+
+@dataclass
 class ContextDeps:
     client: PyrogramClient
     user_id: int
@@ -165,6 +173,7 @@ class ContextDeps:
     # Turn-local moderation receipts prevent repeating successful mutations.
     side_effects_started: bool = False
     moderation_results: dict[str, str] = field(default_factory=dict)
+    moderation_reference: ModerationReference | None = None
 
 
 @dataclass
@@ -212,3 +221,4 @@ class BotLastReply:
     timestamp: float
     original_user_message: str = ""
     full_output: str = ""  # May be split into multiple outgoing messages.
+    moderation_reference: ModerationReference | None = None

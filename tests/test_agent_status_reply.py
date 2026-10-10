@@ -121,6 +121,7 @@ def delivery(monkeypatch, deps):
         record=record,
         settle=settle,
         message=message,
+        deps=deps,
     )
 
 
@@ -128,7 +129,7 @@ def delivery(monkeypatch, deps):
 async def test_successful_status_goes_through_existing_rich_output_and_quota(delivery):
     await delivery.run()
     delivery.output.assert_awaited_once_with(
-        "client", delivery.message, "Natural AI status."
+        "client", delivery.message, "Natural AI status.", deps=delivery.deps
     )
     delivery.record.assert_called_once()
     delivery.settle.assert_awaited_once()

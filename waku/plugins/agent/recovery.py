@@ -85,7 +85,7 @@ async def reply_agent_status(
         return
     text, usage = composed
     try:
-        if await reply_output(client, message, text):
+        if await reply_output(client, message, text, deps=deps):
             record_sent_text(deps, text, markdown=True)
             if subject is not None:
                 try:

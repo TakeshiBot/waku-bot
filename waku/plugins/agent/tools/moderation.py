@@ -114,8 +114,8 @@ _TEXT = {
         "Reply to the member or explicitly include their exact @username/ID in your request.",
     ),
     "reference": (
-        'Tham chiếu mục tiêu đã được backend xác minh: {target}. Người gửi hiện tại đang reply đúng câu trả lời gần nhất của Waku cho chính họ, và đã nêu duy nhất đối tượng này trong yêu cầu gốc. Nếu yêu cầu mới đã rõ (ví dụ cho lên admin), gọi tool với target="{target}" ngay; không hỏi lại tên đối tượng. Chỉ kế thừa danh tính đối tượng, không kế thừa lệnh hay quyền; tool vẫn kiểm tra quyền Telegram hiện tại.',
-        'Backend-verified target reference: {target}. This sender is replying to Waku\'s exact most recent answer to this same sender, whose original request uniquely named this target. For a clear new action, call the tool with target="{target}" immediately without asking for the target again. Only identity is referenced, not past actions or authority; tools recheck current Telegram rights.',
+        'Tham chiếu mục tiêu đã được backend xác minh: {target}. Người gửi đang reply đúng câu trả lời gần nhất của Waku cho chính họ. Đây là đối tượng duy nhất do chính người đó nêu hoặc backend xác định trong chuỗi reply này. Nếu yêu cầu mới đã rõ, gọi tool với target="{target}" ngay; không hỏi lại tên đối tượng hoặc xác nhận lần nữa. Chỉ kế thừa danh tính đối tượng, không kế thừa lệnh hay quyền; tool vẫn kiểm tra quyền Telegram hiện tại.',
+        'Backend-verified target reference: {target}. This sender is replying to Waku\'s exact most recent answer to this same sender. This unique target was named by that sender or resolved by the backend in this reply chain. For a clear new action, call the tool with target="{target}" immediately without asking for the target or confirmation again. Only identity is referenced, not past actions or authority; tools recheck current Telegram rights.',
     ),
     "protected": (
         "Không thể ban/mute/kick chủ nhóm, quản trị viên hoặc chính người ra lệnh. Tài khoản bot khác không tự được bảo vệ chỉ vì là bot.",
@@ -340,38 +340,17 @@ async def _moderation_enabled(chat_id: int) -> bool:
 
 
 async def prepare_group_moderation(ctx: RunContext[datatype.ContextDeps], tool):
-    """Hide unauthorized tools; execution repeats the same fresh checks."""
-    right = MODERATION_RIGHTS.get(tool.name)
-    if right is None:
+    """Expose capabilities in groups; execution returns actual permission denials."""
+    if tool.name not in MODERATION_RIGHTS:
         return None
-    try:
-        if not await _moderation_enabled(ctx.deps.chat_id):
-            return None
-        # Visibility lasts only this RunContext/turn. Actual execution never uses it.
-        async with _locks.setdefault(ctx.deps.chat_id, asyncio.Lock()):
-            cached = getattr(ctx.deps, "_moderation_visibility", None)
-            if cached is None:
-                message = ctx.deps.message
-                if (
-                    message is None
-                    or message.chat is None
-                    or message.chat.id != ctx.deps.chat_id
-                    or message.chat.type not in _GROUPS
-                    or getattr(message, "business_connection_id", None)
-                ):
-                    raise ModerationDenied("group")
-                if (
-                    message.sender_chat is not None
-                    or message.from_user is None
-                    or message.from_user.id != ctx.deps.user_id
-                    or message.from_user.is_bot
-                ):
-                    raise ModerationDenied("anonymous")
-                actor, bot, _ = await _current_members(ctx)
-                ctx.deps._moderation_visibility = cached = (actor, bot)
-            if not all(_has_right(member, right) for member in cached):
-                return None
-    except Exception:
+    message = ctx.deps.message
+    if (
+        message is None
+        or message.chat is None
+        or message.chat.id != ctx.deps.chat_id
+        or message.chat.type not in _GROUPS
+        or getattr(message, "business_connection_id", None)
+    ):
         return None
     return tool
 
@@ -414,13 +393,26 @@ def _named_targets(ctx, text: str) -> list[str]:
 def _explicit_target_hint(ctx) -> bool:
     text = _request_text(ctx)
     return bool(
-        _named_targets(ctx, text)
-        or _mention_ids(ctx)
-        or re.search(r"(?<!\w)[1-9]\d*(?!\w)", text)
+        _named_targets(ctx, text) or _mention_ids(ctx) or _numeric_target_ids(text)
     )
 
 
-async def _reply_target_evidence(ctx, reply, bot_id: int) -> str:
+def _numeric_target_ids(text: str) -> set[int]:
+    """A duration's numeric value is not evidence for a Telegram user ID."""
+    ids = set()
+    for match in re.finditer(r"(?<![\w@])[1-9]\d{0,18}(?!\w)", text):
+        following = text[match.end() :].lstrip()
+        if re.match(
+            r"(?:[smhdw]|giây|phút|giờ|ngày|tuần|seconds?|minutes?|hours?|days?|weeks?)\b",
+            following,
+            re.I,
+        ):
+            continue
+        ids.add(int(match[0]))
+    return ids
+
+
+async def _reply_target_reference(ctx, reply, bot_id: int):
     """Use only our exact recent reply to this sender, never arbitrary bot prose/history."""
     if (
         reply is None
@@ -429,7 +421,7 @@ async def _reply_target_evidence(ctx, reply, bot_id: int) -> str:
         or reply.sender_chat is not None
         or getattr(reply, "forward_origin", None) is not None
     ):
-        return ""
+        return None
     from waku.common.memory_store import memttlcache
 
     from ..state import bot_last_reply_key
@@ -442,12 +434,27 @@ async def _reply_target_evidence(ctx, reply, bot_id: int) -> str:
             and last.reply_to_user_id == ctx.deps.user_id
             and 0 <= _now().timestamp() - last.timestamp <= 300
         ):
-            return last.original_user_message
+            reference = getattr(last, "moderation_reference", None)
+            if reference is not None:
+                if (
+                    isinstance(reference, datatype.ModerationReference)
+                    and 0 <= _now().timestamp() - reference.timestamp <= 300
+                    and re.fullmatch(
+                        r"(?:@[A-Za-z][A-Za-z0-9_]{3,31}|[1-9]\d{0,18})",
+                        reference.target,
+                    )
+                ):
+                    return reference
+                return None
+            # Compatibility for replies cached before references were added.
+            names = _named_targets(ctx, last.original_user_message)
+            if len(names) == 1:
+                return datatype.ModerationReference(names[0], last.timestamp)
     except Exception as error:
         logger.debug(
             "Moderation reply target lookup unavailable: {}", type(error).__name__
         )
-    return ""
+    return None
 
 
 async def group_moderation_context(ctx) -> str:
@@ -463,17 +470,30 @@ async def group_moderation_context(ctx) -> str:
         or message.from_user.is_bot
         or message.sender_chat is not None
         or getattr(message, "business_connection_id", None)
-        or _explicit_target_hint(ctx)
     ):
+        return ""
+    if _explicit_target_hint(ctx):
+        names = _named_targets(ctx, _request_text(ctx))
+        ids = _mention_ids(ctx) | _numeric_target_ids(_request_text(ctx))
+        if len(names) == 1 and not ids:
+            ctx.deps.moderation_reference = datatype.ModerationReference(
+                names[0], _now().timestamp()
+            )
+        elif len(ids) == 1 and not names:
+            ctx.deps.moderation_reference = datatype.ModerationReference(
+                str(next(iter(ids))), _now().timestamp()
+            )
         return ""
     reply = get_reply_target(message)
     if reply is None or reply.chat is None or reply.chat.id != ctx.deps.chat_id:
         return ""
     if not await _moderation_enabled(ctx.deps.chat_id):
         return ""
-    evidence = await _reply_target_evidence(ctx, reply, await _identity(ctx))
-    names = _named_targets(ctx, evidence)
-    return _text(ctx, "reference", target=names[0]) if len(names) == 1 else ""
+    reference = await _reply_target_reference(ctx, reply, await _identity(ctx))
+    if reference is None:
+        return ""
+    ctx.deps.moderation_reference = reference
+    return _text(ctx, "reference", target=reference.target)
 
 
 def _mention_ids(ctx) -> set[int]:
@@ -497,16 +517,15 @@ async def _target(
     bot_id = await _identity(ctx)
     source_text = _request_text(ctx)
     names = _named_targets(ctx, source_text)
+    requested_ids = _mention_ids(ctx) | _numeric_target_ids(source_text)
+    reference = None
     if not names and not _explicit_target_hint(ctx):
-        evidence = await _reply_target_evidence(ctx, reply, bot_id)
-        candidates = _named_targets(ctx, evidence)
-        if len(candidates) == 1:
-            source_text, names = evidence, candidates
+        reference = await _reply_target_reference(ctx, reply, bot_id)
+        if reference is not None:
+            source_text = reference.target
+            names = _named_targets(ctx, source_text)
     target = target.strip()
-    if not target and not (
-        user_id is not None
-        and (_explicit_token(ctx, str(user_id)) or user_id in _mention_ids(ctx))
-    ):
+    if not target and not (user_id is not None and user_id in requested_ids):
         # A model may accidentally pass the ID of our replied message's author.
         # The sender's unique named target is stronger evidence than that ID.
         if len(names) == 1:
@@ -515,6 +534,12 @@ async def _target(
             raise ModerationDenied("target")
         elif len(_mention_ids(ctx)) == 1:
             user_id = next(iter(_mention_ids(ctx)))
+        elif len(requested_ids) == 1 and user_id is None:
+            user_id = next(iter(requested_ids))
+        elif len(requested_ids) > 1 and user_id is None:
+            raise ModerationDenied("target")
+        elif reference is not None and reference.target.isdecimal():
+            user_id = int(reference.target)
     supplied_id = user_id if target else None
     if target.strip():
         value = target.strip()
@@ -547,7 +572,7 @@ async def _target(
     if (
         supplied_id is not None
         and supplied_id != user_id
-        and (_explicit_token(ctx, str(supplied_id)) or supplied_id in _mention_ids(ctx))
+        and supplied_id in requested_ids
     ):
         # Distinct IDs explicitly named by the sender are ambiguous. An ID
         # invented by the model (e.g. the reply bot's ID) cannot override the
@@ -569,8 +594,9 @@ async def _target(
         raise ModerationDenied("target")
     elif not (
         (reply_user is not None and reply_user.id == user_id)
-        or user_id in _mention_ids(ctx)
-        or _explicit_token(ctx, str(user_id))
+        or user_id in requested_ids
+        or reference is not None
+        and reference.target == str(user_id)
         or (
             target.startswith("@")
             and (
@@ -585,6 +611,9 @@ async def _target(
         raise ModerationDenied("self")
     if user_id == ctx.deps.user_id:
         raise ModerationDenied("protected")
+    ctx.deps.moderation_reference = datatype.ModerationReference(
+        str(user_id), _now().timestamp()
+    )
     key = f"member:{_active_action.get()}:{user_id}"
     _canonical_key.set(key)
     receipt = ctx.deps.moderation_results.get(key)

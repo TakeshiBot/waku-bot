@@ -102,6 +102,7 @@ async def record_tool_reply(
         reply_to_message_id=message.id,
         reply_text=delivered_text if isinstance(delivered_text, str) else text,
         original_user_message=message_plain_text(message),
+        moderation_reference=getattr(deps, "moderation_reference", None),
         timestamp=datetime.now().timestamp(),
     )
     try:
@@ -278,6 +279,8 @@ async def reply_output(
     message: pyrogram.types.Message,
     text: str,
     should_send: Callable[[], bool] | None = None,
+    *,
+    deps: datatype.ContextDeps | None = None,
 ) -> bool:
     if should_send is not None and not should_send():
         return False
@@ -327,6 +330,7 @@ async def reply_output(
                 reply_to_message_id=message.id,
                 reply_text=last_reply_text,
                 original_user_message=message_plain_text(message),
+                moderation_reference=getattr(deps, "moderation_reference", None),
                 timestamp=datetime.now().timestamp(),
             )
             _chat = message.chat
@@ -433,9 +437,10 @@ class StreamingOutput:
     MAX_MESSAGE_LENGTH = 4000
     MAX_TOTAL_TIME = float(app_config.agent_streaming_max_time)
 
-    def __init__(self, client, message, should_send=None):
+    def __init__(self, client, message, should_send=None, *, deps=None):
         self.client = client
         self.message = message
+        self.deps = deps
         self.should_send = should_send
         self.current_text = ""
         self.reply_message_id = None
@@ -600,6 +605,9 @@ class StreamingOutput:
                             reply_to_message_id=self.message.id,
                             reply_text=self.current_text,
                             original_user_message=message_plain_text(self.message),
+                            moderation_reference=getattr(
+                                self.deps, "moderation_reference", None
+                            ),
                             timestamp=datetime.now().timestamp(),
                         ),
                         ttl=300,

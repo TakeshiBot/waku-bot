@@ -7,9 +7,12 @@ dùng bộ xử lý quản trị của bản mod cũ.
 ## Yêu cầu và cách gọi
 
 Bật AI của nhóm và **AI quản trị** trong `/config`, rồi bấm **Lưu**.
-AI quản trị mặc định tắt; khi tắt, bot vẫn trò chuyện nhưng không dùng tool quản trị.
+AI quản trị mặc định tắt; khi tắt, bot vẫn trò chuyện nhưng không thực hiện thao tác quản trị.
 Cho Waku làm admin và cấp đúng quyền cần dùng.
 Người yêu cầu cũng phải có quyền quản trị tương ứng trong chính nhóm đó.
+Người thường vẫn được gửi yêu cầu. AI gọi tool để kiểm tra quyền thực tế,
+rồi giải thích lý do từ chối theo prompt nếu người gọi hoặc bot thiếu quyền;
+không suy diễn rằng bot chưa hỗ trợ chức năng đó.
 Quyền admin toàn bot không thay thế quyền quản trị nhóm; admin ẩn danh không
 được thực thi khi không xác minh được danh tính người ra lệnh.
 
@@ -28,6 +31,10 @@ bao gồm mute, ban/kick và bổ nhiệm admin nhóm, theo quyền/trạng thá
 Bot không đoán từ tên hiển thị hoặc tác giả gốc của tin chuyển tiếp.
 Khi reply câu trả lời gần nhất của Waku cho chính mình trong 5 phút, câu tiếp
 nối như `cho lên admin` có thể dùng mục tiêu duy nhất đã ghi trong yêu cầu gốc.
+Mục tiêu được giữ qua chuỗi reply của cùng người gọi, chẳng hạn
+`cho @username admin` → `thôi demote đi` → `giờ mute 36s`, cả với phản hồi
+thông thường, streaming hoặc tin do tool gửi. Thời hạn như `36 giây` không
+được coi là ID thành viên.
 Backend đối chiếu người gọi, nhóm, ID tin reply và thời gian; không lấy mục tiêu
 từ nội dung AI tự tạo, reply của người khác hoặc lịch sử tùy ý.
 Khi yêu cầu chưa rõ, AI phải hỏi lại trước khi thực hiện.

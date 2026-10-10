@@ -253,11 +253,11 @@ def turn(env, locale="en"):
 
 
 @pytest.mark.asyncio
-async def test_disabled_group_hides_even_cached_tools_and_execution(env):
+async def test_disabled_group_exposes_capability_but_denies_execution(env):
     tool = SimpleNamespace(name="ban_user")
     assert await mod.prepare_group_moderation(env.ctx, tool) is tool
     mod.get_chat_by_id.return_value.chat_config.agent_moderation_enabled = False
-    assert await mod.prepare_group_moderation(env.ctx, tool) is None
+    assert await mod.prepare_group_moderation(env.ctx, tool) is tool
     result = await mod.ban_user(env.ctx)
     assert "disabled" in result
     assert not env.mutations
@@ -405,11 +405,11 @@ def test_lossless_native_snapshot():
 
 
 @pytest.mark.asyncio
-async def test_prepare_cache_then_fresh_execution(env):
+async def test_tool_visibility_never_grants_authority(env):
     for name in mod.MODERATION_RIGHTS:
         tool = Tool(getattr(mod, name))
         assert await mod.prepare_group_moderation(env.ctx, tool) is tool
-    assert env.client.invoke.await_count == 2
+    env.client.invoke.assert_not_awaited()
     env.members[2] = member(2)
     assert "administrator permission" in await mod.ban_user(env.ctx)
     assert not env.mutations
@@ -424,6 +424,66 @@ async def test_no_global_owner_bypass(env, who):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("denial", ["member", "actor_right", "bot_right", "disabled"])
+async def test_ai_receives_real_denial_instead_of_hidden_mute_tool(env, denial):
+    from pydantic_ai import Agent
+    from pydantic_ai.messages import (
+        ModelResponse,
+        TextPart,
+        ToolCallPart,
+        ToolReturnPart,
+    )
+    from pydantic_ai.models.function import FunctionModel
+
+    if denial == "member":
+        env.members[2] = member(2)
+    elif denial == "actor_right":
+        env.members[2].admin_rights.ban_users = False
+    elif denial == "bot_right":
+        env.members[99].admin_rights.ban_users = False
+    else:
+        mod.get_chat_by_id.return_value.chat_config.agent_moderation_enabled = False
+    responses = []
+
+    async def respond(messages, info):
+        assert [tool.name for tool in info.function_tools] == ["mute_user"]
+        receipts = [
+            part.content
+            for message in messages
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if not receipts:
+            return ModelResponse(parts=[ToolCallPart("mute_user", {"user_id": 3})])
+        responses.extend(receipts)
+        assert (
+            "disabled" in receipts[0]
+            if denial == "disabled"
+            else "permission" in receipts[0]
+        )
+        return ModelResponse(
+            parts=[TextPart("Tui không thực hiện được vì chưa đủ quyền nha.")]
+        )
+
+    agent = Agent(
+        FunctionModel(respond),
+        deps_type=ContextDeps,
+        tools=[Tool(mod.mute_user, prepare=mod.prepare_group_moderation)],
+    )
+    result = await agent.run("waku mute 3", deps=env.ctx.deps)
+    assert result.output == "Tui không thực hiện được vì chưa đủ quyền nha."
+    assert len(responses) == 1
+    assert not env.mutations and not env.data
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("chat_type", [ChatType.PRIVATE, ChatType.CHANNEL])
+async def test_moderation_tools_remain_group_only(env, chat_type):
+    env.chat.type = chat_type
+    assert await mod.prepare_group_moderation(env.ctx, Tool(mod.mute_user)) is None
+
+
+@pytest.mark.asyncio
 async def test_anonymous_decline(env):
     env.message.sender_chat = env.chat
     assert "Anonymous" in await mod.ban_user(env.ctx)
@@ -434,6 +494,7 @@ async def test_anonymous_decline(env):
 @pytest.mark.asyncio
 async def test_protected_targets(env, who):
     env.members[4] = admin(4)
+    env.message.text = "mute"
     env.reply.from_user = User(id=who, first_name="Protected")
     assert "protected" in await mod.ban_user(env.ctx)
     assert not env.mutations
@@ -1312,6 +1373,113 @@ async def test_followup_reply_reuses_only_same_senders_original_named_target(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("duration_text", ["36s", "36 giây", "36 seconds"])
+@pytest.mark.parametrize("via_tool_send", [False, True])
+async def test_verified_target_survives_promote_demote_mute_reply_chain(
+    env, monkeypatch, duration_text, via_tool_send
+):
+    from waku.common.memory_store import memttlcache
+    from waku.plugins.agent import output
+    from waku.plugins.agent.output import record_tool_reply
+
+    other_bot_target(env, monkeypatch)
+    env.members[2] = raw.types.ChannelParticipantCreator(
+        user_id=2, admin_rights=raw.types.ChatAdminRights()
+    )
+    cache = {}
+
+    async def get(key, default=None):
+        return cache.get(key, default)
+
+    async def put(key, value, **kwargs):
+        cache[key] = value
+
+    monkeypatch.setattr(memttlcache, "get", AsyncMock(side_effect=get))
+    monkeypatch.setattr(memttlcache, "set", AsyncMock(side_effect=put))
+    monkeypatch.setattr(output, "datetime", SimpleNamespace(now=lambda: NOW))
+    monkeypatch.setattr(output, "_rich_output_enabled", AsyncMock(return_value=False))
+    actions = [
+        ("cho @jinmirror_bot admin", mod.promote_user, {"target": "@jinmirror_bot"}),
+        ("thôi demote đi", mod.demote_user, {}),
+        (f"giờ mute {duration_text}", mod.mute_user, {"duration": "36s"}),
+    ]
+    for index, (text, action, arguments) in enumerate(actions):
+        env.message.text = text
+        ctx = turn(env)
+        context = await mod.group_moderation_context(ctx)
+        if index:
+            assert "Backend-verified target reference: 3" in context
+        result = await action(ctx, **arguments)
+        assert "Completed" in result
+        delivered = Message(
+            id=100 + index, chat=env.chat, from_user=env.client.me, text="AI reply"
+        )
+        if via_tool_send:
+            await record_tool_reply(ctx.deps, delivered, "AI reply")
+        else:
+            monkeypatch.setattr(
+                output, "_send_plain_reply", AsyncMock(return_value=delivered)
+            )
+            assert await output.reply_output(
+                env.client, env.message, "AI reply", deps=ctx.deps
+            )
+        env.message.reply_to_message = delivered
+    assert len(env.mutations) == 3
+    assert env.mutations[-1].participant.user_id == 3
+    assert env.mutations[-1].banned_rights.until_date == int(
+        (NOW + timedelta(seconds=36)).timestamp()
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid", ["sender", "expired", "future", "message", "forward", "different_target"]
+)
+async def test_carried_reference_never_crosses_identity_time_or_explicit_target(
+    env, monkeypatch, invalid
+):
+    from waku.common.memory_store import memttlcache
+    from waku.plugins.agent.datatype import BotLastReply, ModerationReference
+
+    other_bot_target(env, monkeypatch)
+    env.message.text = "giờ mute 36s"
+    cached = BotLastReply(
+        message_id=env.reply.id,
+        reply_to_user_id=2,
+        reply_to_message_id=5,
+        reply_text="Anything, including invented @someone",
+        timestamp=NOW.timestamp(),
+        original_user_message="thôi demote đi",
+        moderation_reference=ModerationReference("3", NOW.timestamp()),
+    )
+    if invalid == "sender":
+        cached.reply_to_user_id = 1
+    elif invalid == "expired":
+        cached.moderation_reference.timestamp -= 301
+    elif invalid == "future":
+        cached.moderation_reference.timestamp += 1
+    elif invalid == "message":
+        cached.message_id += 1
+    elif invalid == "forward":
+        env.reply.forward_origin = MessageOriginUser(sender_user=env.client.me)
+    else:
+        env.message.text = "mute ID 4 36s"
+        env.members[4] = member(4)
+    monkeypatch.setattr(memttlcache, "get", AsyncMock(return_value=cached))
+    assert await mod.group_moderation_context(env.ctx) == ""
+    if invalid == "different_target":
+        assert "Completed mute" in await mod.mute_user(
+            env.ctx, user_id=4, duration="36s"
+        )
+        assert env.mutations[0].participant.user_id == 4
+    else:
+        assert "Completed" not in await mod.mute_user(
+            env.ctx, user_id=3, duration="36s"
+        )
+        assert not env.mutations
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "invalid_evidence",
     [
@@ -1444,6 +1612,7 @@ async def test_multiple_names_without_specific_target_never_selects_reply_author
 
 @pytest.mark.asyncio
 async def test_actual_executing_bot_stays_protected_without_protecting_other_bots(env):
+    env.message.text = "mute"
     env.reply.from_user = env.client.me
     assert "this executing bot itself" in await mod.mute_user(env.ctx)
     assert not env.mutations

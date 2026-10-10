@@ -242,6 +242,7 @@ async def test_tool_send_and_final_output_deliver_only_once(
         yield AgentRun()
 
     namespace["app_config"].agent_streaming = streaming
+
     # Error delivery uses the separately tested persona status composer. This
     # runner fixture has no real model, so exercise its API-unavailable fallback.
     async def reply_agent_status(client, message, **kwargs):
@@ -421,3 +422,31 @@ async def test_tool_only_reply_preserves_group_follow_up_context(delivery):
     assert reply.reply_text == "Hello"
     assert reply.reply_to_message_id == 1
     assert reply.original_user_message == "Hi"
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_group_reply_carries_verified_reference_in_every_output_mode(
+    delivery, streaming
+):
+    delivery.message.chat.type = pyrogram.enums.ChatType.SUPERGROUP
+    delivery.message.text = "thôi demote đi"
+    reference = SimpleNamespace(target="3", timestamp=1000)
+    delivery.deps.moderation_reference = reference
+    if streaming:
+        stream = delivery.namespace["StreamingOutput"](
+            delivery.client, delivery.message, deps=delivery.deps
+        )
+        await stream.append_delta("AI reply")
+        assert await stream.finalize()
+    else:
+        assert await delivery.namespace["reply_output"](
+            delivery.client, delivery.message, "AI reply", deps=delivery.deps
+        )
+    replies = [
+        call.args[1]
+        for call in delivery.namespace["memttlcache"].set.await_args_list
+        if call.args[0] == "reply:2"
+    ]
+    assert len(replies) == 1
+    assert replies[0].moderation_reference is reference
+    assert replies[0].original_user_message == "thôi demote đi"

@@ -379,7 +379,7 @@ async def _run_agent_impl(
                                                     continue
                                                 if streaming_output is None:
                                                     streaming_output = StreamingOutput(
-                                                        client, message
+                                                        client, message, deps=deps
                                                     )
                                                 await streaming_output.append_delta(
                                                     event.part.content
@@ -390,7 +390,7 @@ async def _run_agent_impl(
                                                     continue
                                                 if streaming_output is None:
                                                     streaming_output = StreamingOutput(
-                                                        client, message
+                                                        client, message, deps=deps
                                                     )
                                                 await streaming_output.append_delta(
                                                     event.delta.content_delta
@@ -434,7 +434,9 @@ async def _run_agent_impl(
                             elif streaming_output is not None:
                                 await streaming_output.finalize()
                             elif output and not text_already_sent(deps, output):
-                                if await reply_output(client, message, output):
+                                if await reply_output(
+                                    client, message, output, deps=deps
+                                ):
                                     record_sent_text(deps, output, markdown=True)
                         # Settle before fallible cleanup so a sent answer is still billed if cleanup fails.
                         await quota.settle(subject, agent_run.usage)
@@ -513,7 +515,7 @@ async def _run_agent_impl(
                                         )
                                     elif not text_already_sent(deps, part.content):
                                         delivered = await reply_output(
-                                            client, message, part.content
+                                            client, message, part.content, deps=deps
                                         )
                                         if delivered:
                                             record_sent_text(
@@ -541,7 +543,7 @@ async def _run_agent_impl(
                             f"Agent returned {type(output).__name__} for user {user_id}"
                         )
                     elif not replied and output and not text_already_sent(deps, output):
-                        if await reply_output(client, message, output):
+                        if await reply_output(client, message, output, deps=deps):
                             record_sent_text(deps, output, markdown=True)
                             full_output_parts.append(output)
                     # Settle before cleanup; cleanup failure must not make the call free.
