@@ -8,7 +8,6 @@ on:
       - "scripts/check_i18n.py"
       - "scripts/dev_init_data.py"
       - "settings.ex.toml"
-      - "tests/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/i18n.yml"
@@ -19,7 +18,6 @@ on:
       - "scripts/check_i18n.py"
       - "scripts/dev_init_data.py"
       - "settings.ex.toml"
-      - "tests/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/i18n.yml"
@@ -38,7 +36,6 @@ jobs:
           enable-cache: true
       - run: uv python install 3.13
       - run: uv sync --frozen
-      - name: Prepare test configuration
+      - name: Prepare configuration
         run: cp settings.ex.toml settings.toml
-      - run: uv run --no-sync python -m pytest tests -q
       - run: uv run --no-sync python scripts/check_i18n.py

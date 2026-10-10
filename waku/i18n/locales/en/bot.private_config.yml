@@ -25,7 +25,12 @@ bot:
     denied: Only bot owners and global administrators can use private settings.
     expired: This menu expired or belongs to another user. Open /config again.
     back: ↩️
-    close: ✖️
+    close: ✖️ Close
+    business_prompt_help: 'Custom Prompt enabled and filled: use it exclusively for Business. Disabled or empty: use the main prompt. Save to apply immediately.'
+    business_labels:
+      business_chat_enabled: Business Chat
+      business_chat_prompt_enabled: Custom Prompt
+      business_chat_prompt: Edit Prompt
     closed: Settings closed.
     edit: ✏️ Edit value
     toggle: Toggle

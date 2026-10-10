@@ -18,7 +18,7 @@ streaming và giới hạn của base hiện tại.
    agent_model = "default/ten-model"
    ```
 
-Giữ provider và prompt AI đang dùng. Business dùng `agent_prompt`, `agent_model`,
+Business dùng `agent_model`,
 `agent_streaming`, `agent_rich_output`, timeout và giới hạn AI của bot hiện tại;
 không cần token hoặc URL/key AI khác.
 
@@ -27,6 +27,20 @@ Chủ bot hoặc quản trị viên toàn cục có thể vào **DM với bot �
 trang tiếp theo → Telegram Business**, rồi bật/tắt `business_chat_enabled`.
 Công tắc được lưu và áp dụng ngay, không cần khởi động lại. Những thay đổi model,
 provider và prompt vẫn theo cơ chế cấu hình của base hiện tại.
+
+Trong mục **Telegram Business**, bấm **Sửa Prompt** để nhập nội dung riêng,
+**Prompt Riêng** để bật/tắt rồi bấm **Lưu**. Khi bật và nội dung không trống,
+Business chỉ dùng prompt riêng này, không ghép thêm `agent_prompt`. Khi tắt
+hoặc để trống, Business dùng prompt chính. Tắt không xoá nội dung đã lưu;
+thay đổi áp dụng cho lượt tiếp theo, không cần khởi động lại.
+Nút **Đóng** trong menu admin bỏ các thay đổi chưa lưu.
+
+Hai mục tương ứng trong file cấu hình, đặt cùng `business_chat_enabled`:
+
+```toml
+business_chat_prompt_enabled = true
+business_chat_prompt = '''Bạn là trợ lý trả lời khách hàng của tôi.'''
+```
 
 Telegram yêu cầu kết nối còn bật và quyền `can_reply`. Quyền gửi/sửa tin áp dụng
 cho cuộc chat riêng có tin đến trong 24 giờ gần nhất. Xem

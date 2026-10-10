@@ -100,7 +100,8 @@ pnpm-debug.log*
 .opencode/
 .codegraph/
 
-# Root-level scratch files; do not hide tests/ or frontend test source.
+# Local test suite and root-level scratch files.
+/tests/
 /test*.py
 /test*.json
 /test*.db

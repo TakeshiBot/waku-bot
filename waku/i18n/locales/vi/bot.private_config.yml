@@ -25,7 +25,12 @@ bot:
     denied: Chỉ chủ bot hoặc quản trị viên toàn cục được dùng cấu hình riêng tư.
     expired: Menu đã hết hạn hoặc không thuộc về bạn. Mở lại /config.
     back: ↩️
-    close: ✖️
+    close: ✖️ Đóng
+    business_prompt_help: 'Prompt Riêng bật và có nội dung: dùng riêng cho Business. Tắt hoặc trống: dùng prompt chính. Lưu để áp dụng ngay.'
+    business_labels:
+      business_chat_enabled: Chat Business
+      business_chat_prompt_enabled: Prompt Riêng
+      business_chat_prompt: Sửa Prompt
     closed: Đã đóng cấu hình.
     edit: ✏️ Sửa giá trị
     toggle: Bật / tắt

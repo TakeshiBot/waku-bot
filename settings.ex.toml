@@ -18,6 +18,9 @@ agent_sticker_description_model = "default/gpt-4o-mini"
 
 # Telegram Business: kết nối tài khoản và bật Secretary Mode trong BotFather.
 business_chat_enabled = false
+# Bật và có nội dung: dùng prompt riêng. Tắt hoặc trống: dùng agent_prompt.
+business_chat_prompt_enabled = true
+business_chat_prompt = ''''''
 
 # Telegram Mini App management panel
 webapp = false

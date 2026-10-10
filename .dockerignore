@@ -61,6 +61,7 @@ unknown_errors.txt
 *.sqlite-*
 *.sqlite3
 *.sqlite3-*
+tests/
 test*.py
 test*.json
 *.bak

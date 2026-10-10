@@ -63,6 +63,9 @@ class _AppConfig(pydantic.BaseModel):
 
     # Reply on behalf of connected Telegram Business accounts when permitted.
     business_chat_enabled: bool = False
+    # Empty/disabled custom prompt falls back to the ordinary DM persona.
+    business_chat_prompt_enabled: bool = True
+    business_chat_prompt: str = ""
 
     # Discord is an optional application layer; Telegram remains the default.
     discord_enabled: bool = False

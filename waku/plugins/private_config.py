@@ -133,6 +133,7 @@ def _footer(
         row.append(_button(_tr("restart", session), token, "restart"))
     if following:
         row.append(_button("▶️", token, following))
+    row.append(_button(_tr("close", session), token, "close"))
     return row
 
 
@@ -156,7 +157,17 @@ def _entry_value(values: dict, key: str):
 def _label(key: str, value, session: ConfigSession) -> str:
     status = "✅ " if value is True else "❌ " if value is False else ""
     changed = "📝 " if key in session.changes else "🔄 " if key in session.dirty else ""
-    return changed + status + key.rsplit(".", 1)[-1]
+    name = (
+        _tr("business_labels." + key, session)
+        if key
+        in {
+            "business_chat_enabled",
+            "business_chat_prompt_enabled",
+            "business_chat_prompt",
+        }
+        else key.rsplit(".", 1)[-1]
+    )
+    return changed + status + name
 
 
 def _variables_text(
@@ -505,6 +516,8 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
             session,
         )
         text += "\n" + _tr("page", session, page=page + 1, pages=pages)
+        if group == "business":
+            text += "\n" + _tr("business_prompt_help", session)
         buttons = []
         for index in range(page * _PAGE_SIZE, min(len(keys), (page + 1) * _PAGE_SIZE)):
             key = keys[index]

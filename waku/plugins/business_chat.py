@@ -56,13 +56,23 @@ def _should_reply(message: Message) -> bool:
     )
 
 
+def _business_prompt() -> str:
+    if (
+        app_config.business_chat_prompt_enabled
+        and app_config.business_chat_prompt.strip()
+    ):
+        return app_config.business_chat_prompt
+    from waku.plugins.agent.localization import configured_prompt
+
+    return configured_prompt("agent_prompt", app_config.lang)
+
+
 def _make_business_agent() -> Agent:
     # Keep the plugin importable when agent=false; importing the shared agent
     # stack at plugin discovery time would initialize unrelated Telegram state.
     from pydantic_ai import Agent
     from pydantic_ai_harness.guardrails import OutputGuardrail
 
-    from waku.plugins.agent.localization import configured_prompt
     from waku.plugins.agent.provider import make_chat_model, make_model_settings
     from waku.plugins.agent.safety import scrub_output
 
@@ -70,7 +80,7 @@ def _make_business_agent() -> Agent:
     return Agent(
         model=make_chat_model(app_config.agent_model),
         model_settings=make_model_settings(app_config.agent_model_options),
-        instructions=configured_prompt("agent_prompt", app_config.lang),
+        instructions=_business_prompt(),
         output_type=str,
         capabilities=[OutputGuardrail(guard=scrub_output)]
         if app_config.agent_secret_masking
