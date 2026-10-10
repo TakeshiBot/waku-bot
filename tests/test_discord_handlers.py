@@ -100,7 +100,7 @@ async def test_discord_serializes_same_user_before_prompt_preparation(monkeypatc
     try:
         await asyncio.wait_for(entered.wait(), timeout=1)
         await handlers._handle_message(message, "second")
-        send_reply.assert_awaited_once_with(message, "Thinking...")
+        send_reply.assert_not_awaited()
         channel.send.assert_not_awaited()
         assert run_once.await_count == 0
         release.set()
@@ -115,6 +115,56 @@ async def test_discord_serializes_same_user_before_prompt_preparation(monkeypatc
             except asyncio.CancelledError:
                 pass
         await handlers.common.memstore.delete(waiting_key)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stale", ["flag", "finished_task"])
+async def test_stale_busy_state_does_not_block_a_new_turn(monkeypatch, stale):
+    message = SimpleNamespace(
+        author=SimpleNamespace(id=989, bot=False),
+        guild=SimpleNamespace(id=10, name="test"),
+        channel=SimpleNamespace(id=123, name="test", send=AsyncMock()),
+    )
+    monkeypatch.setattr(state, "discord_agent", object())
+    turn = AsyncMock()
+    monkeypatch.setattr(handlers, "_handle_discord_message_turn", turn)
+    monkeypatch.setattr(handlers, "_send_reply", AsyncMock())
+    waiting_key = handlers._waiting_key(message.author.id)
+    owner = True
+    if stale == "finished_task":
+        owner = asyncio.create_task(asyncio.sleep(0))
+        await owner
+    await handlers.common.memstore.set(waiting_key, owner)
+    await handlers._handle_message(message, "hello")
+    turn.assert_awaited_once_with(message, "hello")
+    handlers._send_reply.assert_not_awaited()
+    assert await handlers.common.memstore.get(waiting_key) is None
+
+
+@pytest.mark.asyncio
+async def test_cancelling_a_turn_releases_its_busy_owner(monkeypatch):
+    message = SimpleNamespace(
+        author=SimpleNamespace(id=990, bot=False),
+        guild=SimpleNamespace(id=10, name="test"),
+        channel=SimpleNamespace(id=123, name="test", send=AsyncMock()),
+    )
+    entered = asyncio.Event()
+
+    async def hold(*args):
+        entered.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(state, "discord_agent", object())
+    monkeypatch.setattr(handlers, "_handle_discord_message_turn", hold)
+    waiting_key = handlers._waiting_key(message.author.id)
+    task = asyncio.create_task(handlers._handle_message(message, "hello"))
+    await asyncio.wait_for(entered.wait(), 1)
+    assert await handlers.common.memstore.get(waiting_key) is task
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert await handlers.common.memstore.get(waiting_key) is None
+    assert task not in state.discord_ai_tasks
 
 
 @pytest.mark.asyncio

@@ -26,6 +26,124 @@ def writes(transport):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("connection", [None, "business-a"])
+async def test_thinking_precedes_model_text_and_shares_the_final_draft_id(
+    transport, monkeypatch, connection
+):
+    monkeypatch.setattr(output, "_rich_output_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(output.app_config, "agent_streaming", True)
+    message = transport.message(connection)
+    message.message_thread_id = 72
+    async with output.TypingKeepAlive(transport.client, message) as typing:
+        stream = typing.streaming_output
+        assert stream.current_text == "" and not writes(transport)
+        first = transport.calls[0][0]
+        assert isinstance(
+            first.action.rich_message.blocks[0], raw.types.PageBlockThinking
+        )
+        assert first.top_msg_id == 72 and first.action.can_stop
+        assert generation.has_live_generation(transport.client, message)
+        await stream.append_delta("Câu trả lời.")
+        stream.official_draft._next_send = 0
+        rich_output._DRAFT_PEER_NEXT_SEND.clear()
+        await stream.official_draft._send_draft()
+        later = transport.calls[-1][0]
+        assert later.action.random_id == first.action.random_id
+        assert later.action.rich_message.markdown == "Câu trả lời."
+        assert await stream.finalize()
+    assert len(writes(transport)) == 1
+    assert writes(transport)[0].random_id == first.action.random_id
+    assert all(account == connection for _, account in transport.calls)
+    assert not generation._generations and stream.official_draft._task.done()
+
+
+@pytest.mark.asyncio
+async def test_thinking_cleanup_without_any_model_text_never_sends_an_empty_message(
+    transport, monkeypatch
+):
+    monkeypatch.setattr(output, "_rich_output_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(output.app_config, "agent_streaming", True)
+    async with output.TypingKeepAlive(
+        transport.client, transport.message(None)
+    ) as typing:
+        stream = typing.streaming_output
+        assert generation.has_live_generation(transport.client, stream.message)
+    assert not generation._generations and not writes(transport)
+    assert stream.official_draft._task.done()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("connection", [None, "business-a"])
+async def test_stop_during_thinking_cancels_before_the_first_token(
+    transport, monkeypatch, connection
+):
+    monkeypatch.setattr(output, "_rich_output_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(output.app_config, "agent_streaming", True)
+    message = transport.message(connection)
+    message.message_thread_id = 72
+    ready = asyncio.Event()
+    state = {}
+
+    async def run():
+        async with output.TypingKeepAlive(transport.client, message) as typing:
+            state["typing"] = typing
+            ready.set()
+            await asyncio.Event().wait()
+            await typing.streaming_output.append_delta("Must not be sent")
+
+    task = asyncio.create_task(run())
+    try:
+        await asyncio.wait_for(ready.wait(), 1)
+        typing = state["typing"]
+        stream = typing.streaming_output
+        assert stream.current_text == ""
+        assert generation.stop_generation(
+            transport.client, message.chat.id, 72, stream.random_id, connection
+        )
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert stream._cancelled and not await stream.finalize()
+        assert stream.official_draft._task.done() and typing._task.done()
+        assert not generation._generations and not writes(transport)
+    finally:
+        if not task.done():
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+
+@pytest.mark.asyncio
+async def test_cancellation_while_starting_thinking_cleans_up_context(
+    transport, monkeypatch
+):
+    monkeypatch.setattr(output, "_rich_output_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(output.app_config, "agent_streaming", True)
+    started = asyncio.Event()
+
+    async def invoke(query, **kwargs):
+        if isinstance(query.action, raw.types.InputSendMessageRichMessageDraftAction):
+            started.set()
+            await asyncio.Event().wait()
+        return True
+
+    monkeypatch.setattr(transport.client, "invoke", invoke)
+    typing = output.TypingKeepAlive(transport.client, transport.message(None))
+    task = asyncio.create_task(typing.__aenter__())
+    try:
+        await asyncio.wait_for(started.wait(), 1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert typing._task.done()
+        assert not generation._generations and not writes(transport)
+    finally:
+        if not task.done():
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("connection", [None, "business-a"])
 @pytest.mark.parametrize("rich", [False, True])
 async def test_private_native_preview_and_final_same_id_peer_topic_reply(
     transport, monkeypatch, connection, rich
@@ -181,8 +299,16 @@ async def test_empty_markdown_prefix_thinks_then_streams_later_text(
     stream = output.StreamingOutput(transport.client, transport.message(connection))
     await stream.append_delta(prefix)
     first = transport.calls[0][0]
-    assert isinstance(first.action, raw.types.SendMessageTextDraftAction)
-    assert first.action.text.text == ""
+    if not prefix.strip():
+        assert isinstance(
+            first.action, raw.types.InputSendMessageRichMessageDraftAction
+        )
+        assert isinstance(
+            first.action.rich_message.blocks[0], raw.types.PageBlockThinking
+        )
+    else:
+        assert isinstance(first.action, raw.types.SendMessageTextDraftAction)
+        assert first.action.text.text == ""
     assert stream.official_draft._task is not None
     assert generation.has_live_generation(transport.client, stream.message)
     await stream.append_delta(suffix)

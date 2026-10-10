@@ -364,6 +364,7 @@ class TypingKeepAlive:
         self.message = message
         self._stop = False
         self._task: asyncio.Task | None = None
+        self.streaming_output = None
 
     async def _loop(self):
         chat = self.message.chat
@@ -418,9 +419,23 @@ class TypingKeepAlive:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        if self.streaming_output is not None:
+            await self.streaming_output.abort()
 
     async def __aenter__(self):
         self.start()
+        try:
+            if (
+                getattr(app_config, "agent_streaming", False)
+                and self.message.chat
+                and self.message.chat.type == pyrogram.enums.ChatType.PRIVATE
+            ):
+                self.streaming_output = StreamingOutput(self.client, self.message)
+                await self.streaming_output.start_thinking()
+        except BaseException:
+            # __aexit__ is not called if entering the context is interrupted.
+            await self.stop()
+            raise
         return self
 
     async def __aexit__(self, *_):
@@ -488,15 +503,16 @@ class StreamingOutput:
             generation.unregister_generation(self.client, self.message, self.random_id)
             self._registered = False
 
-    async def append_delta(self, delta: str):
-        if not delta or self._finalized or not self._may_send():
+    async def start_thinking(self):
+        """Start the draft before text, reusing its identity for the final reply."""
+        if self.official_draft is None or self._finalized or not self._may_send():
             return
-        self.current_text += delta
-        if self.official_draft is None:
-            # Telegram does not support native drafts in groups. Buffer the
-            # answer and persist it once instead of repeatedly editing it.
-            return
-        self.official_draft.update(self.current_text)
+        # Rebind Stop to the active runner task when a caller-owned keepalive
+        # hands its preview to the timeout-bound model run.
+        if self._registered:
+            generation.register_generation(
+                self.client, self.message, self.random_id, self.request_stop
+            )
         if self._draft_attempted:
             return
         self._draft_attempted = True
@@ -507,6 +523,17 @@ class StreamingOutput:
         self._registered = True
         if not await self.official_draft.start():
             self._unregister()
+
+    async def append_delta(self, delta: str):
+        if not delta or self._finalized or not self._may_send():
+            return
+        self.current_text += delta
+        if self.official_draft is None:
+            # Telegram does not support native drafts in groups. Buffer the
+            # answer and persist it once instead of repeatedly editing it.
+            return
+        self.official_draft.update(self.current_text)
+        await self.start_thinking()
 
     async def _finalize_generation(self):
         if self._finalized:

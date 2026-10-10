@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import discord
@@ -197,10 +198,12 @@ async def forget_command(interaction: discord.Interaction) -> None:
         )
         return
     waiting_key = _waiting_key(interaction.user.id)
+    task = asyncio.current_task()
     async with state._discord_turn_lock(interaction.user.id):
-        busy = bool(await common.memstore.get(waiting_key))
+        owner = await common.memstore.get(waiting_key)
+        busy = isinstance(owner, asyncio.Task) and not owner.done()
         if not busy:
-            await common.memstore.set(waiting_key, True)
+            await common.memstore.set(waiting_key, task)
     if busy:
         await _render(
             interaction,
@@ -213,7 +216,8 @@ async def forget_command(interaction: discord.Interaction) -> None:
         key = await _history_key(_context(interaction))
         await common.memttlcache.delete(key)
     finally:
-        await common.memstore.delete(waiting_key)
+        if await common.memstore.get(waiting_key) is task:
+            await common.memstore.delete(waiting_key)
     await _render(
         interaction, "Đã xoá ngữ cảnh của bạn ở kênh hiện tại.", title="Đã quên"
     )

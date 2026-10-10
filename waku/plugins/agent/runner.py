@@ -350,7 +350,12 @@ async def _run_agent_impl(
             await ctx.__aenter__()
         try:
             if app_config.agent_streaming:
-                streaming_output: StreamingOutput | None = None
+                streaming_output: StreamingOutput | None = getattr(
+                    ctx, "streaming_output", None
+                )
+                if streaming_output is not None:
+                    streaming_output.deps = deps
+                    await streaming_output.start_thinking()
                 output: Any = None
                 try:
                     async with _iter_with_spill_session(
@@ -368,6 +373,11 @@ async def _run_agent_impl(
                         node = agent_run.next_node
                         while not Agent.is_end_node(node):
                             if Agent.is_model_request_node(node):
+                                if streaming_output is None and not deps.sent_texts:
+                                    streaming_output = StreamingOutput(
+                                        client, message, deps=deps
+                                    )
+                                    await streaming_output.start_thinking()
                                 async with node.stream(agent_run.ctx) as request_stream:
                                     async for event in request_stream:
                                         if isinstance(event, PartStartEvent):
@@ -400,7 +410,11 @@ async def _run_agent_impl(
                                     part.part_kind == "tool-call"
                                     for part in node.model_response.parts
                                 )
-                                if has_tool_calls and streaming_output is not None:
+                                if (
+                                    has_tool_calls
+                                    and streaming_output is not None
+                                    and streaming_output.current_text
+                                ):
                                     await streaming_output.finalize()
                                     if streaming_output.delivered:
                                         record_sent_text(
@@ -431,13 +445,20 @@ async def _run_agent_impl(
                                 logger.warning(
                                     f"The stupid agent returned 'final_result' as text🤡 for user {user_id}"
                                 )
-                            elif streaming_output is not None:
+                            elif (
+                                streaming_output is not None
+                                and streaming_output.current_text
+                            ):
                                 await streaming_output.finalize()
-                            elif output and not text_already_sent(deps, output):
-                                if await reply_output(
-                                    client, message, output, deps=deps
-                                ):
-                                    record_sent_text(deps, output, markdown=True)
+                            else:
+                                if streaming_output is not None:
+                                    await streaming_output.abort()
+                                    streaming_output = None
+                                if output and not text_already_sent(deps, output):
+                                    if await reply_output(
+                                        client, message, output, deps=deps
+                                    ):
+                                        record_sent_text(deps, output, markdown=True)
                         # Settle before fallible cleanup so a sent answer is still billed if cleanup fails.
                         await quota.settle(subject, agent_run.usage)
                         trace.mark_trace(

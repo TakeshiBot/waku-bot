@@ -118,16 +118,19 @@ async def _handle_message(message: discord.Message, user_prompt: str) -> None:
     waiting_key = _waiting_key(message.author.id)
     try:
         async with state._discord_turn_lock(message.author.id):
-            already_waiting = bool(await common.memstore.get(waiting_key))
+            owner = await common.memstore.get(waiting_key)
+            already_waiting = isinstance(owner, asyncio.Task) and not owner.done()
             if not already_waiting:
-                await common.memstore.set(waiting_key, True)
+                await common.memstore.set(waiting_key, task)
         if already_waiting:
-            await _send_reply(message, "Thinking...")
+            # Keep the active reply/typing indicator, without sending permanent
+            # placeholders for every subsequent message from the same user.
             return
         try:
             await _handle_discord_message_turn(message, user_prompt)
         finally:
-            await common.memstore.delete(waiting_key)
+            if await common.memstore.get(waiting_key) is task:
+                await common.memstore.delete(waiting_key)
     finally:
         if task is not None:
             state.discord_ai_tasks.discard(task)

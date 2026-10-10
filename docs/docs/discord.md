@@ -118,6 +118,16 @@ dữ liệu chạy hoặc credentials từ source cũ.
 
 ## Cách trả lời và dùng biểu cảm
 
+Streaming được bật mặc định theo `agent_streaming` chung. Khi model bắt đầu
+trả lời, Waku gửi một tin rồi cập nhật dần nội dung, tối đa khoảng một lần mỗi
+2 giây. Khi hoàn tất, bot chốt tin đó và gửi các đoạn còn lại nếu câu trả lời
+dài. Trong lúc chạy tool, bản xem trước được giữ; câu trả lời cuối thay thế
+nội dung tạm. Tắt `agent_streaming` để gửi toàn bộ câu trả lời sau khi AI xong.
+Tin gửi thêm khi lượt trước của cùng người đang xử lý không tạo các tin
+“Thinking...” riêng. Nếu model chưa bắt đầu trả lời hoặc gọi tool trong
+`agent_model_timeout` (mặc định 120 giây), bot kết thúc lượt bị nghẽn và nhả
+trạng thái bận; tool đã bắt đầu vẫn dùng giới hạn thời gian của toàn lượt.
+
 Bot giữ cách gửi của bản Discord cũ: phản hồi AI là tin nhắn thường, tin dài được
 chia theo đoạn/dòng, giữ khối code, tối đa 7 tin và có khoảng nghỉ giữa các tin.
 Chỉ tin đầu reply vào tin người gọi, không ping người gọi; các tin sau gửi nối tiếp.

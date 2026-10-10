@@ -177,7 +177,10 @@ coi đây là hỗ trợ mọi kiểu tin rich của các phiên bản Telegram 
 ## Hiển thị câu trả lời đang sinh
 
 `agent_streaming = true` dùng **native draft** trong chat riêng, kể cả đường
-Business khi kết nối hỗ trợ. Draft là bản xem trước tạm thời; khi AI hoàn tất,
+Business khi kết nối hỗ trợ. Bot phát **Thinking** ngay khi bắt đầu xử lý,
+trước chữ đầu tiên của model; sau đó cập nhật câu trả lời trên cùng draft.
+Đây là trạng thái chờ, không hiển thị suy luận nội bộ của model.
+Draft là bản xem trước tạm thời; khi AI hoàn tất,
 bot gửi tin chính thức qua đúng chat/topic/kết nối. Nút Stop chỉ hủy lượt sinh
 gắn với chính draft đó; không hoàn tác thao tác quản trị đã được xác nhận.
 

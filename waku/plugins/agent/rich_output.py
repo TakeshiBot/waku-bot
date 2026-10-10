@@ -157,11 +157,22 @@ class OfficialRichDraftStreamer:
                 return False
             chunks = convert_md_chunks(draft_text, self.MAX_DRAFT_LENGTH)
             text, entities = chunks[0] if chunks else ("", [])
-            # Incomplete Markdown (e.g. a leading heading or code fence)
-            # can render no blocks. Empty text drafts are officially the
-            # Thinking placeholder; empty rich drafts are rejected instead.
+            # Publish a real Thinking block before the model emits text.
+            # Empty text drafts remain the native fallback for rich rejection.
             thinking = thinking or draft_text == self._empty_rich_text
-            if self.rich and not force_text and not thinking and text.strip():
+            if self.rich and not force_text and not draft_text.strip():
+                action = raw.types.InputSendMessageRichMessageDraftAction(
+                    random_id=self.random_id,
+                    rich_message=raw.types.InputRichMessage(
+                        blocks=[
+                            raw.types.PageBlockThinking(
+                                text=raw.types.TextPlain(text="Thinking…")
+                            )
+                        ],
+                    ),
+                    can_stop=True,
+                )
+            elif self.rich and not force_text and not thinking and text.strip():
                 payloads = convert_rich_md(draft_text)
                 if payloads:
                     action = raw.types.InputSendMessageRichMessageDraftAction(

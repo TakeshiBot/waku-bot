@@ -158,6 +158,7 @@ async def env():
     ns = dict(
         __name__="__main__",
         discord=discord,
+        asyncio=asyncio,
         app_commands=app_commands,
         SimpleNamespace=SimpleNamespace,
         logger=Mock(),
@@ -308,7 +309,7 @@ async def test_utility_slash_callbacks_are_silent_for_nonadmin_dm(env, command):
 
 
 async def test_forget_busy_and_exception_release_lock(env):
-    env.storage["waiting:42"] = True
+    env.storage["waiting:42"] = asyncio.current_task()
     await env.ns["forget_command"](env.request())
     env.ns["common"].memttlcache.delete.assert_not_awaited()
     assert env.storage["waiting:42"]
@@ -516,7 +517,7 @@ async def test_forget_serializes_busy_claim_with_ai_handler(env):
         pending = asyncio.create_task(env.ns["forget_command"](env.request()))
         await asyncio.sleep(0)
         assert not pending.done()
-        env.storage["waiting:42"] = True  # AI handler claims under this same lock.
+        env.storage["waiting:42"] = asyncio.current_task()  # Active AI owner.
     await pending
     env.ns["common"].memttlcache.delete.assert_not_awaited()
     assert env.storage["waiting:42"]  # Never clear another run's flag.
