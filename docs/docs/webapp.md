@@ -7,11 +7,16 @@ bot ngay trong Telegram.
 ## Điều kiện triển khai
 
 1. Có tên miền và chứng chỉ HTTPS hợp lệ.
-2. Đăng ký Mini App cho bot trong [@BotFather](https://t.me/BotFather).
+2. Bật `webapp` và đặt `webapp_url` trỏ tới URL HTTPS của bảng quản trị.
 
 Khi build bằng Docker, frontend được đóng gói sẵn trong image.
 
-## Đăng ký Mini App
+Từ `/config` hoặc `/panel` trong nhóm, bấm **Mở Mini App** để chuyển sang
+chat riêng, rồi bấm nút mở Mini App. Bot kiểm tra quyền quản trị nhóm trước khi
+hiện nút; bảng quản trị tiếp tục kiểm tra quyền khi đọc và lưu cấu hình.
+Luồng này giữ đúng nhóm cần sửa và không yêu cầu đăng ký short name.
+
+## Đăng ký Mini App trực tiếp (tuỳ chọn)
 
 Gửi `/newapp` trong [@BotFather](https://t.me/BotFather), chọn bot, rồi điền:
 
@@ -57,7 +62,7 @@ HTTPS và lưu cấu hình Mini App; xem [hướng dẫn triển khai](self-host
 | `webapp_host` | `"0.0.0.0"` | Địa chỉ lắng nghe |
 | `webapp_port` | `8180` | Cổng lắng nghe |
 | `webapp_url` | `""` | URL HTTPS công khai, bắt buộc khi bật bảng quản trị |
-| `webapp_short_name` | `"panel"` | Short name của Mini App đã đăng ký trong BotFather |
+| `webapp_short_name` | `"panel"` | Short name cho liên kết Mini App đã đăng ký trong BotFather; không bắt buộc cho nút mở từ nhóm |
 | `webapp_menu_button` | `true` | Cho nút menu trong cuộc trò chuyện mở bảng quản trị |
 | `webapp_jwt_secret` | `""` | Khóa ký token phiên; để trống thì tạo từ token của bot |
 | `webapp_jwt_ttl` | `21600` | Thời hạn phiên, tính bằng giây |

@@ -212,6 +212,47 @@ def _draft_values(session: ConfigSession) -> dict:
     return session.values
 
 
+def _runtime_summary(session: ConfigSession) -> str:
+    """Show active settings, separately from the file and unsaved draft."""
+    from waku.discordbot import get_discord_runtime_status
+    from waku.timezone import BOT_TIMEZONE_NAME
+
+    def status(enabled: bool) -> str:
+        return _tr("runtime.enabled" if enabled else "runtime.disabled", session)
+
+    def value(text) -> str:
+        return html.escape(str(text or "—")[:160])
+
+    discord_status = get_discord_runtime_status().split(" as ", 1)[0]
+    if not app_config.discord_enabled:
+        discord_status = "disabled"
+    elif discord_status not in {"ready", "connecting", "offline", "error"}:
+        discord_status = "offline"
+    return _tr(
+        "runtime.summary",
+        session,
+        agent=status(app_config.agent),
+        model=value(app_config.agent_model),
+        vision=value(app_config.agent_model_multimodal or app_config.agent_model),
+        streaming=status(app_config.agent_streaming),
+        rich=status(app_config.agent_rich_output),
+        sticker=status(app_config.agent_sticker_memory),
+        sticker_mode=value(app_config.agent_sticker_search_mode),
+        sticker_model=value(
+            app_config.agent_sticker_description_model
+            or app_config.agent_model_multimodal
+            or app_config.agent_model
+        ),
+        discord=_tr("runtime.discord." + discord_status, session),
+        business=status(app_config.business_chat_enabled),
+        webapp=status(app_config.webapp),
+        nickname=value(app_config.nickname),
+        language=value(app_config.lang),
+        timezone=BOT_TIMEZONE_NAME,
+        log_level=value(app_config.log_level),
+    )
+
+
 async def _stage_setting(session: ConfigSession, key: str, text: str) -> None:
     _draft_values(session)
     changes = {**session.changes, key: text}
@@ -383,7 +424,8 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
     if action == "home":
         session.entries = []
         session.provider_name = None
-        text += "\n" + _tr(
+        text += "\n\n" + _runtime_summary(session)
+        text += "\n\n" + _tr(
             "summary",
             session,
             file=html.escape(session.editor.path.name),

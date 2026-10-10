@@ -25,7 +25,10 @@ Gọi tên/tag Waku, hoặc dùng `/chat`, rồi yêu cầu bằng ngôn ngữ t
 - `waku, đổi tên nhóm thành Hội bạn Waku`.
 
 Mục tiêu ưu tiên @username/ID được nêu rõ trong tin ra lệnh; nếu không có thì
-dùng người gửi tin đang reply. Reply tin của Waku kèm `@bot_khac` vẫn tác động
+dùng người gửi tin đang reply. Username có thể viết không có `@`, ví dụ
+`waku cho takeshi7502 admin`; bot tra đúng username Telegram, kiểm tra thành viên
+và quyền trước khi thực hiện. Không dùng tên gần giống hoặc tên hiển thị để đoán.
+Reply tin của Waku kèm `@bot_khac` vẫn tác động
 đến `@bot_khac`, không chọn Waku. Bot khác là đối tượng quản trị hợp lệ,
 bao gồm mute, ban/kick và bổ nhiệm admin nhóm, theo quyền/trạng thái Telegram.
 Bot không đoán từ tên hiển thị hoặc tác giả gốc của tin chuyển tiếp.

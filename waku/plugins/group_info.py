@@ -20,7 +20,7 @@ from waku.config import app_config
 from waku.i18n import t
 from waku.logger import logger
 
-_PAGE_SIZE = 10
+_PAGE_SIZE = 15
 _ACCESS_TTL = 60
 _ACCESS_LIMIT = 512
 _PANEL_TTL = 15 * 60
@@ -106,6 +106,12 @@ def _keyboard(page, pages, user_id, locale):
         )
     navigation.append(
         InlineKeyboardButton(
+            t("bot.info.refresh", locale=locale),
+            callback_data=f"group_info:{user_id}:r:{page}",
+        )
+    )
+    navigation.append(
+        InlineKeyboardButton(
             t("bot.info.close", locale=locale),
             callback_data=f"group_info:{user_id}:x:{page}",
         )
@@ -117,13 +123,7 @@ def _keyboard(page, pages, user_id, locale):
                 callback_data=f"group_info:{user_id}:p:{page + 1}",
             )
         )
-    actions = [
-        InlineKeyboardButton(
-            t("bot.info.refresh", locale=locale),
-            callback_data=f"group_info:{user_id}:r:{page}",
-        ),
-    ]
-    return InlineKeyboardMarkup([navigation, actions])
+    return InlineKeyboardMarkup([navigation])
 
 
 def _format_group_line(index, chat, status, locale):
@@ -155,8 +155,7 @@ async def _page(client, user_id, locale, page=1, refresh=False):
         zip(result.items, statuses, strict=True),
         start=(result.page - 1) * result.size + 1,
     ):
-        lines.extend([_format_group_line(index, chat, status, locale), ""])
-    lines.append(t("bot.info.legend", locale=locale))
+        lines.append(_format_group_line(index, chat, status, locale))
     return "\n".join(lines), _keyboard(result.page, pages, user_id, locale)
 
 

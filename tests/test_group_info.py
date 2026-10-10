@@ -1,8 +1,10 @@
 """Privileged group overview works without Telegram or the production database."""
 
 import asyncio
+import html
 import importlib.util
 import inspect
+import re
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -39,7 +41,7 @@ def info(monkeypatch):
         )
     )
     database.get_known_groups_page = AsyncMock(
-        return_value=SimpleNamespace(items=[], total=0, page=1, size=10)
+        return_value=SimpleNamespace(items=[], total=0, page=1, size=15)
     )
     monkeypatch.setitem(sys.modules, "waku.database", database)
     monkeypatch.setattr(waku, "database", database, raising=False)
@@ -123,7 +125,7 @@ async def test_registered_command_uses_real_message_methods_and_current_api(
     assert (1, 17) in info._panels
     assert isinstance(edit.kwargs["reply_markup"].inline_keyboard[0][0].text, str)
     assert (
-        edit.kwargs["reply_markup"].inline_keyboard[0][0].callback_data
+        edit.kwargs["reply_markup"].inline_keyboard[0][1].callback_data
         == "group_info:1:x:1"
     )
 
@@ -161,14 +163,53 @@ async def test_registered_callback_uses_real_query_and_message_methods(info):
 
 def test_legacy_style_layout_and_telegram_message_size(info):
     keyboard = info._keyboard(2, 3, 1, "vi")
-    assert [button.text for button in keyboard.inline_keyboard[0]] == ["◀️", "✖️", "▶️"]
+    assert len(keyboard.inline_keyboard) == 1
+    assert [button.text for button in keyboard.inline_keyboard[0]] == [
+        "◀️",
+        "🔄",
+        "✖️",
+        "▶️",
+    ]
     chat = SimpleNamespace(id=-1001234567890, title='"<&>' * 20, username="a" * 32)
     line = info._format_group_line(10, chat, "accessible", "en")
     assert line.startswith("<blockquote><b>10. ")
     assert "<b>ID:</b>" in line
     assert "<b>Link:</b> @" in line
     assert line.endswith("| 🟢")
-    assert len(line * info._PAGE_SIZE) + 200 < 4096
+    # Telegram's limit applies to the text after HTML entities are parsed.
+    plain = html.unescape(re.sub(r"<[^>]+>", "", line))
+    assert len(plain.encode("utf-16-le")) // 2 * info._PAGE_SIZE + 200 < 4096
+
+
+@pytest.mark.asyncio
+async def test_compact_pages_use_fifteen_groups_and_keep_navigation(info):
+    info.database.get_known_groups_page.return_value = SimpleNamespace(
+        items=[
+            SimpleNamespace(id=-i, title=f"Group {i}", username="")
+            for i in range(16, 31)
+        ],
+        total=31,
+        page=2,
+        size=15,
+    )
+    client = SimpleNamespace(
+        get_chat_member=AsyncMock(
+            return_value=SimpleNamespace(status=ChatMemberStatus.MEMBER)
+        )
+    )
+    body, keyboard = await info._page(client, 1, "vi", page=2)
+    info.database.get_known_groups_page.assert_awaited_once_with(page=2, size=15)
+    assert body.count("<blockquote>") == 15
+    assert "<b>16. Group 16</b>" in body and "<b>30. Group 30</b>" in body
+    assert "Là thành viên ·" not in body
+    assert "\n\n" not in body.split("<blockquote>", 1)[1]
+    assert len(keyboard.inline_keyboard) == 1
+    assert [button.callback_data for button in keyboard.inline_keyboard[0]] == [
+        "group_info:1:p:1",
+        "group_info:1:r:2",
+        "group_info:1:x:2",
+        "group_info:1:p:3",
+    ]
 
 
 @pytest.mark.asyncio

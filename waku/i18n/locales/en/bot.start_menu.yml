@@ -1,0 +1,4 @@
+bot:
+  start_menu:
+    close: ✖️ Close
+    not_yours: Only the person who opened this menu can close it.

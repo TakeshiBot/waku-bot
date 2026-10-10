@@ -1,18 +1,15 @@
 """Entry points into the Mini App panel.
 
-The panel is a Mini App, and Telegram will only hand a `web_app` button its launch
-parameters in a private chat. In a group the equivalent is a plain URL button on the
-`t.me/<bot>/<app>?startapp=` form, which opens the same app and carries a parameter
-saying which chat it came from.
-
-So a group gets a link, a private chat gets a real Mini App button, and both land on
-the same panel. The `startapp` value is only a navigation hint - the panel re-checks
-permissions server-side before reading or writing anything.
+Group links route through /start in private chat, where a real web_app button can
+launch the configured HTTPS URL. This also works without a registered BotFather
+app short name. The group hint is navigation only; API permissions remain checked.
 """
+
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import pyrogram
 from pyrogram.client import Client
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 from waku import common, database
 from waku.config import app_config
@@ -21,18 +18,19 @@ from waku.webapp.auth import build_chat_start_param
 
 
 def panel_available() -> bool:
-    """Whether a panel link can be built at all.
-
-    A deep link needs the bot's username and the app's short name in addition to the
-    panel being enabled, so all four are checked together rather than at each call
-    site.
-    """
+    """Whether the configured panel has a usable HTTPS launch URL."""
     from waku.bot.client import client
 
     if not (app_config.webapp and app_config.webapp_url):
         return False
+    try:
+        url = urlsplit(app_config.webapp_url)
+    except ValueError:
+        return False
+    if url.scheme != "https" or not url.hostname or url.username or url.password:
+        return False
     bot_username = client.me.username if client.me else None
-    return bool(bot_username and app_config.webapp_short_name)
+    return bool(bot_username)
 
 
 def chat_panel_url(chat_id: int) -> str | None:
@@ -43,9 +41,25 @@ def chat_panel_url(chat_id: int) -> str | None:
         return None
     bot_username = client.me.username if client.me else None
     start_param = build_chat_start_param(chat_id)
-    return (
-        f"https://t.me/{bot_username}/"
-        f"{app_config.webapp_short_name}?startapp={start_param}"
+    return f"https://t.me/{bot_username}?start=panel_{start_param}"
+
+
+def private_chat_panel_button(chat_id: int, lang: str) -> InlineKeyboardButton | None:
+    """Launch in DM with a group navigation hint, without changing initData."""
+    if not panel_available():
+        return None
+    url = urlsplit(app_config.webapp_url)
+    query = [
+        (key, value)
+        for key, value in parse_qsl(url.query, keep_blank_values=True)
+        if key != "waku_chat"
+    ]
+    query.append(("waku_chat", build_chat_start_param(chat_id)))
+    launch_url = urlunsplit(
+        (url.scheme, url.netloc, url.path, urlencode(query), url.fragment)
+    )
+    return InlineKeyboardButton(
+        i18n.t("bot.button.chat_panel", locale=lang), web_app=WebAppInfo(url=launch_url)
     )
 
 

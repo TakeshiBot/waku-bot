@@ -369,8 +369,13 @@ def _token_in_text(text: str, token: str) -> bool:
     )
 
 
+def _username_in_text(text: str, username: str) -> bool:
+    """Accept an exact username written with or without Telegram's @ marker."""
+    return _token_in_text(text, username) or _token_in_text(text, username.lstrip("@"))
+
+
 def _named_targets(ctx, text: str) -> list[str]:
-    """Exact mentions take precedence over a reply author; ignore a leading wake tag."""
+    """Exact identifiers beat a reply author; ordinary words are not auto-targets."""
     me = getattr(ctx.deps.client, "me", None)
     own_names = {
         (getattr(me, "username", None) or "").casefold(),
@@ -381,13 +386,46 @@ def _named_targets(ctx, text: str) -> list[str]:
         ),
     }
     names = []
-    for match in re.finditer(r"(?<![\w@/])@[A-Za-z][A-Za-z0-9_]{3,31}(?!\w)", text):
-        name = match[0].casefold()
+    for match in re.finditer(r"(?<![\w@/])@?[A-Za-z][A-Za-z0-9_]{3,31}(?![\w/])", text):
+        token = match[0]
+        # Unmarked tokens with digits/underscores, such as takeshi7502, identify
+        # usernames. Pure words need an explicit, matching target tool argument.
+        if not token.startswith("@") and not re.search(r"[\d_]", token):
+            continue
+        name = "@" + token.lstrip("@").casefold()
         if name[1:] in own_names and not text[: match.start()].strip():
             continue
         if name not in names:
             names.append(name)
     return names
+
+
+def _remember_requested_username(ctx, target: str) -> None:
+    """Retain a sender's exact tool target even if authorization rejects the action."""
+    message = ctx.deps.message
+    if (
+        message is None
+        or message.chat is None
+        or message.chat.id != ctx.deps.chat_id
+        or message.chat.type not in _GROUPS
+        or message.from_user is None
+        or message.from_user.id != ctx.deps.user_id
+        or message.from_user.is_bot
+        or message.sender_chat is not None
+        or getattr(message, "business_connection_id", None)
+        or not isinstance(target, str)
+    ):
+        return
+    target = "@" + target.strip().lstrip("@").casefold()
+    names = _named_targets(ctx, _request_text(ctx))
+    if (
+        re.fullmatch(r"@[A-Za-z][A-Za-z0-9_]{3,31}", target)
+        and _username_in_text(_request_text(ctx), target)
+        and (not names or names == [target])
+    ):
+        ctx.deps.moderation_reference = datatype.ModerationReference(
+            target, _now().timestamp()
+        )
 
 
 def _explicit_target_hint(ctx) -> bool:
@@ -517,6 +555,12 @@ async def _target(
     bot_id = await _identity(ctx)
     source_text = _request_text(ctx)
     names = _named_targets(ctx, source_text)
+    target = target.strip()
+    if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{3,31}", target):
+        target = "@" + target
+    if not names and re.fullmatch(r"@[A-Za-z][A-Za-z0-9_]{3,31}", target):
+        if _username_in_text(source_text, target):
+            names = [target.casefold()]
     requested_ids = _mention_ids(ctx) | _numeric_target_ids(source_text)
     reference = None
     if not names and not _explicit_target_hint(ctx):
@@ -524,7 +568,6 @@ async def _target(
         if reference is not None:
             source_text = reference.target
             names = _named_targets(ctx, source_text)
-    target = target.strip()
     if not target and not (user_id is not None and user_id in requested_ids):
         # A model may accidentally pass the ID of our replied message's author.
         # The sender's unique named target is stronger evidence than that ID.
@@ -547,13 +590,18 @@ async def _target(
             user_id = int(value)
         elif re.fullmatch(r"@[A-Za-z][A-Za-z0-9_]{3,31}", value):
             if not (
-                _explicit_token(ctx, value)
+                _username_in_text(_request_text(ctx), value)
+                and (not names or value.casefold() in names)
                 or len(names) == 1
                 and names[0] == value.casefold()
-                and _token_in_text(source_text, value)
+                and _username_in_text(source_text, value)
             ):
                 raise ModerationDenied("target")
             user = await ctx.deps.client.get_users(value)
+            if isinstance(user, list):
+                if len(user) != 1:
+                    raise ModerationDenied("target")
+                user = user[0]
             if user is None or not any(
                 name.lower() == value[1:].lower()
                 for name in [
@@ -600,7 +648,7 @@ async def _target(
         or (
             target.startswith("@")
             and (
-                _explicit_token(ctx, target)
+                _username_in_text(_request_text(ctx), target)
                 or len(names) == 1
                 and names[0] == target.casefold()
             )
@@ -964,6 +1012,7 @@ def _guarded(function):
             canonical_token = _canonical_key.set(None)
             action_token = _active_action.set(function.__name__)
             try:
+                _remember_requested_username(ctx, bound.arguments.get("target", ""))
                 await _authorize(ctx, MODERATION_RIGHTS[function.__name__])
                 result = await function(ctx, *args, **kwargs)
             except _ExistingReceipt as receipt:

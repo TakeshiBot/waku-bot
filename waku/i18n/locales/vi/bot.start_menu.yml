@@ -1,0 +1,4 @@
+bot:
+  start_menu:
+    close: ✖️ Đóng
+    not_yours: Chỉ người mở menu mới được đóng.

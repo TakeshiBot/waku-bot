@@ -45,8 +45,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def panel(tmp_path, schemas, monkeypatch):  # noqa: F811
     path = tmp_path / "settings.toml"
     path.write_text(
-        'token="test"\nowners=[1]\nagent_prompt="before"\n'
-        'business_chat_enabled=false\n'
+        'token="test"\nowners=[1]\nagent_prompt="before"\nbusiness_chat_enabled=false\n'
     )
     schema, provider = schemas
     runtime = schema(token="test", owners=[1])
@@ -169,6 +168,58 @@ def query(panel, action, *, user=1, chat=1, view=None):
         message=panel.message,
         answer=AsyncMock(),
     )
+
+
+def test_home_shows_active_basics_and_models_without_secrets_or_draft_values(
+    panel, monkeypatch
+):
+    from waku import discordbot
+
+    monkeypatch.setattr(
+        discordbot, "get_discord_runtime_status", lambda: "ready as Test Bot"
+    )
+    runtime = panel.ns["app_config"]
+    runtime.agent = True
+    runtime.agent_model = "default/current-chat"
+    runtime.agent_model_multimodal = None
+    runtime.agent_sticker_memory = True
+    runtime.agent_sticker_description_model = "default/vision<&>"
+    runtime.discord_enabled = True
+    runtime.discord_token = "private-discord-token"
+    runtime.webapp = True
+    panel.ns["_draft_values"](panel.session)
+    panel.session.values["agent_model"] = "default/unsaved-model"
+    panel.session.changes["agent_model"] = "default/unsaved-model"
+    body, _ = panel.ns["_menu"]("test", panel.session)
+    assert "Cấu hình đang áp dụng" in body
+    assert body.count("default/current-chat") == 2  # Chat + inherited Vision.
+    assert "default/vision&lt;&amp;&gt;" in body
+    assert "Đã kết nối" in body
+    assert "Học sticker: ✅ Bật" in body
+    assert "Mini App: ✅ Bật" in body
+    assert "Asia/Ho_Chi_Minh" in body and "INFO" in body
+    assert "Đã sửa: 1 mục" in body
+    assert "unsaved-model" not in body and "private-discord-token" not in body
+
+
+@pytest.mark.parametrize(
+    "state,label",
+    [
+        ("connecting", "Đang kết nối"),
+        ("offline", "Chưa kết nối"),
+        ("error", "Lỗi kết nối"),
+    ],
+)
+def test_home_distinguishes_discord_connection_from_enabled_setting(
+    panel, monkeypatch, state, label
+):
+    from waku import discordbot
+
+    monkeypatch.setattr(discordbot, "get_discord_runtime_status", lambda: state)
+    panel.ns["app_config"].discord_enabled = True
+    assert label in panel.ns["_menu"]("test", panel.session)[0]
+    panel.ns["app_config"].discord_enabled = False
+    assert "Discord: ❌ Tắt" in panel.ns["_menu"]("test", panel.session)[0]
 
 
 @pytest.mark.parametrize("user,chat", [(2, 1), (1, 2)])
@@ -762,7 +813,13 @@ def test_example_settings_menu_matches_file_fields_and_order(panel):
     panel.ns["_menu"]("test", panel.session, "groups:0")
     assert panel.session.field_keys == list(document)
     assert panel.ns["_visible_groups"](panel.session) == [
-        "base", "agent", "business", "webapp", "discord", "services", "providers"
+        "base",
+        "agent",
+        "business",
+        "webapp",
+        "discord",
+        "services",
+        "providers",
     ]
     displayed = []
     for group in panel.ns["_visible_groups"](panel.session):
@@ -770,29 +827,47 @@ def test_example_settings_menu_matches_file_fields_and_order(panel):
             continue
         panel.ns["_menu"]("test", panel.session, f"group:{group}:0")
         assert panel.session.entries == [
-            key for key in document if key != "agent_providers" and panel.ns["_group"](key) == group
+            key
+            for key in document
+            if key != "agent_providers" and panel.ns["_group"](key) == group
         ]
         displayed.extend(panel.session.entries)
     assert set(displayed) == set(document) - {"agent_providers"}
-    assert not {"agent_sticker_search_mode", "agent_small_model_timeout", "webapp_jwt_ttl"} & set(displayed)
+    assert not {
+        "agent_sticker_search_mode",
+        "agent_small_model_timeout",
+        "webapp_jwt_ttl",
+    } & set(displayed)
     panel.ns["_menu"]("test", panel.session, "providers:0")
     text, markup = panel.ns["_menu"]("test", panel.session, "provider:0")
-    assert panel.session.entries == ["agent_providers.default.url", "agent_providers.default.key", "agent_providers.default.type"]
+    assert panel.session.entries == [
+        "agent_providers.default.url",
+        "agent_providers.default.key",
+        "agent_providers.default.type",
+    ]
     assert "api_type" not in text and "proxy" not in text
-    assert all(len(button.callback_data.encode()) <= 64 for row in markup.inline_keyboard for button in row)
+    assert all(
+        len(button.callback_data.encode()) <= 64
+        for row in markup.inline_keyboard
+        for button in row
+    )
 
 
 def test_explicit_advanced_setting_remains_editable_in_its_declared_order(panel):
     panel.editor.path.write_text(
         'token="test"\nowners=[1]\nagent_prompt="before"\n'
-        'agent_small_model_timeout=50\n[agent_providers.default]\n'
+        "agent_small_model_timeout=50\n[agent_providers.default]\n"
         'key="secret-key"\nurl="https://example.test/v1"\nproxy="http://proxy.test"\n'
     )
     panel.ns["_menu"]("test", panel.session, "group:agent:0")
     assert panel.session.entries == ["agent_prompt", "agent_small_model_timeout"]
     panel.ns["_menu"]("test", panel.session, "providers:0")
     text, _ = panel.ns["_menu"]("test", panel.session, "provider:0")
-    assert panel.session.entries == ["agent_providers.default.key", "agent_providers.default.url", "agent_providers.default.proxy"]
+    assert panel.session.entries == [
+        "agent_providers.default.key",
+        "agent_providers.default.url",
+        "agent_providers.default.proxy",
+    ]
     assert "secret-key" not in text and "proxy.test" not in text
 
 

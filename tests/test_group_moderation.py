@@ -1286,6 +1286,127 @@ def other_bot_target(env, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["promote_user", "mute_user", "ban_user"])
+@pytest.mark.parametrize("model_target", ["takeshi7502", "@takeshi7502", ""])
+@pytest.mark.parametrize("model_id", [None, 99])
+async def test_exact_bare_username_resolves_before_replied_waku(
+    env, monkeypatch, action, model_target, model_id
+):
+    env.reply.from_user = env.client.me
+    env.message.text = "waku cho takeshi7502 admin"
+    monkeypatch.setattr(
+        env.client,
+        "get_users",
+        AsyncMock(
+            return_value=User(id=3, first_name="Takeshi", username="takeshi7502")
+        ),
+    )
+    result = await getattr(mod, action)(env.ctx, target=model_target, user_id=model_id)
+    assert "Completed" in result
+    env.client.get_users.assert_awaited_once_with("@takeshi7502")
+    query = env.mutations[0]
+    assert (
+        query.user_id if action == "promote_user" else query.participant
+    ).user_id == 3
+    assert len(env.mutations) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target", ["takeshi", "@takeshi", "@TAKESHI"])
+async def test_pure_letter_username_is_accepted_only_as_exact_tool_target(
+    env, monkeypatch, target
+):
+    env.message.text = "waku cho takeshi admin"
+    monkeypatch.setattr(
+        env.client,
+        "get_users",
+        AsyncMock(return_value=User(id=3, first_name="Takeshi", username="takeshi")),
+    )
+    assert "Completed promote" in await mod.promote_user(env.ctx, target=target)
+    assert env.mutations[0].user_id.user_id == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "request_text",
+    ["cho takeshi75020 admin", "cho nottakeshi7502 admin", "cho người này admin"],
+)
+async def test_bare_username_is_not_guessed_from_substring_or_display_name(
+    env, monkeypatch, request_text
+):
+    env.message.text = request_text
+    monkeypatch.setattr(env.client, "get_users", AsyncMock())
+    assert "exact" in await mod.promote_user(env.ctx, target="@takeshi7502")
+    assert not env.mutations
+    env.client.get_users.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["wrong_username", "multiple_users", "no_member"])
+async def test_bare_username_still_requires_exact_telegram_identity_and_membership(
+    env, monkeypatch, kind
+):
+    env.message.text = "waku cho takeshi7502 admin"
+    user = User(id=3, first_name="Takeshi", username="takeshi7502")
+    response = user
+    if kind == "wrong_username":
+        user.username = "someone_else"
+    elif kind == "multiple_users":
+        response = [user, User(id=4, first_name="Other", username="takeshi7502")]
+    else:
+        env.members[3] = raw.types.ChannelParticipantLeft(
+            peer=raw.types.PeerUser(user_id=3)
+        )
+    monkeypatch.setattr(env.client, "get_users", AsyncMock(return_value=response))
+    assert "Completed" not in await mod.promote_user(env.ctx, target="takeshi7502")
+    assert not env.mutations
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("username", ["takeshi7502", "takeshi"])
+async def test_bare_username_retry_after_bot_permission_was_granted(
+    env, monkeypatch, username
+):
+    from waku.common.memory_store import memttlcache
+    from waku.plugins.agent import output
+
+    env.message.text = f"waku cho {username} admin"
+    env.message.reply_to_message = None
+    env.members[99].admin_rights.add_admins = False
+    monkeypatch.setattr(
+        env.client,
+        "get_users",
+        AsyncMock(return_value=User(id=3, first_name="Takeshi", username=username)),
+    )
+    await mod.group_moderation_context(env.ctx)
+    assert "bot lacks" in await mod.promote_user(env.ctx, target=f"@{username}")
+    assert not env.mutations
+    delivered = Message(
+        id=101,
+        chat=env.chat,
+        from_user=env.client.me,
+        text="AI explains missing bot permission",
+    )
+    monkeypatch.setattr(output, "datetime", SimpleNamespace(now=lambda: NOW))
+    cache_set = AsyncMock()
+    monkeypatch.setattr(memttlcache, "set", cache_set)
+    await output.record_tool_reply(env.ctx.deps, delivered, delivered.text)
+    saved = cache_set.await_args.args[1]
+    assert saved.moderation_reference.target == f"@{username}"
+    monkeypatch.setattr(memttlcache, "get", AsyncMock(return_value=saved))
+    env.members[99].admin_rights.add_admins = True
+    env.message.text = "rồi đó"
+    env.message.reply_to_message = delivered
+    ctx = turn(env)
+    assert (
+        f"Backend-verified target reference: @{username}"
+        in await mod.group_moderation_context(ctx)
+    )
+    assert "Completed promote" in await mod.promote_user(ctx)
+    assert len(env.mutations) == 1 and env.mutations[0].user_id.user_id == 3
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("action", ["mute_user", "ban_user", "promote_user"])
 @pytest.mark.parametrize("incorrect_model_id", [None, 99])
 @pytest.mark.parametrize("model_target", ["", "@jinmirror_bot"])

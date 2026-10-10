@@ -16,8 +16,9 @@ from waku import common, consts, database, i18n
 from waku.common.memory_store import memttlcache
 from waku.config import app_config
 from waku.logger import logger
-from waku.plugins.panel import chat_panel_button
+from waku.plugins.panel import chat_panel_button, private_chat_panel_button
 from waku.timezone import as_bot_time
+from waku.webapp.auth import parse_start_param_chat_id
 
 _BOTTLE_MSG_PREFIX = "bottle_msg:"
 
@@ -78,6 +79,14 @@ class PrivateStartBotMarkup:
                     )
                 ],
             )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    i18n.t("bot.start_menu.close", locale=self.lang),
+                    callback_data=f"start_close:{self.user_id or 0}",
+                )
+            ]
+        )
         return InlineKeyboardMarkup(rows)
 
 
@@ -99,7 +108,36 @@ async def start(client: Client, message: Message):
         )
         return
     cmd = message.command[1]
-    if cmd.startswith("inline_query"):
+    if cmd.startswith("panel_"):
+        from waku.common.telegram_authority import can_manage_bot_settings
+
+        chat_id = parse_start_param_chat_id(cmd.removeprefix("panel_"))
+        button = (
+            private_chat_panel_button(chat_id, lang)
+            if chat_id and chat_id < 0
+            else None
+        )
+        if button is None:
+            await message.reply(text=i18n.t("bot.msg.panel_unavailable", locale=lang))
+            return
+        if not await can_manage_bot_settings(client, user_id, chat_id):
+            await message.reply(text=i18n.t("bot.msg.no_permission_group", locale=lang))
+            return
+        await message.reply(
+            text=i18n.t("bot.msg.chat_panel", locale=lang),
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [button],
+                    [
+                        InlineKeyboardButton(
+                            i18n.t("bot.start_menu.close", locale=lang),
+                            callback_data=f"start_close:{user_id}",
+                        )
+                    ],
+                ]
+            ),
+        )
+    elif cmd.startswith("inline_query"):
         if not client.me or not client.me.username:
             return
         await message.reply(
@@ -300,6 +338,15 @@ async def start_group(client: Client, message: Message):
     panel_button = chat_panel_button(message.chat.id, lang)
     if panel_button and await _can_manage(message):
         rows.insert(0, [panel_button])
+    if message.from_user:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    i18n.t("bot.start_menu.close", locale=lang),
+                    callback_data=f"start_close:{message.from_user.id}",
+                )
+            ]
+        )
     reply = await message.reply(
         text=i18n.t("bot.msg.group_start", locale=lang),
         reply_markup=InlineKeyboardMarkup(rows),
@@ -364,6 +411,25 @@ async def toggle_dm_ai(client: Client, callback_query: CallbackQuery):
             locale=config.lang,
         )
     )
+
+
+@Client.on_callback_query(filters.regex(r"^start_close:\d+$"))
+async def close_start_menu(client: Client, query: CallbackQuery):
+    message, user = query.message, query.from_user
+    if not message or not message.chat or not user:
+        await query.answer()
+        return
+    data = query.data.decode() if isinstance(query.data, bytes) else query.data
+    owner_id = int(data.split(":")[1])
+    if owner_id != user.id and not (
+        owner_id == 0
+        and message.chat.type == enums.ChatType.PRIVATE
+        and message.chat.id == user.id
+    ):
+        await query.answer(i18n.t("bot.start_menu.not_yours"), show_alert=True)
+        return
+    await query.answer()
+    await message.delete()
 
 
 @Client.on_callback_query(filters.regex(r"^delete_callback_query_message$"))

@@ -99,6 +99,20 @@ async def test_real_forum_menu_stages_without_mutating_cached_config_then_saves_
     assert not menu._SESSIONS
 
 
+def test_toggle_labels_keep_status_at_front_and_use_compact_vietnamese(panel):
+    markup = menu.ChatConfigMarkup(panel.config, "vi").build()
+    toggles = [
+        button
+        for row in markup.inline_keyboard
+        for button in row
+        if ":toggle:" in button.callback_data
+    ]
+    assert all(button.text.startswith(("✔️ ", "❌ ")) for button in toggles)
+    assert toggles[3].text == "✔️ AI Trả Lời"
+    assert "Xóa Sự Kiện" in toggles[1].text
+    assert "AI Quản Trị" in toggles[13].text
+
+
 @pytest.mark.asyncio
 async def test_image_button_cycles_safe_r18_mixed_off_and_saves_only_selected_mode(
     panel,
@@ -108,9 +122,9 @@ async def test_image_button_cycles_safe_r18_mixed_off_and_saves_only_selected_mo
     assert session.draft.setu_enabled and session.draft.telegram_r18_mode == 0
     for enabled, mode, label in [
         (True, 1, "R18"),
-        (True, 2, "Cả hai"),
+        (True, 2, "Cả Hai"),
         (False, 0, "Tắt"),
-        (True, 0, "An toàn"),
+        (True, 0, "An Toàn"),
         (True, 1, "R18"),
     ]:
         await panel.click("toggle:6")

@@ -2,6 +2,16 @@ bot:
   private_config:
     info_command: 'List groups known to the bot'
     title: ⌬ <b>Waku settings</b>
+    runtime:
+      summary: "<b>🤖 AI · Active settings</b>\nAI: {agent} · Streaming: {streaming} · Rich messages: {rich}\nChat: <code>{model}</code>\nVision: <code>{vision}</code>\n\n<b>🧠 Stickers</b>\nLearning: {sticker} · Search: <code>{sticker_mode}</code>\nDescription model: <code>{sticker_model}</code>\n\n<b>🛰️ Services</b>\nDiscord: {discord}\nTelegram Business: {business} · Mini App: {webapp}\n\n<b>⚙️ Basics</b>\nName: <code>{nickname}</code> · Language: <code>{language}</code>\nTimezone: <code>{timezone}</code> · Log: <code>{log_level}</code>"
+      enabled: ✅ On
+      disabled: ❌ Off
+      discord:
+        disabled: ❌ Off
+        ready: 🟢 Connected
+        connecting: 🟡 Connecting
+        offline: 🔴 Disconnected
+        error: 🔴 Connection error
     open_settings: ⚙️ Settings
     variables_title: ⌬ <b>Config variables</b>
     groups_summary: "│\n┟ <b>Groups</b> → {count}\n┠ <b>Page</b> → {page}/{pages}\n┖ <b>Changed</b> → {changed}"

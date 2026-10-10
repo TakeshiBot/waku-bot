@@ -1,10 +1,10 @@
 bot:
   config:
-    image_safe: '✔️ Ảnh: An toàn'
+    image_safe: '✔️ Ảnh: An Toàn'
     image_r18: '✔️ Ảnh: R18'
-    image_mixed: '✔️ Ảnh: Cả hai'
+    image_mixed: '✔️ Ảnh: Cả Hai'
     image_off: '❌ Ảnh: Tắt'
-    moderation: AI quản lý nhóm
+    moderation: AI Quản Trị
     save: 💾 Lưu
     cancel: ✖️ Huỷ
     reload: ↻ Đọc lại

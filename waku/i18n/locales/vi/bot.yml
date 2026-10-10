@@ -604,22 +604,22 @@ bot:
     page_prev: Trang trước
     page_next: Trang sau
     panel: Bảng quản trị
-    chat_panel: Mở bảng quản trị
+    chat_panel: Mở Mini App
     chat_config:
-      waifu: Waifu hằng ngày
-      delete_events: Xóa thông báo sự kiện
-      quote_pin_message: Ghim tin nhắn được trích dẫn
-      ai_reply: Trả lời bằng AI
-      ai_reply_other_bots_enabled: Trả lời bot khác
-      setu_enabled: Ảnh gợi cảm ngẫu nhiên
-      unpin_channel_pin_enabled: Bỏ ghim bài đăng từ kênh
-      convert_b23_enabled: Chuyển đổi liên kết b23
-      parse_artwork_enabled: Phân tích liên kết tác phẩm
-      pick_bottle_enabled: Nhặt chai
-      ai_comment: Bình luận bằng AI
-      group_memory_enabled: Bộ nhớ nhóm
-      sticker_memory_enabled: Học và gửi sticker
-      verify: Xác minh thành viên mới
+      waifu: Waifu Hằng Ngày
+      delete_events: Xóa Sự Kiện
+      quote_pin_message: Ghim Trích Dẫn
+      ai_reply: AI Trả Lời
+      ai_reply_other_bots_enabled: Trả Lời Bot Khác
+      setu_enabled: Ảnh Ngẫu Nhiên
+      unpin_channel_pin_enabled: Bỏ Ghim Từ Kênh
+      convert_b23_enabled: Mở Link B23
+      parse_artwork_enabled: Đọc Link Tác Phẩm
+      pick_bottle_enabled: Nhặt Chai
+      ai_comment: AI Bình Luận
+      group_memory_enabled: Bộ Nhớ Nhóm
+      sticker_memory_enabled: Học Và Gửi Sticker
+      verify: Xác Minh Thành Viên
       save: Lưu
     waifu:
       remove: Xóa (quản trị viên)

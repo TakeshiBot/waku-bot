@@ -95,7 +95,9 @@ export async function setupTelegram(): Promise<void> {
 export function launchContext(): LaunchContext {
   return {
     initDataRaw: retrieveRawInitData() ?? "",
-    startChatId: parseStartParam(retrieveLaunchParams().tgWebAppStartParam),
+    startChatId:
+      parseStartParam(retrieveLaunchParams().tgWebAppStartParam) ??
+      parseStartParam(new URLSearchParams(window.location.search).get("waku_chat") ?? undefined),
   };
 }
 
@@ -103,7 +105,8 @@ function parseStartParam(value: string | undefined): number | null {
   if (!value || !value.startsWith("c")) return null;
   const digits = value.slice(1);
   if (!/^\d+$/.test(digits)) return null;
-  return -Number(digits);
+  const id = Number(digits);
+  return Number.isSafeInteger(id) && id > 0 ? -id : null;
 }
 
 /**

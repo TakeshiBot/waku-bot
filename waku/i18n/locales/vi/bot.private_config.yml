@@ -2,6 +2,16 @@ bot:
   private_config:
     info_command: 'Xem các nhóm bot đã ghi nhận'
     title: ⌬ <b>Cấu hình Waku</b>
+    runtime:
+      summary: "<b>🤖 AI · Cấu hình đang áp dụng</b>\nAI: {agent} · Streaming: {streaming} · Rich message: {rich}\nChat: <code>{model}</code>\nVision: <code>{vision}</code>\n\n<b>🧠 Sticker</b>\nHọc sticker: {sticker} · Tìm kiếm: <code>{sticker_mode}</code>\nModel mô tả: <code>{sticker_model}</code>\n\n<b>🛰️ Dịch vụ</b>\nDiscord: {discord}\nTelegram Business: {business} · Mini App: {webapp}\n\n<b>⚙️ Cơ bản</b>\nTên: <code>{nickname}</code> · Ngôn ngữ: <code>{language}</code>\nMúi giờ: <code>{timezone}</code> · Log: <code>{log_level}</code>"
+      enabled: ✅ Bật
+      disabled: ❌ Tắt
+      discord:
+        disabled: ❌ Tắt
+        ready: 🟢 Đã kết nối
+        connecting: 🟡 Đang kết nối
+        offline: 🔴 Chưa kết nối
+        error: 🔴 Lỗi kết nối
     open_settings: ⚙️ Cài đặt
     variables_title: ⌬ <b>Biến cấu hình</b>
     groups_summary: "│\n┟ <b>Nhóm</b> → {count}\n┠ <b>Trang</b> → {page}/{pages}\n┖ <b>Đã sửa</b> → {changed}"

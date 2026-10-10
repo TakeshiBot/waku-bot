@@ -2,7 +2,6 @@ bot:
   info:
     header: "📚 <b>Telegram Groups</b>\n<b>Total:</b> <code>{total}</code>   <b>Page:</b> <code>{page}/{pages}</code>"
     group_line: "<blockquote><b>{index}. {title}</b></blockquote>\n   <b>ID:</b> <code>{id}</code>\n   <b>Link:</b> {handle} | {status}"
-    legend: "🟢 Member · 🔴 No access · ⚪ Unverified"
     empty: "No groups are stored yet. Send a message or command in a group so the bot can record it."
     accessible: "🟢 Bot is a member"
     unavailable: "🔴 Bot can no longer access this group"
@@ -14,5 +13,5 @@ bot:
     error: "Could not load groups. Please try /info again."
     previous: "◀️"
     next: "▶️"
-    refresh: "↻ Refresh"
+    refresh: "🔄"
     close: "✖️"

@@ -105,7 +105,7 @@ class ChatConfigMarkup:
                 else i18n.t("bot.button.chat_config." + label, locale=self.lang)
             )
             status = "✔️" if getattr(self.chat_config, name) else "❌"
-            buttons.append(self._button(f"{title} {status}", f"toggle:{index}"))
+            buttons.append(self._button(f"{status} {title}", f"toggle:{index}"))
         rows = [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
         rows.append([self._button(_tr("save", self.lang), "save")])
         if self.chat_id is not None:
