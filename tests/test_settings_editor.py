@@ -247,6 +247,8 @@ def test_replace_failure_preserves_original_and_cleans_temp(editor, monkeypatch)
 
 def test_provider_crud_and_existing_dotted_name(editor):
     editor.add_provider("new-provider", revision(editor))
+    assert list(read(editor)["agent_providers"]["new-provider"]) == ["url", "key", "type"]
+    assert editor.editable_provider_fields("new-provider") == ["url", "key", "type"]
     editor.set_value(
         "agent_providers.new-provider.api_type", "ollama", revision(editor)
     )
@@ -333,6 +335,24 @@ def test_override_file_is_targeted_without_rewriting_base(editor):
     layered.set_value("lang", "en", revision(layered))
     assert editor.path.read_bytes() == original
     assert tomllib.loads(override.read_text())["lang"] == "en"
+
+
+def test_menu_fields_keep_declared_order_across_settings_layers(editor):
+    original_fields = editor.configured_fields()
+    override = editor.path.parent / "settings.dev.toml"
+    override.write_text(
+        'agent_prompt = "override"\nlang = "vi"\n'
+        '[agent_providers.default]\nkey = "override-key"\n'
+        'proxy = "http://localhost:8080"\n',
+        encoding="utf-8",
+    )
+    layered = SettingsEditor(
+        [editor.path, override], editor.schema, editor.provider_schema, editor.runtime
+    )
+    assert layered.configured_fields() == original_fields + ["lang"]
+    assert layered.configured_keys() == set(original_fields) | {"lang"}
+    assert layered.editable_provider_fields("default") == ["url", "key", "proxy"]
+    assert layered.editable_provider_fields("new-draft") == ["url", "key", "type"]
 
 
 def test_nullable_inherited_value_not_silently_cleared(editor):

@@ -22,6 +22,7 @@ import tomlkit
 
 _WRITE_LOCK = threading.RLock()
 _PROVIDER_NAME = re.compile(r"[A-Za-z0-9_-]{1,48}\Z")
+_BASIC_PROVIDER_FIELDS = ("url", "key", "type")
 
 
 class SettingsEditError(ValueError):
@@ -156,25 +157,48 @@ class SettingsEditor:
 
     def configured_keys(self) -> set[str]:
         """Editable fields explicitly present in the active TOML layers."""
+        return set(self.configured_fields())
+
+    def configured_fields(self, provider: str | None = None) -> list[str]:
+        """Declared fields in file order; later layers retain existing positions."""
         try:
-            return {
-                key.lower()
-                for path in self.paths
-                for key in tomllib.loads(path.read_text(encoding="utf-8-sig"))
-                if key.lower() in self.schema.model_fields
-            }
-        except (OSError, ValueError):
+            fields = {}
+            for path in self.paths:
+                values = tomllib.loads(path.read_text(encoding="utf-8-sig"))
+                schema = self.schema
+                if provider is not None:
+                    tables = next(
+                        (value for key, value in values.items() if key.lower() == "agent_providers"),
+                        {},
+                    )
+                    values = tables.get(provider, {})
+                    schema = self.provider_schema
+                for key in values:
+                    if key.lower() in schema.model_fields:
+                        fields[key.lower()] = None
+            return list(fields)
+        except (OSError, ValueError, AttributeError, TypeError):
             raise SettingsEditError("invalid_file") from None
+
+    def editable_provider_fields(self, name: str) -> list[str]:
+        # Inherited/default and newly drafted providers need only the same three
+        # fields as the example. Advanced fields appear when explicitly declared.
+        return self.configured_fields(provider=name) or list(_BASIC_PROVIDER_FIELDS)
 
     def _key(self, document, name: str) -> str:
         return next((key for key in document if key.lower() == name), name)
 
-    @staticmethod
-    def _toml_providers(providers: Mapping[str, Mapping[str, Any]]) -> dict:
+    def _toml_providers(self, providers: Mapping[str, Mapping[str, Any]]) -> dict:
         # Schema defaults contain optional fields such as proxy=None. TOML
         # represents those defaults by omitting the field, never a null value.
+        defaults = self.provider_schema().model_dump()
         return {
-            name: {key: value for key, value in fields.items() if value is not None}
+            name: {
+                key: value
+                for key, value in fields.items()
+                if value is not None
+                and (key in _BASIC_PROVIDER_FIELDS or value != defaults.get(key))
+            }
             for name, fields in providers.items()
         }
 
@@ -334,7 +358,9 @@ class SettingsEditor:
             key = self._key(document, "agent_providers")
             if key not in document:
                 document[key] = self._toml_providers(values.get("agent_providers", {}))
-            document[key][name] = self.provider_schema().model_dump(exclude_none=True)
+            document[key][name] = self._toml_providers(
+                {name: self.provider_schema().model_dump(exclude_none=True)}
+            )[name]
 
         return change
 

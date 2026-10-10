@@ -64,6 +64,8 @@ Tùy chọn qua biến môi trường (không cần chỉnh nếu dùng mặc đ
 init giữ settings.toml bằng symlink tới config/settings.toml để /config lưu được
 trong Docker. Dữ liệu ở data/, logs/, .agentfs/; bản sao lưu ở .backups/.
 Mini App cần Nginx + Certbot trên VPS, DNS trỏ về VPS và cổng 80/443 truy cập được.
+Các lệnh hệ thống dùng sudo -n: không hỏi mật khẩu, cần quyền NOPASSWD
+hoặc phiên sudo còn hiệu lực. Script không thay đổi sudoers.
 EOF
 }
 
@@ -202,7 +204,14 @@ update_source() {
 }
 
 as_root() {
-  if ((EUID == 0)); then "$@"; else sudo "$@"; fi
+  if ((EUID == 0)); then
+    "$@"
+  else
+    require sudo
+    # Use per-command NOPASSWD rules without requiring sudo -v permission.
+    # Never retry a failed system command or read/store a sudo password.
+    sudo -n -- "$@"
+  fi
 }
 
 reload_nginx() {
@@ -231,7 +240,6 @@ setup_miniapp() {
   require nginx
   require certbot
   require curl
-  if ((EUID != 0)); then require sudo; sudo -v; fi
   if [[ -z "$domain" && -t 0 ]]; then read -r -p "Domain Mini App (ví dụ panel.example.com): " domain; fi
   domain="${domain,,}"
   valid_domain "$domain" || die "Cần domain hợp lệ; truyền vào 'bash run.sh miniapp panel.example.com'."

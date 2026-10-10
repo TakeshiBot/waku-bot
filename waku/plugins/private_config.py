@@ -50,20 +50,6 @@ _GROUPS = (
     "economy",
     "business",
 )
-_ESSENTIAL_FIELDS = {
-    "agent",
-    "agent_model",
-    "agent_prompt",
-    "agent_group_prompt",
-    "agent_streaming",
-    "agent_rich_output",
-    "business_chat_enabled",
-    "manyacg_r18_mode",
-}
-_MENU_GROUPS = tuple(group for group in _GROUPS if group != "business") + (
-    "providers",
-    "business",
-)
 _SESSIONS: dict[str, ConfigSession] = {}
 
 
@@ -85,7 +71,7 @@ class ConfigSession:
     deletions: set[str] = field(default_factory=set)
     values: dict = field(default_factory=dict)
     baseline: dict = field(default_factory=dict)
-    field_keys: set[str] = field(default_factory=set)
+    field_keys: list[str] = field(default_factory=list)
     view: int = 0
     confirmation: str | None = None
     location: str = "home"
@@ -222,7 +208,7 @@ def _draft_values(session: ConfigSession) -> dict:
         session.revision = revision
         session.values = values
         session.baseline = values
-        session.field_keys = session.editor.configured_keys() | _ESSENTIAL_FIELDS
+        session.field_keys = session.editor.configured_fields()
     return session.values
 
 
@@ -284,16 +270,18 @@ def _reset_draft(session: ConfigSession):
     session.deletions.clear()
     session.values, session.revision = session.editor.snapshot()
     session.baseline = session.values
-    session.field_keys = session.editor.configured_keys() | _ESSENTIAL_FIELDS
+    session.field_keys = session.editor.configured_fields()
 
 
 def _visible_groups(session: ConfigSession):
-    return [
-        group
-        for group in _MENU_GROUPS
-        if group == "providers"
-        or any(_group(key) == group for key in session.field_keys)
-    ]
+    groups = dict.fromkeys(
+        "providers" if key == "agent_providers" else _group(key)
+        for key in session.field_keys
+        if key != "agent_powermem_config"
+    )
+    if session.values.get("agent_providers"):
+        groups.setdefault("providers", None)
+    return list(groups)
 
 
 async def _refresh_restart_pending(session: ConfigSession):
@@ -450,14 +438,14 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
         following = f"groups:{page + 1}" if page + 1 < pages else None
     elif action.startswith("group:"):
         _, group, page_text = action.split(":")
-        if group not in _GROUPS:
+        if group not in _GROUPS or group not in visible_groups:
             raise SettingsEditError("invalid_value")
-        keys = sorted(
+        keys = [
             key
             for key in session.field_keys
             if key not in {"agent_providers", "agent_powermem_config"}
             and _group(key) == group
-        )
+        ]
         session.entries = keys
         session.provider_name = None
         session.back = f"groups:{visible_groups.index(group) // _PAGE_SIZE}"
@@ -526,7 +514,8 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
         session.provider_name = name
         session.back = session.provider_parent
         session.entries = [
-            f"agent_providers.{name}.{key}" for key in ProviderConfig.model_fields
+            f"agent_providers.{name}.{key}"
+            for key in session.editor.editable_provider_fields(name)
         ]
         session.entry_parent = "provider_view"
         text = _variables_text(
@@ -674,7 +663,7 @@ async def private_config_callback(client: Client, query: CallbackQuery):
             set(session.deletions),
             session.values,
             session.baseline,
-            set(session.field_keys),
+            list(session.field_keys),
         )
         session.view += 1
         session.pending = None

@@ -60,6 +60,13 @@ project, kiểm tra cấu hình và chạy lại; không dùng `docker compose d
 
 ### Các lệnh quản lý
 
+Thiết lập Mini App dùng `sudo -n` cho các lệnh Nginx, Certbot và ghi cấu hình
+hệ thống, không yêu cầu mật khẩu trong menu. User cần được VPS cấp quyền
+`NOPASSWD` cho các lệnh này, hoặc xác thực trước bằng `sudo -v` trong cùng
+terminal. Có quyền sudo thông thường vẫn có thể cần mật khẩu; script không
+thay đổi `/etc/sudoers` hay lưu mật khẩu. Nếu không dùng quyền `NOPASSWD`,
+có thể chạy riêng bước này bằng `sudo bash run.sh miniapp panel.example.com`.
+
 | Lệnh | Thao tác |
 | --- | --- |
 | `bash run.sh update` | Pull Git fast-forward rồi triển khai; từ chối nếu source có thay đổi local |

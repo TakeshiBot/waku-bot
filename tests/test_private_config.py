@@ -44,7 +44,10 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture
 def panel(tmp_path, schemas, monkeypatch):  # noqa: F811
     path = tmp_path / "settings.toml"
-    path.write_text('token="test"\nowners=[1]\nagent_prompt="before"\n')
+    path.write_text(
+        'token="test"\nowners=[1]\nagent_prompt="before"\n'
+        'business_chat_enabled=false\n'
+    )
     schema, provider = schemas
     runtime = schema(token="test", owners=[1])
     editor = SettingsEditor([path], schema, provider, runtime.model_dump)
@@ -495,9 +498,9 @@ async def test_native_direct_toggle_preserves_group_page_and_shows_changed(
     with panel.editor.path.open("a") as target:
         target.write("\ndebug=false\n")
     await open_native_panel(panel)
-    keys = sorted(
+    keys = [
         key for key in panel.session.field_keys if panel.ns["_group"](key) == "base"
-    )
+    ]
     page = keys.index("debug") // panel.ns["_PAGE_SIZE"]
     text, markup = panel.ns["_menu"](panel.token, panel.session, f"group:base:{page}")
     panel.message.text, panel.message.reply_markup = text, markup
@@ -534,7 +537,7 @@ async def test_native_save_closes_session_and_schedules_exact_message_cleanup(
     panel.client.answer_callback_query.assert_awaited_once()
 
 
-async def test_business_group_available_without_setting_and_preserves_provider_page(
+async def test_business_group_declared_in_file_preserves_provider_page(
     native_panel,
 ):
     panel = native_panel
@@ -735,15 +738,62 @@ async def test_runtime_preparation_failure_preserves_file_and_masks_diagnostics(
     assert "private-provider-secret" not in str(panel.message.edit_text.call_args)
 
 
-def test_menu_only_shows_configured_fields_and_essential_current_features(panel):
+def test_menu_only_shows_configured_fields(panel):
     panel.ns["_menu"]("test", panel.session, "group:agent:0")
-    assert "agent_prompt" in panel.session.entries
-    assert "agent_rich_output" in panel.session.entries
+    assert panel.session.entries == ["agent_prompt"]
+    assert "agent_rich_output" not in panel.session.entries
     assert "agent_landrun_path" not in panel.session.entries
     groups = panel.ns["_visible_groups"](panel.session)
-    assert groups == ["base", "agent", "services", "providers", "business"]
-    panel.ns["_menu"]("test", panel.session, "group:services:0")
-    assert "manyacg_r18_mode" in panel.session.entries
+    assert groups == ["base", "agent", "business", "providers"]
+    with pytest.raises(SettingsEditError):
+        panel.ns["_menu"]("test", panel.session, "group:services:0")
+
+
+def test_removed_business_setting_hides_its_menu_group(panel):
+    panel.editor.path.write_text('token="test"\nowners=[1]\nagent_prompt="before"\n')
+    panel.ns["_menu"]("test", panel.session, "groups:0")
+    assert "business" not in panel.ns["_visible_groups"](panel.session)
+    assert "business_chat_enabled" not in panel.session.field_keys
+
+
+def test_example_settings_menu_matches_file_fields_and_order(panel):
+    panel.editor.path.write_text((ROOT / "settings.ex.toml").read_text())
+    document = tomllib.loads(panel.editor.path.read_text())
+    panel.ns["_menu"]("test", panel.session, "groups:0")
+    assert panel.session.field_keys == list(document)
+    assert panel.ns["_visible_groups"](panel.session) == [
+        "base", "agent", "business", "webapp", "discord", "services", "providers"
+    ]
+    displayed = []
+    for group in panel.ns["_visible_groups"](panel.session):
+        if group == "providers":
+            continue
+        panel.ns["_menu"]("test", panel.session, f"group:{group}:0")
+        assert panel.session.entries == [
+            key for key in document if key != "agent_providers" and panel.ns["_group"](key) == group
+        ]
+        displayed.extend(panel.session.entries)
+    assert set(displayed) == set(document) - {"agent_providers"}
+    assert not {"agent_sticker_search_mode", "agent_small_model_timeout", "webapp_jwt_ttl"} & set(displayed)
+    panel.ns["_menu"]("test", panel.session, "providers:0")
+    text, markup = panel.ns["_menu"]("test", panel.session, "provider:0")
+    assert panel.session.entries == ["agent_providers.default.url", "agent_providers.default.key", "agent_providers.default.type"]
+    assert "api_type" not in text and "proxy" not in text
+    assert all(len(button.callback_data.encode()) <= 64 for row in markup.inline_keyboard for button in row)
+
+
+def test_explicit_advanced_setting_remains_editable_in_its_declared_order(panel):
+    panel.editor.path.write_text(
+        'token="test"\nowners=[1]\nagent_prompt="before"\n'
+        'agent_small_model_timeout=50\n[agent_providers.default]\n'
+        'key="secret-key"\nurl="https://example.test/v1"\nproxy="http://proxy.test"\n'
+    )
+    panel.ns["_menu"]("test", panel.session, "group:agent:0")
+    assert panel.session.entries == ["agent_prompt", "agent_small_model_timeout"]
+    panel.ns["_menu"]("test", panel.session, "providers:0")
+    text, _ = panel.ns["_menu"]("test", panel.session, "provider:0")
+    assert panel.session.entries == ["agent_providers.default.key", "agent_providers.default.url", "agent_providers.default.proxy"]
+    assert "secret-key" not in text and "proxy.test" not in text
 
 
 async def test_rich_only_private_edit_is_consumed_without_saving_or_leaking_to_ai(
