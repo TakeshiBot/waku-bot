@@ -458,6 +458,7 @@ async def test_info_joined_guild_details_saved_and_effective_settings(
     env.ns["_discord_guild_settings"] = AsyncMock(
         return_value=SimpleNamespace(
             ai_reply=local_ai,
+            reply_to_bots=False,
             group_memory_enabled=False,
             setu_enabled=True,
             r18_mode=2,
@@ -471,6 +472,7 @@ async def test_info_joined_guild_details_saved_and_effective_settings(
     assert "Guild ID: `10`" in description and "(`42`)" in description
     assert "Kênh: **1**" in description and "Thành viên: **5**" in description
     assert f"AI Reply đã lưu: **{'BẬT' if local_ai else 'TẮT'}**" in description
+    assert "Trả lời bot khác: **TẮT**" in description
     assert (
         f"AI Reply hiệu lực: **{'BẬT' if global_ai and local_ai else 'TẮT'}**"
         in description

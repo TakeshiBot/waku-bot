@@ -145,11 +145,12 @@ def _discord_current_time() -> str:
 
 
 async def _should_wake(message: discord.Message, bot_user: discord.ClientUser) -> tuple[bool, str]:
-    if message.author.bot:
+    if message.author.id == bot_user.id:
         return False, ""
     is_dm = message.guild is None
     if is_dm and (
-        not isinstance(message.channel, discord.DMChannel)
+        message.author.bot
+        or not isinstance(message.channel, discord.DMChannel)
         or not _is_discord_user_bot_admin(message.author)
     ):
         return False, ""
@@ -162,6 +163,17 @@ async def _should_wake(message: discord.Message, bot_user: discord.ClientUser) -
     keyword = _matches_keyword(content)
     seg_command = _is_seg_command(content)
     artwork_url = _find_artwork_url(content)
+
+    # Other bots must address Waku, rather than wake it with an unrelated
+    # media URL or command. Replies count as addressing it, as for people.
+    if message.author.bot and not (mentioned or replied_to_bot or keyword):
+        return False, ""
+    if message.author.bot:
+        if not await _discord_global_ai_enabled():
+            return False, ""
+        bot_settings = await _discord_guild_settings(message.guild)
+        if not bot_settings.reply_to_bots or not bot_settings.ai_reply:
+            return False, ""
 
     if not content and not is_dm and not mentioned and not replied_to_bot:
         if not state.warned_empty_content:
@@ -292,7 +304,8 @@ async def _build_prompt_impl(message: discord.Message, user_prompt: str) -> tupl
     reaction_hint = await _discord_reaction_hint(message)
     if reaction_hint:
         parts.append(reaction_hint)
-    mentioned_users = [user for user in message.mentions if not user.bot]
+    own_id = getattr(getattr(state.discord_client, "user", None), "id", None)
+    mentioned_users = [user for user in message.mentions if user.id != own_id]
     if mentioned_users:
         parts.append("Mentioned Discord users in the current message:")
         for user in mentioned_users[:10]:

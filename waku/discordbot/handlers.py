@@ -41,6 +41,7 @@ from .permissions import _is_discord_user_bot_admin
 from .settings import (
     _discord_dm_settings,
     _discord_global_ai_enabled,
+    _discord_guild_settings,
     _history_key,
     _waiting_key,
 )
@@ -106,6 +107,10 @@ async def _handle_message(message: discord.Message, user_prompt: str) -> None:
         return
     if not await _discord_global_ai_enabled():
         return
+    if message.guild is not None and getattr(message.author, "bot", False):
+        settings = await _discord_guild_settings(message.guild)
+        if not settings.reply_to_bots or not settings.ai_reply:
+            return
 
     task = asyncio.current_task()
     if task is not None:

@@ -14,6 +14,7 @@ class DiscordGuildSettings:
     group_memory_enabled: bool = True
     setu_enabled: bool = True
     lang: str = "vi"
+    reply_to_bots: bool = True
 
 @dataclass
 class DiscordContextDeps:

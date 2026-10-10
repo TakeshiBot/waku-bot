@@ -75,6 +75,7 @@ class ChatConfig:
     discord_allow_r18: bool = False
     discord_r18_mode: int = 0
     discord_ai_reply: bool = True
+    discord_reply_to_bots: bool = True
     discord_auth_status: str = "none"
     discord_auth_requester_id: int | None = None
     discord_auth_channel_id: int | None = None
@@ -125,6 +126,7 @@ class ChatConfig:
                 "discord_r18_mode", 2 if data.get("discord_allow_r18", False) else 0
             ),
             discord_ai_reply=data.get("discord_ai_reply", True),
+            discord_reply_to_bots=data.get("discord_reply_to_bots", True) is True,
             discord_auth_status=data.get("discord_auth_status", "none"),
             discord_auth_requester_id=data.get("discord_auth_requester_id"),
             discord_auth_channel_id=data.get("discord_auth_channel_id"),

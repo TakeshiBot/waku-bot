@@ -78,6 +78,10 @@ async def patch_discord_chat_config(
     valid = {field.name for field in dataclass_fields(ChatConfig)}
     if not updates.keys() <= valid:
         raise ValueError("Unknown Discord configuration field")
+    if "discord_reply_to_bots" in updates and not isinstance(
+        updates["discord_reply_to_bots"], bool
+    ):
+        raise ValueError("Discord bot reply switch must be boolean")
     assert session is not None
     chat = (
         await session.execute(

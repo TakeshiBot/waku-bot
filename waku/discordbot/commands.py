@@ -147,6 +147,7 @@ async def send_discord_info_message(
                     f"AI Reply đã lưu: **{'BẬT' if settings.ai_reply else 'TẮT'}**\n"
                     f"AI toàn bộ Discord: **{'BẬT' if global_ai else 'TẮT'}**\n"
                     f"AI Reply hiệu lực: **{'BẬT' if global_ai and settings.ai_reply else 'TẮT'}**\n"
+                    f"Trả lời bot khác: **{'BẬT' if settings.reply_to_bots else 'TẮT'}**\n"
                     f"Bộ nhớ kênh: **{'BẬT' if settings.group_memory_enabled else 'TẮT'}**\n"
                     f"Ảnh: **{'BẬT' if settings.setu_enabled else 'TẮT'}**\n"
                     f"R18: `{settings.r18_mode}`\n"

@@ -88,6 +88,7 @@ def _settings_from_config(config, *, dm: bool = False) -> DiscordGuildSettings:
         enabled=True,
         r18_mode=0 if dm else max(0, min(2, int(config.discord_r18_mode))),
         ai_reply=config.discord_ai_reply,
+        reply_to_bots=False if dm else config.discord_reply_to_bots,
         group_memory_enabled=False if dm else config.group_memory_enabled,
         setu_enabled=config.setu_enabled,
         lang=normalize_locale(config.lang),
@@ -96,7 +97,7 @@ def _settings_from_config(config, *, dm: bool = False) -> DiscordGuildSettings:
 
 async def _discord_guild_settings(guild: discord.Guild | None) -> DiscordGuildSettings:
     if guild is None:
-        return DiscordGuildSettings(enabled=True, group_memory_enabled=False)
+        return DiscordGuildSettings(enabled=True, group_memory_enabled=False, reply_to_bots=False)
     cached = await common.memttlcache.get(_discord_settings_cache_key(guild.id))
     if isinstance(cached, DiscordGuildSettings):
         settings = copy.copy(cached)
@@ -113,7 +114,7 @@ async def _discord_guild_settings(guild: discord.Guild | None) -> DiscordGuildSe
     except Exception as exc:
         logger.error(f"Failed to load Discord guild settings from DB: {type(exc).__name__}")
         return DiscordGuildSettings(
-            ai_reply=False, group_memory_enabled=False, setu_enabled=False
+            ai_reply=False, group_memory_enabled=False, setu_enabled=False, reply_to_bots=False
         )
 
 
@@ -127,6 +128,7 @@ async def _set_discord_guild_settings_by_id(guild_id, guild_name, settings) -> N
         "discord_allow_r18": settings.r18_mode != 0,
         "discord_r18_mode": max(0, min(2, int(settings.r18_mode))),
         "discord_ai_reply": settings.ai_reply,
+        "discord_reply_to_bots": settings.reply_to_bots,
         "group_memory_enabled": settings.group_memory_enabled,
         "setu_enabled": settings.setu_enabled,
         "lang": normalize_locale(settings.lang),
@@ -143,7 +145,7 @@ async def _discord_dm_settings(user) -> DiscordGuildSettings:
         )
     except Exception as exc:
         logger.error(f"Failed to load Discord DM settings from DB: user={user.id} error={type(exc).__name__}")
-        return DiscordGuildSettings(enabled=True, r18_mode=0, ai_reply=False, group_memory_enabled=False)
+        return DiscordGuildSettings(enabled=True, r18_mode=0, ai_reply=False, group_memory_enabled=False, reply_to_bots=False)
 
 
 async def _set_discord_dm_settings(user, settings) -> None:

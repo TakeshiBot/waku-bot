@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 import discord
 from discord import app_commands
 
+from waku import common
 from waku.logger import logger
 
 from . import state
 from .commands import register_discord_commands
-from .constants import DISCORD_MEMBERS_INTENT
+from .constants import (
+    DISCORD_BOT_WAKE_LIMIT,
+    DISCORD_BOT_WAKE_WINDOW,
+    DISCORD_MEMBERS_INTENT,
+)
 from .embeds import discord_command_embed
 from .handlers import (
     _handle_discord_admin_command,
@@ -26,6 +32,21 @@ from .messages import _is_seg_command, _matches_keyword, _should_wake
 from .permissions import _is_discord_user_bot_admin
 from .settings import _discord_global_ai_enabled
 from .utilities import _channel_name, _guild_name, _message_text
+
+
+async def _claim_bot_wake(message: discord.Message) -> bool:
+    """Bound automated exchanges per bot/channel without limiting people."""
+    key = f"discord_bot_wakes:{message.channel.id}:{message.author.id}"
+    async with state._discord_turn_lock(message.author.id):
+        now = time.monotonic()
+        previous = await common.memttlcache.get(key, [])
+        recent = [stamp for stamp in previous if now - stamp < DISCORD_BOT_WAKE_WINDOW]
+        if len(recent) >= DISCORD_BOT_WAKE_LIMIT:
+            return False
+        await common.memttlcache.set(
+            key, [*recent, now], ttl=DISCORD_BOT_WAKE_WINDOW
+        )
+    return True
 
 
 class WakuCommandTree(app_commands.CommandTree):
@@ -110,7 +131,12 @@ def _create_client() -> discord.Client:
 
     async def _dispatch_message(message: discord.Message) -> None:
         bot_user = client.user
-        if bot_user is None or message.author.bot or state.discord_stopping:
+        if (
+            bot_user is None
+            or message.author.id == bot_user.id
+            or state.discord_stopping
+            or (message.author.bot and message.guild is None)
+        ):
             return
         content = _message_text(message)
         if await _handle_discord_admin_command(message):
@@ -137,6 +163,8 @@ def _create_client() -> discord.Client:
                     state.discord_ai_tasks.discard(task)
         should_wake, prompt = await _should_wake(message, bot_user)
         if not should_wake:
+            return
+        if message.author.bot and not await _claim_bot_wake(message):
             return
         logger.debug(
             "Discord wake: "

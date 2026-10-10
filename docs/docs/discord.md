@@ -77,9 +77,12 @@ Bot admin trong `discord_admin_users` dùng được mọi lệnh slash trong DM
 `/config`, `/help`, `/forget`, `/invite`, `/clean`, `/seg`. User thường nhắn hoặc
 gọi lệnh trong DM không được phản hồi. `/clean` trong DM chỉ xoá tin của bot.
 
-`/config` có các mục AI/trò chuyện, bộ nhớ, ảnh/R18, ngôn ngữ và trạng thái.
-Trong DM của bot admin, **AI / trò chuyện** bật/tắt chat riêng cho admin đó.
-Bot admin còn có mục **AI Discord toàn bot**, điều khiển trả lời AI tại mọi server
+`/config` hiển thị các nút bật/tắt có trạng thái ✅/❌ cho trả lời AI, trả lời bot khác,
+bộ nhớ và ảnh, cùng các nút chọn chế độ R18 và ngôn ngữ. Không cần chọn mục từ dropdown.
+**Trả lời bot khác** áp dụng riêng cho server hiện tại, mặc định bật để giữ hành vi
+đã tích hợp; tắt mục này không tắt trò chuyện với user. Trong DM của bot admin,
+**Trả lời AI** bật/tắt chat riêng cho admin đó; không có nút trả lời bot khác.
+Bot admin còn có nút **AI Discord toàn bot**, điều khiển trả lời AI tại mọi server
 và DM. Tắt công tắc này cũng dừng các lượt AI đang chạy và việc học bộ nhớ;
 các lệnh/menu và yêu cầu ảnh trực tiếp vẫn hoạt động. Công tắc được lưu riêng
 trong database và giữ nguyên sau khi khởi động lại; không thay đổi AI Telegram.
@@ -99,6 +102,13 @@ Tin nhắn DM của user thường không được phản hồi. AI có tool tì
 truy cập, bộ nhớ theo kênh, reaction, ảnh và lịch gửi tin/ảnh. Bộ nhớ từng kênh
 được tách riêng để tránh lấy nội dung từ kênh kín sang kênh khác. Lịch dùng
 scheduler hiện tại, múi giờ `Asia/Ho_Chi_Minh` (UTC+7), có namespace riêng.
+
+Trong server, bot khác cũng có thể gọi nickname, tag hoặc reply Waku để trò chuyện,
+theo công tắc **Trả lời bot khác** trong `/config`, công tắc AI và giới hạn kênh hiện tại.
+Waku bỏ qua tin do chính mình gửi và
+tin bot khác không gọi Waku. Mỗi bot khác được tối đa 6 lượt gọi trong 60 giây
+ở một kênh để hạn chế vòng lặp tự động; user thường không chịu giới hạn này.
+DM từ bot khác vẫn được bỏ qua.
 
 Settings server, cấu hình DM của admin và công tắc AI toàn Discord được lưu riêng
 trong bảng `discord_chat_data`, không dùng bảng nhóm Telegram. Bot không tự chép

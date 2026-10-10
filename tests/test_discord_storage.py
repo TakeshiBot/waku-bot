@@ -252,3 +252,44 @@ def test_chat_config_discord_roundtrip_retains_telegram_fields():
     restored = ChatConfig.from_dict(config.to_dict())
     assert restored == config
     assert restored.greeting == "hello" and restored.ai_reply_other_bots_enabled
+
+
+@pytest.mark.asyncio
+async def test_bot_reply_switch_persists_per_server_and_keeps_dm_telegram_and_json(storage):
+    first = SimpleNamespace(id=123, name="First")
+    second = SimpleNamespace(id=456, name="Second")
+    user = SimpleNamespace(id=123)
+    async with storage.begin() as session:
+        session.add(ChatData(id=123, title="Telegram", config={"ai_reply_other_bots_enabled": True}))
+        session.add(DiscordChatData(id=123, title="Old server", config={
+            "ai_reply_other_bots_enabled": False, "unknown": "keep",
+        }))
+    assert (await settings._discord_guild_settings(first)).reply_to_bots
+    await settings._set_discord_guild_settings(first, DiscordGuildSettings(reply_to_bots=False))
+    settings.common.memttlcache.delete.assert_awaited_with(settings._discord_settings_cache_key(123))
+    assert not (await settings._discord_guild_settings(first)).reply_to_bots
+    assert (await settings._discord_guild_settings(second)).reply_to_bots
+    assert not (await settings._discord_dm_settings(user)).reply_to_bots
+    async with storage() as session:
+        raw = (await session.get(DiscordChatData, 123)).config
+        assert raw["discord_reply_to_bots"] is False
+        assert raw["unknown"] == "keep"
+        assert raw["ai_reply_other_bots_enabled"] is False
+        assert (await session.get(ChatData, 123)).config == {"ai_reply_other_bots_enabled": True}
+    await settings._set_discord_guild_settings(first, DiscordGuildSettings(reply_to_bots=True))
+    assert (await settings._discord_guild_settings(first)).reply_to_bots
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid", [1, "false", None])
+async def test_bot_reply_switch_rejects_non_boolean_storage_updates(storage, invalid):
+    with pytest.raises(ValueError):
+        await repository.patch_discord_chat_config(123, {"discord_reply_to_bots": invalid})
+    assert not await repository.list_discord_guilds()
+
+
+@pytest.mark.parametrize("raw,expected", [({}, True), ({"discord_reply_to_bots": False}, False), ({"discord_reply_to_bots": "false"}, False)])
+def test_legacy_bot_reply_setting_defaults_and_malformed_values(raw, expected):
+    restored = ChatConfig.from_dict(raw)
+    assert restored.discord_reply_to_bots is expected
+    assert ChatConfig.from_dict(restored.to_dict()).discord_reply_to_bots is expected

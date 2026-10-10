@@ -128,97 +128,82 @@ class DiscordConfigView(discord.ui.View):
             if self.guild
             else self._t("Cá nhân trong DM", "Personal DM")
         )
-        if self.section == "global_ai" and self._global_access(self.origin.user):
-            scope = self._t(
-                "Toàn bộ Discord (server và DM)", "All Discord servers and DMs"
-            )
         embed = discord_command_embed(
             self._t(
-                "Thay đổi chỉ được áp dụng khi bấm **Lưu**.",
-                "Changes apply only after **Save**.",
+                "Bấm nút để thay đổi. Chỉ áp dụng khi bấm **Lưu**.",
+                "Use the buttons to change settings. Changes apply only after **Save**.",
             )
             + (f"\n{self.notice}" if self.notice else ""),
             title=self._t("Cấu hình Waku", "Waku settings"),
         )
         embed.add_field(name=self._t("Phạm vi", "Scope"), value=scope, inline=False)
-        if self.section == "chat":
-            value = (
-                self._t("Tự động trả lời: ", "Automatic replies: ")
-                + f"**{on(settings.ai_reply)}**\n"
-                + self._t(
-                    "Lệnh slash vẫn hoạt động khi tắt trả lời AI.",
-                    "Slash commands remain available when AI replies are off.",
-                )
+        chat = self._t("Trả lời AI: ", "AI replies: ") + f"**{on(settings.ai_reply)}**"
+        if self.guild:
+            chat += (
+                "\n"
+                + self._t("Trả lời bot khác: ", "Replies to other bots: ")
+                + f"**{on(settings.reply_to_bots)}**"
             )
-            name = self._t("AI / trò chuyện", "AI / chat")
-        elif self.section == "global_ai" and self._global_access(self.origin.user):
-            name = self._t("AI Discord toàn bot", "Global Discord AI")
-            value = (
+        chat += "\n" + self._t(
+            "Lệnh slash vẫn hoạt động khi tắt AI.",
+            "Slash commands remain available when AI is off.",
+        )
+        embed.add_field(
+            name=self._t("AI / trò chuyện", "AI / chat"), value=chat, inline=False
+        )
+        if self.guild:
+            embed.add_field(
+                name=self._t("Bộ nhớ kênh", "Channel memory"),
+                value=f"**{on(settings.group_memory_enabled)}**\n"
+                + self._t(
+                    "Bộ nhớ riêng từng kênh. Lưu thay đổi sẽ làm mới lịch sử AI trong server.",
+                    "Memory is separate per channel. Saving a change resets the server's AI history.",
+                ),
+                inline=False,
+            )
+        embed.add_field(
+            name=self._t("Ảnh / R18", "Images / R18"),
+            value=f"**{_r18_mode_label(settings.setu_enabled, settings.r18_mode)}**\n"
+            + (
                 self._t(
-                    "Trả lời AI tại mọi server và DM: ",
-                    "AI replies across all servers and DMs: ",
-                )
-                + f"**{on(self.pending_global_ai)}**\n"
-                + self._t(
-                    "Công tắc riêng cho Discord. Lệnh và menu vẫn hoạt động khi tắt AI. Thay đổi có hiệu lực ngay sau khi Lưu.",
-                    "A separate Discord switch. Commands and menus remain available when AI is off. Changes take effect immediately after Save.",
-                )
-            )
-        elif self.section == "memory":
-            name = self._t("Bộ nhớ", "Memory")
-            value = (
-                (
-                    self._t(
-                        "Bộ nhớ riêng từng kênh: ",
-                        "Separate conversation memory per channel: ",
-                    )
-                    + f"**{on(settings.group_memory_enabled)}**\n"
-                    + self._t(
-                        "Thiết lập áp dụng cho toàn server; bộ nhớ không chia sẻ giữa các kênh. Lưu thay đổi sẽ làm mới lịch sử AI trong các kênh của server.",
-                        "This setting applies across the server; memory is never shared between channels. Saving a change resets AI history in the server's channels.",
-                    )
+                    "Nút Ảnh bật/tắt riêng; nút R18 chuyển An toàn → R18 → Cả hai. Ảnh R18 gửi dạng spoiler.",
+                    "Images can be toggled separately; R18 cycles Safe → R18 → Mixed. R18 images are sent as spoilers.",
                 )
                 if self.guild
                 else self._t(
-                    "Lịch sử hội thoại DM được lưu riêng cho bạn. Dùng `/forget` để bắt đầu lại.",
-                    "DM conversation history is private to you. Use `/forget` to start again.",
+                    "DM chỉ hỗ trợ ảnh an toàn.", "DM supports safe images only."
                 )
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name=self._t("Ngôn ngữ", "Language"),
+            value="Tiếng Việt"
+            if normalize_locale(settings.lang) == "vi"
+            else "English",
+            inline=False,
+        )
+        if self._global_access(self.origin.user):
+            embed.add_field(
+                name=self._t("AI Discord toàn bot", "Global Discord AI"),
+                value=f"**{on(self.pending_global_ai)}**\n"
+                + self._t(
+                    "Áp dụng cho mọi server và DM, có hiệu lực sau khi Lưu. Lệnh và menu vẫn hoạt động khi tắt.",
+                    "Applies to all servers and DMs after Save. Commands and menus remain available when off.",
+                ),
+                inline=False,
             )
-        elif self.section == "images":
-            name = self._t("Ảnh / R18", "Images / R18")
-            value = (
-                f"**{_r18_mode_label(settings.setu_enabled, settings.r18_mode)}**\n"
-                + (
-                    self._t(
-                        "Chế độ ảnh lọc nội dung an toàn, R18 hoặc cả hai. Ảnh R18 được gửi dưới dạng tệp spoiler.",
-                        "Image mode filters safe content, R18 or both. R18 images are sent as spoiler attachments.",
-                    )
-                    if self.guild
-                    else self._t(
-                        "DM chỉ hỗ trợ ảnh an toàn.", "DM supports safe images only."
-                    )
-                )
-            )
-        elif self.section == "language":
-            name = self._t("Ngôn ngữ", "Language")
-            value = (
-                "Tiếng Việt" if normalize_locale(settings.lang) == "vi" else "English"
-            )
-        else:
-            name = self._t("Trạng thái", "Status")
-            value = (
-                f"AI: **{on(bool(app_config.agent))}**\n"
-                + self._t("Trả lời tại đây: ", "Replies here: ")
-                + f"**{on(settings.ai_reply)}**\n"
-                + self._t("Giới hạn kênh toàn bot: ", "Global channel restrictions: ")
-                + (
-                    self._t("Đang bật", "Active")
-                    if app_config.discord_channel_allowlist
-                    else self._t("Không giới hạn", "Unrestricted")
-                )
-            )
-        embed.add_field(name=name, value=value, inline=False)
-        dirty = self._dirty()
+        embed.add_field(
+            name=self._t("Trạng thái", "Status"),
+            value=f"AI: **{on(bool(app_config.agent))}**\n"
+            + self._t("Giới hạn kênh toàn bot: ", "Global channel restrictions: ")
+            + (
+                self._t("Đang bật", "Active")
+                if app_config.discord_channel_allowlist
+                else self._t("Không giới hạn", "Unrestricted")
+            ),
+            inline=False,
+        )
         embed.set_footer(
             text=self._t(
                 "Chỉ bạn thấy menu • Hết hạn sau 15 phút",
@@ -226,7 +211,7 @@ class DiscordConfigView(discord.ui.View):
             )
             + (
                 self._t(" • Có thay đổi chưa lưu", " • Unsaved changes")
-                if dirty
+                if self._dirty()
                 else ""
             )
         )
@@ -247,57 +232,76 @@ class DiscordConfigView(discord.ui.View):
 
     def _sync_controls(self) -> None:
         self.clear_items()
+        settings = self.pending_settings
         has_global = self._global_access(self.origin.user)
         if self.section == "global_ai" and not has_global:
             self.section = "chat"
-        sections = [
-            ("chat", "AI / trò chuyện", "AI / chat"),
-            ("memory", "Bộ nhớ", "Memory"),
-            ("images", "Ảnh / R18", "Images / R18"),
-            ("language", "Ngôn ngữ", "Language"),
-            ("status", "Trạng thái", "Status"),
-        ]
-        if has_global:
-            sections.insert(
-                1, ("global_ai", "AI Discord toàn bot", "Global Discord AI")
-            )
-        select = discord.ui.Select(
-            placeholder=self._t("Chọn mục cấu hình", "Choose a settings section"),
-            row=0,
-            options=[
-                discord.SelectOption(
-                    label=self._t(vi, en), value=key, default=key == self.section
-                )
-                for key, vi, en in sections
-            ],
-        )
-
-        async def choose(interaction):
-            await self._change(interaction, section=select.values[0])
-
-        select.callback = choose
-        self.add_item(select)
-        if self.section == "chat":
-            self._button(
-                self._t("Bật / tắt trả lời AI", "Toggle AI replies"),
+        controls = [
+            (
+                self._t("Trả lời AI", "AI replies"),
+                settings.ai_reply,
                 self.toggle_ai_reply,
+            ),
+        ]
+        if self.guild:
+            controls.extend(
+                [
+                    (
+                        self._t("Trả lời bot khác", "Replies to bots"),
+                        settings.reply_to_bots,
+                        self.toggle_reply_to_bots,
+                    ),
+                    (
+                        self._t("Bộ nhớ kênh", "Channel memory"),
+                        settings.group_memory_enabled,
+                        self.toggle_group_memory,
+                    ),
+                ]
             )
-        elif self.section == "global_ai" and has_global:
+        controls.append(
+            (self._t("Ảnh", "Images"), settings.setu_enabled, self.toggle_images)
+        )
+        if self.guild:
+            mode = (
+                self._t("Tắt ảnh", "Images off")
+                if not settings.setu_enabled
+                else [
+                    self._t("An toàn", "Safe"),
+                    self._t("Chỉ R18", "R18 only"),
+                    self._t("Cả hai", "Mixed"),
+                ][settings.r18_mode]
+            )
+            controls.append(
+                (
+                    f"R18: {mode}",
+                    settings.setu_enabled and settings.r18_mode > 0,
+                    self.cycle_r18_mode,
+                )
+            )
+        language = (
+            "Tiếng Việt" if normalize_locale(settings.lang) == "vi" else "English"
+        )
+        controls.append(
+            (self._t("Ngôn ngữ: ", "Language: ") + language, True, self.toggle_lang)
+        )
+        if has_global:
+            controls.append(
+                (
+                    self._t("AI Discord toàn bot", "Global Discord AI"),
+                    self.pending_global_ai,
+                    self.toggle_global_ai,
+                )
+            )
+        for index, (label, enabled, callback) in enumerate(controls):
             self._button(
-                self._t("Bật / tắt AI Discord toàn bot", "Toggle global Discord AI"),
-                self.toggle_global_ai,
+                ("✅ " if enabled else "❌ ") + label,
+                callback,
+                style=discord.ButtonStyle.success
+                if enabled
+                else discord.ButtonStyle.secondary,
+                row=index // 2,
+                disabled=callback == self.cycle_r18_mode and not settings.setu_enabled,
             )
-        elif self.section == "memory" and self.guild:
-            self._button(
-                self._t("Bật / tắt bộ nhớ từng kênh", "Toggle per-channel memory"),
-                self.toggle_group_memory,
-            )
-        elif self.section == "images":
-            self._button(
-                self._t("Đổi chế độ ảnh", "Change image mode"), self.toggle_r18
-            )
-        elif self.section == "language":
-            self._button("Tiếng Việt / English", self.toggle_lang)
         dirty = self._dirty()
         for label, callback, style, disabled in [
             (
@@ -307,7 +311,7 @@ class DiscordConfigView(discord.ui.View):
                 not dirty,
             ),
             (
-                self._t("Hủy thay đổi", "Cancel changes"),
+                self._t("Huỷ thay đổi", "Cancel changes"),
                 self.cancel_changes,
                 discord.ButtonStyle.secondary,
                 not dirty,
@@ -325,7 +329,7 @@ class DiscordConfigView(discord.ui.View):
                 False,
             ),
         ]:
-            self._button(label, callback, style=style, row=2, disabled=disabled)
+            self._button(label, callback, style=style, row=4, disabled=disabled)
 
     async def _refresh(self, interaction):
         if self.is_finished():
@@ -372,6 +376,38 @@ class DiscordConfigView(discord.ui.View):
             field="ai_reply",
             value=lambda: not self.pending_settings.ai_reply,
         )
+
+    async def toggle_reply_to_bots(self, interaction):
+        if self.guild:
+            await self._change(
+                interaction,
+                field="reply_to_bots",
+                value=lambda: not self.pending_settings.reply_to_bots,
+            )
+
+    async def toggle_images(self, interaction):
+        if not await self._ack(interaction):
+            return
+        async with self._lock:
+            if not await self.interaction_check(interaction):
+                return
+            self.pending_settings.setu_enabled = not self.pending_settings.setu_enabled
+            if self.guild is None:
+                self.pending_settings.r18_mode = 0
+            self.notice = ""
+            await self._refresh(interaction)
+
+    async def cycle_r18_mode(self, interaction):
+        if not self.guild or not await self._ack(interaction):
+            return
+        async with self._lock:
+            if not await self.interaction_check(interaction):
+                return
+            if not self.pending_settings.setu_enabled:
+                return
+            self.pending_settings.r18_mode = (self.pending_settings.r18_mode + 1) % 3
+            self.notice = ""
+            await self._refresh(interaction)
 
     async def toggle_global_ai(self, interaction):
         if not await self._ack(interaction):
