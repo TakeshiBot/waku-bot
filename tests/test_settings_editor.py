@@ -3,7 +3,7 @@
 import ast
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pydantic
 import pytest
@@ -31,6 +31,7 @@ def schemas():
         "pydantic": pydantic,
         "Path": Path,
         "Any": Any,
+        "Literal": Literal,
         "i18n": i18n,
         "__file__": str(ROOT / "waku/config/__init__.py"),
     }

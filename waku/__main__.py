@@ -243,7 +243,7 @@ async def init_bot(client: Client = client):
 
         embed_dims = await sticker_memory.ensure_embed_dimensions()
         await sticker_vec.init(embed_dims)
-        logger.debug("Sticker vector DB initialized")
+        logger.info("Sticker memory initialized (search mode: {})", app_config.agent_sticker_search_mode)
 
     # Schedule periodic bot avatar changes.
     if app_config.avatar_change_enabled:

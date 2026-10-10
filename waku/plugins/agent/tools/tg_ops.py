@@ -396,6 +396,8 @@ async def tg(
         return tr("method_failed", p0=method, p1=e.__class__.__name__)
     if is_current_reply:
         await record_tool_reply(ctx.deps, result, str(kwargs["text"]))
+    if method == "sendReaction":
+        getattr(ctx.deps, "tools_called_this_turn", set()).add("tg.sendReaction")
     message_id = getattr(result, "id", None) or getattr(result, "message_id", None)
     if message_id is not None:
         return tr("tool_p0_sent_message_id_p1", p0=method, p1=message_id)

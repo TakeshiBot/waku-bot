@@ -509,6 +509,7 @@ bot:
       parse_artwork_enabled: Parse Artwork Links
       pick_bottle_enabled: Pick Bottle
       group_memory_enabled: Group Memory
+      sticker_memory_enabled: Learn and send stickers
       verify: Member Verification
       save: Save
     verify:

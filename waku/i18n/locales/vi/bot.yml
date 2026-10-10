@@ -618,6 +618,7 @@ bot:
       pick_bottle_enabled: Nhặt chai
       ai_comment: Bình luận bằng AI
       group_memory_enabled: Bộ nhớ nhóm
+      sticker_memory_enabled: Học và gửi sticker
       verify: Xác minh thành viên mới
       save: Lưu
     waifu:

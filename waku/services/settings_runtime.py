@@ -88,6 +88,7 @@ _STARTUP_FIELDS = {
     "redis_db",
     "redis_password",
     "agent_sticker_memory",
+    "agent_sticker_search_mode",
     "agent_sticker_embed_model",
     "agent_sticker_embed_dimensions",
     "agent_sticker_db_path",
@@ -243,7 +244,10 @@ def _effective_roots(candidate: _AppConfig, changed_fields: set[str]) -> set[str
 
 
 def _embedding_provider_changed(candidate: _AppConfig) -> bool:
-    if not app_config.agent_sticker_memory:
+    if (
+        not app_config.agent_sticker_memory
+        or app_config.agent_sticker_search_mode != "embedding"
+    ):
         return False
     spec = app_config.agent_sticker_embed_model
     name = spec.split("/", 1)[0] if "/" in spec else "default"
@@ -263,7 +267,11 @@ def settings_restart_fields(
     embedding_provider_changed = _embedding_provider_changed(candidate)
     if embedding_provider_changed and "agent_providers" in roots:
         restart.add("agent_providers")
-    if app_config.agent_sticker_memory and "agent_proxy" in roots:
+    if (
+        app_config.agent_sticker_memory
+        and app_config.agent_sticker_search_mode == "embedding"
+        and "agent_proxy" in roots
+    ):
         restart.add("agent_proxy")
     main = sys.modules.get("waku.plugins.agent.agent")
     # If a provider update needs restart, retain every old provider-bound
@@ -282,6 +290,7 @@ def settings_restart_fields(
         or embedding_provider_changed
         or (
             app_config.agent_sticker_memory
+            and app_config.agent_sticker_search_mode == "embedding"
             and candidate.agent_proxy != app_config.agent_proxy
         )
     ):
@@ -421,8 +430,26 @@ async def prepare_settings_application(
                 sticker._description_agent,
                 "model",
                 model(
-                    candidate.agent_sticker_description_model or candidate.agent_model
+                    candidate.agent_sticker_description_model
+                    or candidate.agent_model_multimodal
+                    or candidate.agent_model
                 ),
+            )
+        if sticker is not None and getattr(sticker, "_selector_agent", None) is not None:
+            assign(
+                sticker._selector_agent,
+                "model",
+                model(
+                    candidate.agent_model_small
+                    or candidate.agent_sticker_description_model
+                    or candidate.agent_model_multimodal
+                    or candidate.agent_model
+                ),
+            )
+            assign(
+                sticker._selector_agent,
+                "model_settings",
+                provider.make_model_settings(candidate.agent_model_small_options),
             )
         discord = sys.modules.get("waku.discordbot.state")
         if discord is not None:

@@ -49,6 +49,7 @@ AgentRunKind = Literal[
     "rss_digest",
     "rss_broadcast",
     "sticker_description",
+    "sticker_selection",
     "memory",
     "transcription",
     "compaction",

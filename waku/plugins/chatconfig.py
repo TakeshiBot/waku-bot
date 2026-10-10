@@ -38,6 +38,7 @@ _FIELDS = (
     ("ai_reply_other_bots_enabled", "ai_reply_other_bots_enabled"),
     ("verify", "verify_enabled"),
     ("moderation", "agent_moderation_enabled"),
+    ("sticker_memory_enabled", "sticker_memory_enabled"),
 )
 _TTL = 15 * 60
 _SESSIONS = {}

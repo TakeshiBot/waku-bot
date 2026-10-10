@@ -452,6 +452,7 @@
       "rss_digest": "RSS digest",
       "rss_broadcast": "RSS broadcast",
       "sticker_description": "Sticker description",
+      "sticker_selection": "Sticker selection",
       "memory": "User memory",
       "transcription": "Transcription",
       "compaction": "History compaction"

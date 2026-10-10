@@ -174,6 +174,7 @@ def staged(monkeypatch):
     comment.comment_agent = Agent(old_model, output_type=MemoryResult)
     sticker = ModuleType("waku.plugins.agent.sticker_memory")
     sticker._description_agent = Agent(old_model)
+    sticker._selector_agent = Agent(old_model)
     followup = ModuleType("waku.plugins.agent.followup")
     followup.model = followup.small_model = followup.multimodal_model = old_model
     followup._default_relevance_check_agent = Agent(old_model, output_type=MemoryResult)
@@ -272,7 +273,8 @@ async def test_prepare_offline_then_activate_all_static_bindings(staged):
         "max_tokens": 40,
         "thinking": False,
     }
-    assert staged.sticker._description_agent.model is staged.main.model
+    assert staged.sticker._description_agent.model is staged.main.multimodal_model
+    assert staged.sticker._selector_agent.model is staged.main.small_model
     assert staged.followup.model is staged.main.model
     assert staged.followup.small_model is staged.main.small_model
     assert staged.followup.multimodal_model is staged.main.multimodal_model
@@ -326,6 +328,7 @@ async def test_prepare_failure_sanitized_and_closes_created_pools(staged, monkey
 @pytest.mark.asyncio
 async def test_embedding_provider_restart_only_if_active_provider_affected(staged):
     staged.current.agent_sticker_memory = True
+    staged.current.agent_sticker_search_mode = "embedding"
     plan = await runtime.prepare_settings_application(
         staged.candidate, {"agent_providers.default.key", "agent_model"}
     )
@@ -341,6 +344,25 @@ async def test_embedding_provider_restart_only_if_active_provider_affected(stage
     )
     assert not plan.restart_fields
     await plan.discard()
+
+
+@pytest.mark.asyncio
+async def test_chat_sticker_provider_change_updates_selector_without_restart(staged):
+    staged.current.agent_sticker_memory = staged.candidate.agent_sticker_memory = True
+    staged.current.agent_sticker_search_mode = staged.candidate.agent_sticker_search_mode = "chat"
+    plan = await runtime.prepare_settings_application(
+        staged.candidate, {"agent_model", "agent_providers.default.key"}
+    )
+    assert not plan.restart_fields
+    plan.apply()
+    assert staged.sticker._selector_agent.model is staged.main.model
+
+
+def test_sticker_search_mode_change_requires_restart(staged):
+    staged.candidate.agent_sticker_search_mode = "embedding"
+    assert runtime.settings_restart_fields(
+        staged.candidate, {"agent_sticker_search_mode"}
+    ) == {"agent_sticker_search_mode"}
 
 
 @pytest.mark.asyncio
@@ -460,6 +482,7 @@ def test_provider_factory_keeps_existing_global_proxy_path(monkeypatch):
 @pytest.mark.asyncio
 async def test_pending_embedding_provider_change_cannot_sneak_in_via_model_edit(staged):
     staged.current.agent_sticker_memory = True
+    staged.current.agent_sticker_search_mode = "embedding"
     plan = await runtime.prepare_settings_application(staged.candidate, {"agent_model"})
     assert plan.restart_fields == {"agent_model"}
     assert not plan._clients

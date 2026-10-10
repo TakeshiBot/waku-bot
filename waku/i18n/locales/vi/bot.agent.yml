@@ -1,5 +1,7 @@
 bot:
   agent_i18n:
+    periodic_sticker_hint: 'Đến lượt gợi ý sticker: nếu phù hợp với nội dung, gọi send_sticker một lần với mô tả cảm xúc cần dùng. Không gửi thêm nếu đã gửi sticker trong lượt này; có thể bỏ qua khi nội dung nghiêm túc hoặc không phù hợp.'
+    periodic_reaction_hint: 'Đến lượt gợi ý cảm xúc: nếu phù hợp, gọi tg("sendReaction", {"emoji": "…"}) một lần để thả cảm xúc vào tin nhắn đang trả lời. Dùng emoji reaction thông thường được Telegram hỗ trợ. Có thể bỏ qua khi không phù hợp.'
     busy: Mình đang trả lời nhiều tin nhắn, vui lòng chờ một chút...
     channel_task: 'Loại nhiệm vụ: bình luận kênh'
     channel_name: 'Tên kênh: {p0}'

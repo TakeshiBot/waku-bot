@@ -157,6 +157,7 @@ class ContextDeps:
     multimodal_model: Any | None = None
     history: list[ModelMessage] = field(default_factory=list)
     tools_called_this_turn: set[str] = field(default_factory=set)
+    periodic_expressions_enabled: bool = False
     locale: str = ""
     # Successful text deliveries in this run, shared by tools and the runner.
     # Never carried into conversation history: the next user turn may repeat text.

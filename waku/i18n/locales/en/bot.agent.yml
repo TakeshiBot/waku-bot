@@ -1,5 +1,7 @@
 bot:
   agent_i18n:
+    periodic_sticker_hint: 'Sticker hint for this turn: when appropriate, call send_sticker once with a description of the desired emotion. Do not send another sticker if one was already sent this turn. Skip it for serious or unsuitable content.'
+    periodic_reaction_hint: 'Reaction hint for this turn: when appropriate, call tg("sendReaction", {"emoji": "…"}) once to react to the message being answered. Use a standard Telegram-supported reaction emoji. Skip it when unsuitable.'
     busy: I have too many messages to answer; please wait a moment...
     channel_task: 'Task type: channel comment'
     channel_name: 'Channel name: {p0}'

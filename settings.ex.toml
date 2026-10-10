@@ -1,96 +1,45 @@
+# Telegram
 token = ""
 owners = []
-db_url = "sqlite+aiosqlite:///./data/waku.db"
-session_name = "waku"
 api_id = 1025907
 api_hash = "452b0359b988148995f22ff0f4229750"
-use_ipv6 = false
-log_retention_days = 30
-log_level = "INFO"
 lang = "vi"
 nickname = "waku"
+log_level = "INFO"
 
-# Telegram Business: enable Secretary Mode in BotFather and connect the account.
-# Uses agent_model and agent_prompt; can be toggled immediately in private /config.
-business_chat_enabled = false
-
-# Optional Discord bot, using the AI providers configured below.
-# Enable Message Content Intent and Server Members Intent in the Developer Portal.
-discord_enabled = false
-discord_token = ""
-# Discord user IDs only; Telegram owners are not Discord administrators.
-discord_admin_users = []
-# Empty allowlist permits all joined servers; joining requires no Waku approval.
-discord_channel_allowlist = []
-# Omit keywords to use the bot nickname; keep prefix commands such as !waku.
-# discord_keywords = ["waku"]
-# Discord-only periodic reaction hint; 0 disables it. Omit to inherit agent_periodic_reaction_interval.
-discord_periodic_reaction_interval = 5
-
-# Telegram Mini App management panel.
-# webapp = false
-# webapp_host = "0.0.0.0"
-# webapp_port = 8180
-# Public HTTPS URL, required when the panel is enabled (Telegram rejects HTTP Mini Apps).
-# webapp_url = ""
-# Mini App short name registered with /newapp in BotFather.
-# Required for group /config deep links: t.me/<bot>/<short_name>?startapp=...
-# webapp_short_name = "panel"
-# webapp_menu_button = true
-
-redis = false
-redis_endpoint = "localhost"
-redis_port = 6379
-redis_db = 0
-redis_password = ""
-
+# AI: prefix trước tên model chọn provider ở cuối file.
 agent = false
 agent_model = "default/gpt-4o-mini"
-agent_messages_threshold = 20
-agent_whitelist_mode = false
-agent_whitelist = []
 agent_prompt = ''''''
 
-# Global fallback for all providers without an explicit proxy:
-# agent_proxy = "http://127.0.0.1:7890"
+# Sticker: model dưới đây cần đọc được ảnh; dùng để học/chọn sticker.
+agent_sticker_memory = true
+agent_sticker_description_model = "default/gpt-4o-mini"
+
+# Telegram Business: kết nối tài khoản và bật Secretary Mode trong BotFather.
+business_chat_enabled = false
+
+# Telegram Mini App management panel
+webapp = false
+webapp_host = "0.0.0.0"
+webapp_port = 8180
+# URL HTTPS công khai; điền trước khi bật webapp.
+webapp_url = ""
+# Short name đã đăng ký trong BotFather bằng /newapp.
+webapp_short_name = "panel"
+webapp_menu_button = true
+
+# Discord: điền token và ID admin Discord khi bật bot.
+discord_enabled = false
+discord_token = ""
+discord_admin_users = []
+
+# Dịch vụ ảnh: để key trống nếu không dùng.
 manyacg_api_url = "https://api.manyacg.top/v1"
 manyacg_api_key = ""
-manyacg_channel = "MoreACG"
-manyacg_bot = "kirakabot"
-manyacg_setu_cd = 1
-# Telegram private/Business images: 0 = safe, 1 = R18, 2 = both.
-# Groups choose their own image mode in /config.
-manyacg_r18_mode = 0
 
-# Infographic API https://github.com/krau/infographic-api
-# infographic = false
-# infographic_api_url = "http://localhost:3000"
-# infographic_api_key = ""
-
-# Periodic sticker / reaction: force the model to call the tool every N conversations.
-# Set to 0 to disable.
-# agent_periodic_sticker_interval = 5
-# agent_periodic_reaction_interval = 3
-
-# RSS subscription delivery.
-# rss_enabled = true
-# Whitelist mode: enabled by default; only chats approved by an owner can subscribe.
-# rss_whitelist_mode = true
-# Polling interval (minutes).
-# rss_interval = 30
-
-# Model specs use provider/model; the first part selects a table below.
-# Keep provider tables after global settings: following keys belong to the table.
+# Provider AI. Các mục này luôn đặt cuối file.
 [agent_providers.default]
 url = "https://api.openai.com/v1"
 key = ""
 type = "chat_completions"
-# type = "responses" selects the Responses API instead.
-# api_type = "openai" is the API family; use "ollama" for native Ollama embeddings.
-# Optional provider HTTP proxy, otherwise agent_proxy is used:
-# proxy = "http://127.0.0.1:7890"
-
-# [agent_providers.openai_native]
-# url = "https://api.openai.com/v1"
-# key = ""
-# type = "responses"

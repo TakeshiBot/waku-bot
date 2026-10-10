@@ -1,7 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 import pydantic
 from dynaconf import Dynaconf
@@ -310,7 +310,7 @@ class _AppConfig(pydantic.BaseModel):
     agent_crawl_api_token: str | None = None
     agent_crawl_api_timeout: int = 60
     agent_model_timeout: int = 120  # Main model timeout (0 = no timeout)
-    agent_small_model_timeout: int = 10  # Small model timeout for quick tasks
+    agent_small_model_timeout: int = 45  # Includes sticker descriptions/selection.
     agent_download_timeout: int = 30  # Download media timeout (0 = no timeout)
     # Overall wall-clock timeout for a single agent run (the whole iter loop,
     # including all tool calls and streaming). Prevents a stuck model/tool call
@@ -328,10 +328,13 @@ class _AppConfig(pydantic.BaseModel):
     agent_image_edit_model: str | None = None
     # Sticker semantic memory
     agent_sticker_memory: bool = False
-    agent_sticker_memory_sample_rate: float = 0.5
+    # "chat" chooses stored descriptions with the chat model; no embedding API needed.
+    agent_sticker_search_mode: Literal["embedding", "chat"] = "chat"
+    agent_sticker_search_candidates: int = pydantic.Field(default=60, ge=1, le=200)
+    agent_sticker_memory_sample_rate: float = pydantic.Field(default=0.5, ge=0, le=1)
     # Cold start: increase the sample rate linearly up to 1.0 below this stored-sticker target.
     # None or <=0 disables this adjustment and the tool's stock threshold; use the base sample rate.
-    agent_sticker_warmup_count: int | None = 30
+    agent_sticker_warmup_count: int | None = 1
     agent_sticker_db_path: str = "data/sticker_vec.db"
     agent_sticker_ttl: int = 86400 * 7
     agent_sticker_min_keep_count: int = (
@@ -339,7 +342,7 @@ class _AppConfig(pydantic.BaseModel):
     )
     # Embedding model spec: "provider/model". Falls back to agent_model provider.
     agent_sticker_embed_model: str = "default/text-embedding-3-small"
-    agent_sticker_embed_dimensions: int = 1024
+    agent_sticker_embed_dimensions: int = pydantic.Field(default=1024, gt=0)
     # Description model spec. Falls back to agent_model when unset.
     agent_sticker_description_model: str | None = None
     agent_sticker_description_prompt: str = pydantic.Field(
@@ -349,8 +352,8 @@ class _AppConfig(pydantic.BaseModel):
     )
     # Periodic sticker / reaction: force-inject the tool hint every N conversations.
     # 0 = disabled.
-    agent_periodic_sticker_interval: int = 0
-    agent_periodic_reaction_interval: int = 0
+    agent_periodic_sticker_interval: int = pydantic.Field(default=10, ge=0)
+    agent_periodic_reaction_interval: int = pydantic.Field(default=5, ge=0)
     # Code self-awareness: allow agent to read its own codebase to understand other features
     agent_code_awareness: bool = True
     # Custom file patterns to exclude from code repository (in addition to default security exclusions)

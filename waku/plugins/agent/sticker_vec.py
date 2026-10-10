@@ -149,7 +149,7 @@ async def upsert(
     file_id: str,
     chat_id: int,
     description: str,
-    embedding: list[float],
+    embedding: list[float] | None = None,
 ) -> None:
     async with _connect(write=True) as db:
         await _lazy_evict(db, chat_id)
@@ -168,10 +168,6 @@ async def upsert(
             await db.execute(
                 "DELETE FROM sticker_embeddings WHERE rowid = ?", (row_id,)
             )
-            await db.execute(
-                "INSERT INTO sticker_embeddings(rowid, embedding) VALUES (?, ?)",
-                (row_id, _pack(embedding)),
-            )
         else:
             cur = await db.execute(
                 "INSERT INTO stickers(file_unique_id, file_id, chat_id, description, last_seen) "
@@ -179,6 +175,7 @@ async def upsert(
                 (file_unique_id, file_id, chat_id, description, now),
             )
             row_id = cur.lastrowid
+        if embedding is not None:
             await db.execute(
                 "INSERT INTO sticker_embeddings(rowid, embedding) VALUES (?, ?)",
                 (row_id, _pack(embedding)),
@@ -266,3 +263,18 @@ async def search(
                 break
             result.append((r[0], r[1], r[2]))
         return result
+
+
+async def candidates(
+    chat_id: int, limit: int = 60
+) -> list[tuple[int, str, str]]:
+    """Bounded, chat-scoped descriptions for selection without embeddings."""
+    async with _connect(write=True) as db:
+        await _lazy_evict(db, chat_id)
+        rows = await db.execute_fetchall(
+            "SELECT id, file_id, description FROM stickers "
+            "WHERE chat_id = ? AND description IS NOT NULL AND description != '' "
+            "ORDER BY last_seen DESC, id DESC LIMIT ?",
+            (chat_id, max(1, min(limit, 200))),
+        )
+        return [(int(row[0]), row[1], row[2]) for row in rows]

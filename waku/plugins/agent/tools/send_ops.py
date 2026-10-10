@@ -18,7 +18,7 @@ from waku.plugins.manyacg import manyacg
 from waku.services.telegram_images import image_allowed, telegram_image_settings
 from waku.timezone import BOT_TIMEZONE
 
-from .. import datatype, sticker_memory, sticker_vec
+from .. import datatype, quota, sticker_memory, sticker_vec
 
 
 @dataclass
@@ -374,23 +374,19 @@ async def send_sticker(
     if ctx.deps.chat_id is None or ctx.deps.message is None:
         return SendResult(success=False, message=tr("context_unavailable")).text()
 
-    if sticker_memory.embedder is None:
+    if not sticker_memory.search_ready():
         return SendResult(
             success=False, message=tr("sticker_memory_unconfigured")
         ).text()
 
-    embedding = await sticker_memory.get_embedding(query)
-    if embedding is None:
-        raise ModelRetry(tr("query_embedding_failed"))
-
-    results = await sticker_vec.search(ctx.deps.chat_id, embedding, k=1)
-    if not results:
+    result = await sticker_memory.select_sticker(
+        query, ctx.deps.chat_id, quota.subject_of(ctx.deps.message)
+    )
+    if not result:
         raise ModelRetry(tr("sticker_no_match"))
 
-    file_id, description, distance = results[0]
-    logger.debug(
-        f"send_sticker: query={query!r} -> description={description!r} distance={distance:.4f}"
-    )
+    file_id, _description = result
+    logger.debug("send_sticker: selected a stored sticker ({})", app_config.agent_sticker_search_mode)
     try:
         await ctx.deps.client.send_sticker(
             chat_id=ctx.deps.chat_id,
@@ -402,8 +398,7 @@ async def send_sticker(
     except Exception as e:
         logger.error(f"send_sticker send error: {e.__class__.__name__}: {e}")
         raise ModelRetry(tr("sticker_send_failed", p0=e.__class__.__name__, p1=e))
-    # Mark as already called this turn so prepare_periodic_sticker suppresses
-    # the "MUST call" hint for any further steps within the same agent run.
+    # Suppress periodic hints on later model requests within this same run.
     ctx.deps.tools_called_this_turn.add("send_sticker")
     return SendResult(success=True).text()
 
@@ -626,7 +621,7 @@ async def _send_sticker_checked(
     ctx: RunContext[datatype.ContextDeps], query: str
 ) -> str:
     """Send a sticker after the availability checks."""
-    if not app_config.agent_sticker_memory or sticker_memory.embedder is None:
+    if not app_config.agent_sticker_memory or not sticker_memory.search_ready():
         return tr("sticker_memory_disabled")
     if ctx.deps.chat_id is None or ctx.deps.chat_id >= -100:
         return tr("stickers_group_only")
@@ -641,7 +636,7 @@ async def _send_sticker_checked(
             f"Failed to check sticker count for chat {ctx.deps.chat_id}: {e}"
         )
         return tr("sticker_availability_failed", p0=e)
-    if sticker_count < 20:
+    if sticker_count < max(1, app_config.agent_sticker_warmup_count or 0):
         return tr("stickers_insufficient")
     return await send_sticker(ctx, query)
 

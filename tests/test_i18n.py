@@ -128,7 +128,7 @@ def test_infographic_help_keeps_valid_multiline_example():
 
 @pytest.mark.parametrize("lang", ["vi", "en", "zh-CN"])
 def test_config_prompt_defaults_follow_language_and_preserve_custom(lang):
-    from typing import Any
+    from typing import Any, Literal
 
     import pydantic
 
@@ -143,6 +143,7 @@ def test_config_prompt_defaults_follow_language_and_preserve_custom(lang):
     namespace = {
         "pydantic": pydantic,
         "Any": Any,
+        "Literal": Literal,
         "Path": Path,
         "i18n": i18n,
         "__file__": str(path),

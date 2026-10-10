@@ -1,45 +1,63 @@
-__pycache__
-*venv*
-*.log
-# Kurigram runtime RPC diagnostics.
-/unknown_errors.txt
-tmp/
+# Python environments, bytecode and tool caches.
+.venv*/
+venv/
+venv-*/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.pyrefly_cache/
+.hypothesis/
+.tox/
+.nox/
+
+# Test coverage and generated Python packages.
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+coverage/
+*.egg-info/
+.eggs/
+/build/
+/dist/
+
+# Bot runtime data, logs and Telegram authentication sessions.
+/data/
 logs/
-.idea
-.vscode
-# Local runtime settings. Only sanitized examples belong in the repository.
+tmp/
+*.log
+*.pid
+*.session
+*.session-*
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+/unknown_errors.txt
+pgload/
+
+# Local settings. Keep sanitized examples in version control.
 settings*.toml
 .settings-editor-*
 !settings.ex.toml
 !settings.example.toml
 !settings.sample.toml
-data/**
 .secret*
-pgload/
-.agentfs
 
-# Root-level scratch files (test.py, test2.py, test.json, test_powermem.json).
-# Scoped to the repo root with a leading slash: a bare *test* pattern also matches
-# conftest.py, tests/test_*.py and vitest.config.ts, which hides the real suite.
-/test*.py
-/test*.json
-/test*.db
-
-# Mini App panel: frontend deps, caches and build output
-webapp/node_modules/
-webapp/dist/
-webapp/.vite/
-webapp/*.tsbuildinfo
-waku/webapp/dist/
-# Environment files can contain API keys, bot tokens and signed initData.
+# Environment files may contain tokens, API keys or signed initData.
 .env
 .env.*
 *.env
 *.env.*
 .envrc
 .envrc.*
-env/
-# Keep sanitized environment templates available for fresh checkouts.
 !.env.example
 !.env.sample
 !.env.template
@@ -49,16 +67,45 @@ env/
 !*.env.template
 !*.env.dist
 !.envrc.example
-# Telegram session files contain authentication data.
-*.session
-*.session-*
 
-# Working notes: design plans, local dev scratch. Not user documentation, so they
-# stay out of the repo and out of the docs site.
+# Mini App dependencies, frontend caches and generated bundles.
+node_modules/
+.pnpm-store/
+.npm/
+.vite/
+*.tsbuildinfo
+/webapp/dist/
+/waku/webapp/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Generated documentation; keep docs source and assets.
+/site/
+/docs/site/
+
+# Local assistant state and working notes, including private config backups.
+.agentfs/
 .dev-notes/
-# Runtime configuration with real credentials - never commit.
 .omp/
 .claude/
 .codex/
 .opencode/
 .codegraph/
+
+# Root-level scratch files; do not hide tests/ or frontend test source.
+/test*.py
+/test*.json
+/test*.db
+
+# Editor, operating system and temporary backup files.
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+*.bak

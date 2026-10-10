@@ -19,6 +19,7 @@ hãy đọc lịch sử commit và sao lưu cấu hình, cơ sở dữ liệu, d
 - [Triển khai](docs/docs/self-host.md)
 - [Bảng quản trị Mini App](docs/docs/webapp.md)
 - [Telegram Business](docs/docs/telegram-business.md)
+- [Sticker và emoji trên Telegram](docs/docs/telegram-stickers.md)
 - [Quốc tế hóa và tiếng Việt](docs/docs/i18n.md)
 - [Đổi tên dự án và múi giờ](docs/docs/branding-timezone.md)
 

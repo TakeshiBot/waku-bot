@@ -36,6 +36,7 @@ from . import (
     trace,
     utils,
 )
+from .expressions import periodic_expression_instructions
 from .history import compact_history
 from .model_log import ModelActivityLog
 from .moderation_prompt import group_moderation_instructions
@@ -317,6 +318,8 @@ if app_config.agent and app_config.agent_model:
             + group_moderation_instructions(ctx.deps.locale or app_config.lang)
             + "\n\n"
             + await moderation.group_moderation_context(ctx)
+            + "\n\n"
+            + await periodic_expression_instructions(ctx)
         )
 
     memory_agent = Agent(
@@ -1177,6 +1180,7 @@ async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
                     instructions=instructions,
                     powermemory=powermemory,
                     history=history,
+                    periodic_expressions_enabled=True,
                 ),  # type: ignore
                 multimodal_model=multimodal_model,
                 model=model,
