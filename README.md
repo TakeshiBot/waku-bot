@@ -47,7 +47,8 @@ VPS không cần cài Python hay Node riêng. `settings.toml` trỏ tới `confi
 cho các lệnh và điều kiện chạy trực tiếp bằng Python 3.13.
 
 Múi giờ mặc định là `Asia/Ho_Chi_Minh` (UTC+7). Ngôn ngữ mặc định là `vi`; dữ liệu
-ngôn ngữ đã lưu của người dùng và nhóm được giữ lại, có thể đổi bằng `/lang`.
+ngôn ngữ đã lưu của người dùng và nhóm được giữ lại. Đổi ngôn ngữ nhóm bằng
+`/sett` → Ngôn Ngữ; ngôn ngữ cá nhân được chỉnh trong bảng quản trị.
 Tên hiển thị của bot là `waku`; tên repository và phân phối Python là `waku-bot`.
 Thư mục và module Python là `waku`; chạy trực tiếp bằng `python -m waku`.
 Các dữ liệu cũ được xử lý theo [hướng dẫn nâng cấp](docs/docs/branding-timezone.md).

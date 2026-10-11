@@ -27,9 +27,17 @@ class TitlePermissionsMarkup:
         rows.append(
             [
                 InlineKeyboardButton(
-                    i18n.t("title_menu.save", locale=self.lang),
+                    "⬅️ " + i18n.t("title_menu.back", locale=self.lang),
+                    callback_data=f"sett:{self.token}:{self.revision}:home",
+                ),
+                InlineKeyboardButton(
+                    "💾 " + i18n.t("title_menu.save", locale=self.lang),
                     callback_data=f"sett:{self.token}:{self.revision}:save",
-                )
+                ),
+                InlineKeyboardButton(
+                    "✖️ " + i18n.t("title_menu.close", locale=self.lang),
+                    callback_data=f"sett:{self.token}:{self.revision}:close",
+                ),
             ]
         )
         return InlineKeyboardMarkup(rows)

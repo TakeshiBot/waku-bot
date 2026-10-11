@@ -5,6 +5,7 @@ bot:
     group_config: Click the buttons to change group settings!
     chat_panel: Tap to configure this group in the panel
     panel_unavailable: The panel is not enabled
+    panel_app_unregistered: To open the panel from a group, register a Main Mini App in BotFather or set webapp_short_name to the actual app name registered using /newapp.
     unknown_operation: Unknown operation. No funny business!
     group_config_saved: Group settings saved~
     refresh_failed: Refresh failed, please try again later.
@@ -20,7 +21,7 @@ bot:
     title:
       set_self: Alright, you are now a {title}!
       set_other: "{user} turned {target} into a {title}!"
-      set_permissions: 'Choose an administrator preset. Used only when AI is explicitly asked to promote with /sett; press Save to apply.'
+      set_permissions: 'Choose the exact permissions used when AI promotes administrators; press Save to apply.'
       deleted: Your title has been removed.
       errors:
         generic: Oof, that didn't work.
@@ -60,7 +61,7 @@ bot:
       /qp - Set the probability of sending random quotes
       /tag - Set a member tag or administrator title
       /xtag - Remove a member tag or administrator title
-      /sett - Configure an administrator promotion preset for AI
+      /sett - Group language and promotion permissions
       /seg - Gimme some lewds (/ω＼*)
       /greet - Set the group welcome message
       /id - Get chat ID
@@ -473,7 +474,7 @@ bot:
     qrand: Random quote
     qp: Set quote probability
     tag: Set a member tag or administrator title
-    sett: Configure an administrator promotion preset for AI
+    sett: Group language and promotion permissions
     id: Get chat ID
     ip: Get IP info
     seg: Gimme lewds

@@ -1,13 +1,18 @@
 title_menu:
-  preset: "Quyền thăng quản trị viên cho AI (/sett). Nút chỉ đổi bản nháp; bấm Lưu để áp dụng. /tag và /xtag chỉ đổi nhãn, không cấp hoặc thu hồi quyền. AI chỉ dùng bộ quyền này khi bạn yêu cầu rõ ràng."
+  preset: "Cấp Quyền\nBot cấp admin theo đúng các quyền bật bên dưới. Bấm Lưu để áp dụng. Quyền Quản Lý Nhóm luôn có khi là admin."
+  settings: "Cài Đặt Nhóm\nThay đổi chỉ áp dụng khi bấm Lưu. Đóng để bỏ thay đổi."
+  language: "Ngôn Ngữ"
+  grant: "Cấp Quyền"
+  choose_language: "Ngôn Ngữ Nhóm\nChọn ngôn ngữ rồi bấm Lưu để áp dụng."
+  back: "Quay Lại"
   denied: "Không xác minh được quyền Telegram của bạn và bot để sửa mục này. Quản trị ẩn danh cần dùng tài khoản cá nhân."
   invalid: "Nhãn phải tối đa 16 ký tự, không chứa emoji hoặc ký tự điều khiển."
   changed: "Quyền đã thay đổi; hãy tải lại và kiểm tra trước khi sửa."
   expired: "Menu đã hết hạn hoặc không thuộc về bạn. Mở lại /sett."
   error: "Thao tác chưa xác minh được kết quả; hãy kiểm tra Telegram trước khi thử lại."
   done: "Đã cập nhật nhãn; quyền quản trị không thay đổi."
-  saved: 'Đã lưu bộ quyền. Menu tự xóa sau 5 giây.'
-  conflict: 'Bộ quyền đã thay đổi ở menu khác. Mở lại /sett để lấy bộ quyền mới.'
+  saved: 'Đã lưu cài đặt. Menu tự xóa sau 5 giây.'
+  conflict: 'Cài đặt đã thay đổi ở menu khác. Mở lại /sett để lấy cấu hình mới.'
   unsupported: "Quyền này không khả dụng cho nhóm hoặc SDK hiện tại."
   save: "Lưu"
   cancel: "Hủy thay đổi"

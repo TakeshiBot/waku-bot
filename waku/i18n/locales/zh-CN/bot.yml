@@ -2,15 +2,16 @@ bot:
   msg:
     private_start: |
       Nya~
-      You can use /lang to change the language of the bot.
+      Change your language in the management panel.
     group_start: |
       Hi~
-      You can use /lang to change the language of the bot in this group.
+      Use /sett → Language to change the group language.
     lang_changed: 语言已更改为 {lang}
     no_permission_group: 你没有本群组中管理 bot 的权限哦
     group_config: 点击按钮更改群组设置哦
     chat_panel: 点击按钮在管理面板中配置本群
     panel_unavailable: 管理面板未启用哦
+    panel_app_unregistered: To open the panel from a group, register a Main Mini App in BotFather or set webapp_short_name to the actual app name registered using /newapp.
     unknown_operation: 未知操作, 不可以干坏事哦
     group_config_saved: 群组设置已保存~
     refresh_failed: 刷新失败, 请稍后再试
@@ -28,7 +29,7 @@ bot:
     title:
       set_self: 好, 你现在是 {title} 啦
       set_other: "{user} 把 {target} 变成 {title} !"
-      set_permissions: 'Choose an administrator preset. Used only when AI is explicitly asked to promote with /sett; press Save to apply.'
+      set_permissions: 'Choose the exact permissions used when AI promotes administrators; press Save to apply.'
       deleted: 已删除你的头衔
       errors:
         generic: 失败了喵
@@ -68,7 +69,7 @@ bot:
       /qp - 设置随机主动发送语录的概率
       /tag - Set a member tag or administrator title
       /xtag - Remove a member tag or administrator title
-      /sett - Configure an administrator promotion preset for AI
+      /sett - Group language and promotion permissions
       /seg - 来点色图 (/ω＼*)
       /greet - 设置群组欢迎语
       /id - 获取聊天ID

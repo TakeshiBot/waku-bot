@@ -29,7 +29,8 @@ webapp_port = 8180
 # URL HTTPS công khai; điền trước khi bật webapp.
 webapp_url = ""
 # Short name đã đăng ký trong BotFather bằng /newapp.
-webapp_short_name = "panel"
+# Leave empty for Main Mini App; otherwise use the short name registered via /newapp.
+webapp_short_name = ""
 webapp_menu_button = true
 
 # Discord: điền token và ID admin Discord khi bật bot.

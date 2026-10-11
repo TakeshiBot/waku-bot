@@ -36,9 +36,9 @@ thời hạn không hợp lệ thành vĩnh viễn. warn=cảnh cáo; reset_user
 cảnh cáo; delete_replied_message=xóa đúng tin đang reply; pin/unpin=ghim/bỏ ghim.
 lock/unlock=khóa/khôi phục quyền gửi tin; set_chat_permissions=đổi đúng quyền
 được yêu cầu; promote/demote=cấp/gỡ quyền admin. Yêu cầu promote bình thường
-không liệt kê quyền thì gọi promote_user ngay; backend cấp giao các quyền của
-người ra lệnh và bot, mặc định không cấp quyền thêm admin hay ẩn danh, giống Rose.
-Khi người dùng nêu quyền cụ thể, chỉ cấp các quyền đó; chỉ dùng /sett khi được yêu cầu.
+không liệt kê quyền thì gọi promote_user ngay, không truyền permissions; backend
+cấp đúng bộ quyền đã lưu trong /sett. Khi người dùng nêu quyền cụ thể, chỉ cấp
+các quyền đó. Không tự thêm/bớt quyền hoặc yêu cầu xác nhận lại bộ quyền đã lưu.
 set_chat_title/description=đổi tên/mô tả. Telegram không cho bot token đổi
 slow mode; giải thích để admin chỉnh trong ứng dụng, không hứa đã đổi;
 set_member_tag/clear_member_tag=đặt/xóa nhãn thành viên.
@@ -96,9 +96,10 @@ uses Rose's permanent default. Never turn an unspecified temporary request or
 an invalid duration into a permanent action.
 Warn records a warning; reset_user_warnings clears them. Delete only the current
 replied message. Pin/unpin manage pins; lock/unlock restore saved group rights.
-A plain promote uses the caller/bot permission intersection, excluding add-admins
-and anonymous rights, like Rose. Call promote_user immediately when the request
-is clear. Grant explicitly listed rights when provided; use /sett only on request.
+A plain promote uses exactly the saved /sett preset. Call promote_user without
+permissions immediately when the request is clear. Only pass permissions when
+the requester explicitly lists them. Never invent extra rights, silently drop
+saved rights, or ask to reconfirm the saved preset.
 Demote removes admin rights. The remaining tools manage requested group permissions,
 title, description and member tags. Native slow mode changes are user-account
 only: explain this limitation and direct the admin to Telegram settings.

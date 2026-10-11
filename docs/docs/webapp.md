@@ -20,7 +20,10 @@ theo một trong hai cách dưới đây; chỉ đặt nút menu DM chưa đủ.
 
 Cách 1: trong BotFather, mở **Bot Settings → Configure Mini App → Enable
 Mini App**, đặt URL HTTPS của bảng quản trị làm **Main Mini App** và để
-`webapp_short_name = ""`. Nút nhóm dùng `https://t.me/<bot>?startapp=...`.
+`webapp_short_name = ""` (mặc định). Nút nhóm dùng `https://t.me/<bot>?startapp=...`.
+Bot ưu tiên Main Mini App khi Telegram xác nhận bot đã đăng ký app này, kể cả
+khi cấu hình cũ còn short name `panel`. `/config` và `/panel` cập nhật thông tin
+đăng ký tối đa mỗi phút, không cần khởi động lại sau khi đổi trong BotFather.
 
 Cách 2: đăng ký Mini App có short name:
 
@@ -44,7 +47,7 @@ Thêm các dòng sau vào `settings.toml`:
 ```toml
 webapp = true
 webapp_url = "https://panel.example.com"
-webapp_short_name = "panel"
+webapp_short_name = "" # Main Mini App; dùng "panel" chỉ khi đã đăng ký /newapp tên này
 ```
 
 ## Khởi động
@@ -96,7 +99,7 @@ hoàn thành nên một lượt có thể vượt phần còn lại; phần vư�
 | `webapp_host` | `"0.0.0.0"` | Địa chỉ lắng nghe |
 | `webapp_port` | `8180` | Cổng lắng nghe |
 | `webapp_url` | `""` | URL HTTPS công khai, bắt buộc khi bật bảng quản trị |
-| `webapp_short_name` | `"panel"` | Short name Mini App đăng ký bằng `/newapp`; để trống nếu đã bật Main Mini App |
+| `webapp_short_name` | `""` | Main Mini App được ưu tiên; nếu chưa bật Main, dùng short name đã đăng ký bằng `/newapp` |
 | `webapp_menu_button` | `true` | Cho nút menu trong cuộc trò chuyện mở bảng quản trị |
 | `webapp_jwt_secret` | `""` | Khóa ký token phiên; để trống thì tạo từ token của bot |
 | `webapp_jwt_ttl` | `21600` | Thời hạn phiên, tính bằng giây |

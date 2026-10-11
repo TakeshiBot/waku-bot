@@ -30,8 +30,8 @@ def _markup(token: str, lang: str) -> types.InlineKeyboardMarkup:
     return types.InlineKeyboardMarkup(rows)
 
 
-@Client.on_message(filters.command("lang") & (filters.private | filters.group), group=0)
 async def change_lang_command(client: Client, message: types.Message):
+    """Legacy draft helper; language selection now lives in /sett and the panel."""
     if not message.from_user or not message.chat:
         return
     private = message.chat.type == enums.ChatType.PRIVATE

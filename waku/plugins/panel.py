@@ -5,6 +5,9 @@ hint is navigation only; API permissions remain checked. Legacy private /start
 links remain supported for previously sent menus.
 """
 
+import asyncio
+import re
+import time
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import pyrogram
@@ -15,6 +18,30 @@ from waku import common, database
 from waku.config import app_config
 from waku.i18n import i18n
 from waku.webapp.auth import build_chat_start_param
+
+_registration_checked: tuple[int, float] | None = None
+
+
+async def refresh_panel_registration(client) -> None:
+    """Refresh Telegram's Main Mini App flag after BotFather changes, at most every minute."""
+    global _registration_checked
+    if not panel_available() or getattr(client, "is_connected", False) is not True:
+        return
+    now = time.monotonic()
+    if (
+        _registration_checked
+        and _registration_checked[0] == id(client)
+        and now - _registration_checked[1] < 60
+    ):
+        return
+    _registration_checked = (id(client), now)
+    try:
+        me = await asyncio.wait_for(client.get_me(), 5)
+        if me and me.id == client.me.id:
+            client.me = me
+    except Exception:
+        # A transient Telegram error must not disable a previously valid menu.
+        pass
 
 
 def panel_available() -> bool:
@@ -41,7 +68,17 @@ def chat_panel_url(chat_id: int) -> str | None:
         return None
     bot_username = client.me.username if client.me else None
     start_param = build_chat_start_param(chat_id)
-    short_name = app_config.webapp_short_name.strip()
+    # Main Mini App is registered on the bot itself. An old default "panel"
+    # short name must not send users to an unregistered /newapp instead.
+    short_name = (
+        ""
+        if getattr(client.me, "has_main_web_app", False)
+        else app_config.webapp_short_name.strip()
+    )
+    if not short_name and getattr(client.me, "has_main_web_app", None) is False:
+        return None
+    if short_name and re.fullmatch(r"[A-Za-z0-9_]+", short_name) is None:
+        return None
     app_path = f"/{short_name}" if short_name else ""
     return f"https://t.me/{bot_username}{app_path}?startapp={start_param}"
 
@@ -95,9 +132,17 @@ async def panel_group_cmd(client: Client, message: pyrogram.types.Message):
         await message.reply(text=i18n.t("bot.msg.no_permission_group", locale=lang))
         return
 
+    await refresh_panel_registration(client)
     button = chat_panel_button(chat.id, lang)
     if button is None:
-        await message.reply(text=i18n.t("bot.msg.panel_unavailable", locale=lang))
+        await message.reply(
+            text=i18n.t(
+                "bot.msg.panel_app_unregistered"
+                if panel_available()
+                else "bot.msg.panel_unavailable",
+                locale=lang,
+            )
+        )
         return
 
     await message.reply(

@@ -95,9 +95,9 @@ class _AppConfig(pydantic.BaseModel):
     # Public HTTPS base URL of the panel. Required when `webapp` is enabled:
     # Telegram refuses to open Mini Apps over plain HTTP.
     webapp_url: str = ""
-    # Mini App short name registered via BotFather (/newapp). Used to build the
-    # direct link that carries group context: t.me/<bot>/<short_name>?startapp=...
-    webapp_short_name: str = "panel"
+    # Empty uses Main Mini App; otherwise the actual /newapp short name.
+    # Telegram's registered Main Mini App takes precedence over this fallback.
+    webapp_short_name: str = ""
     # Set the chat menu button to open the panel.
     webapp_menu_button: bool = True
     # HS256 secret for session tokens. Derived from the bot token when empty.

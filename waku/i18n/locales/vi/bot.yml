@@ -304,15 +304,16 @@ bot:
       change_same: Waifu hôm nay của bạn vẫn là người ấy~
     private_start: |
       Meo~
-      Bạn có thể dùng /lang để đổi ngôn ngữ của bot.
+      Đổi ngôn ngữ cá nhân trong bảng quản trị.
     group_start: |
       Chào cả nhóm~
-      Dùng /lang để đổi ngôn ngữ của bot trong nhóm này.
+      Dùng /sett → Ngôn Ngữ để đổi ngôn ngữ nhóm.
     lang_changed: Đã đổi ngôn ngữ thành {lang}.
     no_permission_group: Bạn không có quyền quản lý bot trong nhóm này.
     group_config: Nhấn nút để thay đổi cài đặt nhóm.
     chat_panel: Nhấn nút để cấu hình nhóm trong bảng quản trị.
     panel_unavailable: Bảng quản trị chưa được bật.
+    panel_app_unregistered: Để mở panel từ nhóm, hãy đăng ký Main Mini App trong BotFather hoặc đặt webapp_short_name đúng tên app đã đăng ký bằng /newapp.
     unknown_operation: Thao tác không xác định.
     group_config_saved: Đã lưu cài đặt nhóm~
     refresh_failed: Làm mới thất bại, hãy thử lại sau.
@@ -330,7 +331,7 @@ bot:
     title:
       set_self: Được rồi, danh hiệu của bạn giờ là {title}.
       set_other: '{user} đã đặt danh hiệu {title} cho {target}!'
-      set_permissions: 'Chọn mẫu quyền admin. Chỉ áp dụng khi yêu cầu AI bổ nhiệm theo /sett; bấm Lưu để cập nhật.'
+      set_permissions: 'Chọn đúng bộ quyền khi AI cấp admin; bấm Lưu để cập nhật.'
       deleted: Đã xóa danh hiệu của bạn.
       errors:
         generic: Thao tác thất bại.
@@ -370,7 +371,7 @@ bot:
       /qp - Đặt xác suất tự gửi trích dẫn
       /tag - Đặt tag cho thành viên hoặc danh hiệu admin
       /xtag - Xóa tag hoặc danh hiệu
-      /sett - Cấu hình mẫu quyền bổ nhiệm admin cho AI
+      /sett - Cài đặt ngôn ngữ và quyền cấp admin
       /seg - Gửi ảnh gợi cảm (/ω＼*)
       /greet - Đặt lời chào thành viên mới
       /id - Xem ID cuộc trò chuyện
@@ -669,7 +670,7 @@ bot:
     qp: Đặt xác suất tự gửi trích dẫn
     tag: Đặt tag cho thành viên hoặc danh hiệu admin
     xtag: Xóa tag hoặc danh hiệu
-    sett: Cấu hình mẫu quyền bổ nhiệm admin cho AI
+    sett: Cài đặt ngôn ngữ và quyền cấp admin
     id: Xem ID cuộc trò chuyện
     ip: Tra cứu IP hoặc tên miền
     seg: Gửi ảnh gợi cảm

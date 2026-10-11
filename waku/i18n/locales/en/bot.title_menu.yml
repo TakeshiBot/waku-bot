@@ -1,13 +1,18 @@
 title_menu:
-  preset: "AI promotion permission preset (/sett). Buttons change a draft; press Save to apply. /tag and /xtag change labels only. AI uses this preset only when explicitly requested."
+  preset: "Grant Permissions\nThe bot grants exactly the enabled rights when promoting administrators. Press Save to apply. Manage Chat is inherent to administrators."
+  settings: "Group Settings\nChanges apply only when you press Save. Close discards changes."
+  language: "Language"
+  grant: "Grant Permissions"
+  choose_language: "Group Language\nChoose a language, then press Save to apply."
+  back: "Back"
   denied: "Your and the bot's Telegram authority could not be verified. Anonymous administrators must use a personal account."
   invalid: "Labels must be at most 16 characters without emoji or control characters."
   changed: "Permissions changed; reload and review before editing."
   expired: "This menu expired or belongs to someone else. Open /sett again."
   error: "The outcome is unverified; check Telegram before trying again."
   done: "Label updated; administrator permissions remain unchanged."
-  saved: 'Permission preset saved. This menu will be deleted in 5 seconds.'
-  conflict: 'This preset changed in another menu. Open /sett again to load the latest permissions.'
+  saved: 'Settings saved. This menu will be deleted in 5 seconds.'
+  conflict: 'Settings changed in another menu. Open /sett again to load the latest configuration.'
   unsupported: "This permission is unavailable for groups or the installed SDK."
   save: "Save"
   cancel: "Cancel changes"

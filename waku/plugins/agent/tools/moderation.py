@@ -830,6 +830,7 @@ async def _mutate(
     _allow_admin=False,
     _demote=False,
     _promotion_rights=None,
+    _promotion_preset=None,
     _duration_seconds=None,
     _update_mute=False,
     _admin_title=False,
@@ -891,6 +892,13 @@ async def _mutate(
             ):
                 raise ModerationDenied("changed")
         if _promotion_rights is not None and query is not None:
+            if _promotion_preset is not None:
+                row = await get_chat_by_id(ctx.deps.chat_id)
+                current = (
+                    group_preset(row.chat_config.title_permissions or {}) if row else {}
+                )
+                if current != _promotion_preset:
+                    raise ModerationDenied("changed")
             for name in _promotion_rights:
                 if not _has_right(actor, name) or not _has_right(bot, name):
                     raise ModerationDenied(
@@ -1423,9 +1431,11 @@ async def promote_user(
     permissions: list[str] | None = None,
     use_configured_permissions: bool = False,
 ) -> str:
-    """Promote with explicit permissions or the caller/bot intersection by default, like Rose.
+    """Promote with the saved /sett preset unless specific permissions are requested.
 
-    Use the /sett preset only when the requester explicitly asks for configured permissions.
+    Never silently add or remove preset rights to fit the caller or bot's authority.
+    use_configured_permissions is retained for compatibility; omitted permissions
+    always use the saved preset, including when this flag is false.
     """
     _supergroup(ctx)
     if title:
@@ -1438,18 +1448,8 @@ async def promote_user(
     ):
         raise ModerationDenied("text")
     selected = permissions
-    if selected is None and not use_configured_permissions:
-        actor, bot, _ = await _authorize(ctx, "can_promote_members")
-        selected = [
-            name
-            for name in ADMIN_RIGHTS
-            if name not in CHANNEL_ONLY
-            and name not in {"can_promote_members", "is_anonymous"}
-            and supported(name)
-            and _has_right(actor, name)
-            and _has_right(bot, name)
-        ]
-    if use_configured_permissions:
+    preset = None
+    if selected is None:
         row = await get_chat_by_id(ctx.deps.chat_id)
         try:
             preset = (
@@ -1472,6 +1472,7 @@ async def promote_user(
         user_id,
         _target_id=user_id,
         _promotion_rights=requested,
+        _promotion_preset=preset,
         _allow_admin=True,
     )
     if title:

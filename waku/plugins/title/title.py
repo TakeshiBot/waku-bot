@@ -8,14 +8,16 @@ from dataclasses import dataclass, field
 
 import pyrogram
 from pyrogram import Client
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from waku import database, i18n
+from waku.common.telegram_authority import can_manage_group_settings
 from waku.common.utils import get_reply_target
 from waku.logger import logger
 from waku.plugins.menu_cleanup import schedule_saved_menu_cleanup
 
 from .authority import TitleDenied, can_set_preset, change_title
-from .permissions import ADMIN_RIGHTS, CHANNEL_ONLY, supported
+from .permissions import ADMIN_RIGHTS, CHANNEL_ONLY, group_preset, supported
 from .utils import TitlePermissionsMarkup
 
 
@@ -26,6 +28,8 @@ class PresetSession:
     lang: str
     baseline: dict | str | None
     draft: dict
+    baseline_lang: str = ""
+    page: str = "home"
     token: str = field(default_factory=lambda: secrets.token_hex(8))
     message_id: int | None = None
     revision: int = 0
@@ -103,9 +107,80 @@ async def delete_member_title(client, message):
 
 
 def _markup(session):
-    return TitlePermissionsMarkup(
-        session.draft, session.lang, session.token, session.revision
-    ).build()
+    def button(text, action):
+        return InlineKeyboardButton(
+            text, callback_data=f"sett:{session.token}:{session.revision}:{action}"
+        )
+
+    if session.page == "rights":
+        return TitlePermissionsMarkup(
+            session.draft, session.lang, session.token, session.revision
+        ).build()
+    if session.page == "language":
+        names = {"vi": "Tiếng Việt", "en": "English", "zh-CN": "Chinese (Simplified)"}
+        rows = [
+            [
+                button(
+                    ("✅ " if locale == session.lang else "")
+                    + names.get(locale, locale),
+                    f"lang_{locale}",
+                )
+            ]
+            for locale in i18n.i18n.get_available_locales()
+        ]
+    else:
+        rows = [
+            [
+                button("🌐 " + _t("language", session.lang), "language"),
+                button("🛡 " + _t("grant", session.lang), "rights"),
+            ]
+        ]
+    navigation = []
+    if session.page != "home":
+        navigation.append(button("⬅️ " + _t("back", session.lang), "home"))
+    navigation.extend(
+        [
+            button("💾 " + _t("save", session.lang), "save"),
+            button("✖️ " + _t("close", session.lang), "close"),
+        ]
+    )
+    rows.append(navigation)
+    return InlineKeyboardMarkup(rows)
+
+
+def _text(session):
+    return _t(
+        "preset"
+        if session.page == "rights"
+        else "choose_language"
+        if session.page == "language"
+        else "settings",
+        session.lang,
+    )
+
+
+async def _allowed(client, session, action):
+    if action == "close":
+        return True  # Only the bound requester can close their own draft.
+    if action == "rights" or action.isdecimal():
+        return await can_set_preset(client, session.chat_id, session.user_id)
+    if action == "language" or action.startswith("lang_"):
+        return await can_manage_group_settings(client, session.user_id, session.chat_id)
+    if action == "save":
+        if session.draft != _preset(session.baseline) and not await can_set_preset(
+            client, session.chat_id, session.user_id
+        ):
+            return False
+        if (
+            session.lang != session.baseline_lang
+            and not await can_manage_group_settings(
+                client, session.user_id, session.chat_id
+            )
+        ):
+            return False
+    return await can_set_preset(
+        client, session.chat_id, session.user_id
+    ) or await can_manage_group_settings(client, session.user_id, session.chat_id)
 
 
 @Client.on_message(pyrogram.filters.command("sett") & pyrogram.filters.group, group=0)
@@ -121,7 +196,10 @@ async def set_title_permissions(client, message):
         return
     lang = (await database.get_chat_config(chat)).lang
     try:
-        if not await can_set_preset(client, chat.id, user.id):
+        if not (
+            await can_set_preset(client, chat.id, user.id)
+            or await can_manage_group_settings(client, user.id, chat.id)
+        ):
             await message.reply_text(_t("denied", lang))
             return
         preset, lang = await _current_preset(chat)
@@ -132,16 +210,16 @@ async def set_title_permissions(client, message):
     for token, previous in list(_sessions.items()):
         if previous.expires <= time.monotonic():
             _sessions.pop(token, None)
-    session = PresetSession(chat.id, user.id, lang, preset, draft)
+    session = PresetSession(chat.id, user.id, lang, preset, draft, baseline_lang=lang)
     session.command_message_id = message.id
-    sent = await message.reply_text(_t("preset", lang), reply_markup=_markup(session))
+    sent = await message.reply_text(_text(session), reply_markup=_markup(session))
     session.message_id = sent.id
     _sessions[session.token] = session
 
 
 @Client.on_callback_query(
     pyrogram.filters.regex(
-        r"^sett:[0-9a-f]{16}:\d{1,9}:(?:\d+|save|cancel|reload|close)$"
+        r"^sett:[0-9a-f]{16}:\d{1,9}:(?:\d+|save|cancel|reload|close|home|rights|language|lang_[^:]{1,32})$"
     ),
     group=0,
 )
@@ -164,7 +242,7 @@ async def set_title_permissions_callback(client, query):
         )
         return
     try:
-        if not await can_set_preset(client, session.chat_id, user.id):
+        if not await _allowed(client, session, action):
             await query.answer(_t("denied", session.lang), show_alert=True)
             return
     except Exception:
@@ -181,7 +259,10 @@ async def set_title_permissions_callback(client, query):
         session.revision += 1
         if action == "close":
             _sessions.pop(token, None)
-            await message.edit_reply_markup(None)
+            try:
+                await message.delete()
+            except Exception:
+                await message.edit_reply_markup(None)
             return
         if action in ("reload", "cancel"):
             try:
@@ -193,15 +274,31 @@ async def set_title_permissions_callback(client, query):
                 )
                 return
             session.baseline, session.draft = preset, draft
+            session.baseline_lang = session.lang
+        elif action in ("home", "rights", "language"):
+            session.page = action
+        elif action.startswith("lang_"):
+            locale = action[5:]
+            if locale not in i18n.i18n.get_available_locales():
+                return
+            session.lang = locale
+            session.page = "language"
         elif action == "save":
             try:
-                if not await can_set_preset(client, session.chat_id, user.id):
+                if not await _allowed(client, session, "save"):
                     raise TitleDenied("denied")
-                await database.update_chat_config_fields(
-                    message.chat,
-                    {"title_permissions": dict(session.draft)},
-                    expected_fields={"title_permissions": session.baseline},
-                )
+                fields, expected = {}, {}
+                if session.draft != _preset(session.baseline):
+                    group_preset(session.draft)
+                    fields["title_permissions"] = dict(session.draft)
+                    expected["title_permissions"] = session.baseline
+                if session.lang != session.baseline_lang:
+                    fields["lang"] = session.lang
+                    expected["lang"] = session.baseline_lang
+                if fields:
+                    await database.update_chat_config_fields(
+                        message.chat, fields, expected_fields=expected
+                    )
             except TitleDenied:
                 await message.edit_text(
                     _t("denied", session.lang), reply_markup=_markup(session)
@@ -224,6 +321,8 @@ async def set_title_permissions_callback(client, query):
                 schedule_saved_menu_cleanup(client, message, session.command_message_id)
             return
         else:
+            if not action.isdecimal():
+                return
             index = int(action)
             names = list(ADMIN_RIGHTS)
             if index >= len(names):
@@ -241,6 +340,4 @@ async def set_title_permissions_callback(client, query):
                 )
                 return
             session.draft[name] = not session.draft.get(name, False)
-        await message.edit_text(
-            _t("preset", session.lang), reply_markup=_markup(session)
-        )
+        await message.edit_text(_text(session), reply_markup=_markup(session))

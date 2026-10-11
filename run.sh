@@ -293,7 +293,7 @@ EOF
   check_config --miniapp-url "https://${domain}"
   start_waku
   curl --fail --silent --show-error --max-time 20 --output /dev/null "https://${domain}/"
-  log "Mini App: https://${domain}/ — đăng ký URL này và short name trong BotFather."
+  log "Mini App: https://${domain}/ — đặt URL này làm Main Mini App trong BotFather; short name chỉ dùng khi đăng ký bằng /newapp."
 }
 
 menu() {

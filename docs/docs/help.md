@@ -1,7 +1,8 @@
 # Trợ giúp chi tiết
 
 Phần trợ giúp chi tiết này cần được bổ sung khi chức năng thay đổi. Khi chạy bot,
-dùng `/help` để xem hướng dẫn theo ngôn ngữ đã chọn và `/lang` để đổi ngôn ngữ.
+dùng `/help` để xem hướng dẫn theo ngôn ngữ đã chọn. Đổi ngôn ngữ nhóm bằng
+`/sett` → Ngôn Ngữ; đổi ngôn ngữ cá nhân trong bảng quản trị.
 
 Trong chat riêng, mở `/start` và dùng nút **AI trong tin nhắn riêng** để bật/tắt AI
 cho tài khoản của bạn. Mặc định tắt; lựa chọn được lưu trong cơ sở dữ liệu. Bạn cũng

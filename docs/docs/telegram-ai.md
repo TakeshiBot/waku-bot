@@ -46,7 +46,7 @@ Tool kiểm tra quyền thực tế ngay trước khi gửi thao tác.
 
 ## Menu, quyền và các lệnh Telegram
 
-`/config` trong nhóm, `/sett`, `/lang`, thay đổi lời chào `/greet`, `/qp` và
+`/config` trong nhóm, `/sett`, thay đổi lời chào `/greet`, `/qp` và
 `/rss digest|broadcast on|off` dùng bản nháp:
 bấm **Lưu** mới áp dụng và đóng menu. Menu cùng tin gọi lệnh tự xóa sau 5 giây
 (tin gọi lệnh chỉ xóa được khi bot có quyền). Mở lại lệnh để bỏ bản nháp.
@@ -60,12 +60,17 @@ cũng được kiểm tra theo chế độ đã chọn. Trong DM/Business, `many
 chọn `0` (An toàn, mặc định), `1` (R18) hoặc `2` (Cả hai), có hiệu lực ngay
 sau khi lưu trong `/config` của quản trị bot.
 
-`/sett` chỉnh **mẫu quyền bổ nhiệm admin** cho AI, không đổi quyền của thành viên
-hay admin ngay lúc lưu. Chỉ dùng mẫu này khi yêu cầu rõ, ví dụ reply thành viên:
-`waku, bổ nhiệm người này theo mẫu quyền đã lưu trong /sett`.
-Quyền được cấp vẫn phải nằm trong quyền hiện tại của người ra lệnh và bot.
-Promote không nêu quyền cụ thể dùng phần quyền chung của người gọi và bot,
-trừ quyền thêm admin và ẩn danh. Không cần cấu hình `/sett` trước.
+`/sett` có hai menu con **Ngôn Ngữ** và **Cấp Quyền**. Thay đổi được giữ trong
+bản nháp chung; **Quay Lại** giữ bản nháp, **Lưu** áp dụng và đóng (tự xóa sau
+5 giây), **Đóng** bỏ thay đổi. Lệnh gõ `/lang` đã được bỏ.
+Mục ngôn ngữ cần quyền đổi thông tin nhóm; mục cấp quyền cần quyền thêm admin.
+
+AI promote không nêu quyền cụ thể sẽ cấp **đúng bộ quyền đã lưu** trong `/sett`.
+Các quyền tắt không được tự thêm vào; quyền Quản Lý Nhóm luôn có do Telegram
+coi đây là quyền cơ bản của admin. Nếu chưa lưu bộ quyền, chỉ cấp quyền cơ bản này.
+Người ra lệnh và bot vẫn phải có đủ toàn bộ quyền đã chọn; thiếu quyền thì từ chối,
+không âm thầm cấp bộ quyền khác. Yêu cầu nêu danh sách quyền cụ thể có thể ghi đè
+cho riêng thao tác đó. Lưu `/sett` không đổi quyền của admin hiện có.
 
 `/tag Nội dung` và `/xtag` đặt/xóa tag cho người đang reply; không reply thì áp
 dụng cho chính người gọi. Với thành viên thường, bot dùng quyền quản lý tag;

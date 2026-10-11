@@ -20,7 +20,7 @@ from waku.common.utils import GROUP_CHAT_TYPES
 from waku.database.models import ChatConfig
 from waku.i18n import i18n
 from waku.plugins.menu_cleanup import schedule_saved_menu_cleanup
-from waku.plugins.panel import chat_panel_button
+from waku.plugins.panel import chat_panel_button, refresh_panel_registration
 from waku.services.telegram_images import normalize_image_mode
 
 _FIELDS = (
@@ -132,6 +132,7 @@ async def config_chat_cmd(client, message):
             i18n.t("bot.msg.no_permission_group", locale=config.lang)
         )
         return
+    await refresh_panel_registration(client)
     _prune()
     for token, session in list(_SESSIONS.items()):
         if (session.user_id, session.chat_id) == (user.id, chat.id):
