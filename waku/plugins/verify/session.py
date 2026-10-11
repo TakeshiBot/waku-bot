@@ -22,6 +22,7 @@ from pyrogram.types import (
 
 from waku import common, database
 from waku.bot.client import client
+from waku.common import telegram_authority
 from waku.database.models import ChatConfig, VerificationSession
 from waku.i18n import i18n
 from waku.logger import logger
@@ -44,7 +45,7 @@ ACTION_RECEIPTS_KEY = "_verification_action_receipts"
 async def verification_authorized(
     bot, chat_id, user_id, *, actor_id=None, allow_banned=False
 ):
-    """Current Telegram roles only; bot configuration roles grant no punishments."""
+    """Bot operators may command verification; the bot still needs native rights."""
     if (
         type(chat_id) is not int
         or chat_id >= 0
@@ -97,7 +98,10 @@ async def verification_authorized(
                 actor.user is None
                 or actor.user.id != actor_id
                 or actor.user.is_bot
-                or not has_right(actor, "can_restrict_members")
+                or (
+                    not await telegram_authority.is_bot_admin(actor_id)
+                    and not has_right(actor, "can_restrict_members")
+                )
             ):
                 return False
     except Exception:

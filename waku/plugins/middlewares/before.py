@@ -6,6 +6,7 @@ from pyrogram.enums import ChatType
 from pyrogram.types import CallbackQuery, InlineQuery, Message
 
 from waku import common, database, enums
+from waku.common.telegram_authority import is_bot_admin
 from waku.common.utils import GROUP_CHAT_TYPES
 from waku.config import app_config
 from waku.logger import logger
@@ -31,9 +32,10 @@ async def on_m(client: Client, message: Message):
         logger.debug(f"Dropping update from blocked user {user.id}")
         message.stop_propagation()
         return
-    if chat.type == ChatType.GROUP:
+    if chat.type == ChatType.GROUP and not await is_bot_admin(user.id):
         message.stop_propagation()
-    if chat.type in (ChatType.SUPERGROUP, ChatType.FORUM):
+        return
+    if chat.type in GROUP_CHAT_TYPES:
         chat_db = await database.upsert_chat(chat)
         await database.add_association_in_chat(chat_db, user_db, None)
         if random.uniform(0, 1) < app_config.coin_add_chance_on_message:
@@ -114,15 +116,16 @@ async def on_cb(client: Client, callback_query: CallbackQuery):
     if user is None or chat is None:
         return
     logger.trace(f"[CallBackButton][{chat.id}]({user.id}): {callback_query.data}")
-    if chat.type in (ChatType.CHANNEL, ChatType.GROUP):
+    if chat.type == ChatType.CHANNEL:
         callback_query.stop_propagation()
     user_db = await database.upsert_user(user)
     if user_db.is_blocked:
         logger.debug(f"Dropping callback from blocked user {user.id}")
         callback_query.stop_propagation()
         return
-    if chat.type == ChatType.GROUP:
+    if chat.type == ChatType.GROUP and not await is_bot_admin(user.id):
         callback_query.stop_propagation()
+        return
     if chat.type in GROUP_CHAT_TYPES:
         chat_db = await database.upsert_chat(chat)
         await database.add_association_in_chat(chat_db, user_db, None)

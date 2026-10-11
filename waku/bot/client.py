@@ -4,6 +4,7 @@ from pathlib import Path
 from pyrogram.client import Client
 from pyrogram.session.session import Session
 
+from waku.bot.guest import install_guest_parser
 from waku.bot.kurigram_patch import install as install_kurigram_patch
 from waku.config import app_config
 
@@ -65,3 +66,4 @@ client = Client(
     sleep_threshold=300,
     max_concurrent_transmissions=min(32, (cpu_count() or 0) + 4),
 )
+install_guest_parser(client)

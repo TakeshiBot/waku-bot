@@ -1,8 +1,36 @@
-"""Fresh Telegram authority for settings; bot roles do not grant group rights."""
+"""Live bot-operator roles and Telegram authority for group commands."""
 
 import asyncio
 
 from pyrogram import enums, raw
+
+
+async def is_bot_admin(user_id: int) -> bool:
+    """Bot owners/global admins may operate the bot in any group; never cache roles."""
+    from waku import database
+    from waku.config import app_config
+    from waku.enums import ChatID
+
+    if (
+        type(user_id) is not int
+        or user_id <= 0
+        or user_id
+        in (
+            int(ChatID.ANONYMOUS_ADMIN),
+            int(ChatID.SERVICE_CHAT),
+            int(ChatID.FAKE_CHANNEL),
+        )
+    ):
+        return False
+    if user_id in app_config.owners:
+        return True
+    user = await database.get_user_by_id(user_id)
+    return bool(
+        user
+        and user.is_bot_global_admin is True
+        and not getattr(user, "is_blocked", False)
+        and not getattr(user, "is_bot", False)
+    )
 
 
 async def can_manage_group_settings(
@@ -16,6 +44,8 @@ async def can_manage_group_settings(
         or chat_id >= 0
     ):
         return False
+    if await is_bot_admin(user_id):
+        return True
     try:
         member = await asyncio.wait_for(client.get_chat_member(chat_id, user_id), 10)
     except Exception:
@@ -51,13 +81,10 @@ async def can_manage_bot_settings(client, user_id: int, chat_id: int) -> bool:
         return False
     # Import inside the call to avoid common/database initialization cycles.
     from waku import database
-    from waku.config import app_config
 
-    if user_id in app_config.owners:
+    if await is_bot_admin(user_id):
         return True
     user = await database.get_user_by_id(user_id)
-    if user and user.is_bot_global_admin and not user.is_blocked:
-        return True
     association = await database.get_association(user_id, chat_id)
     if (
         association

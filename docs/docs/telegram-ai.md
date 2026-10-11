@@ -9,12 +9,32 @@ dùng bộ xử lý quản trị của bản mod cũ.
 Bật AI của nhóm và **AI quản trị** trong `/config`, rồi bấm **Lưu**.
 AI quản trị mặc định tắt; khi tắt, bot vẫn trò chuyện nhưng không thực hiện thao tác quản trị.
 Cho Waku làm admin và cấp đúng quyền cần dùng.
-Người yêu cầu cũng phải có quyền quản trị tương ứng trong chính nhóm đó.
+Người yêu cầu thường phải có quyền quản trị tương ứng trong chính nhóm đó.
+**Chủ bot và quản trị viên toàn bot** được dùng các lệnh nhóm dù không là admin
+nhóm. Bộ quyền của người gọi không giới hạn các thao tác của họ, nhưng bot vẫn
+phải có đủ quyền Telegram và phải được Telegram cho phép sửa đối tượng.
 Người thường vẫn được gửi yêu cầu. AI gọi tool để kiểm tra quyền thực tế,
 rồi giải thích lý do từ chối theo prompt nếu người gọi hoặc bot thiếu quyền;
 không suy diễn rằng bot chưa hỗ trợ chức năng đó.
-Quyền admin toàn bot không thay thế quyền quản trị nhóm; admin ẩn danh không
-được thực thi khi không xác minh được danh tính người ra lệnh.
+Quyền toàn bot được đọc lại khi thực hiện, không dùng vai trò đã lưu trong menu.
+Admin ẩn danh không được thực thi khi không xác minh được danh tính người ra lệnh.
+
+## Chat khi bot chưa tham gia nhóm (Guest Mode)
+
+Trong Mini App của **@BotFather**, chọn bot → Settings → bật **Guest Mode**.
+Đây là thiết lập của Telegram, không thể bật bằng token bot hoặc `settings.toml`.
+Sau đó gửi `@ten_bot nội dung` hoặc reply tin Guest của bot trong một nhóm/private
+chat được Telegram hỗ trợ, kể cả khi bot chưa là thành viên.
+
+Bot dùng model, tùy chọn model và prompt chính hiện tại (prompt nhóm nếu đã đặt),
+không cần đăng nhập tài khoản user. Mỗi truy vấn có một câu trả lời, không streaming.
+Ngữ cảnh chỉ gồm tin gọi bot và các tin tham chiếu Telegram gửi; không trộn với
+lịch sử, bộ nhớ, cấu hình hoặc credit nhóm thông thường. Free token và credit cá
+nhân của người gọi được tính chung với các lần chat khác. Bot không quản trị nhóm
+hay chạy tool qua Guest; thêm bot vào nhóm để dùng các chức năng đó.
+
+Secret chat và nhóm bật bảo vệ nội dung không hỗ trợ Guest Mode.
+Xem [tài liệu Telegram](https://core.telegram.org/api/bots/guest-mode).
 
 Gọi tên/tag Waku, hoặc dùng `/chat`, rồi yêu cầu bằng ngôn ngữ tự nhiên:
 
@@ -63,12 +83,14 @@ sau khi lưu trong `/config` của quản trị bot.
 `/sett` có hai menu con **Ngôn Ngữ** và **Cấp Quyền**. Thay đổi được giữ trong
 bản nháp chung; **Quay Lại** giữ bản nháp, **Lưu** áp dụng và đóng (tự xóa sau
 5 giây), **Đóng** bỏ thay đổi. Lệnh gõ `/lang` đã được bỏ.
-Mục ngôn ngữ cần quyền đổi thông tin nhóm; mục cấp quyền cần quyền thêm admin.
+Admin bot được dùng cả hai mục. Với admin nhóm, mục ngôn ngữ cần quyền đổi
+thông tin nhóm; mục cấp quyền cần quyền thêm admin.
 
 AI promote không nêu quyền cụ thể sẽ cấp **đúng bộ quyền đã lưu** trong `/sett`.
 Các quyền tắt không được tự thêm vào; quyền Quản Lý Nhóm luôn có do Telegram
 coi đây là quyền cơ bản của admin. Nếu chưa lưu bộ quyền, chỉ cấp quyền cơ bản này.
-Người ra lệnh và bot vẫn phải có đủ toàn bộ quyền đã chọn; thiếu quyền thì từ chối,
+Admin nhóm thông thường và bot phải có đủ toàn bộ quyền đã chọn; admin toàn bot
+không cần quyền admin nhóm, nhưng bot vẫn cần đủ quyền. Thiếu quyền thì từ chối,
 không âm thầm cấp bộ quyền khác. Yêu cầu nêu danh sách quyền cụ thể có thể ghi đè
 cho riêng thao tác đó. Lưu `/sett` không đổi quyền của admin hiện có.
 
@@ -94,9 +116,9 @@ file TOML, và khóa bí mật được che trong menu.
 
 `/botpromote <ID Telegram>` cấp quyền quản trị **toàn bot**;
 `/botdemote <ID Telegram>` gỡ quyền đó. Chỉ owner/admin toàn bot dùng được,
-trong DM cá nhân với bot. Người được cấp quyền phải đã tương tác với bot;
-owner và chính người gọi được bảo vệ. Hai lệnh này không hoạt động trong nhóm
-và không thay đổi quyền admin Telegram của nhóm.
+trong DM cá nhân hoặc nhóm có bot. Người được cấp quyền phải đã tương tác với bot;
+owner và chính người gọi được bảo vệ. Hai lệnh này không thay đổi quyền admin
+Telegram của nhóm.
 
 ## Đối chiếu hành vi quản trị
 

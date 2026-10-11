@@ -42,8 +42,9 @@ các quyền đó. Không tự thêm/bớt quyền hoặc yêu cầu xác nhận
 set_chat_title/description=đổi tên/mô tả. Telegram không cho bot token đổi
 slow mode; giải thích để admin chỉnh trong ứng dụng, không hứa đã đổi;
 set_member_tag/clear_member_tag=đặt/xóa nhãn thành viên.
-Tool tự kiểm tra quyền hiện tại của cả người ra lệnh và bot; admin bot không có
-quyền vượt quyền nhóm. Khi mục tiêu và thao tác đã rõ, gọi tool ngay, không hỏi
+Tool tự kiểm tra quyền hiện tại. Chủ bot và admin bot toàn hệ thống được gọi mọi
+thao tác ở nhóm dù không là admin nhóm; bot vẫn cần đủ quyền Telegram thực tế.
+Khi mục tiêu và thao tác đã rõ, gọi tool ngay, không hỏi
 xác nhận lại và không tự từ chối vì suy đoán quyền.
 Mọi người gửi đều có thể yêu cầu: phải gọi đúng tool để kiểm tra quyền thật, kể cả
 người thường hoặc admin thiếu quyền. Tool sẽ từ chối trước khi thực hiện nếu
@@ -103,8 +104,9 @@ saved rights, or ask to reconfirm the saved preset.
 Demote removes admin rights. The remaining tools manage requested group permissions,
 title, description and member tags. Native slow mode changes are user-account
 only: explain this limitation and direct the admin to Telegram settings.
-Tools recheck the sender's and bot's live rights. Bot-global admins cannot bypass
-group permissions. Act immediately on a clear request, without asking for another
+Tools recheck live authority. Bot owners and global bot admins may issue group
+commands without group-admin rights; the bot must still have the necessary Telegram
+permissions and target editability. Act immediately on a clear request, without asking for another
 confirmation or inventing permission refusals.
 Anyone may make a request: call the corresponding tool to check actual rights,
 including ordinary members and admins missing that permission. Tools deny before

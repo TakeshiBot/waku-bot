@@ -5,6 +5,8 @@ import unicodedata
 
 from pyrogram import Client, enums, raw
 
+from waku.common import telegram_authority
+
 
 class TitleDenied(ValueError):
     pass
@@ -26,6 +28,8 @@ async def can_set_preset(client, chat_id, user_id):
         or user_id == 1087968824
     ):
         return False
+    if await telegram_authority.is_bot_admin(user_id):
+        return True
     member = await client.get_chat_member(chat_id, user_id)
     if member.user is None or member.user.id != user_id or member.user.is_bot:
         return False
@@ -36,6 +40,7 @@ async def _members(client, chat_id, actor_id, target_id):
     actor = await client.get_chat_member(chat_id, actor_id)
     if actor.user is None or actor.user.id != actor_id or actor.user.is_bot:
         raise TitleDenied("denied")
+    operator = await telegram_authority.is_bot_admin(actor_id)
     target = await client.get_chat_member(chat_id, target_id)
     me = client.me or await client.get_me()
     bot = await client.get_chat_member(chat_id, me.id)
@@ -57,9 +62,9 @@ async def _members(client, chat_id, actor_id, target_id):
             and actor.status == enums.ChatMemberStatus.ADMINISTRATOR
         ):
             return target
-        if not has_right(actor, "can_promote_members"):
+        if not operator and not has_right(actor, "can_promote_members"):
             raise TitleDenied("denied")
-        if actor.status != enums.ChatMemberStatus.OWNER:
+        if not operator and actor.status != enums.ChatMemberStatus.OWNER:
             current, seen = target, set()
             for _ in range(32):
                 promoter = getattr(current, "promoted_by", None)
@@ -84,7 +89,7 @@ async def _members(client, chat_id, actor_id, target_id):
             raise TitleDenied("denied")
         if not has_right(bot, "can_manage_tags"):
             raise TitleDenied("denied")
-        if not has_right(actor, "can_manage_tags"):
+        if not operator and not has_right(actor, "can_manage_tags"):
             if actor_id != target_id:
                 raise TitleDenied("denied")
             # None on MEMBER is not proof: Telegram default restrictions still apply.

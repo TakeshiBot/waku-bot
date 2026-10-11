@@ -1,6 +1,7 @@
 """Group administration with current Telegram rights and explicit user intent.
 
-These tools never use bot-owner roles to bypass Telegram administrator rights.
+Bot owners/global admins may issue commands without a group administrator role.
+The bot's actual Telegram rights and target editability remain mandatory.
 All mutations are serialized per group; warnings and permission snapshots are durable.
 """
 
@@ -22,6 +23,7 @@ from pyrogram.enums import ChatMemberStatus, ChatType, MessageEntityType
 from pyrogram.errors import RPCError
 from pyrogram.types import ChatAdministratorRights
 
+from waku.common import telegram_authority
 from waku.common.rich_message import message_plain_text, rich_message_mention_ids
 from waku.common.utils import get_reply_target
 from waku.database import get_chat_by_id
@@ -318,6 +320,7 @@ async def _authorize(ctx, right: str):
         or message.chat.id != deps.chat_id
         or message.chat.type not in _GROUPS
         or getattr(message, "business_connection_id", None)
+        or getattr(message, "guest_query_id", None)
     ):
         raise ModerationDenied("group")
     if message.sender_chat is not None or message.from_user is None:
@@ -327,7 +330,9 @@ async def _authorize(ctx, right: str):
     if not await _moderation_enabled(deps.chat_id):
         raise ModerationDenied("disabled")
     actor, bot, bot_id = await _current_members(ctx)
-    if not _has_right(actor, right):
+    if not await telegram_authority.is_bot_admin(deps.user_id) and not _has_right(
+        actor, right
+    ):
         raise ModerationDenied("actor")
     if not _has_right(bot, right):
         raise ModerationDenied("bot")
@@ -350,6 +355,7 @@ async def prepare_group_moderation(ctx: RunContext[datatype.ContextDeps], tool):
         or message.chat.id != ctx.deps.chat_id
         or message.chat.type not in _GROUPS
         or getattr(message, "business_connection_id", None)
+        or getattr(message, "guest_query_id", None)
     ):
         return None
     return tool
@@ -899,10 +905,15 @@ async def _mutate(
                 )
                 if current != _promotion_preset:
                     raise ModerationDenied("changed")
+            operator = await telegram_authority.is_bot_admin(ctx.deps.user_id)
             for name in _promotion_rights:
-                if not _has_right(actor, name) or not _has_right(bot, name):
+                if (not operator and not _has_right(actor, name)) or not _has_right(
+                    bot, name
+                ):
                     raise ModerationDenied(
-                        "actor" if not _has_right(actor, name) else "bot"
+                        "actor"
+                        if not operator and not _has_right(actor, name)
+                        else "bot"
                     )
             query.admin_rights = raw.types.ChatAdminRights(
                 **{
@@ -1403,7 +1414,9 @@ async def _editable(ctx, member):
         or member.can_be_edited is not True
     ):
         raise ModerationDenied("editable")
-    if actor.status == ChatMemberStatus.OWNER:
+    if actor.status == ChatMemberStatus.OWNER or await telegram_authority.is_bot_admin(
+        ctx.deps.user_id
+    ):
         return
     # Both Telegram's bot editability and the requesting administrator's chain
     # must be verified. Missing promoter metadata is never an authorization grant.

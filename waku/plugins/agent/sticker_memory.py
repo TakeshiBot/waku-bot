@@ -11,6 +11,7 @@ from pyrogram import filters
 from pyrogram.client import Client as PyrogramClient
 
 from waku import common, database
+from waku.common.telegram_authority import is_bot_admin
 from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.agent.localization import configured_prompt, localized_message, tr
@@ -287,7 +288,9 @@ async def _process_sticker(
     if app_config.agent_sticker_search_mode == "embedding":
         embedding = await get_embedding(description)
         if not embedding:
-            logger.warning(f"sticker {file_unique_id}: no embedding generated, skipping")
+            logger.warning(
+                f"sticker {file_unique_id}: no embedding generated, skipping"
+            )
             return
 
     await sticker_vec.upsert(file_unique_id, file_id, chat_id, description, embedding)
@@ -309,6 +312,8 @@ async def _is_admin_actor(
     chat = message.chat
     if not chat or not chat.id:
         return False
+    if await is_bot_admin(user.id):
+        return True
     if not is_chat_allowed(chat.id):
         return False
     try:

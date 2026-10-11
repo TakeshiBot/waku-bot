@@ -1,6 +1,6 @@
 bot:
   botadmin_private:
-    usage: 'Dùng /botpromote <ID Telegram> để cấp quyền quản trị toàn bot, hoặc /botdemote <ID Telegram> để gỡ quyền. Chỉ dùng trong DM với bot.'
+    usage: 'Dùng /botpromote <ID Telegram> để cấp quyền quản trị toàn bot, hoặc /botdemote <ID Telegram> để gỡ quyền. Admin bot có thể dùng trong DM hoặc nhóm.'
     invalid: ID Telegram không hợp lệ.
     protected: Không thể thay đổi quyền của chính bạn hoặc chủ bot bằng lệnh này.
     unregistered: Người này chưa có trong dữ liệu bot. Hãy nhờ họ gửi /start cho bot hoặc gửi tin trong nhóm có bot, rồi thử lại.

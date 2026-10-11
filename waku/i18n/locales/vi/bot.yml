@@ -686,8 +686,8 @@ bot:
     buygift: Mua quà
     gift: Tặng quà cho bot
     syncmembers: Đồng bộ thành viên nhóm
-    botpromote: Cấp quyền quản trị toàn bot bằng ID (DM)
-    botdemote: Gỡ quyền quản trị toàn bot bằng ID (DM)
+    botpromote: Cấp quyền quản trị toàn bot bằng ID
+    botdemote: Gỡ quyền quản trị toàn bot bằng ID
     help: Trợ giúp | Các tính năng khác
     randmyavatar: Đổi ảnh đại diện của bot ngay
     reload: Tải lại cấu hình

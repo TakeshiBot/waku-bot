@@ -25,8 +25,8 @@ bot:
     buygift: 购买礼物
     gift: 送礼物给 Bot
     syncmembers: 同步群组成员
-    botpromote: Grant bot-wide admin access by Telegram ID (DM)
-    botdemote: Revoke bot-wide admin access by Telegram ID (DM)
+    botpromote: Grant bot-wide admin access by Telegram ID
+    botdemote: Revoke bot-wide admin access by Telegram ID
     help: 帮助|更多功能
     randmyavatar: 立刻更换 bot 头像
     reload: 重载配置文件

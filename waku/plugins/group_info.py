@@ -1,4 +1,4 @@
-"""Private, privileged overview of groups already known to the bot."""
+"""Operator-only overview of groups already known to the bot."""
 
 import asyncio
 import html
@@ -32,12 +32,14 @@ _access_slots = asyncio.Semaphore(3)
 
 
 async def _actor(user):
-    if user is None:
+    if user is None or getattr(user, "is_bot", False):
         return False, "vi"
     record = await database.get_user_by_id(user.id)
     locale = record.user_config.lang if record else "vi"
     allowed = user.id in app_config.owners or bool(
-        record and record.is_bot_global_admin
+        record
+        and record.is_bot_global_admin is True
+        and not getattr(record, "is_blocked", False)
     )
     return allowed, locale
 
@@ -159,9 +161,13 @@ async def _page(client, user_id, locale, page=1, refresh=False):
     return "\n".join(lines), _keyboard(result.page, pages, user_id, locale)
 
 
-@Client.on_message(filters.command("info") & filters.private, group=0)
+@Client.on_message(filters.command("info") & (filters.private | filters.group), group=0)
 async def info_command(client, message):
-    if message.chat is None or message.chat.type != ChatType.PRIVATE:
+    if (
+        message.chat is None
+        or message.sender_chat
+        or getattr(message, "guest_query_id", None)
+    ):
         return
     allowed, locale = await _actor(message.from_user)
     if not allowed:
@@ -188,12 +194,7 @@ async def info_command(client, message):
 async def info_callback(client, query):
     allowed, locale = await _actor(query.from_user)
     message = query.message
-    if (
-        not allowed
-        or message is None
-        or message.chat is None
-        or message.chat.type != ChatType.PRIVATE
-    ):
+    if not allowed or message is None or message.chat is None:
         await query.answer(t("bot.info.denied", locale=locale), show_alert=True)
         return
     match = re.fullmatch(r"group_info:(\d+):([prx]):([1-9]\d{0,8})", query.data or "")
@@ -201,7 +202,9 @@ async def info_callback(client, query):
         await query.answer(t("bot.info.invalid", locale=locale), show_alert=True)
         return
     user_id, action, page = match.groups()
-    if int(user_id) != query.from_user.id or message.chat.id != query.from_user.id:
+    if int(user_id) != query.from_user.id or (
+        message.chat.type == ChatType.PRIVATE and message.chat.id != query.from_user.id
+    ):
         await query.answer(t("bot.info.denied", locale=locale), show_alert=True)
         return
     key = (message.chat.id, message.id)

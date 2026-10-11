@@ -1,4 +1,4 @@
-"""Grant/revoke bot-wide administrator access by numeric Telegram ID in DM."""
+"""Grant/revoke bot-wide administrator access by ID, wherever an operator calls it."""
 
 import asyncio
 
@@ -13,7 +13,8 @@ _ROLE_LOCK = asyncio.Lock()
 
 
 @Client.on_message(
-    pyrogram.filters.command(["botpromote", "botdemote"]) & pyrogram.filters.private,
+    pyrogram.filters.command(["botpromote", "botdemote"])
+    & (pyrogram.filters.private | pyrogram.filters.group),
     group=0,
 )
 async def set_user_bot_admin(client: Client, message: pyrogram.types.Message):
@@ -22,8 +23,16 @@ async def set_user_bot_admin(client: Client, message: pyrogram.types.Message):
         not actor
         or actor.is_bot
         or not chat
-        or chat.type != pyrogram.enums.ChatType.PRIVATE
-        or chat.id != actor.id
+        or getattr(message, "sender_chat", None)
+        or (chat.type == pyrogram.enums.ChatType.PRIVATE and chat.id != actor.id)
+        or chat.type
+        not in (
+            pyrogram.enums.ChatType.PRIVATE,
+            pyrogram.enums.ChatType.GROUP,
+            pyrogram.enums.ChatType.SUPERGROUP,
+            pyrogram.enums.ChatType.FORUM,
+        )
+        or getattr(message, "guest_query_id", None)
         or getattr(message, "business_connection_id", None)
     ):
         return
