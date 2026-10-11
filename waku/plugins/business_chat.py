@@ -39,7 +39,8 @@ _MAX_PROCESSED_MESSAGES = 4096
 def _should_reply(message: Message) -> bool:
     sender = message.from_user
     return bool(
-        app_config.business_chat_enabled
+        app_config.telegram_enabled
+        and app_config.business_chat_enabled
         and app_config.agent
         and app_config.agent_model
         and message.business_connection_id

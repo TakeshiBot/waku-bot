@@ -53,6 +53,11 @@ Tên hiển thị của bot là `waku`; tên repository và phân phối Python 
 Thư mục và module Python là `waku`; chạy trực tiếp bằng `python -m waku`.
 Các dữ liệu cũ được xử lý theo [hướng dẫn nâng cấp](docs/docs/branding-timezone.md).
 
+Admin bot có thể tạm dừng Telegram bằng `/config` trong DM → Cài đặt →
+Cơ bản và vận hành → Bot Telegram → Lưu. Công tắc `telegram_enabled` có hiệu
+lực ngay, áp dụng cho DM, nhóm, Business và Guest Mode; tiến trình và Discord
+vẫn chạy. Khi tắt, chỉ menu `/config` trong DM của admin bot còn hoạt động để bật lại.
+
 Discord dùng được ngay sau khi thêm vào server, không cần duyệt. Dùng `/config`
 để mở menu embed riêng tư trong server; `/help` liệt kê các lệnh. Admin bot dùng
 `!bc`, `!info [ID server]`, `!server` và mọi slash command trong DM; chat DM của

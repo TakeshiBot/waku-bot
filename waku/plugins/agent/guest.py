@@ -87,6 +87,8 @@ def _make_agent(message, lang):
 
 
 async def _answer(client, message, text):
+    if not app_config.telegram_enabled:
+        return False
     result = types.InlineQueryResultArticle(
         id=message.guest_query_id,
         title=app_config.nickname or "Waku",
@@ -103,10 +105,13 @@ async def _answer(client, message, text):
         retries=1,
         sleep_threshold=0,
     )
+    return True
 
 
 @Client.on_guest_message(group=0)
 async def guest_chat(client, message):
+    if not app_config.telegram_enabled:
+        return
     query_id = str(message.guest_query_id or "")
     actor = message.from_user
     if (
@@ -137,8 +142,8 @@ async def guest_chat(client, message):
         nonlocal attempted
         # An uncertain Telegram receipt must not result in a second answer.
         attempted = True
-        await _answer(client, message, text)
-        logger.info("Telegram Guest answer delivered")
+        if await _answer(client, message, text):
+            logger.info("Telegram Guest answer delivered")
 
     try:
         user = await database.upsert_user(actor)

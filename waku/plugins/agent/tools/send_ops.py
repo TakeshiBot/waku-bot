@@ -42,6 +42,8 @@ class SendResult:
 
 
 async def _scheduled_text_job(chat_id: int, text: str) -> None:
+    if not app_config.telegram_enabled:
+        return
     try:
         await client.send_message(chat_id=chat_id, text=text)
         logger.info("Scheduled text message sent successfully")
@@ -55,6 +57,8 @@ async def _scheduled_media_job(
     media_url: str,
     caption: str,
 ) -> None:
+    if not app_config.telegram_enabled:
+        return
     try:
         match media_type:
             case "photo":
@@ -95,6 +99,8 @@ async def _scheduled_poll_job(
     is_anonymous: bool,
     allows_multiple_answers: bool,
 ) -> None:
+    if not app_config.telegram_enabled:
+        return
     try:
         from waku.bot.client import client
 

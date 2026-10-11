@@ -83,6 +83,8 @@ async def change_bot_avatar():
     from waku.bot.client import client
     from waku.services import aniobjcut, manyacg
 
+    if not app_config.telegram_enabled:
+        return
     if not manyacg.manyacg_client or not aniobjcut.aniobjcut_client:
         logger.warning(i18n.t("log.avatar_change_disabled", locale=app_config.lang))
         return
@@ -137,7 +139,7 @@ async def rss_push():
     event loop, and a burst of parallel fetches competes with message handling
     for it.
     """
-    if not app_config.rss_enabled:
+    if not app_config.telegram_enabled or not app_config.rss_enabled:
         return
 
     from waku.services import rss as rss_service
@@ -350,6 +352,8 @@ async def _deliver_entry(chat_id: int, text: str, media_urls: list[str]) -> bool
     from waku.services import rss as rss_service
 
     async def send() -> None:
+        if not app_config.telegram_enabled:
+            return
         if media_urls:
             await client.send_photo(
                 chat_id,
@@ -446,7 +450,7 @@ async def _try_broadcast(chat_id: int, text: str | None) -> None:
     must not be interpreted as HTML. Failures are logged and swallowed; a
     broadcast never cleans up subscriptions or affects the regular push.
     """
-    if not text or not await _broadcast_due(chat_id):
+    if not app_config.telegram_enabled or not text or not await _broadcast_due(chat_id):
         return
     from waku.bot.client import client
 

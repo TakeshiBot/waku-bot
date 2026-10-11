@@ -282,6 +282,13 @@ async def reply_output(
     *,
     deps: datatype.ContextDeps | None = None,
 ) -> bool:
+    caller_should_send = should_send
+
+    def should_send():
+        return app_config.telegram_enabled and (
+            caller_should_send is None or caller_should_send()
+        )
+
     if should_send is not None and not should_send():
         return False
     if message.chat is None:
@@ -372,11 +379,11 @@ class TypingKeepAlive:
         if not chat_id:
             return
         first = True
-        while not self._stop:
+        while not self._stop and app_config.telegram_enabled:
             try:
                 if not first:
                     await asyncio.sleep(self.CHAT_ACTION_INTERVAL)
-                    if self._stop:
+                    if self._stop or not app_config.telegram_enabled:
                         break
                 first = False
                 if generation.has_live_generation(self.client, self.message):
@@ -469,7 +476,7 @@ class StreamingOutput:
             OfficialRichDraftStreamer(
                 client,
                 message,
-                should_send=should_send,
+                should_send=self._may_send,
                 max_duration=self.MAX_TOTAL_TIME,
             )
             if message.chat and message.chat.type == pyrogram.enums.ChatType.PRIVATE
@@ -496,7 +503,11 @@ class StreamingOutput:
                 self.official_draft._task.cancel()
 
     def _may_send(self):
-        return not self._cancelled and (self.should_send is None or self.should_send())
+        return (
+            app_config.telegram_enabled
+            and not self._cancelled
+            and (self.should_send is None or self.should_send())
+        )
 
     def _unregister(self):
         if self._registered:

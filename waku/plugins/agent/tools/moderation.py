@@ -312,6 +312,10 @@ async def _current_members(ctx):
 
 
 async def _authorize(ctx, right: str):
+    from waku.config import app_config
+
+    if not app_config.telegram_enabled:
+        raise ModerationDenied("disabled")
     deps = ctx.deps
     message = deps.message
     if (

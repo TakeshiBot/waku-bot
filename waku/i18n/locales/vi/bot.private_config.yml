@@ -2,8 +2,9 @@ bot:
   private_config:
     info_command: 'Xem các nhóm bot đã ghi nhận'
     title: ⌬ <b>Cấu hình Waku</b>
+    telegram_enabled: Bot Telegram
     runtime:
-      summary: "<b>🤖 AI · Cấu hình đang áp dụng</b>\nAI: {agent} · Streaming: {streaming} · Rich message: {rich}\nChat: <code>{model}</code>\nVision: <code>{vision}</code>\n\n<b>🧠 Sticker</b>\nHọc sticker: {sticker} · Tìm kiếm: <code>{sticker_mode}</code>\nModel mô tả: <code>{sticker_model}</code>\n\n<b>🛰️ Dịch vụ</b>\nDiscord: {discord}\nTelegram Business: {business} · Mini App: {webapp}\n\n<b>⚙️ Cơ bản</b>\nTên: <code>{nickname}</code> · Ngôn ngữ: <code>{language}</code>\nMúi giờ: <code>{timezone}</code> · Log: <code>{log_level}</code>"
+      summary: "<b>🤖 AI · Cấu hình đang áp dụng</b>\nAI: {agent} · Streaming: {streaming} · Rich message: {rich}\nChat: <code>{model}</code>\nVision: <code>{vision}</code>\n\n<b>🧠 Sticker</b>\nHọc sticker: {sticker} · Tìm kiếm: <code>{sticker_mode}</code>\nModel mô tả: <code>{sticker_model}</code>\n\n<b>🛰️ Dịch vụ</b>\nTelegram: {telegram} · Discord: {discord}\nTelegram Business: {business} · Mini App: {webapp}\n\n<b>⚙️ Cơ bản</b>\nTên: <code>{nickname}</code> · Ngôn ngữ: <code>{language}</code>\nMúi giờ: <code>{timezone}</code> · Log: <code>{log_level}</code>"
       enabled: ✅ Bật
       disabled: ❌ Tắt
       discord:

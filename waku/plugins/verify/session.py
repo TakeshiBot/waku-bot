@@ -497,6 +497,10 @@ async def load_active_sessions() -> None:
 
 async def verify_sweep() -> None:
     """Periodically handle timeouts, disabled verification and deleted chats; one failure does not stop the rest."""
+    from waku.config import app_config
+
+    if not app_config.telegram_enabled:
+        return
     try:
         sessions = await database.get_all_verification_sessions()
     except Exception as e:

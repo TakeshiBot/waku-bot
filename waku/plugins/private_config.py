@@ -158,7 +158,9 @@ def _label(key: str, value, session: ConfigSession) -> str:
     status = "✅ " if value is True else "❌ " if value is False else ""
     changed = "📝 " if key in session.changes else "🔄 " if key in session.dirty else ""
     name = (
-        _tr("business_labels." + key, session)
+        _tr("telegram_enabled", session)
+        if key == "telegram_enabled"
+        else _tr("business_labels." + key, session)
         if key
         in {
             "business_chat_enabled",
@@ -219,8 +221,26 @@ def _draft_values(session: ConfigSession) -> dict:
         session.revision = revision
         session.values = values
         session.baseline = values
-        session.field_keys = session.editor.configured_fields()
+        session.field_keys = _editable_fields(session.editor)
     return session.values
+
+
+def _editable_fields(editor: SettingsEditor) -> list[str]:
+    fields = editor.configured_fields()
+    # Make recovery available even on an existing deployment's older TOML.
+    if "telegram_enabled" not in fields:
+        fields.insert(0, "telegram_enabled")
+    return fields
+
+
+def has_pending_config_input(message: Message) -> bool:
+    _prune()
+    return any(
+        session.user_id == message.from_user.id
+        and session.chat_id == message.chat.id
+        and session.pending
+        for session in _SESSIONS.values()
+    )
 
 
 def _runtime_summary(session: ConfigSession) -> str:
@@ -255,6 +275,7 @@ def _runtime_summary(session: ConfigSession) -> str:
             or app_config.agent_model
         ),
         discord=_tr("runtime.discord." + discord_status, session),
+        telegram=status(app_config.telegram_enabled),
         business=status(app_config.business_chat_enabled),
         webapp=status(app_config.webapp),
         nickname=value(app_config.nickname),
@@ -322,7 +343,7 @@ def _reset_draft(session: ConfigSession):
     session.deletions.clear()
     session.values, session.revision = session.editor.snapshot()
     session.baseline = session.values
-    session.field_keys = session.editor.configured_fields()
+    session.field_keys = _editable_fields(session.editor)
 
 
 def _visible_groups(session: ConfigSession):
