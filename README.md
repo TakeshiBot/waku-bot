@@ -55,8 +55,9 @@ Các dữ liệu cũ được xử lý theo [hướng dẫn nâng cấp](docs/do
 
 Admin bot có thể tạm dừng Telegram bằng `/config` trong DM → Cài đặt →
 Cơ bản và vận hành → Bot Telegram → Lưu. Công tắc `telegram_enabled` có hiệu
-lực ngay, áp dụng cho DM, nhóm, Business và Guest Mode; tiến trình và Discord
-vẫn chạy. Khi tắt, chỉ menu `/config` trong DM của admin bot còn hoạt động để bật lại.
+lực ngay, áp dụng cho người dùng thường, nhóm và Guest Mode; tiến trình và Discord
+vẫn chạy. Khi tắt, admin bot vẫn chat và dùng lệnh trong DM như bình thường;
+bên ngoài DM cũng tắt với admin bot. Business dùng công tắc riêng, không bị ảnh hưởng.
 
 Discord dùng được ngay sau khi thêm vào server, không cần duyệt. Dùng `/config`
 để mở menu embed riêng tư trong server; `/help` liệt kê các lệnh. Admin bot dùng

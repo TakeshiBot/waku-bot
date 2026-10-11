@@ -10,6 +10,7 @@ from pydantic_ai import ModelRetry, RunContext
 
 from waku import common, database, i18n
 from waku.bot.client import client
+from waku.common.telegram_runtime import telegram_chat_allowed
 from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.agent.localization import tr
@@ -42,7 +43,7 @@ class SendResult:
 
 
 async def _scheduled_text_job(chat_id: int, text: str) -> None:
-    if not app_config.telegram_enabled:
+    if not await telegram_chat_allowed(chat_id):
         return
     try:
         await client.send_message(chat_id=chat_id, text=text)
@@ -57,7 +58,7 @@ async def _scheduled_media_job(
     media_url: str,
     caption: str,
 ) -> None:
-    if not app_config.telegram_enabled:
+    if not await telegram_chat_allowed(chat_id):
         return
     try:
         match media_type:
@@ -99,7 +100,7 @@ async def _scheduled_poll_job(
     is_anonymous: bool,
     allows_multiple_answers: bool,
 ) -> None:
-    if not app_config.telegram_enabled:
+    if not await telegram_chat_allowed(chat_id):
         return
     try:
         from waku.bot.client import client

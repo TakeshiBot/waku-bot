@@ -1,11 +1,9 @@
-"""Pause Telegram interaction, retaining only the admin DM settings menu."""
+"""Pause native Telegram interaction, retaining all bot-admin DM commands."""
 
-from pyrogram import Client, enums, filters
+from pyrogram import Client, enums
 
-from waku.common.telegram_authority import is_bot_admin
+from waku.common.telegram_runtime import prepare_telegram_output
 from waku.config import app_config
-
-_config_command = filters.command("config")
 
 
 async def _recovery_allowed(client, update, *, callback=False):
@@ -19,20 +17,9 @@ async def _recovery_allowed(client, update, *, callback=False):
         or actor.is_bot
         or getattr(message, "business_connection_id", None)
         or getattr(message, "guest_query_id", None)
-        or not await is_bot_admin(actor.id)
     ):
         return False
-    if callback:
-        data = update.data
-        if isinstance(data, bytes):
-            data = data.decode("utf-8", errors="replace")
-        # The settings handler still checks session ownership, expiry and view.
-        return isinstance(data, str) and data.startswith("pcfg:")
-    if await _config_command(client, message):
-        return True
-    from waku.plugins.private_config import has_pending_config_input
-
-    return has_pending_config_input(message)
+    return await prepare_telegram_output(message, actor)
 
 
 @Client.on_message(group=-1000)

@@ -39,8 +39,7 @@ _MAX_PROCESSED_MESSAGES = 4096
 def _should_reply(message: Message) -> bool:
     sender = message.from_user
     return bool(
-        app_config.telegram_enabled
-        and app_config.business_chat_enabled
+        app_config.business_chat_enabled
         and app_config.agent
         and app_config.agent_model
         and message.business_connection_id
@@ -305,6 +304,7 @@ async def _run_business_turn(client, message, revision, timeout):
                 output = _active_outputs[lock_key] = _new_streaming_output(
                     client, message, revision
                 )
+                await output.start_thinking()
                 async with chat_agent.run_stream(
                     message.text,
                     message_history=history,

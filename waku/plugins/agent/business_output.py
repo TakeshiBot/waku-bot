@@ -1,4 +1,4 @@
-"""Business streaming through edits, independent of draft rendering support."""
+"""Native Business drafts with streaming edits when Telegram rejects drafts."""
 
 import asyncio
 import secrets
@@ -7,7 +7,11 @@ import pyrogram
 
 from waku.common.rich_message import rich_html_plain_text
 from waku.logger import logger
-from waku.plugins.agent.output import DeliveryUncertain, _rich_output_enabled
+from waku.plugins.agent.output import (
+    DeliveryUncertain,
+    StreamingOutput,
+    _rich_output_enabled,
+)
 from waku.plugins.agent.rich_output import (
     edit_business_message_text,
     send_generation_message,
@@ -20,7 +24,7 @@ from waku.plugins.agent.styling import (
 
 
 class BusinessStreamingOutput:
-    """Publish the first text immediately, then coalesce edits of that message.
+    """Prefer native Thinking/drafts, falling back to coalesced message edits.
 
     The final reply replaces the preview, preserving rich formatting and sending
     only overflow as new messages. All writes recheck the connection permission.
@@ -42,9 +46,25 @@ class BusinessStreamingOutput:
         self._stopped = False
         self._finalized = False
         self._completion_success = False
+        self._native = None
 
     def _may_send(self):
         return not self._stopped and (self.should_send is None or self.should_send())
+
+    async def start_thinking(self):
+        if self._native is not None or self._finalized or not self._may_send():
+            return
+        self._native = StreamingOutput(
+            self.client, self.message, should_send=self._may_send
+        )
+        await self._native.start_thinking()
+
+    def _native_available(self):
+        return (
+            self._native is not None
+            and self._native.official_draft is not None
+            and self._native.official_draft.supported is not False
+        )
 
     async def _write(self, text="", entities=None, rich_message=None, *, edit=False):
         if not self._may_send():
@@ -132,6 +152,15 @@ class BusinessStreamingOutput:
         if not delta or self._finalized or not self._may_send():
             return
         self.current_text += delta
+        if self._native_available():
+            await self._native.append_delta(delta)
+            if self._native_available():
+                return
+        if self._native is not None:
+            # No persistent message was sent by a draft. Falling back to edits
+            # uses the accumulated text once, without creating two answers.
+            await self._native.abort()
+            self._native = None
         if self._preview_id is None:
             await self._preview()
         if self._preview_id is not None and self._task is None:
@@ -150,6 +179,15 @@ class BusinessStreamingOutput:
             return self._completion_success
         self._finalized = True
         await self._stop_updates()
+        if self._native_available():
+            self._native.current_text = self.current_text
+            self._completion_success = await self._native.finalize()
+            self.reply_message_id = self._native.reply_message_id
+            self.delivered = self._native.delivered
+            return self._completion_success
+        if self._native is not None:
+            await self._native.abort()
+            self._native = None
         if not self._may_send() or not self.current_text.strip():
             return False
         payloads = (
@@ -205,3 +243,5 @@ class BusinessStreamingOutput:
     async def abort(self):
         self._stopped = True
         await self._stop_updates()
+        if self._native is not None:
+            await self._native.abort()

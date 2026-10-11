@@ -129,6 +129,11 @@ class OfficialRichDraftStreamer:
         self._empty_rich_text = None
 
     async def _send_draft(self, *, force_text=False, thinking=False) -> bool:
+        if getattr(self.message, "guest_query_id", None):
+            # Guest query IDs do not identify a native bot/private chat.
+            # Never resolve an aliased peer to send previews into another chat.
+            self.supported = False
+            return False
         chat = self.message.chat
         if chat is None or self._stop:
             return False

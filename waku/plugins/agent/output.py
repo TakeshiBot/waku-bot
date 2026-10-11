@@ -13,6 +13,10 @@ from waku.common.rich_message import (
     rich_html_plain_text,
     send_rich_message,
 )
+from waku.common.telegram_runtime import (
+    prepare_telegram_output,
+    telegram_output_allowed,
+)
 from waku.common.utils import GROUP_CHAT_TYPES
 from waku.config import app_config
 from waku.logger import logger
@@ -282,10 +286,12 @@ async def reply_output(
     *,
     deps: datatype.ContextDeps | None = None,
 ) -> bool:
+    if not await prepare_telegram_output(message):
+        return False
     caller_should_send = should_send
 
     def should_send():
-        return app_config.telegram_enabled and (
+        return telegram_output_allowed(message) and (
             caller_should_send is None or caller_should_send()
         )
 
@@ -379,11 +385,11 @@ class TypingKeepAlive:
         if not chat_id:
             return
         first = True
-        while not self._stop and app_config.telegram_enabled:
+        while not self._stop and await prepare_telegram_output(self.message):
             try:
                 if not first:
                     await asyncio.sleep(self.CHAT_ACTION_INTERVAL)
-                    if self._stop or not app_config.telegram_enabled:
+                    if self._stop or not await prepare_telegram_output(self.message):
                         break
                 first = False
                 if generation.has_live_generation(self.client, self.message):
@@ -504,7 +510,7 @@ class StreamingOutput:
 
     def _may_send(self):
         return (
-            app_config.telegram_enabled
+            telegram_output_allowed(self.message)
             and not self._cancelled
             and (self.should_send is None or self.should_send())
         )
@@ -516,6 +522,8 @@ class StreamingOutput:
 
     async def start_thinking(self):
         """Start the draft before text, reusing its identity for the final reply."""
+        if not await prepare_telegram_output(self.message):
+            return
         if self.official_draft is None or self._finalized or not self._may_send():
             return
         # Rebind Stop to the active runner task when a caller-owned keepalive
@@ -536,6 +544,8 @@ class StreamingOutput:
             self._unregister()
 
     async def append_delta(self, delta: str):
+        if not await prepare_telegram_output(self.message):
+            return
         if not delta or self._finalized or not self._may_send():
             return
         self.current_text += delta
@@ -553,6 +563,8 @@ class StreamingOutput:
         try:
             if self.official_draft is not None:
                 await self.official_draft.stop()
+            if not await prepare_telegram_output(self.message):
+                return False
             if not self.current_text.strip() or not self._may_send():
                 return False
             payloads = (

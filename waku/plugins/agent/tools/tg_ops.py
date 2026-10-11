@@ -16,7 +16,7 @@ import pyrogram.errors
 from pydantic_ai import RunContext
 
 from waku.common.safe_http import DEFAULT_MAX_BYTES, UnsafeUrlError, safe_download_bytes
-from waku.config import app_config
+from waku.common.telegram_runtime import prepare_telegram_output
 from waku.logger import logger
 from waku.plugins.agent.localization import tr
 from waku.plugins.agent.output import record_tool_reply, text_already_sent
@@ -365,7 +365,7 @@ async def tg(
     if ctx.deps.message is None or ctx.deps.message.id is None:
         return tr("error_context_unavailable")
 
-    if not app_config.telegram_enabled:
+    if not await prepare_telegram_output(ctx.deps.message):
         return tr("guest.disabled")
 
     if method in _WAKU_EXTENSIONS:
@@ -386,7 +386,7 @@ async def tg(
     ):
         return tr("method_ok", p0=method)
     client_method = _METHODS[method][0]
-    if not app_config.telegram_enabled:
+    if not await prepare_telegram_output(ctx.deps.message):
         return tr("guest.disabled")
     try:
         result = await getattr(ctx.deps.client, client_method)(

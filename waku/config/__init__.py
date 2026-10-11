@@ -45,8 +45,8 @@ class _AppConfig(pydantic.BaseModel):
     # base config
     token: str
     owners: list[int]
-    # Pause Telegram responses without disconnecting the client. Admin DM
-    # /config remains available so the service can be enabled again.
+    # Pause native Telegram/Guest responses without disconnecting the client.
+    # Bot-admin DMs remain active; Business has its own independent switch.
     telegram_enabled: bool = True
     db_url: str = "sqlite+aiosqlite:///./data/waku.db"
     # APScheduler job store database URL (sync)
