@@ -3,6 +3,8 @@
 from pyrogram import raw, types
 from pyrogram.handlers import GuestMessageHandler
 
+from waku.logger import logger
+
 
 class _GuestCache:
     def __init__(self):
@@ -36,6 +38,10 @@ class _GuestParserClient:
 
 def install_guest_parser(client):
     async def parse_guest(update, users, chats):
+        logger.info(
+            "Telegram Guest query received (references={})",
+            len(update.reference_messages or []),
+        )
         scoped = _GuestParserClient(client)
 
         async def parse(message, query_id=None):

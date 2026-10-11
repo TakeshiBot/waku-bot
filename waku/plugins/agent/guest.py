@@ -131,16 +131,19 @@ async def guest_chat(client, message):
     key = (id(client), actor.id)
     acquired = False
     attempted = False
+    stage = "user"
 
     async def answer(text):
         nonlocal attempted
         # An uncertain Telegram receipt must not result in a second answer.
         attempted = True
         await _answer(client, message, text)
+        logger.info("Telegram Guest answer delivered")
 
     try:
         user = await database.upsert_user(actor)
         if user.is_blocked:
+            logger.info("Telegram Guest query ignored: blocked caller")
             return
         lang = user.user_config.lang
         with locale_scope(lang):
@@ -155,9 +158,11 @@ async def guest_chat(client, message):
             # The calling user's personal quota is shared with ordinary chats.
             # Guest chat IDs can alias normal chats: never charge group credits.
             subject = quota.Subject(user_id=actor.id, chat_id=None, in_group=False)
+            stage = "quota"
             if not await quota.can_start(subject):
                 await answer(quota.exhausted_text(await quota.get_state(subject), lang))
                 return
+            stage = "model"
             result = await asyncio.wait_for(
                 _make_agent(message, lang).run(
                     _input(message), usage_limits=UsageLimits(request_limit=3)
@@ -165,13 +170,17 @@ async def guest_chat(client, message):
                 timeout=90,
             )
             # Charge generated tokens even when Telegram cannot deliver the answer.
+            stage = "settle"
             await quota.settle(subject, result.usage)
             text = result.output.strip()
+            stage = "delivery"
             await answer(text or tr("guest.error"))
     except asyncio.CancelledError:
         raise
     except Exception as error:
-        logger.warning("Telegram guest chat failed: {}", type(error).__name__)
+        logger.warning(
+            "Telegram Guest chat failed at {}: {}", stage, type(error).__name__
+        )
         if not attempted:
             try:
                 await answer(tr("guest.error", locale=lang))

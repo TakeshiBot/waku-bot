@@ -128,6 +128,18 @@ async def init_bot(client: Client = client):
         app_config.avatar_cache_dir.mkdir(parents=True, exist_ok=True)
     logger.debug(i18n.t("log.getting_me", locale=app_config.lang))
     me = await client.get_me()
+    from pyrogram.handlers import GuestMessageHandler
+
+    guest_handlers = sum(
+        isinstance(handler, GuestMessageHandler)
+        for group in client.dispatcher.groups.values()
+        for handler in group
+    )
+    logger.info(
+        "Telegram Guest Mode: {}; handlers: {}",
+        bool(me.supports_guest_queries),
+        guest_handlers,
+    )
     db_me = await database.upsert_user(me)
     logger.info(
         i18n.t("log.welcome", locale=app_config.lang).format(
@@ -145,9 +157,7 @@ async def init_bot(client: Client = client):
         ),
         BotCommand("help", i18n.t("bot.cmd.help", locale=app_config.lang)),
         BotCommand("seg", i18n.t("bot.cmd.seg", locale=app_config.lang)),
-        BotCommand(
-            "nemchai", i18n.t("bot.cmd.nemchai", locale=app_config.lang)
-        ),
+        BotCommand("nemchai", i18n.t("bot.cmd.nemchai", locale=app_config.lang)),
         BotCommand("nhatchai", i18n.t("bot.cmd.nhatchai", locale=app_config.lang)),
     ]
     if app_config.agent:
@@ -243,7 +253,10 @@ async def init_bot(client: Client = client):
 
         embed_dims = await sticker_memory.ensure_embed_dimensions()
         await sticker_vec.init(embed_dims)
-        logger.info("Sticker memory initialized (search mode: {})", app_config.agent_sticker_search_mode)
+        logger.info(
+            "Sticker memory initialized (search mode: {})",
+            app_config.agent_sticker_search_mode,
+        )
 
     # Schedule periodic bot avatar changes.
     if app_config.avatar_change_enabled:
