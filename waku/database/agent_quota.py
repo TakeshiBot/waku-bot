@@ -16,6 +16,9 @@ from datetime import UTC, date, datetime
 from typing import NamedTuple
 
 import sqlalchemy
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -367,6 +370,74 @@ async def adjust_credits(
 
 
 @with_tx
+async def grant_credits(
+    scope: str,
+    scope_id: int,
+    tokens: int,
+    ref: str,
+    session: AsyncSession | None = None,
+) -> tuple[int, bool]:
+    """Add a positive grant once, even if a client retries after a lost response."""
+    assert session is not None
+    if tokens <= 0 or scope not in (SCOPE_USER, SCOPE_CHAT):
+        raise ValueError("invalid_credit_grant")
+
+    # Write before reading the ledger. SQLite cannot safely upgrade competing
+    # SAVEPOINT read transactions to writers, even with a busy timeout. A
+    # no-change upsert creates/locks this account until the outer commit, and
+    # serializes retries on PostgreSQL/MySQL too without a process-local lock.
+    values = {"scope": scope, "scope_id": scope_id, "balance": 0}
+    dialect = session.get_bind().dialect.name
+    if dialect == "sqlite":
+        seed = (
+            sqlite_insert(AgentCredit)
+            .values(**values)
+            .on_conflict_do_update(
+                index_elements=["scope", "scope_id"],
+                set_={"balance": AgentCredit.balance},
+            )
+        )
+    elif dialect == "postgresql":
+        seed = (
+            postgres_insert(AgentCredit)
+            .values(**values)
+            .on_conflict_do_update(
+                index_elements=["scope", "scope_id"],
+                set_={"balance": AgentCredit.balance},
+            )
+        )
+    elif dialect in {"mysql", "mariadb"}:
+        seed = (
+            mysql_insert(AgentCredit)
+            .values(**values)
+            .on_duplicate_key_update(balance=AgentCredit.balance)
+        )
+    else:
+        raise ValueError("unsupported_credit_dialect")
+    await session.execute(seed)
+
+    async def previous_grant():
+        return await session.scalar(
+            sqlalchemy.select(AgentCreditLedger).where(
+                AgentCreditLedger.scope == scope,
+                AgentCreditLedger.scope_id == scope_id,
+                AgentCreditLedger.ref == ref,
+            )
+        )
+
+    previous = await previous_grant()
+    if previous is None:
+        balance = await adjust_credits(
+            scope, scope_id, tokens, CREDIT_REASON_ADMIN, ref, session=session
+        )
+        await session.flush()
+        return balance, True
+    if previous.delta != tokens or previous.reason != CREDIT_REASON_ADMIN:
+        raise ValueError("credit_grant_conflict")
+    return await get_credit(scope, scope_id, session=session), False
+
+
+@with_tx
 async def set_credit(
     scope: str,
     scope_id: int,
@@ -427,6 +498,7 @@ __all__ = [
     "charge_tokens",
     "get_credit",
     "get_usage",
+    "grant_credits",
     "record_and_charge",
     "record_usage",
     "set_credit",

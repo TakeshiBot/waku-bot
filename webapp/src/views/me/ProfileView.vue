@@ -27,7 +27,7 @@ import { useNotice } from "@/composables/useNotice";
 import { t, tError } from "@/i18n";
 import { useMeStore } from "@/stores/me";
 import { haptics } from "@/telegram";
-import { formatNumber, formatPercent } from "@/utils/format";
+import { formatNumber, formatPercent, formatTokens } from "@/utils/format";
 import { languageOptions } from "@/utils/locale";
 
 const router = useRouter();
@@ -70,6 +70,26 @@ const economyItems = computed<DefinitionItem[]>(() => {
     items.push({ label: t("me.percentile"), value: formatPercent(me.affection_percentile) });
   }
   return items;
+});
+
+const quotaItems = computed<DefinitionItem[]>(() => {
+  const quota = profile.data.value?.agent_quota;
+  if (!quota) return [];
+  const unlimited = quota.exempt || quota.free_limit_tokens === null;
+  return [
+    {
+      label: t("quota.dailyFree"),
+      value: unlimited ? t("admin.agentUnlimited") : formatTokens(quota.free_limit_tokens ?? 0),
+    },
+    { label: t("quota.freeUsed"), value: formatTokens(quota.free_used_tokens_today) },
+    {
+      label: t("quota.freeLeft"),
+      value: unlimited
+        ? t("admin.agentUnlimited")
+        : formatTokens(Math.max(0, (quota.free_limit_tokens ?? 0) - quota.free_used_tokens_today)),
+    },
+    { label: t("quota.creditBalance"), value: formatTokens(quota.credits) },
+  ];
 });
 
 async function save(): Promise<void> {
@@ -163,6 +183,13 @@ async function onRefreshAvatar(): Promise<void> {
 
     <SettingsSection :label="t('me.economy')">
       <DefinitionList :items="economyItems" />
+    </SettingsSection>
+    <SettingsSection
+      v-if="profile.data.value?.agent_quota"
+      :label="t('quota.title')"
+      :hint="t('quota.profileHint')"
+    >
+      <DefinitionList :items="quotaItems" />
     </SettingsSection>
 
     <SettingsSection :label="t('me.waifu')">

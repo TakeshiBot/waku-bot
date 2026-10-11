@@ -28,6 +28,7 @@ from waku.webapp import audit
 from waku.webapp.deps import CurrentUser, client_key
 from waku.webapp.errors import ApiError, ErrorCode, forbidden, not_found
 from waku.webapp.i18n import api_text
+from waku.webapp.quota import usage_out
 from waku.webapp.ratelimit import write_limiter
 from waku.webapp.schemas import (
     ChatBriefOut,
@@ -102,6 +103,7 @@ async def read_me(user: CurrentUser) -> MeOut:
         gift_count=await database.count_user_gifts(user.id),
         chat_count=len(chats),
         roles=user.roles,
+        agent_quota=await usage_out(database.SCOPE_USER, user.id, user.is_admin),
     )
 
 

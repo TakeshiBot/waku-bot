@@ -102,6 +102,7 @@ pnpm-debug.log*
 
 # Local test suite and root-level scratch files.
 /tests/
+/webapp/src/**/*.spec.ts
 /test*.py
 /test*.json
 /test*.db

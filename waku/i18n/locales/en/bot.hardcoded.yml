@@ -189,6 +189,9 @@
         "no_text": "There is no text to generate a word cloud."
       },
       "api_reasons": {
+        "quota_settings_override": "An environment variable overrides this allowance. Update the environment variable first.",
+        "quota_settings_failed": "Could not save quota settings. Reload the page and try again.",
+        "credit_grant_conflict": "This credit request was already used with a different amount. Reload the page and try again.",
         "init_empty": "initData is empty",
         "bot_token_missing": "Bot token is not configured",
         "init_query": "initData is not a query string",

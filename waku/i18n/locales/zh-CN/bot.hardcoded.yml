@@ -189,6 +189,9 @@
         "no_text": "没有可用于生成词云的文本"
       },
       "api_reasons": {
+        "quota_settings_override": "An environment variable overrides this allowance. Update the environment variable first.",
+        "quota_settings_failed": "Could not save quota settings. Reload the page and try again.",
+        "credit_grant_conflict": "This credit request was already used with a different amount. Reload the page and try again.",
         "init_empty": "initData 为空",
         "bot_token_missing": "尚未配置 Bot token",
         "init_query": "initData 不是查询字符串",

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The running configuration, read-only.
+ * The running configuration, with a dedicated daily-quota editor for the owner.
  *
  * Secrets arrive already replaced by a marker server-side, so this page renders
  * "configured" or "not set" and never a value. Field names and JSON-ish values use
@@ -17,6 +17,7 @@ import { isApiError } from "@/api/errors";
 import type { ConfigValue } from "@/api/types";
 import DefinitionList, { type DefinitionItem } from "@/components/DefinitionList.vue";
 import PageHeader from "@/components/PageHeader.vue";
+import QuotaSettings from "@/components/QuotaSettings.vue";
 import SettingsRow from "@/components/SettingsRow.vue";
 import SettingsSection from "@/components/SettingsSection.vue";
 import StateBlock from "@/components/StateBlock.vue";
@@ -116,6 +117,7 @@ async function onReload(): Promise<void> {
 
 <template>
   <PageHeader :title="t('admin.config')" :subtitle="t('admin.configHint')" />
+  <QuotaSettings :disabled="!session.isOwner" @updated="config.reload" />
 
   <StateBlock
     :loading="config.loading.value && !config.data.value"

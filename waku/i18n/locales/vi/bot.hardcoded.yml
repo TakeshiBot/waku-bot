@@ -189,6 +189,9 @@
         "no_text": "Không có nội dung văn bản để tạo đám mây từ."
       },
       "api_reasons": {
+        "quota_settings_override": "Biến môi trường đang ghi đè hạn mức này. Hãy cập nhật biến môi trường trước.",
+        "quota_settings_failed": "Không lưu được cấu hình hạn mức. Tải lại trang rồi thử lại.",
+        "credit_grant_conflict": "Yêu cầu thêm credit này đã được dùng với số lượng khác. Tải lại trang rồi thử lại.",
         "init_empty": "Dữ liệu initData trống.",
         "bot_token_missing": "Chưa cấu hình token của bot.",
         "init_query": "initData không phải chuỗi truy vấn.",

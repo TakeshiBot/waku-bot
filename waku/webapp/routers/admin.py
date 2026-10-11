@@ -9,20 +9,33 @@ a coin balance gets the name change applied and the coins reported as skipped.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path as FilePath
 
 from fastapi import APIRouter, Path, Query, Request
 
 from waku import database
 from waku.bot.client import client
 from waku.common import jobqueue, ops
-from waku.config import app_config, reload_config
+from waku.config import (
+    ProviderConfig,
+    _AppConfig,
+    _resolve_settings_files,
+    app_config,
+    reload_config,
+)
 from waku.database.models import ChatPolicy, UserData
 from waku.logger import logger
+from waku.services.settings_editor import SettingsEditError, SettingsEditor
+from waku.services.settings_runtime import (
+    SETTINGS_APPLICATION_LOCK,
+    prepare_settings_application,
+)
 from waku.webapp import audit
-from waku.webapp.deps import RequireAdmin, RequireOwner, client_key
+from waku.webapp.deps import RequireAdmin, RequireOwner, SessionUser, client_key
 from waku.webapp.errors import ApiError, ErrorCode, forbidden, not_found
 from waku.webapp.i18n import api_text
 from waku.webapp.metrics import runtime_metrics
+from waku.webapp.quota import usage_out
 from waku.webapp.ratelimit import write_limiter
 from waku.webapp.sanitize import config_snapshot
 from waku.webapp.schemas import (
@@ -40,9 +53,13 @@ from waku.webapp.schemas import (
     ChatPolicyOut,
     ConfigReloadOut,
     ConfigSnapshotOut,
+    CreditGrantIn,
+    CreditGrantOut,
     FieldChangeOut,
     JobOut,
     PageOut,
+    QuotaSettingsIn,
+    QuotaSettingsOut,
     SkippedFieldOut,
     StatsOut,
 )
@@ -152,6 +169,9 @@ async def read_chat(user: RequireAdmin, chat_id: int) -> ChatDetailOut:
         created_at=timestamp(chat.created_at),
         can_manage=True,
         is_blocked=chat.is_blocked,
+        agent_quota=await usage_out(database.SCOPE_CHAT, chat_id)
+        if chat_id < 0
+        else None,
     )
 
 
@@ -316,27 +336,120 @@ async def _agent_usage_out(scope: str, scope_id: int, exempt: bool) -> AgentUsag
     The free limit is reported as None when it does not apply, so the UI can tell
     "unlimited" apart from "0 left".
     """
-    requests_today, free_used, input_tokens, output_tokens = await database.get_usage(
-        scope, scope_id, database.utc_day()
-    )
+    return await usage_out(scope, scope_id, exempt)
+
+
+@router.get("/quota-settings", response_model=QuotaSettingsOut)
+async def read_quota_settings(user: RequireAdmin) -> QuotaSettingsOut:
+    return QuotaSettingsOut(free_daily_tokens=app_config.agent_quota_free_daily_tokens)
+
+
+@router.patch("/quota-settings", response_model=QuotaSettingsOut)
+async def write_quota_settings(
+    request: Request, user: RequireOwner, payload: QuotaSettingsIn
+) -> QuotaSettingsOut:
+    """Persist the global personal allowance and apply it without a restart."""
+    write_limiter.check(client_key(request, user.id))
+    key = "agent_quota_free_daily_tokens"
+    async with SETTINGS_APPLICATION_LOCK:
+        editor = SettingsEditor(
+            [FilePath(path) for path in _resolve_settings_files()],
+            _AppConfig,
+            ProviderConfig,
+            lambda: app_config.model_dump(),
+        )
+        plan = None
+        try:
+            _, revision = await asyncio.to_thread(editor.snapshot)
+            changes = {key: str(payload.free_daily_tokens)}
+            values = await asyncio.to_thread(editor.preview, changes, revision)
+            candidate = editor.effective_candidate(values)
+            if getattr(candidate, key) != payload.free_daily_tokens:
+                raise ApiError(ErrorCode.CONFLICT, api_text("quota_settings_override"))
+            plan = await prepare_settings_application(candidate, {key})
+            previous = getattr(app_config, key)
+            await asyncio.to_thread(editor.commit_batch, changes, revision)
+        except BaseException as error:
+            if plan is not None:
+                await plan.discard()
+            if isinstance(error, SettingsEditError):
+                raise ApiError(
+                    ErrorCode.CONFLICT
+                    if str(error) == "stale_file"
+                    else ErrorCode.VALIDATION_FAILED,
+                    api_text("quota_settings_failed"),
+                ) from None
+            raise
+        await plan.activate()
+    if previous != payload.free_daily_tokens:
+        audit.record(
+            action="config.quota.update",
+            actor_id=user.id,
+            actor_roles=user.roles,
+            changes=[audit.FieldChange(key, previous, payload.free_daily_tokens)],
+        )
+    return await read_quota_settings(user)
+
+
+async def _grant_panel_credit(
+    request: Request,
+    user: SessionUser,
+    scope: str,
+    scope_id: int,
+    payload: CreditGrantIn,
+) -> CreditGrantOut:
+    write_limiter.check(client_key(request, user.id))
+    try:
+        balance, applied = await database.grant_credits(
+            scope, scope_id, payload.amount, f"panel:{user.id}:{payload.request_id}"
+        )
+    except ValueError:
+        raise ApiError(ErrorCode.CONFLICT, api_text("credit_grant_conflict")) from None
+    if applied:
+        audit.record(
+            action="agent.credit.grant",
+            actor_id=user.id,
+            actor_roles=user.roles,
+            target=scope_id,
+            changes=[
+                audit.FieldChange("agent_credits", balance - payload.amount, balance)
+            ],
+            extra={"scope": scope, "amount": payload.amount},
+        )
+    exempt = False
     if scope == database.SCOPE_USER:
-        limit = app_config.agent_quota_free_daily_tokens
-        free_limit = None if limit <= 0 else limit
-    else:
-        # The allowance the chat is actually charged against, which is the policy's own
-        # number unless that is 0 and the deployment sets a default.
-        policy = await database.get_chat_policy(scope_id)
-        free_limit = database.agent_free_daily_tokens(policy)
-    return AgentUsageOut(
-        scope=scope,
-        scope_id=scope_id,
-        requests_today=requests_today,
-        free_used_tokens_today=free_used,
-        free_limit_tokens=free_limit,
-        credits=await database.get_credit(scope, scope_id),
-        input_tokens_today=input_tokens,
-        output_tokens_today=output_tokens,
-        exempt=exempt,
+        target = await database.get_user_by_id(scope_id)
+        exempt = (
+            bool(target and target.is_bot_global_admin) or scope_id in app_config.owners
+        )
+    return CreditGrantOut(
+        quota=await usage_out(scope, scope_id, exempt), applied=applied
+    )
+
+
+@router.post("/users/{user_id}/credits", response_model=CreditGrantOut)
+async def grant_user_credit(
+    request: Request, user: RequireOwner, payload: CreditGrantIn, user_id: int
+) -> CreditGrantOut:
+    if not app_config.webapp_admin_edit_user:
+        raise forbidden(ErrorCode.FEATURE_DISABLED, api_text("editing_disabled"))
+    if await database.get_user_by_id(user_id) is None:
+        raise not_found(ErrorCode.USER_NOT_FOUND, api_text("user_missing"))
+    return await _grant_panel_credit(
+        request, user, database.SCOPE_USER, user_id, payload
+    )
+
+
+@router.post("/chats/{chat_id}/credits", response_model=CreditGrantOut)
+async def grant_chat_credit(
+    request: Request, user: RequireOwner, payload: CreditGrantIn, chat_id: int
+) -> CreditGrantOut:
+    if chat_id >= 0:
+        raise ApiError(ErrorCode.VALIDATION_FAILED, api_text("quota_group_only"))
+    if await database.get_chat_by_id(chat_id) is None:
+        raise not_found(ErrorCode.CHAT_NOT_FOUND, api_text("chat_missing"))
+    return await _grant_panel_credit(
+        request, user, database.SCOPE_CHAT, chat_id, payload
     )
 
 

@@ -46,6 +46,7 @@ export interface Me {
   gift_count: number;
   chat_count: number;
   roles: Role[];
+  agent_quota?: AgentUsage | null;
 }
 
 export interface MeConfigPatch {
@@ -171,6 +172,16 @@ export interface ChatDetail {
   created_at: string;
   can_manage: boolean;
   is_blocked: boolean;
+  agent_quota?: AgentUsage | null;
+}
+
+export interface CreditGrantResult {
+  quota: AgentUsage;
+  applied: boolean;
+}
+
+export interface QuotaSettings {
+  free_daily_tokens: number;
 }
 
 export interface ChatAdmin {

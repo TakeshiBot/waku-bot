@@ -8,6 +8,7 @@ limits in `waku.database.models`.
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -91,6 +92,7 @@ class MeOut(ApiModel):
     gift_count: int
     chat_count: int
     roles: list[str]
+    agent_quota: AgentUsageOut | None = None
 
 
 class MeConfigPatch(ApiModel):
@@ -239,7 +241,9 @@ class VerifyQuestionOut(ApiModel):
     question: str
     options: list[str]
     answers: list[str]
-    select: str = "all"  # Legacy data lacks this field; default to selecting all correct answers.
+    select: str = (
+        "all"  # Legacy data lacks this field; default to selecting all correct answers.
+    )
 
 
 class VerifyQuestionsOut(ApiModel):
@@ -387,6 +391,7 @@ class ChatDetailOut(ApiModel):
     created_at: str
     can_manage: bool
     is_blocked: bool
+    agent_quota: AgentUsageOut | None = None
 
 
 class ChatAdminOut(ApiModel):
@@ -479,11 +484,35 @@ class AgentUsageOut(ApiModel):
     scope_id: int
     requests_today: int
     free_used_tokens_today: int
-    free_limit_tokens: int | None  # None = unlimited free usage for this account; 0 for a group means unallocated.
+    free_limit_tokens: (
+        int | None
+    )  # None = unlimited free usage for this account; 0 for a group means unallocated.
     credits: int
     input_tokens_today: int
     output_tokens_today: int
     exempt: bool
+
+
+class CreditGrantIn(ApiModel):
+    """Add tokens to the existing balance; a retry must reuse request_id."""
+
+    amount: int = Field(gt=0, le=AGENT_CREDITS_MAX)
+    request_id: UUID
+
+
+class CreditGrantOut(ApiModel):
+    quota: AgentUsageOut
+    applied: bool
+
+
+class QuotaSettingsIn(ApiModel):
+    """Global daily personal free allowance; zero disables the limit."""
+
+    free_daily_tokens: int = Field(ge=0, le=AGENT_CREDITS_MAX)
+
+
+class QuotaSettingsOut(ApiModel):
+    free_daily_tokens: int
 
 
 class AdminUserOut(ApiModel):

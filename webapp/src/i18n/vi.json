@@ -1,4 +1,18 @@
 {
+  "quota": {
+    "title": "Hạn Mức AI",
+    "dailyFree": "Token Miễn Phí Mỗi Ngày",
+    "dailyHint": "Áp dụng cho mọi user. 0 = không giới hạn. Lưu là áp dụng ngay.",
+    "freeUsed": "Free Đã Dùng Hôm Nay",
+    "freeLeft": "Free Còn Lại Hôm Nay",
+    "creditBalance": "Credit Còn Lại (token)",
+    "creditAdd": "Thêm Credit (token)",
+    "creditHint": "Cộng vào số dư hiện có, không đổi hạn mức miễn phí.",
+    "groupCreditHint": "Chỉ dùng trong nhóm này khi đã hết free và credit cá nhân.",
+    "add": "Thêm Credit",
+    "creditAdded": "Đã cộng {amount} token credit",
+    "profileHint": "Free làm mới lúc 07:00 hằng ngày (UTC+7). Credit còn dư giữ sang ngày sau."
+  },
   "app": {
     "name": "waku",
     "loading": "Đang kết nối...",
@@ -231,7 +245,7 @@
     "affectionBuckets": "Các khoảng điểm tình cảm",
     "affectionRange": "Phạm vi khoảng điểm",
     "config": "Cấu hình đang chạy",
-    "configHint": "Chỉ đọc, các khóa bí mật đã được ẩn",
+    "configHint": "Chủ bot có thể sửa free mỗi ngày. Các khóa bí mật đã được ẩn.",
     "configured": "Đã cấu hình",
     "notConfigured": "Chưa cấu hình",
     "reload": "Tải lại cấu hình",
@@ -383,7 +397,7 @@
     "quotaDaily": "Hạn mức nhóm hằng ngày (token)",
     "quotaDailyHint": "Các thành viên dùng chung sau khi hết hạn mức cá nhân; 0 = dùng mặc định toàn hệ thống",
     "quotaDailyNone": "Chưa cấp",
-    "quotaCredits": "Số dư hạn mức nhóm (token)",
+    "quotaCredits": "Credit Nhóm Còn Lại (token)",
     "quotaUsage": "Mức sử dụng hôm nay"
   },
   "verify": {

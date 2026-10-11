@@ -1,4 +1,18 @@
 {
+  "quota": {
+    "title": "AI Quota",
+    "dailyFree": "Daily Free Tokens",
+    "dailyHint": "Applies to all users. 0 = unlimited. Takes effect as soon as you save.",
+    "freeUsed": "Free Tokens Used Today",
+    "freeLeft": "Free Tokens Left Today",
+    "creditBalance": "Remaining Credit (tokens)",
+    "creditAdd": "Add Credit (tokens)",
+    "creditHint": "Adds to the existing balance without changing the free allowance.",
+    "groupCreditHint": "Only used in this group after personal free tokens and credits run out.",
+    "add": "Add Credit",
+    "creditAdded": "Added {amount} token credit",
+    "profileHint": "Free tokens reset daily at 07:00 (UTC+7). Unused credit carries over."
+  },
   "app": {
     "name": "waku",
     "loading": "Connecting...",
@@ -231,7 +245,7 @@
     "affectionBuckets": "Affection buckets",
     "affectionRange": "Bucket range",
     "config": "Runtime config",
-    "configHint": "Read-only, secrets redacted",
+    "configHint": "The owner can edit the daily free allowance. Secrets are redacted.",
     "configured": "Configured",
     "notConfigured": "Not set",
     "reload": "Reload config",

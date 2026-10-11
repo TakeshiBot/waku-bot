@@ -60,6 +60,31 @@ HTTPS cho tên miền của bảng quản trị và chuyển yêu cầu đến c
 Trên VPS dùng Nginx/Certbot, `bash run.sh miniapp panel.example.com` có thể thiết lập
 HTTPS và lưu cấu hình Mini App; xem [hướng dẫn triển khai](self-host.md).
 
+## Hạn mức AI và credit
+
+- **Hồ sơ cá nhân → Hạn Mức AI**: xem free mỗi ngày, free đã dùng/còn lại và
+  số dư credit riêng. Free làm mới lúc **07:00 UTC+7**; credit chưa dùng giữ
+  sang ngày sau, không cộng vào hay đặt lại bộ đếm free.
+- **Quản trị → Cấu hình → Hạn Mức AI**: chủ bot sửa số token miễn phí mỗi ngày
+  cho toàn bộ user, bấm **Lưu** để áp dụng ngay và lưu vào cấu hình. Đặt **0**
+  để không giới hạn. Nếu biến môi trường ghi đè giá trị này, cần sửa biến môi
+  trường trước. Thay đổi không xóa lượng free đã dùng trong ngày.
+- **Quản trị → Người dùng → chọn user → Thêm Credit**: nhập số token cần
+  **cộng thêm**, rồi bấm **Thêm Credit**. Ví dụ quota free 100.000, credit hiện
+  có 20.000, thêm 100.000 thì free vẫn 100.000 và credit thành 120.000.
+- **Quản trị → Nhóm → chọn nhóm → Thêm Credit**: cộng vào quỹ credit của đúng
+  nhóm đó; mặc định là 0. Khi user hết free và credit cá nhân, nhóm có credit
+  vẫn cho chat. Quỹ này không dùng được trong DM hoặc nhóm khác.
+
+Quyền thay đổi quota chung và cộng credit thuộc **chủ bot**; quản trị viên bot
+khác chỉ xem các mục tài chính. Các số dư credit đã có được giữ nguyên.
+Yêu cầu thêm credit có mã riêng để việc gửi lại sau lỗi mạng không cộng trùng.
+
+Thứ tự thanh toán giữ theo base: free cá nhân → free nhóm nếu được cấp →
+credit cá nhân → credit nhóm. Quota dùng chung giữa DM và các nhóm Telegram,
+chưa áp dụng cho Discord hay Telegram Business. Token được chốt sau khi model
+hoàn thành nên một lượt có thể vượt phần còn lại; phần vượt được ghi thành nợ.
+
 ## Các tùy chọn cấu hình
 
 | Tùy chọn | Giá trị mặc định | Ý nghĩa |

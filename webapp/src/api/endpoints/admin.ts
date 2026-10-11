@@ -14,10 +14,30 @@ import type {
   ChatPolicyPatch,
   ConfigReloadResult,
   ConfigSnapshot,
+  CreditGrantResult,
   Job,
   Page,
+  QuotaSettings,
   Stats,
 } from "../types";
+
+export function grantCredit(scope: "user" | "chat", id: number, amount: number, requestId: string) {
+  const path = scope === "user" ? "users" : "chats";
+  return api.post<CreditGrantResult>(`/api/admin/${path}/${id}/credits`, {
+    amount,
+    request_id: requestId,
+  });
+}
+
+export function fetchQuotaSettings(signal?: AbortSignal) {
+  return api.get<QuotaSettings>("/api/admin/quota-settings", signal ? { signal } : {});
+}
+
+export function saveQuotaSettings(freeDailyTokens: number) {
+  return api.patch<QuotaSettings>("/api/admin/quota-settings", {
+    free_daily_tokens: freeDailyTokens,
+  });
+}
 
 export function fetchStats(signal?: AbortSignal) {
   return api.get<Stats>("/api/admin/stats", signal ? { signal } : {});

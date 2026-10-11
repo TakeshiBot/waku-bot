@@ -22,6 +22,7 @@ import { isApiError } from "@/api/errors";
 import type { AdminUserPatch } from "@/api/types";
 import DefinitionList, { type DefinitionItem } from "@/components/DefinitionList.vue";
 import NumberField from "@/components/NumberField.vue";
+import CreditGrant from "@/components/CreditGrant.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import SelectField from "@/components/SelectField.vue";
 import SettingsRow from "@/components/SettingsRow.vue";
@@ -53,7 +54,6 @@ interface EditableUser extends Record<string, unknown> {
   waifu_mention: boolean;
   coins: number;
   affection: number;
-  agent_credits: number;
   is_bot_global_admin: boolean;
 }
 
@@ -64,7 +64,6 @@ const form = useDirtyState<EditableUser>({
   waifu_mention: false,
   coins: 0,
   affection: 0,
-  agent_credits: 0,
   is_bot_global_admin: false,
 });
 
@@ -77,7 +76,6 @@ const user = useAsyncData(async (signal) => {
     waifu_mention: data.waifu_mention,
     coins: data.coins,
     affection: data.affection,
-    agent_credits: data.agent_quota?.credits ?? 0,
     is_bot_global_admin: data.is_bot_global_admin,
   });
   return data;
@@ -142,7 +140,6 @@ function buildPatch(): AdminUserPatch {
   if (changed("waifu_mention")) patch.waifu_mention = draft.waifu_mention;
   if (changed("coins")) patch.coins = draft.coins;
   if (changed("affection")) patch.affection = draft.affection;
-  if (changed("agent_credits")) patch.agent_credits = draft.agent_credits;
   if (changed("is_bot_global_admin")) patch.is_bot_global_admin = draft.is_bot_global_admin;
   return patch;
 }
@@ -178,7 +175,6 @@ async function save(): Promise<void> {
       waifu_mention: result.user.waifu_mention,
       coins: result.user.coins,
       affection: result.user.affection,
-      agent_credits: result.user.agent_quota?.credits ?? 0,
       is_bot_global_admin: result.user.is_bot_global_admin,
     });
 
@@ -304,16 +300,12 @@ useMainButton({
       :label="t('admin.agentQuota')"
       :hint="canEditEconomy ? undefined : t('admin.ownerOnly')"
     >
-      <NumberField
-        v-if="canEditEconomy"
-        v-model="form.draft.value.agent_credits"
-        :label="t('admin.agentCredits')"
-        :changed="changed('agent_credits')"
-      />
-      <SettingsRow
-        v-else
-        :label="t('admin.agentCredits')"
-        :value="formatNumber(form.draft.value.agent_credits)"
+      <CreditGrant
+        scope="user"
+        :account-id="userId"
+        :balance="user.data.value?.agent_quota?.credits ?? 0"
+        :disabled="!canEditEconomy"
+        @updated="user.data.value && (user.data.value.agent_quota = $event)"
       />
     </SettingsSection>
 
