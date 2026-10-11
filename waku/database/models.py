@@ -806,7 +806,7 @@ class AgentPersistentFile(Base):
 
 
 class AgentUsageDaily(Base):
-    """A quota account's usage for one UTC date, measured in tokens.
+    """A quota account's usage for one billing day (06:00 UTC+7), measured in tokens.
 
     `input_tokens` / `output_tokens` track actual daily model usage; `free_used_tokens` tracks
     the part paid from this account's free allocation. Calls paid by a group pool or credits still

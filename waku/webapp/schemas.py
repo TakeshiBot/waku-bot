@@ -505,6 +505,12 @@ class CreditGrantOut(ApiModel):
     applied: bool
 
 
+class CreditBalanceIn(ApiModel):
+    """Replace the credit balance; zero removes the allocated credit."""
+
+    balance: int = Field(ge=0, le=AGENT_CREDITS_MAX)
+
+
 class QuotaSettingsIn(ApiModel):
     """Global daily personal free allowance; zero disables the limit."""
 

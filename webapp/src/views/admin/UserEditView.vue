@@ -22,7 +22,6 @@ import { isApiError } from "@/api/errors";
 import type { AdminUserPatch } from "@/api/types";
 import DefinitionList, { type DefinitionItem } from "@/components/DefinitionList.vue";
 import NumberField from "@/components/NumberField.vue";
-import CreditGrant from "@/components/CreditGrant.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import SelectField from "@/components/SelectField.vue";
 import SettingsRow from "@/components/SettingsRow.vue";
@@ -55,6 +54,7 @@ interface EditableUser extends Record<string, unknown> {
   coins: number;
   affection: number;
   is_bot_global_admin: boolean;
+  agent_credits: number;
 }
 
 const form = useDirtyState<EditableUser>({
@@ -65,6 +65,7 @@ const form = useDirtyState<EditableUser>({
   coins: 0,
   affection: 0,
   is_bot_global_admin: false,
+  agent_credits: 0,
 });
 
 const user = useAsyncData(async (signal) => {
@@ -77,6 +78,7 @@ const user = useAsyncData(async (signal) => {
     coins: data.coins,
     affection: data.affection,
     is_bot_global_admin: data.is_bot_global_admin,
+    agent_credits: data.agent_quota?.credits ?? 0,
   });
   return data;
 });
@@ -112,7 +114,7 @@ const readonlyItems = computed<DefinitionItem[]>(() => {
   if (quota) {
     items.push({ label: t("admin.agentUsedToday"), value: formatNumber(quota.requests_today) });
     items.push({
-      label: t("admin.agentFreeToday"),
+      label: t("quota.freeUsage"),
       value:
         quota.free_limit_tokens === null
           ? t("admin.agentUnlimited")
@@ -140,6 +142,7 @@ function buildPatch(): AdminUserPatch {
   if (changed("waifu_mention")) patch.waifu_mention = draft.waifu_mention;
   if (changed("coins")) patch.coins = draft.coins;
   if (changed("affection")) patch.affection = draft.affection;
+  if (changed("agent_credits")) patch.agent_credits = draft.agent_credits;
   if (changed("is_bot_global_admin")) patch.is_bot_global_admin = draft.is_bot_global_admin;
   return patch;
 }
@@ -176,6 +179,7 @@ async function save(): Promise<void> {
       coins: result.user.coins,
       affection: result.user.affection,
       is_bot_global_admin: result.user.is_bot_global_admin,
+      agent_credits: result.user.agent_quota?.credits ?? 0,
     });
 
     const parts = [t("admin.changesApplied", { count: result.changed.length })];
@@ -300,12 +304,19 @@ useMainButton({
       :label="t('admin.agentQuota')"
       :hint="canEditEconomy ? undefined : t('admin.ownerOnly')"
     >
-      <CreditGrant
-        scope="user"
-        :account-id="userId"
-        :balance="user.data.value?.agent_quota?.credits ?? 0"
-        :disabled="!canEditEconomy"
-        @updated="user.data.value && (user.data.value.agent_quota = $event)"
+      <NumberField
+        v-if="canEditEconomy"
+        v-model="form.draft.value.agent_credits"
+        :label="t('quota.creditBalance')"
+        :min="0"
+        :max="1000000000000"
+        :changed="changed('agent_credits')"
+        :disabled="saving"
+      />
+      <SettingsRow
+        v-else
+        :label="t('quota.creditBalance')"
+        :value="formatTokens(user.data.value?.agent_quota?.credits ?? 0)"
       />
     </SettingsSection>
 

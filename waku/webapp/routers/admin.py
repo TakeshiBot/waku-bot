@@ -53,6 +53,7 @@ from waku.webapp.schemas import (
     ChatPolicyOut,
     ConfigReloadOut,
     ConfigSnapshotOut,
+    CreditBalanceIn,
     CreditGrantIn,
     CreditGrantOut,
     FieldChangeOut,
@@ -451,6 +452,29 @@ async def grant_chat_credit(
     return await _grant_panel_credit(
         request, user, database.SCOPE_CHAT, chat_id, payload
     )
+
+
+@router.put("/chats/{chat_id}/credits", response_model=AgentUsageOut)
+async def set_chat_credit(
+    request: Request, user: RequireOwner, payload: CreditBalanceIn, chat_id: int
+) -> AgentUsageOut:
+    """Set the group's remaining balance without changing its daily free usage."""
+    write_limiter.check(client_key(request, user.id))
+    if chat_id >= 0:
+        raise ApiError(ErrorCode.VALIDATION_FAILED, api_text("quota_group_only"))
+    if await database.get_chat_by_id(chat_id) is None:
+        raise not_found(ErrorCode.CHAT_NOT_FOUND, api_text("chat_missing"))
+    previous = await database.set_credit(database.SCOPE_CHAT, chat_id, payload.balance)
+    if previous != payload.balance:
+        audit.record(
+            action="agent.credit.set",
+            actor_id=user.id,
+            actor_roles=user.roles,
+            target=chat_id,
+            changes=[audit.FieldChange("agent_credits", previous, payload.balance)],
+            extra={"scope": database.SCOPE_CHAT},
+        )
+    return await usage_out(database.SCOPE_CHAT, chat_id)
 
 
 async def _user_detail(target: UserData) -> AdminUserDetailOut:

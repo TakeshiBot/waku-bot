@@ -19,7 +19,6 @@ import { deleteChatPolicy, fetchChatPolicy, setChatPolicy } from "@/api/endpoint
 import { isApiError } from "@/api/errors";
 import DefinitionList, { type DefinitionItem } from "@/components/DefinitionList.vue";
 import NumberField from "@/components/NumberField.vue";
-import CreditGrant from "@/components/CreditGrant.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import SettingsRow from "@/components/SettingsRow.vue";
 import SettingsSection from "@/components/SettingsSection.vue";
@@ -82,14 +81,16 @@ async function setFlag(
 }
 
 const dailyDraft = ref(0);
-type QuotaField = "agent_quota_daily_tokens";
+const creditsDraft = ref(0);
+type QuotaField = "agent_quota_daily_tokens" | "agent_credits";
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
-/** Only the daily allowance uses debounce; credit grants have their own button. */
+/** Queued absolute balances and daily allowances; never incremental grants. */
 const queued = new Map<QuotaField, number>();
 
 /** Debounce numeric fields: NumberField updates per keystroke, so typing "123" should not send three PUTs. */
 function queueSave(field: QuotaField, value: number): void {
-  dailyDraft.value = value;
+  if (field === "agent_quota_daily_tokens") dailyDraft.value = value;
+  else creditsDraft.value = value;
   queued.set(field, value);
   if (saveTimer !== null) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
@@ -120,6 +121,8 @@ async function flushSave(): Promise<void> {
         if (field === "agent_quota_daily_tokens") {
           data.item.policy.agent_quota_daily_tokens = value;
           data.agent_quota.free_limit_tokens = value;
+        } else {
+          data.agent_quota.credits = value;
         }
       }
     }
@@ -151,6 +154,7 @@ watch(
   (data) => {
     if (!data) return;
     dailyDraft.value = data.item.policy.agent_quota_daily_tokens;
+    creditsDraft.value = data.agent_quota.credits;
   },
   { immediate: true },
 );
@@ -167,7 +171,6 @@ const usageItems = computed<DefinitionItem[]>(() => {
           ? t("chatPolicy.quotaDailyNone")
           : `${formatTokens(quota.free_used_tokens_today)} / ${formatTokens(quota.free_limit_tokens ?? 0)}`,
     },
-    { label: t("chatPolicy.quotaCredits"), value: formatTokens(quota.credits) },
     {
       label: t("admin.agentTokensToday"),
       value: `${formatTokens(quota.input_tokens_today)} / ${formatTokens(quota.output_tokens_today)}`,
@@ -232,11 +235,7 @@ async function remove(): Promise<void> {
     </SettingsSection>
 
     <!-- Private chats have no group account; the backend rejects all group quota fields. -->
-    <SettingsSection
-      v-if="props.chatId < 0"
-      :label="t('chatPolicy.quota')"
-      :hint="t('chatPolicy.quotaHint')"
-    >
+    <SettingsSection v-if="props.chatId < 0" :label="t('chatPolicy.quota')">
       <SettingsRow
         :label="t('chatPolicy.quotaExempt')"
         :hint="t('chatPolicy.quotaExemptHint')"
@@ -259,12 +258,13 @@ async function remove(): Promise<void> {
         :disabled="!session.isOwner || busy"
         @update:model-value="queueSave('agent_quota_daily_tokens', $event)"
       />
-      <CreditGrant
-        scope="chat"
-        :account-id="chatId"
-        :balance="detail.data.value?.agent_quota.credits ?? 0"
+      <NumberField
+        v-model="creditsDraft"
+        :label="t('quota.creditBalance')"
+        :min="0"
+        :max="1000000000000"
         :disabled="!session.isOwner || busy"
-        @updated="detail.data.value && (detail.data.value.agent_quota = $event)"
+        @update:model-value="queueSave('agent_credits', $event)"
       />
     </SettingsSection>
 

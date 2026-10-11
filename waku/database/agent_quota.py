@@ -12,7 +12,7 @@ Create rows on demand: usage on the first charge; balances on the first grant or
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import NamedTuple
 
 import sqlalchemy
@@ -42,9 +42,17 @@ class ChargeAccount(NamedTuple):
     free_limit: int | None
 
 
+def quota_day(now: datetime | None = None) -> date:
+    """Billing day resets at 06:00 UTC+7 (23:00 UTC), on every deployment."""
+    timestamp = now if now is not None else datetime.now(UTC)
+    if timestamp.tzinfo is None:
+        raise ValueError("quota_day requires a timezone-aware timestamp")
+    return (timestamp.astimezone(UTC) + timedelta(hours=1)).date()
+
+
 def utc_day() -> date:
-    """Quota accounting's "today" is always UTC, independent of the deployment timezone."""
-    return datetime.now(UTC).date()
+    """Compatibility name for the quota billing day, which now resets at 06:00 UTC+7."""
+    return quota_day()
 
 
 async def _ensure_usage_row(
@@ -369,19 +377,9 @@ async def adjust_credits(
     return balance
 
 
-@with_tx
-async def grant_credits(
-    scope: str,
-    scope_id: int,
-    tokens: int,
-    ref: str,
-    session: AsyncSession | None = None,
-) -> tuple[int, bool]:
-    """Add a positive grant once, even if a client retries after a lost response."""
-    assert session is not None
-    if tokens <= 0 or scope not in (SCOPE_USER, SCOPE_CHAT):
-        raise ValueError("invalid_credit_grant")
-
+async def _lock_credit_account(
+    session: AsyncSession, scope: str, scope_id: int
+) -> None:
     # Write before reading the ledger. SQLite cannot safely upgrade competing
     # SAVEPOINT read transactions to writers, even with a busy timeout. A
     # no-change upsert creates/locks this account until the outer commit, and
@@ -415,6 +413,21 @@ async def grant_credits(
     else:
         raise ValueError("unsupported_credit_dialect")
     await session.execute(seed)
+
+
+@with_tx
+async def grant_credits(
+    scope: str,
+    scope_id: int,
+    tokens: int,
+    ref: str,
+    session: AsyncSession | None = None,
+) -> tuple[int, bool]:
+    """Add a positive grant once, even if a client retries after a lost response."""
+    assert session is not None
+    if tokens <= 0 or scope not in (SCOPE_USER, SCOPE_CHAT):
+        raise ValueError("invalid_credit_grant")
+    await _lock_credit_account(session, scope, scope_id)
 
     async def previous_grant():
         return await session.scalar(
@@ -452,7 +465,7 @@ async def set_credit(
     Do not append a ledger entry when the target balance is unchanged.
     """
     assert session is not None
-    await _ensure_credit_row(session, scope, scope_id)
+    await _lock_credit_account(session, scope, scope_id)
     for _ in range(_CREDIT_CAS_RETRIES):
         observed = await session.scalar(
             sqlalchemy.select(AgentCredit.balance).where(
@@ -499,6 +512,7 @@ __all__ = [
     "get_credit",
     "get_usage",
     "grant_credits",
+    "quota_day",
     "record_and_charge",
     "record_usage",
     "set_credit",

@@ -78,15 +78,8 @@ const quotaItems = computed<DefinitionItem[]>(() => {
   const unlimited = quota.exempt || quota.free_limit_tokens === null;
   return [
     {
-      label: t("quota.dailyFree"),
-      value: unlimited ? t("admin.agentUnlimited") : formatTokens(quota.free_limit_tokens ?? 0),
-    },
-    { label: t("quota.freeUsed"), value: formatTokens(quota.free_used_tokens_today) },
-    {
-      label: t("quota.freeLeft"),
-      value: unlimited
-        ? t("admin.agentUnlimited")
-        : formatTokens(Math.max(0, (quota.free_limit_tokens ?? 0) - quota.free_used_tokens_today)),
+      label: t("quota.freeUsage"),
+      value: `${formatTokens(quota.free_used_tokens_today)} / ${unlimited ? t("admin.agentUnlimited") : formatTokens(quota.free_limit_tokens ?? 0)}`,
     },
     { label: t("quota.creditBalance"), value: formatTokens(quota.credits) },
   ];
@@ -184,11 +177,7 @@ async function onRefreshAvatar(): Promise<void> {
     <SettingsSection :label="t('me.economy')">
       <DefinitionList :items="economyItems" />
     </SettingsSection>
-    <SettingsSection
-      v-if="profile.data.value?.agent_quota"
-      :label="t('quota.title')"
-      :hint="t('quota.profileHint')"
-    >
+    <SettingsSection v-if="profile.data.value?.agent_quota" :label="t('quota.title')">
       <DefinitionList :items="quotaItems" />
     </SettingsSection>
 

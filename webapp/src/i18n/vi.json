@@ -1,17 +1,9 @@
 {
   "quota": {
     "title": "Hạn Mức AI",
-    "dailyFree": "Token Miễn Phí Mỗi Ngày",
-    "dailyHint": "Áp dụng cho mọi user. 0 = không giới hạn. Lưu là áp dụng ngay.",
-    "freeUsed": "Free Đã Dùng Hôm Nay",
-    "freeLeft": "Free Còn Lại Hôm Nay",
-    "creditBalance": "Credit Còn Lại (token)",
-    "creditAdd": "Thêm Credit (token)",
-    "creditHint": "Cộng vào số dư hiện có, không đổi hạn mức miễn phí.",
-    "groupCreditHint": "Chỉ dùng trong nhóm này khi đã hết free và credit cá nhân.",
-    "add": "Thêm Credit",
-    "creditAdded": "Đã cộng {amount} token credit",
-    "profileHint": "Free làm mới lúc 07:00 hằng ngày (UTC+7). Credit còn dư giữ sang ngày sau."
+    "dailyFree": "Token Free",
+    "freeUsage": "Free Token",
+    "creditBalance": "Credit (token)"
   },
   "app": {
     "name": "waku",

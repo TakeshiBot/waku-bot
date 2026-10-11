@@ -116,7 +116,7 @@ async function onReload(): Promise<void> {
 </script>
 
 <template>
-  <PageHeader :title="t('admin.config')" :subtitle="t('admin.configHint')" />
+  <PageHeader :title="t('admin.config')" />
   <QuotaSettings :disabled="!session.isOwner" @updated="config.reload" />
 
   <StateBlock

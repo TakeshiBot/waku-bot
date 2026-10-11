@@ -58,7 +58,6 @@ async function save(): Promise<void> {
       <NumberField
         v-model="amount"
         :label="t('quota.dailyFree')"
-        :hint="t('quota.dailyHint')"
         :min="0"
         :max="1000000000000"
         :disabled="disabled || saving"

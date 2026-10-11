@@ -24,6 +24,7 @@ from waku.webapp import audit
 from waku.webapp.deps import ChatAdminCtx, client_key
 from waku.webapp.errors import ApiError, ErrorCode, forbidden, not_found
 from waku.webapp.i18n import api_text
+from waku.webapp.quota import usage_out
 from waku.webapp.ratelimit import write_limiter
 from waku.webapp.schemas import (
     TITLE_PERMISSION_KEYS,
@@ -98,6 +99,7 @@ async def read_chat(ctx: ChatAdminCtx) -> ChatDetailOut:
         created_at=chat.created_at.isoformat() if chat.created_at else "",
         can_manage=True,
         is_blocked=chat.is_blocked,
+        agent_quota=await usage_out(database.SCOPE_CHAT, chat.id),
     )
 
 

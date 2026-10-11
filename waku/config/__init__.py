@@ -464,9 +464,9 @@ class _AppConfig(pydantic.BaseModel):
     agent_usage_request_limit: int | None = None
     agent_usage_tool_calls_limit: int = 0
     agent_usage_total_tokens_limit: int = 0
-    # Daily free agent tokens (input + output) per user, shared across groups, reset by UTC date.
+    # Daily free agent tokens (input + output) per user; shared across groups, reset at 06:00 UTC+7.
     agent_quota_free_daily_tokens: int = 100_000
-    # Daily free tokens per group, shared within the group and reset by UTC date.
+    # Daily free tokens per group; shared within the group, reset at 06:00 UTC+7.
     # Used after personal free tokens. A positive group override wins; 0 means no global allocation.
     agent_quota_chat_free_daily_tokens: int = 0
     # Record every agent run and its steps (model requests and responses, tool

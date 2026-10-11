@@ -4,6 +4,7 @@ import type {
   AdminUser,
   AdminUserPatch,
   AdminUserPatchResult,
+  AgentUsage,
   AgentRunDetail,
   AgentRunEventDetail,
   AgentRunQuery,
@@ -14,19 +15,14 @@ import type {
   ChatPolicyPatch,
   ConfigReloadResult,
   ConfigSnapshot,
-  CreditGrantResult,
   Job,
   Page,
   QuotaSettings,
   Stats,
 } from "../types";
 
-export function grantCredit(scope: "user" | "chat", id: number, amount: number, requestId: string) {
-  const path = scope === "user" ? "users" : "chats";
-  return api.post<CreditGrantResult>(`/api/admin/${path}/${id}/credits`, {
-    amount,
-    request_id: requestId,
-  });
+export function setChatCredit(id: number, balance: number) {
+  return api.put<AgentUsage>(`/api/admin/chats/${id}/credits`, { balance });
 }
 
 export function fetchQuotaSettings(signal?: AbortSignal) {

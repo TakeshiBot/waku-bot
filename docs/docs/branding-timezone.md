@@ -47,8 +47,9 @@ Ngày giờ đã có múi giờ hoặc được người dùng chỉ định b�
 tục dùng múi giờ đã chỉ định. Lịch đã lưu trong cơ sở dữ liệu giữ múi giờ trong
 trigger cũ; muốn chuyển lịch đó sang UTC+7 thì cần tạo lại lịch.
 Dữ liệu UTC phục vụ xác thực, timestamp và giao thức
-được giữ nguyên. Bộ đếm quota theo ngày tiếp tục dùng ngày UTC để bảo toàn dữ liệu
-đã lưu: mốc đổi ngày là 00:00 UTC, tức 07:00 tại Việt Nam.
+được giữ nguyên. Quota miễn phí dùng ngày thanh toán bắt đầu lúc **06:00 UTC+7**
+(23:00 UTC ngày trước), độc lập với múi giờ máy chủ. Dữ liệu ngày cũ giữ nguyên;
+credit không bị đặt lại khi đổi ngày.
 
 Khi chạy trực tiếp trên máy chủ, đặt biến môi trường `TZ=Asia/Ho_Chi_Minh`
 để log của môi trường và các tiện ích hệ thống hiển thị nhất quán.

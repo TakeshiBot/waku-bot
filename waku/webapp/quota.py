@@ -7,7 +7,7 @@ from waku.webapp.schemas import AgentUsageOut
 
 async def usage_out(scope: str, scope_id: int, exempt: bool = False) -> AgentUsageOut:
     requests, free_used, input_tokens, output_tokens = await database.get_usage(
-        scope, scope_id, database.utc_day()
+        scope, scope_id, database.quota_day()
     )
     if scope == database.SCOPE_USER:
         limit = app_config.agent_quota_free_daily_tokens

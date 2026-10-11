@@ -1,17 +1,9 @@
 {
   "quota": {
     "title": "AI Quota",
-    "dailyFree": "Daily Free Tokens",
-    "dailyHint": "Applies to all users. 0 = unlimited. Takes effect as soon as you save.",
-    "freeUsed": "Free Tokens Used Today",
-    "freeLeft": "Free Tokens Left Today",
-    "creditBalance": "Remaining Credit (tokens)",
-    "creditAdd": "Add Credit (tokens)",
-    "creditHint": "Adds to the existing balance without changing the free allowance.",
-    "groupCreditHint": "Only used in this group after personal free tokens and credits run out.",
-    "add": "Add Credit",
-    "creditAdded": "Added {amount} token credit",
-    "profileHint": "Free tokens reset daily at 07:00 (UTC+7). Unused credit carries over."
+    "dailyFree": "Token Free",
+    "freeUsage": "Free Token",
+    "creditBalance": "Credit (token)"
   },
   "app": {
     "name": "waku",

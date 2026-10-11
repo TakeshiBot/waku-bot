@@ -32,6 +32,7 @@ import { useNotice } from "@/composables/useNotice";
 import { t, tOptional } from "@/i18n";
 import { tError } from "@/i18n";
 import { haptics } from "@/telegram";
+import { formatTokens } from "@/utils/format";
 import { languageOptions } from "@/utils/locale";
 import { TOGGLES_WITH_HINTS, TOGGLE_GROUPS, type ChatToggleKey } from "./config-layout";
 
@@ -170,6 +171,12 @@ function go(name: string): void {
     :error="chat.error.value"
     @retry="chat.reload"
   >
+    <SettingsSection v-if="chat.data.value?.agent_quota" :label="t('quota.title')">
+      <SettingsRow
+        :label="t('quota.creditBalance')"
+        :value="formatTokens(chat.data.value?.agent_quota?.credits ?? 0)"
+      />
+    </SettingsSection>
     <SettingsSection
       v-for="group in TOGGLE_GROUPS"
       :key="group.labelKey"

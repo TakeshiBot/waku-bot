@@ -15,7 +15,7 @@ import { useRouter } from "vue-router";
 import { blockChat, fetchChat, leaveChat, unblockChat } from "@/api/endpoints/admin";
 import { isApiError } from "@/api/errors";
 import DefinitionList, { type DefinitionItem } from "@/components/DefinitionList.vue";
-import CreditGrant from "@/components/CreditGrant.vue";
+import CreditBalance from "@/components/CreditBalance.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import SettingsRow from "@/components/SettingsRow.vue";
 import SettingsSection from "@/components/SettingsSection.vue";
@@ -135,9 +135,8 @@ async function onLeave(): Promise<void> {
       <DefinitionList :items="overview" />
     </SettingsSection>
     <SettingsSection v-if="chatId < 0" :label="t('quota.title')">
-      <CreditGrant
-        scope="chat"
-        :account-id="chatId"
+      <CreditBalance
+        :chat-id="chatId"
         :balance="chat.data.value?.agent_quota?.credits ?? 0"
         :disabled="!session.isOwner"
         @updated="chat.data.value && (chat.data.value.agent_quota = $event)"

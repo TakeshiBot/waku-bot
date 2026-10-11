@@ -175,11 +175,6 @@ export interface ChatDetail {
   agent_quota?: AgentUsage | null;
 }
 
-export interface CreditGrantResult {
-  quota: AgentUsage;
-  applied: boolean;
-}
-
 export interface QuotaSettings {
   free_daily_tokens: number;
 }

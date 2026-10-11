@@ -176,7 +176,7 @@ async def _plan(subject: Subject) -> tuple[list[database.ChargeAccount], bool]:
 async def get_state(subject: Subject) -> QuotaState:
     """Full read-only usage/quota/credits and exemption state for /quota and rejection notices."""
     accounts, exempt = await _plan(subject)
-    day = database.utc_day()
+    day = database.quota_day()
     states: list[AccountState] = []
     for account in accounts:
         requests, free_used, input_tokens, output_tokens = await database.get_usage(
@@ -212,7 +212,7 @@ async def can_start(subject: Subject) -> bool:
 
 
 async def _has_capacity(accounts: list[database.ChargeAccount]) -> bool:
-    day = database.utc_day()
+    day = database.quota_day()
     for account in accounts:
         if account.free_limit is None:
             # This account has unlimited free usage (agent_quota_free_daily_tokens = 0).
@@ -237,7 +237,7 @@ async def settle(subject: Subject, usage: RunUsage | None) -> None:
     global administrators and exempt groups.
     """
     accounts, exempt = await _plan(subject)
-    day = database.utc_day()
+    day = database.quota_day()
     input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
     output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
     await database.record_and_charge(
