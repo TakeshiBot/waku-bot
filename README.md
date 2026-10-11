@@ -63,7 +63,7 @@ Guest Mode gửi Thinking trước khi gọi AI, rồi sửa đúng tin Guest đ
 lời; khi bật `agent_streaming`, nội dung được cập nhật trong lúc sinh. Bot thử khối
 Thinking gốc qua Guest query; nếu Telegram từ chối định dạng, dùng thông báo
 Thinking có thể sửa. Luồng này dùng ID tin inline do Telegram trả về, không gửi
-qua ID chat thường. Business nhận cả văn bản và Rich Message từ bot khác; xem
+qua ID chat thường. Business chỉ trả lời người dùng trong DM, bỏ qua bot khác; xem
 [cấu hình và giới hạn hội thoại](docs/docs/telegram-business.md).
 
 Discord dùng được ngay sau khi thêm vào server, không cần duyệt. Dùng `/config`

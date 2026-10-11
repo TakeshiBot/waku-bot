@@ -35,10 +35,6 @@ _active_outputs: dict[tuple[str, int], object] = {}
 _processed_messages: OrderedDict[tuple[str, int, int], float] = OrderedDict()
 _HISTORY_LIMIT = 20
 _MAX_PROCESSED_MESSAGES = 4096
-_bot_turns: OrderedDict[tuple[str, int], list[float]] = OrderedDict()
-_global_bot_turns: list[float] = []
-_BOT_WINDOW = 300.0
-_MAX_BOT_TURNS = 6
 
 
 def _should_reply(message: Message) -> bool:
@@ -50,13 +46,14 @@ def _should_reply(message: Message) -> bool:
         and app_config.agent_model
         and message.business_connection_id
         and message.chat
-        and message.chat.type in (enums.ChatType.PRIVATE, enums.ChatType.BOT)
+        and message.chat.type == enums.ChatType.PRIVATE
         and message.chat.id
         and message.id
         and text.strip()
         and not text.lstrip().startswith("/")
         and not message.outgoing
         and sender
+        and not _automated_sender(message)
     )
 
 
@@ -69,25 +66,6 @@ def _automated_sender(message: Message) -> bool:
         or getattr(getattr(message, "raw", None), "via_business_bot_id", None)
         or getattr(message, "via_bot", None)
     )
-
-
-def _claim_bot_turn(message: Message) -> bool:
-    key = (message.business_connection_id, message.chat.id)
-    if not _automated_sender(message):
-        _bot_turns.pop(key, None)
-        return True
-    now = time.monotonic()
-    turns = [stamp for stamp in _bot_turns.pop(key, []) if now - stamp < _BOT_WINDOW]
-    _bot_turns[key] = turns
-    while len(_bot_turns) > _MAX_PROCESSED_MESSAGES:
-        _bot_turns.popitem(last=False)
-    _global_bot_turns[:] = [stamp for stamp in _global_bot_turns if now - stamp < 60]
-    if len(turns) >= _MAX_BOT_TURNS or len(_global_bot_turns) >= 60:
-        logger.info("Telegram Business automated conversation paused: turn limit")
-        return False
-    turns.append(now)
-    _global_bot_turns.append(now)
-    return True
 
 
 def _business_prompt() -> str:
@@ -304,8 +282,6 @@ async def _reply_to_business_message(client: Client, message: Message) -> None:
         )
         if not _claim_message(message, timeout):
             return
-        if not _claim_bot_turn(message):
-            return
         task = asyncio.create_task(
             _run_business_turn(client, message, revision, timeout),
             name="business-chat-turn",
@@ -413,12 +389,3 @@ async def business_chat_message(client: Client, message: Message) -> None:
         bool(message.rich_message),
     )
     await _reply_to_business_message(client, message)
-
-
-@Client.on_edited_business_message(group=0)
-async def business_chat_edited_message(client: Client, message: Message) -> None:
-    # A streaming bot may publish a textless placeholder and later replace it
-    # with the answer. Handle that first usable bot message, once by message ID;
-    # ordinary user edits must not trigger another AI turn.
-    if _automated_sender(message):
-        await _reply_to_business_message(client, message)

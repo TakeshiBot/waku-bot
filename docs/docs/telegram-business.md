@@ -48,18 +48,11 @@ cho cuộc chat riêng có tin đến trong 24 giờ gần nhất. Xem
 
 ## Hành vi
 
-- Trả lời tin văn bản và Rich Message Telegram chuyển tới kết nối, kể cả tin từ
-  bot; bỏ qua lệnh bắt đầu bằng `/`, tin đi và tin của chủ kết nối.
-- Để trả lời bot khác, bật **Bot to Bot Communication Mode** trong BotFather.
-  Phạm vi chat và quyền `can_reply` của kết nối vẫn phải cho phép cuộc chat đó.
-  Bot chỉ có thể xử lý những update Telegram thực sự chuyển đến. Tài liệu
-  [Bot-to-Bot](https://core.telegram.org/api/bots/bot-to-bot) mô tả gửi từ kết nối
-  Business tới tài khoản bot; không bảo đảm mọi câu trả lời tự động giữa hai tài
-  khoản người dùng gắn bot Business đều được chuyển tới cả hai bot. Thấy tin
-  trong app Telegram chưa đủ để xác nhận bot đã nhận update tương ứng.
-- Chống lặp bằng cách loại tin trùng và giới hạn 6 lượt tự trả lời bot trong mỗi
-  cuộc chat/kết nối trong 5 phút, tối đa 60 lượt toàn bot mỗi phút. Tin do người
-  dùng tự gửi sẽ mở lại lượt hội thoại cho cuộc chat; lịch sử AI được giữ nguyên.
+- Chỉ trả lời tin văn bản và Rich Message từ người dùng trong DM thuộc kết nối.
+  Bỏ qua tài khoản bot, tin gửi qua bot khác hoặc bot Business, lệnh bắt đầu
+  bằng `/`, tin đi và tin của chủ kết nối. Bật Bot-to-Bot trong BotFather cũng
+  không làm Business tự trả lời bot khác.
+- Loại tin trùng theo kết nối, cuộc chat và ID tin nhắn.
 - Lịch sử AI được tách theo kết nối Business và cuộc chat, không dùng lịch sử DM
   thường, nhóm Telegram hoặc Discord.
 - Khi bật streaming, thử draft gốc với Thinking trước khi AI sinh ra nội dung,
@@ -67,10 +60,8 @@ cho cuộc chat riêng có tin đến trong 24 giờ gần nhất. Xem
   cho kết nối/cuộc chat này, gửi phần văn bản đầu tiên và sửa cùng tin đó khoảng
   2 giây một lần. Kết quả cuối giữ rich message nếu bật; chỉ gửi tin bổ sung khi
   nội dung vượt giới hạn Telegram. Mọi thao tác đều đi qua đúng kết nối Business.
-- Tắt công tắc hoặc thu hồi quyền kết nối sẽ ngăn bot tiếp tục trả lời. Với bot
-  streaming, nội dung được bổ sung bằng một update sửa tin cũng có thể bắt đầu
-  lượt trả lời nếu tin đó chưa được xử lý. Tin đã trả lời, tin người dùng sửa
-  hoặc tin bị xoá không tạo thêm lượt AI.
+- Tắt công tắc hoặc thu hồi quyền kết nối sẽ ngăn bot tiếp tục trả lời.
+  Update sửa hoặc xoá tin không tạo thêm lượt AI.
 
 Nếu chưa trả lời, kiểm tra công tắc Business, `agent`, model/provider, Secretary
 Mode, phạm vi chat và quyền trả lời trong tài khoản Telegram. Kết nối Business
