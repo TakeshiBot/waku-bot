@@ -59,6 +59,13 @@ lực ngay, áp dụng cho người dùng thường, nhóm và Guest Mode; tiế
 vẫn chạy. Khi tắt, admin bot vẫn chat và dùng lệnh trong DM như bình thường;
 bên ngoài DM cũng tắt với admin bot. Business dùng công tắc riêng, không bị ảnh hưởng.
 
+Guest Mode gửi Thinking trước khi gọi AI, rồi sửa đúng tin Guest đó thành câu trả
+lời; khi bật `agent_streaming`, nội dung được cập nhật trong lúc sinh. Bot thử khối
+Thinking gốc qua Guest query; nếu Telegram từ chối định dạng, dùng thông báo
+Thinking có thể sửa. Luồng này dùng ID tin inline do Telegram trả về, không gửi
+qua ID chat thường. Business nhận cả văn bản và Rich Message từ bot khác; xem
+[cấu hình và giới hạn hội thoại](docs/docs/telegram-business.md).
+
 Discord dùng được ngay sau khi thêm vào server, không cần duyệt. Dùng `/config`
 để mở menu embed riêng tư trong server; `/help` liệt kê các lệnh. Admin bot dùng
 `!bc`, `!info [ID server]`, `!server` và mọi slash command trong DM; chat DM của

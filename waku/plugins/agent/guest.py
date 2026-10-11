@@ -15,6 +15,7 @@ from waku.config import app_config
 from waku.enums import ChatID
 from waku.logger import logger
 from waku.plugins.agent import provider, quota
+from waku.plugins.agent.guest_output import GuestStreamingOutput
 from waku.plugins.agent.localization import locale_scope, tr
 
 _seen: OrderedDict[tuple[int, str], float] = OrderedDict()
@@ -136,13 +137,19 @@ async def guest_chat(client, message):
     key = (id(client), actor.id)
     acquired = False
     attempted = False
+    output = None
     stage = "user"
 
     async def answer(text):
         nonlocal attempted
         # An uncertain Telegram receipt must not result in a second answer.
         attempted = True
-        if await _answer(client, message, text):
+        delivered = (
+            await output.finalize(text)
+            if output is not None and output.inline_id is not None
+            else await _answer(client, message, text)
+        )
+        if delivered:
             logger.info("Telegram Guest answer delivered")
 
     try:
@@ -167,17 +174,29 @@ async def guest_chat(client, message):
             if not await quota.can_start(subject):
                 await answer(quota.exhausted_text(await quota.get_state(subject), lang))
                 return
+            stage = "thinking"
+            output = GuestStreamingOutput(client, message)
+            attempted = True
+            if not await output.start_thinking():
+                return
             stage = "model"
-            result = await asyncio.wait_for(
-                _make_agent(message, lang).run(
-                    _input(message), usage_limits=UsageLimits(request_limit=3)
-                ),
-                timeout=90,
-            )
+            async with asyncio.timeout(90):
+                chat_agent = _make_agent(message, lang)
+                if app_config.agent_streaming:
+                    async with chat_agent.run_stream(
+                        _input(message), usage_limits=UsageLimits(request_limit=3)
+                    ) as result:
+                        async for delta in result.stream_text(delta=True):
+                            await output.append_delta(delta)
+                        text = (await result.get_output()).strip()
+                else:
+                    result = await chat_agent.run(
+                        _input(message), usage_limits=UsageLimits(request_limit=3)
+                    )
+                    text = result.output.strip()
             # Charge generated tokens even when Telegram cannot deliver the answer.
             stage = "settle"
             await quota.settle(subject, result.usage)
-            text = result.output.strip()
             stage = "delivery"
             await answer(text or tr("guest.error"))
     except asyncio.CancelledError:
@@ -186,7 +205,9 @@ async def guest_chat(client, message):
         logger.warning(
             "Telegram Guest chat failed at {}: {}", stage, type(error).__name__
         )
-        if not attempted:
+        if not attempted or (
+            output is not None and output.inline_id is not None and stage != "delivery"
+        ):
             try:
                 await answer(tr("guest.error", locale=lang))
             except Exception as delivery_error:

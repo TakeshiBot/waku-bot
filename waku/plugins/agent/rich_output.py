@@ -73,6 +73,8 @@ async def edit_business_message_text(
                 raw.types.UpdateEditChannelMessage,
             ),
         ):
+            if update.message.id != message_id:
+                continue
             # Short updates carry no peer dictionaries. Build a bound native
             # Message from the known chat instead of fetching missing peers
             # after a successful edit (or letting the SDK parser fail).
@@ -97,6 +99,24 @@ async def edit_business_message_text(
                 business_connection_id=connection_id,
                 replies=0,
             )
+    # Short acknowledgements do not include an edited Message object. The
+    # known target ID still confirms the edit; never borrow an unrelated ID.
+    receipt_id = sent_message_id(result)
+    if receipt_id == message_id:
+        return pyrogram.types.Message(
+            id=message_id,
+            chat=source.chat,
+            text=parsed["message"] or None,
+            entities=entities,
+            business_connection_id=connection_id,
+            outgoing=True,
+            client=client,
+        )
+    logger.warning(
+        "Business edit receipt missing (result={}, updates={})",
+        type(result).__name__,
+        [type(update).__name__ for update in updates],
+    )
     return None
 
 
@@ -367,7 +387,17 @@ async def send_generation_message(
                 query,
                 business_connection_id=getattr(source, "business_connection_id", None),
             )
-            return sent_message_id(result)
+            message_id = sent_message_id(result)
+            if message_id is None:
+                logger.warning(
+                    "Generation receipt missing (result={}, updates={})",
+                    type(result).__name__,
+                    [
+                        type(update).__name__
+                        for update in getattr(result, "updates", []) or []
+                    ],
+                )
+            return message_id
         except pyrogram.errors.FloodWait as error:
             await asyncio.sleep(max(1, error.value))
     return None

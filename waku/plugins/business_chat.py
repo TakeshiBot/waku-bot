@@ -13,10 +13,11 @@ from collections import OrderedDict
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from pyrogram import Client, enums, filters
+from pyrogram import Client, enums
 from pyrogram.types import BusinessConnection, Message
 
 from waku.common.memory_store import memttlcache
+from waku.common.rich_message import message_plain_text
 from waku.config import app_config
 from waku.logger import logger
 
@@ -34,26 +35,59 @@ _active_outputs: dict[tuple[str, int], object] = {}
 _processed_messages: OrderedDict[tuple[str, int, int], float] = OrderedDict()
 _HISTORY_LIMIT = 20
 _MAX_PROCESSED_MESSAGES = 4096
+_bot_turns: OrderedDict[tuple[str, int], list[float]] = OrderedDict()
+_global_bot_turns: list[float] = []
+_BOT_WINDOW = 300.0
+_MAX_BOT_TURNS = 6
 
 
 def _should_reply(message: Message) -> bool:
     sender = message.from_user
+    text = message_plain_text(message)
     return bool(
         app_config.business_chat_enabled
         and app_config.agent
         and app_config.agent_model
         and message.business_connection_id
         and message.chat
-        and message.chat.type == enums.ChatType.PRIVATE
+        and message.chat.type in (enums.ChatType.PRIVATE, enums.ChatType.BOT)
         and message.chat.id
         and message.id
-        and message.text
-        and message.text.strip()
-        and not message.text.lstrip().startswith("/")
+        and text.strip()
+        and not text.lstrip().startswith("/")
         and not message.outgoing
         and sender
-        and not sender.is_bot
     )
+
+
+def _automated_sender(message: Message) -> bool:
+    # Business replies are authored by a USER account; is_bot alone misses them.
+    return bool(
+        message.from_user
+        and message.from_user.is_bot
+        or getattr(message, "sender_business_bot", None)
+        or getattr(getattr(message, "raw", None), "via_business_bot_id", None)
+        or getattr(message, "via_bot", None)
+    )
+
+
+def _claim_bot_turn(message: Message) -> bool:
+    key = (message.business_connection_id, message.chat.id)
+    if not _automated_sender(message):
+        _bot_turns.pop(key, None)
+        return True
+    now = time.monotonic()
+    turns = [stamp for stamp in _bot_turns.pop(key, []) if now - stamp < _BOT_WINDOW]
+    _bot_turns[key] = turns
+    while len(_bot_turns) > _MAX_PROCESSED_MESSAGES:
+        _bot_turns.popitem(last=False)
+    _global_bot_turns[:] = [stamp for stamp in _global_bot_turns if now - stamp < 60]
+    if len(turns) >= _MAX_BOT_TURNS or len(_global_bot_turns) >= 60:
+        logger.info("Telegram Business automated conversation paused: turn limit")
+        return False
+    turns.append(now)
+    _global_bot_turns.append(now)
+    return True
 
 
 def _business_prompt() -> str:
@@ -270,6 +304,8 @@ async def _reply_to_business_message(client: Client, message: Message) -> None:
         )
         if not _claim_message(message, timeout):
             return
+        if not _claim_bot_turn(message):
+            return
         task = asyncio.create_task(
             _run_business_turn(client, message, revision, timeout),
             name="business-chat-turn",
@@ -306,7 +342,7 @@ async def _run_business_turn(client, message, revision, timeout):
                 )
                 await output.start_thinking()
                 async with chat_agent.run_stream(
-                    message.text,
+                    message_plain_text(message),
                     message_history=history,
                     usage_limits=_usage_limits(),
                     usage=usage,
@@ -326,7 +362,7 @@ async def _run_business_turn(client, message, revision, timeout):
                     return
             else:
                 result = await chat_agent.run(
-                    message.text,
+                    message_plain_text(message),
                     message_history=history,
                     usage_limits=_usage_limits(),
                     usage=usage,
@@ -351,11 +387,38 @@ async def _run_business_turn(client, message, revision, timeout):
         raise
     except Exception as error:
         await _abort_output(output)
-        logger.warning(f"Telegram Business chat failed: {error.__class__.__name__}")
+        chain = []
+        current = error
+        while current is not None and len(chain) < 5:
+            chain.append(type(current).__name__)
+            current = current.__cause__
+        if type(error).__name__ == "DeliveryUncertain" and str(error) in {
+            "Missing Business streaming receipt",
+            "Unconfirmed Business streaming send",
+            "Missing generation delivery receipt",
+            "Unconfirmed generation delivery",
+        }:
+            chain.append(str(error))
+        logger.warning("Telegram Business chat failed: {}", " <- ".join(chain))
     finally:
         _active_outputs.pop(lock_key, None)
 
 
-@Client.on_business_message(filters.private & filters.text, group=0)
+@Client.on_business_message(group=0)
 async def business_chat_message(client: Client, message: Message) -> None:
+    logger.info(
+        "Telegram Business update (incoming={}, automated={}, rich={})",
+        not message.outgoing,
+        _automated_sender(message),
+        bool(message.rich_message),
+    )
     await _reply_to_business_message(client, message)
+
+
+@Client.on_edited_business_message(group=0)
+async def business_chat_edited_message(client: Client, message: Message) -> None:
+    # A streaming bot may publish a textless placeholder and later replace it
+    # with the answer. Handle that first usable bot message, once by message ID;
+    # ordinary user edits must not trigger another AI turn.
+    if _automated_sender(message):
+        await _reply_to_business_message(client, message)
