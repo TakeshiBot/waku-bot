@@ -158,7 +158,9 @@ def _label(key: str, value, session: ConfigSession) -> str:
     status = "✅ " if value is True else "❌ " if value is False else ""
     changed = "📝 " if key in session.changes else "🔄 " if key in session.dirty else ""
     name = (
-        _tr("telegram_enabled", session)
+        _tr("dm_sticker_download", session)
+        if key == "dm_sticker_download_enabled"
+        else _tr("telegram_enabled", session)
         if key == "telegram_enabled"
         else _tr("business_labels." + key, session)
         if key
@@ -226,7 +228,11 @@ def _draft_values(session: ConfigSession) -> dict:
 
 
 def _editable_fields(editor: SettingsEditor) -> list[str]:
-    fields = editor.configured_fields()
+    fields = [
+        key
+        for key in editor.configured_fields()
+        if key != "dm_sticker_download_enabled"
+    ]
     # Make recovery available even on an existing deployment's older TOML.
     if "telegram_enabled" not in fields:
         fields.insert(0, "telegram_enabled")
@@ -456,7 +462,7 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
     if action == "home":
         session.entries = []
         session.provider_name = None
-        text += "\n\n" + _runtime_summary(session)
+        text += "\n" + _runtime_summary(session)
         text += "\n\n" + _tr(
             "summary",
             session,
@@ -505,9 +511,24 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
             )
             for group in visible_groups
         ]
+        buttons = []
         for group, label in groups[page * _PAGE_SIZE : (page + 1) * _PAGE_SIZE]:
             destination = "providers:0" if group == "providers" else f"group:{group}:0"
-            rows.append([_button(label, token, destination)])
+            buttons.append(_button(label, token, destination))
+        rows.extend(_rows(buttons))
+        rows.append(
+            [
+                _button(
+                    _label(
+                        "dm_sticker_download_enabled",
+                        _entry_value(values, "dm_sticker_download_enabled"),
+                        session,
+                    ),
+                    token,
+                    "sticker_download",
+                )
+            ]
+        )
         previous = f"groups:{page - 1}" if page else None
         following = f"groups:{page + 1}" if page + 1 < pages else None
     elif action.startswith("group:"):
@@ -784,6 +805,16 @@ async def private_config_callback(client: Client, query: CallbackQuery):
                 _reset_draft(session)
                 await _refresh_restart_pending(session)
                 action = "home"
+            elif action == "sticker_download":
+                value = _entry_value(
+                    _draft_values(session), "dm_sticker_download_enabled"
+                )
+                await _stage_setting(
+                    session, "dm_sticker_download_enabled", str(not value).lower()
+                )
+                await query.answer(_tr("staged", session), show_alert=True)
+                answered = True
+                action = session.location
             elif action.startswith(("edit:", "toggle:")):
                 index = int(action.split(":")[1])
                 key = session.entries[index]

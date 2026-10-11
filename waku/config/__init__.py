@@ -48,6 +48,8 @@ class _AppConfig(pydantic.BaseModel):
     # Pause native Telegram/Guest responses without disconnecting the client.
     # Bot-admin DMs remain active; Business has its own independent switch.
     telegram_enabled: bool = True
+    # Return sticker files sent to the bot's ordinary private chat.
+    dm_sticker_download_enabled: bool = True
     db_url: str = "sqlite+aiosqlite:///./data/waku.db"
     # APScheduler job store database URL (sync)
     # If not set, uses db_url with async driver replaced by sync driver

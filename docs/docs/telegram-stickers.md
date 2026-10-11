@@ -57,3 +57,11 @@ Các lệnh và tin nhắn bị bỏ qua không tính vào chu kỳ.
 Mỗi lần mô tả hoặc chọn sticker bằng chế độ `chat` là một lần gọi AI và được
 tính vào quota. Bot chỉ lưu sticker sau khi mô tả thành công; học theo mẫu không
 đảm bảo mọi sticker gửi vào nhóm đều được lưu.
+
+## Tải sticker trong DM
+
+Gửi sticker vào DM của bot để nhận file `.webp`, `.tgs` hoặc `.webm` tương ứng.
+Admin bot có thể bật/tắt **Tải Sticker DM** ở cuối trang **Cài đặt** trong `/config`,
+rồi bấm **Lưu** để áp dụng ngay. **Đóng** bỏ thay đổi chưa lưu.
+Công tắc `dm_sticker_download_enabled` mặc định bật và không ảnh hưởng tới việc
+học/gửi sticker của AI trong nhóm.

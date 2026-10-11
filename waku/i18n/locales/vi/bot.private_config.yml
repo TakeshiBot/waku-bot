@@ -3,8 +3,9 @@ bot:
     info_command: 'Xem các nhóm bot đã ghi nhận'
     title: ⌬ <b>Cấu hình Waku</b>
     telegram_enabled: Bot Telegram
+    dm_sticker_download: Tải Sticker DM
     runtime:
-      summary: "<b>🤖 AI · Cấu hình đang áp dụng</b>\nAI: {agent} · Streaming: {streaming} · Rich message: {rich}\nChat: <code>{model}</code>\nVision: <code>{vision}</code>\n\n<b>🧠 Sticker</b>\nHọc sticker: {sticker} · Tìm kiếm: <code>{sticker_mode}</code>\nModel mô tả: <code>{sticker_model}</code>\n\n<b>🛰️ Dịch vụ</b>\nTelegram: {telegram} · Discord: {discord}\nTelegram Business: {business} · Mini App: {webapp}\n\n<b>⚙️ Cơ bản</b>\nTên: <code>{nickname}</code> · Ngôn ngữ: <code>{language}</code>\nMúi giờ: <code>{timezone}</code> · Log: <code>{log_level}</code>"
+      summary: "│\n┟ <b>AI · Cấu hình đang áp dụng</b>\n│ AI: {agent} · Streaming: {streaming} · Rich message: {rich}\n│ Chat: <code>{model}</code>\n│ Vision: <code>{vision}</code>\n│\n┠ <b>Sticker</b>\n│ Học sticker: {sticker} · Tìm kiếm: <code>{sticker_mode}</code>\n│ Model mô tả: <code>{sticker_model}</code>\n│\n┠ <b>Dịch vụ</b>\n│ Telegram: {telegram} · Discord: {discord}\n│ Telegram Business: {business} · Mini App: {webapp}\n│\n┖ <b>Cơ bản</b>\n  Tên: <code>{nickname}</code> · Ngôn ngữ: <code>{language}</code>\n  Múi giờ: <code>{timezone}</code> · Log: <code>{log_level}</code>"
       enabled: ✅ Bật
       disabled: ❌ Tắt
       discord:
@@ -35,7 +36,7 @@ bot:
     closed: Đã đóng cấu hình.
     edit: ✏️ Sửa giá trị
     toggle: Bật / tắt
-    providers: 🔌 Nhà cung cấp AI
+    providers: Nhà Cung Cấp
     add_provider: ➕ Thêm provider
     delete_provider: 🗑 Xoá provider
     restart: 🔄 Khởi động lại để áp dụng
@@ -62,15 +63,15 @@ bot:
     restarting: 'Bot đang khởi động lại và sẽ tự kết nối lại.'
     cancelled: Đã huỷ sửa giá trị.
     groups:
-      base: Cơ bản và vận hành
-      agent: AI, model và prompt
+      base: Cơ Bản
+      agent: AI & Prompt
       discord: Discord
-      webapp: Mini App và HTTP
-      rss: RSS và nội dung liên kết
-      services: Dịch vụ và kết nối
-      cache: Cache và avatar
-      economy: Coin và chi phí
-      business: Telegram Business
+      webapp: Mini App
+      rss: RSS & Liên Kết
+      services: Dịch Vụ
+      cache: Cache & Avatar
+      economy: Coin & Chi Phí
+      business: Business
     errors:
       menu_failed: Không cập nhật được menu. Thử nhấn lại nút hoặc mở lại /config.
       missing_file: Không tìm thấy file settings đang được bot sử dụng.

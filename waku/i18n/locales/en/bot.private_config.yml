@@ -3,8 +3,9 @@ bot:
     info_command: 'List groups known to the bot'
     title: ⌬ <b>Waku settings</b>
     telegram_enabled: Telegram Bot
+    dm_sticker_download: DM Sticker Download
     runtime:
-      summary: "<b>🤖 AI · Active settings</b>\nAI: {agent} · Streaming: {streaming} · Rich messages: {rich}\nChat: <code>{model}</code>\nVision: <code>{vision}</code>\n\n<b>🧠 Stickers</b>\nLearning: {sticker} · Search: <code>{sticker_mode}</code>\nDescription model: <code>{sticker_model}</code>\n\n<b>🛰️ Services</b>\nTelegram: {telegram} · Discord: {discord}\nTelegram Business: {business} · Mini App: {webapp}\n\n<b>⚙️ Basics</b>\nName: <code>{nickname}</code> · Language: <code>{language}</code>\nTimezone: <code>{timezone}</code> · Log: <code>{log_level}</code>"
+      summary: "│\n┟ <b>AI · Active settings</b>\n│ AI: {agent} · Streaming: {streaming} · Rich messages: {rich}\n│ Chat: <code>{model}</code>\n│ Vision: <code>{vision}</code>\n│\n┠ <b>Stickers</b>\n│ Learning: {sticker} · Search: <code>{sticker_mode}</code>\n│ Description model: <code>{sticker_model}</code>\n│\n┠ <b>Services</b>\n│ Telegram: {telegram} · Discord: {discord}\n│ Telegram Business: {business} · Mini App: {webapp}\n│\n┖ <b>Basics</b>\n  Name: <code>{nickname}</code> · Language: <code>{language}</code>\n  Timezone: <code>{timezone}</code> · Log: <code>{log_level}</code>"
       enabled: ✅ On
       disabled: ❌ Off
       discord:
@@ -35,7 +36,7 @@ bot:
     closed: Settings closed.
     edit: ✏️ Edit value
     toggle: Toggle
-    providers: 🔌 AI providers
+    providers: AI Providers
     add_provider: ➕ Add provider
     delete_provider: 🗑 Delete provider
     restart: 🔄 Restart to apply
@@ -61,15 +62,15 @@ bot:
     restarting: 'The bot is restarting and will reconnect automatically.'
     cancelled: Edit cancelled.
     groups:
-      base: General and runtime
-      agent: AI, models and prompts
+      base: General
+      agent: AI & Prompts
       discord: Discord
-      webapp: Mini App and HTTP
-      rss: RSS and linked content
-      services: Services and connections
-      cache: Cache and avatars
-      economy: Coins and costs
-      business: Telegram Business
+      webapp: Mini App
+      rss: RSS & Links
+      services: Services
+      cache: Cache & Avatars
+      economy: Coins & Costs
+      business: Business
     errors:
       menu_failed: Could not update the menu. Try the button again or reopen /config.
       missing_file: No active settings file was found.

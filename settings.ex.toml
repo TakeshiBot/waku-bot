@@ -1,5 +1,6 @@
 # Telegram
 telegram_enabled = true
+dm_sticker_download_enabled = true
 token = ""
 owners = []
 api_id = 1025907
