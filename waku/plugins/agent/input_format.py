@@ -15,6 +15,11 @@ import pyrogram
 from pydantic_ai import BinaryContent, UserContent
 
 from waku import enums
+from waku.common.document_inputs import (
+    document_contexts,
+    document_prompt,
+    file_metadata,
+)
 from waku.common.rich_message import message_plain_text, rich_media_messages
 from waku.common.utils import is_explicit_reply
 from waku.config import app_config
@@ -538,6 +543,11 @@ def _msg_line(
     type_name = media_type_name(media)
     if type_name:
         attrs.append(f"media_type={_quote(type_name)}")
+    metadata = file_metadata(message)
+    if metadata:
+        for key in ("file_name", "mime_type", "size_bytes"):
+            if metadata[key] is not None:
+                attrs.append(f"{key}={_quote(str(metadata[key]))}")
     if image_number is not None:
         if referenced:
             # already delivered in an earlier turn (or earlier in this one):
@@ -772,6 +782,11 @@ async def build_group_prompt(
     )
 
     parts: list[str] = [_env_header(message, ctx)]
+    from .prompt import _download_media_with_timeout
+
+    documents = await document_contexts(
+        client, [message, reply_msg], download=_download_media_with_timeout
+    )
     # Attachment descriptors follow binary delivery order; human message text
     # below still follows history/current chronology. Transcription relies on
     # the image_number occurrence order, not the numeric value alone.
@@ -788,6 +803,9 @@ async def build_group_prompt(
     current_lines = [tr("current_user", p0=sender_label)]
     current_text = message_plain_text(message)
     current_lines.append(tr("message_content", p0=_quote(current_text)))
+    metadata = file_metadata(message)
+    if metadata:
+        current_lines.append(f"Attachment: {metadata!r}")
     if message.id in budget.numbered:
         if message.id in budget.referenced_ids:
             current_lines.append(
@@ -806,6 +824,9 @@ async def build_group_prompt(
         current_lines.append(tr("reply_heading"))
         current_lines.append(tr("reply_sender", p0=reply_label))
         current_lines.append(tr("reply_content", p0=_quote(reply_text)))
+        metadata = file_metadata(reply_msg)
+        if metadata:
+            current_lines.append(f"Replied attachment: {metadata!r}")
         if reply_msg.id in budget.numbered:
             if reply_msg.id in budget.referenced_ids:
                 current_lines.append(
@@ -819,6 +840,8 @@ async def build_group_prompt(
     parts.append("\n".join(current_lines))
     if rich_lines:
         parts.append("\n".join(rich_lines))
+    if documents:
+        parts.append(document_prompt(documents))
 
     markdown = "\n\n".join(parts)
     return [markdown, *current_rich_binaries, *budget.binaries, *rich_binaries], {

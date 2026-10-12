@@ -25,6 +25,12 @@ from pydantic_ai.messages import (
 from pyrogram.client import Client as PyrogramClient
 
 from waku import affection, common
+from waku.common.document_inputs import (
+    DocumentBudget,
+    document_contexts,
+    document_prompt,
+    file_metadata,
+)
 from waku.common.memory_store import memttlcache
 from waku.common.rich_message import message_plain_text
 from waku.common.utils import GROUP_CHAT_TYPES, is_explicit_reply
@@ -285,6 +291,7 @@ async def get_input_prompt(
     dm_media_remaining = min(50, input_format._effective_budget())
     dm_rich_seen: dict[str, int] = {}
     dm_next_number = 1
+    dm_document_budget = DocumentBudget()
 
     async def build_contents_from_message(
         msg: pyrogram.types.Message,
@@ -305,13 +312,29 @@ async def get_input_prompt(
         text_part = f"{ctx_text or ''}\n{formatted_text}".strip()
         if text_part:
             contents.append(text_part)
+        metadata = file_metadata(msg)
+        if metadata:
+            contents.append(f"Attachment: {metadata!r}")
+        if include_media:
+            documents = await document_contexts(
+                client,
+                [msg],
+                download=_download_media_with_timeout,
+                budget=dm_document_budget,
+            )
+            if documents:
+                contents.append(document_prompt(documents))
+                media_included = any(record.get("text") for record in documents)
 
         if include_media and getattr(msg, "rich_message", None) is not None:
             from .input_format import rich_media_contents
 
             rich_lines, rich_binaries, rich_metadata = await rich_media_contents(
-                client, [msg], initial_seen=dm_rich_seen,
-                start_number=dm_next_number, limit=dm_media_remaining,
+                client,
+                [msg],
+                initial_seen=dm_rich_seen,
+                start_number=dm_next_number,
+                limit=dm_media_remaining,
             )
             if rich_lines:
                 contents.append("\n".join(rich_lines))
@@ -349,36 +372,19 @@ async def get_input_prompt(
             contents.append("\n".join(lines))
 
         if media and media_message and include_media:
-            # Text documents are plain text: readable without multimodal
-            # support (only binary media depends on it).
-            if media == pyrogram.enums.MessageMediaType.DOCUMENT:
-                document = media_message.document
-                if (
-                    document
-                    and document.file_id
-                    and document.file_size is not None
-                    and document.file_size <= 10 * 1024 * 1024
-                ):
-                    mime_type = document.mime_type
-                    if not mime_type:
-                        thetype, _ = mimetypes.guess_type(document.file_name or "")
-                        mime_type = thetype or "application/octet-stream"
-                    if mime_type.split(";")[0].startswith("text/"):
-                        doc_file = await _download_media_with_timeout(
-                            client, document.file_id
-                        )
-                        if doc_file:
-                            try:
-                                text = doc_file.getvalue().decode("utf-8")
-                                contents.append(text)
-                                media_included = True
-                            except UnicodeDecodeError:
-                                pass
-            known_media_number = dm_rich_seen.get(input_format.file_unique_id_of(msg) or "")
+            known_media_number = dm_rich_seen.get(
+                input_format.file_unique_id_of(msg) or ""
+            )
             if known_media_number and not media_included:
-                contents.append(f"    - <media message_id={msg.id} referenced_media={known_media_number} >")
+                contents.append(
+                    f"    - <media message_id={msg.id} referenced_media={known_media_number} >"
+                )
                 media_included = True
-            if app_config.agent_multimodal and dm_media_remaining > 0 and not known_media_number:
+            if (
+                app_config.agent_multimodal
+                and dm_media_remaining > 0
+                and not known_media_number
+            ):
                 match media:
                     case pyrogram.enums.MessageMediaType.PHOTO:
                         photo = media_message.photo
@@ -477,7 +483,10 @@ async def get_input_prompt(
                                     document.file_name or ""
                                 )
                                 mime_type = thetype or "application/octet-stream"
-                            if mime_type in app_config.agent_multimodal_inputs:
+                            if (
+                                mime_type in app_config.agent_multimodal_inputs
+                                and not media_included
+                            ):
                                 doc_file = await _download_media_with_timeout(
                                     client, document.file_id
                                 )
@@ -556,14 +565,23 @@ async def get_input_prompt(
             )
         ):
             contents.append(_media_omitted_note(media, media_message))
-        ordinary_count = sum(isinstance(item, BinaryContent) for item in contents) - rich_count
+        ordinary_count = (
+            sum(isinstance(item, BinaryContent) for item in contents) - rich_count
+        )
         dm_media_remaining -= ordinary_count
         if ordinary_count:
             unique = input_format.file_unique_id_of(msg)
             if unique:
                 dm_rich_seen[unique] = dm_next_number
-            first_binary = next(index for index, item in enumerate(contents) if isinstance(item, BinaryContent))
-            contents.insert(first_binary, f"    - <media message_id={msg.id} image_number={dm_next_number} >")
+            first_binary = next(
+                index
+                for index, item in enumerate(contents)
+                if isinstance(item, BinaryContent)
+            )
+            contents.insert(
+                first_binary,
+                f"    - <media message_id={msg.id} image_number={dm_next_number} >",
+            )
             dm_next_number += ordinary_count
         return contents
 

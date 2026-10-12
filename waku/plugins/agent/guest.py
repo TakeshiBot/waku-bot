@@ -43,11 +43,14 @@ def _clip(text, limit=4096):
 
 
 def _frame(message):
+    from waku.common.document_inputs import file_metadata
+
     author = message.from_user
     return {
         "sender": author.full_name if author else "",
         "text": _clip(message_plain_text(message), 12000),
         "media": str(message.media) if message.media else None,
+        "attachment": file_metadata(message),
     }
 
 
@@ -62,6 +65,19 @@ def _input(message):
         },
         ensure_ascii=False,
     )
+
+
+async def _prepared_input(client, message):
+    from waku.common.document_inputs import document_contexts
+
+    payload = json.loads(_input(message))
+    references = getattr(message, "guest_reference_messages", []) or []
+    if not references and message.reply_to_message:
+        references = [message.reply_to_message]
+    documents = await document_contexts(client, [message, *references[:8]])
+    if documents:
+        payload["document_contents"] = documents
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def _make_agent(message, lang):
@@ -182,16 +198,17 @@ async def guest_chat(client, message):
             stage = "model"
             async with asyncio.timeout(90):
                 chat_agent = _make_agent(message, lang)
+                user_input = await _prepared_input(client, message)
                 if app_config.agent_streaming:
                     async with chat_agent.run_stream(
-                        _input(message), usage_limits=UsageLimits(request_limit=3)
+                        user_input, usage_limits=UsageLimits(request_limit=3)
                     ) as result:
                         async for delta in result.stream_text(delta=True):
                             await output.append_delta(delta)
                         text = (await result.get_output()).strip()
                 else:
                     result = await chat_agent.run(
-                        _input(message), usage_limits=UsageLimits(request_limit=3)
+                        user_input, usage_limits=UsageLimits(request_limit=3)
                     )
                     text = result.output.strip()
             # Charge generated tokens even when Telegram cannot deliver the answer.

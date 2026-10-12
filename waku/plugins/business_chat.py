@@ -1,4 +1,4 @@
-"""Text-only AI replies for connected Telegram Business accounts.
+"""AI replies with readable document context for Telegram Business accounts.
 
 Business updates have their own SDK handlers. They never enter the ordinary
 Telegram DM agent, its tools, database preferences or conversation histories.
@@ -49,7 +49,7 @@ def _should_reply(message: Message) -> bool:
         and message.chat.type == enums.ChatType.PRIVATE
         and message.chat.id
         and message.id
-        and text.strip()
+        and (text.strip() or message.document)
         and not text.lstrip().startswith("/")
         and not message.outgoing
         and sender
@@ -301,6 +301,8 @@ async def _reply_to_business_message(client: Client, message: Message) -> None:
 
 
 async def _run_business_turn(client, message, revision, timeout):
+    from waku.common.document_inputs import business_document_input
+
     lock_key = (message.business_connection_id, message.chat.id)
     output = None
     try:
@@ -312,13 +314,18 @@ async def _run_business_turn(client, message, revision, timeout):
             history = await _compact_business_history(history, chat_agent, usage)
             if not _still_authorized(message, revision):
                 return
+            user_input = await business_document_input(
+                client, message, message_plain_text(message)
+            )
+            if not _still_authorized(message, revision):
+                return
             if app_config.agent_streaming:
                 output = _active_outputs[lock_key] = _new_streaming_output(
                     client, message, revision
                 )
                 await output.start_thinking()
                 async with chat_agent.run_stream(
-                    message_plain_text(message),
+                    user_input,
                     message_history=history,
                     usage_limits=_usage_limits(),
                     usage=usage,
@@ -338,7 +345,7 @@ async def _run_business_turn(client, message, revision, timeout):
                     return
             else:
                 result = await chat_agent.run(
-                    message_plain_text(message),
+                    user_input,
                     message_history=history,
                     usage_limits=_usage_limits(),
                     usage=usage,
