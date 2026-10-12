@@ -569,6 +569,16 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
                 _button(_label(key, value, session), token, f"{target}:{index}")
             )
         rows.extend(_rows(buttons))
+        if group == "business":
+            rows.append(
+                [
+                    _button(
+                        t("bot.business.account", locale=session.locale),
+                        token,
+                        "business_account",
+                    )
+                ]
+            )
         previous = f"group:{group}:{page - 1}" if page else None
         following = f"group:{group}:{page + 1}" if page + 1 < pages else None
     elif action == "providers" or action.startswith("providers:"):
@@ -674,6 +684,11 @@ async def private_config_command(client: Client, message: Message):
         await message.reply_text(_tr("denied"))
         return
     config = await database.get_user_config(user)
+    from waku.plugins.business_panel import _SESSIONS as business_sessions
+
+    for old_token, old_session in list(business_sessions.items()):
+        if old_session.owner_id == user.id:
+            business_sessions.pop(old_token, None)
     _prune()
     for token, session in list(_SESSIONS.items()):
         if session.user_id == user.id:
@@ -800,6 +815,26 @@ async def private_config_callback(client: Client, query: CallbackQuery):
                     schedule_saved_menu_cleanup(
                         client, message, session.command_message_id
                     )
+                return
+            elif action == "business_account":
+                if _draft_count(session):
+                    raise SettingsEditError("save_first")
+                await query.answer()
+                answered = True
+                from waku.plugins.business_panel import open_business_panel
+                from waku.services.business_ops import BusinessOperationError
+
+                try:
+                    await open_business_panel(
+                        client, message, user.id, session.locale, replace=True
+                    )
+                except BusinessOperationError as error:
+                    await _edit(
+                        message,
+                        t("bot.business.errors." + error.code, locale=session.locale),
+                    )
+                _SESSIONS.pop(token, None)
+                committed = True
                 return
             elif action in {"discard", "reload"}:
                 _reset_draft(session)

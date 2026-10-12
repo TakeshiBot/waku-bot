@@ -27,6 +27,39 @@ class Base(DeclarativeBase):
     pass
 
 
+class BusinessState(Base):
+    """peer_id=0 stores the owned account; positive IDs store isolated dialogs."""
+
+    __tablename__ = "business_state"
+    owner_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=False
+    )
+    peer_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=False
+    )
+    state: Mapped[dict] = mapped_column(JSON, default=dict)
+    state_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class BusinessAction(Base):
+    """A reviewed owner action is submitted once, including across restarts."""
+
+    __tablename__ = "business_action"
+    token: Mapped[str] = mapped_column(String(48), primary_key=True)
+    owner_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    connection_id: Mapped[str] = mapped_column(String(255))
+    operation: Mapped[str] = mapped_column(String(48))
+    arguments: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    expires_at: Mapped[float] = mapped_column(sa.Float)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 @dataclass
 class UserConfig:
     lang: str = "vi"
@@ -119,7 +152,8 @@ class ChatConfig:
             parse_sites_enabled=data.get("parse_sites_enabled") or {},
             pick_bottle_enabled=data.get("pick_bottle_enabled", True),
             ai_comment=data.get("ai_comment", False),
-            agent_moderation_enabled=data.get("agent_moderation_enabled", False) is True,
+            agent_moderation_enabled=data.get("agent_moderation_enabled", False)
+            is True,
             group_memory_enabled=data.get("group_memory_enabled", True),
             sticker_memory_enabled=data.get("sticker_memory_enabled", True),
             parse_wechat_enabled=data.get("parse_wechat_enabled", True),
@@ -158,8 +192,12 @@ class GroupModerationState(Base):
 
     __tablename__ = "group_moderation_state"
 
-    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
-    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    chat_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=False
+    )
     state: Mapped[dict] = mapped_column(JSON, default=dict)
     state_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     updated_at: Mapped[datetime] = mapped_column(

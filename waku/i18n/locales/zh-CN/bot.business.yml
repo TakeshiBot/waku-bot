@@ -1,0 +1,142 @@
+bot:
+  business:
+    account: Business Account
+    title: <b>Business Assistant</b> · {name}
+    notice: 'Save applies and closes. Close discards changes.
+
+      Memory contains messages received by this bot, not your complete Telegram history.'
+    management_notice: Enable Management and Save first. ✅ = granted by Telegram.
+    save: 💾 Save
+    close: ✖ Close
+    saved: Business settings saved.
+    completed: Telegram confirmed the operation succeeded.
+    rights: Telegram Rights
+    dialogs: Conversations
+    dialogs_notice: 'Observed chats: chat ID and last 5 message IDs. Up to 15 recent chats.'
+    no_dialogs: No conversations received yet.
+    total: Total Gifts
+    review: Review
+    review_title: <b>{operation}</b>
+    review_notice: Save executes this exact request. Close or Back discards it.
+    stars_destination: Stars move from the Business account to the bot's balance.
+    gift_settings_notice: These are the choices to apply, not settings retrieved from Telegram.
+    settings:
+      reply: AI Replies
+      remember: Conversation Memory
+      read: Auto Mark Read
+      manage: Management
+    groups:
+      chat: Messages
+      profile: Profile
+      gifts: Gifts And Stars
+      stories: Stories
+    roles:
+      owner: Owner
+      contact: Contact
+      assistant: Assistant
+    gift_types:
+      show_gift_button: Show Gift Button
+      unlimited_gifts: Regular Gifts
+      limited_gifts: Limited Gifts
+      unique_gifts: Unique Gifts
+      premium_subscription: Telegram Premium
+      gifts_from_channels: Gifts From Channels
+    fields:
+      chat_id: Chat ID
+      text: Text
+      message_id: Message ID
+      message_ids: Message IDs
+      first_name: First Name
+      last_name: Last Name
+      username: Username
+      bio: Bio
+      is_public: Public Photo
+      owned_gift_id: Owned Gift ID
+      star_count: Stars
+      keep_original_details: Keep Original Details
+      new_owner_chat_id: Recipient ID
+      active_period: Duration (seconds)
+      caption: Caption
+      story_id: Story ID
+      media: File Type
+      show_gift_button: Show Gift Button
+      accepted_gift_types: Accepted Gift Types
+    operations:
+      send_message: Send Message
+      send_media: Send File
+      edit_message: Edit Bot Message
+      mark_read: Mark Read
+      delete_sent: Delete Bot Messages
+      delete_all: Delete Chat Messages
+      set_name: Change Name
+      set_bio: Change Bio
+      set_username: Change Username
+      set_photo: Change Avatar
+      remove_photo: Remove Avatar
+      get_gifts: View Gifts
+      get_stars: View Stars
+      convert_gift: Gift To Stars
+      gift_settings: Gift Settings
+      upgrade_gift: Upgrade Gift
+      transfer_gift: Transfer Gift
+      transfer_stars: Transfer Stars To Bot
+      post_story: Post Story
+      edit_story: Edit Story
+      delete_story: Delete Story
+    rights_labels:
+      can_reply: Send And Edit Replies
+      can_read_messages: Mark As Read
+      can_delete_sent_messages: Delete Bot Messages
+      can_delete_all_messages: Delete Chat Messages
+      can_edit_name: Edit Name
+      can_edit_bio: Edit Bio
+      can_edit_profile_photo: Edit Avatar
+      can_edit_username: Edit Username
+      can_view_gifts_and_stars: View Gifts And Stars
+      can_convert_gifts_to_stars: Convert Gifts To Stars
+      can_change_gift_settings: Gift Settings
+      can_transfer_and_upgrade_gifts: Transfer And Upgrade Gifts
+      can_transfer_stars: Transfer Stars
+      can_manage_stories: Manage Stories
+    errors:
+      owner_only: Only the Business account owner can use this menu in a private chat with the bot.
+      no_connection: No Business connection recorded. Connect the bot, send a message in a managed chat, then reopen
+        /business.
+      connection_disabled: The Business connection is disabled or revoked.
+      management_disabled: Enable Management and Save, then reopen the menu.
+      missing_right: Telegram has not granted this right. Update the connected bot's rights in your account settings.
+      save_first: Save settings first, then reopen the menu to perform an operation.
+      invalid_input: Invalid format or Telegram limit exceeded.
+      need_media: Send a suitable photo or video following the instructions.
+      media_limit: Invalid file or too large (photos up to 10 MB, other files 50 MB).
+      unobserved_chat: This bot has not received messages from this chat. Use Conversations and check the Telegram
+        access scope.
+      unobserved_message: Message ID not found in this observed chat, or already deleted.
+      not_bot_message: This operation applies only to messages sent by this bot.
+      reply_window: No incoming message in the last 24 hours. Telegram does not allow sending or editing here.
+      expired: Menu or input expired. Reopen /business.
+      api_rejected: Telegram rejected the operation. Check rights, IDs, formats and account limits before creating
+        another request.
+      uncertain: Result could not be confirmed. Check Telegram before creating another request to avoid duplication.
+    help:
+      send_message: Send chat ID on the first line, followed by message text. Find IDs in Conversations.
+      send_media: 'Send a file. Caption: chat ID on the first line, then text (up to 1024 characters).'
+      edit_message: 'Send three parts on separate lines: chat ID, bot message ID, new text.'
+      mark_read: 'Send two lines: chat ID, incoming message ID to mark as read.'
+      delete_sent: Send chat ID on the first line; bot message IDs below, separated by spaces or commas (up to 100).
+      delete_all: Send chat ID on the first line; message IDs below, separated by spaces or commas (up to 100).
+      set_name: Send first name, then optional last name on a second line. Use - to clear last name.
+      set_username: Send the new username, or - to remove it.
+      set_bio: Send the new bio (up to 140 characters), or - to clear it.
+      set_photo: Send a photo for the Business account avatar.
+      convert_gift: Send an owned gift ID from View Gifts. It will be converted to Stars.
+      upgrade_gift: 'Send two lines: owned gift ID; Stars you agree to pay. 0 = prepaid upgrade only, no automatic
+        Stars payment.'
+      transfer_gift: 'Send three lines: owned gift ID; recipient ID; Stars you agree to pay. 0 = free transfer only.
+        Recipient must have an active chat in the last 24 hours.'
+      transfer_stars: Send Stars amount (1–10000) to move from the Business account to the bot's balance.
+      post_story: Send a story photo (1080×1920) or portrait video (720×1280, up to 60 seconds), with optional caption.
+        Visible for 24 hours.
+      edit_story: 'Send new story photo/video. Caption: story ID on the first line, then new caption. Only bot-posted
+        stories can be edited.'
+      delete_story: Send a story ID to delete. Only bot-posted stories can be deleted.

@@ -1,0 +1,142 @@
+bot:
+  business:
+    account: Tài Khoản Business
+    title: <b>Trợ Lý Business</b> · {name}
+    notice: 'Bấm Lưu để áp dụng và đóng. Đóng để bỏ thay đổi.
+
+      Bộ nhớ chỉ gồm tin bot đã nhận, không phải toàn bộ lịch sử Telegram.'
+    management_notice: Bật Quản Lý rồi Lưu trước khi dùng. ✅ = Telegram đã cấp quyền.
+    save: 💾 Lưu
+    close: ✖ Đóng
+    saved: Đã lưu cài đặt Business.
+    completed: Telegram đã xác nhận thao tác thành công.
+    rights: Quyền Telegram
+    dialogs: Cuộc Chat
+    dialogs_notice: 'Chat bot đã nhận tin: ID chat và ID 5 tin gần nhất. Tối đa 15 chat gần đây.'
+    no_dialogs: Chưa nhận được hội thoại nào.
+    total: Tổng Quà
+    review: Xem Lại
+    review_title: <b>{operation}</b>
+    review_notice: Bấm Lưu để thực hiện đúng nội dung này. Đóng hoặc quay lại để bỏ.
+    stars_destination: Sao sẽ chuyển từ tài khoản Business về số dư của bot.
+    gift_settings_notice: Đây là lựa chọn sẽ áp dụng, không phải cài đặt hiện tại đọc từ Telegram.
+    settings:
+      reply: AI Trả Lời
+      remember: Nhớ Hội Thoại
+      read: Tự Đánh Dấu Đọc
+      manage: Quản Lý
+    groups:
+      chat: Tin Nhắn
+      profile: Hồ Sơ
+      gifts: Quà Và Sao
+      stories: Story
+    roles:
+      owner: Chủ Acc
+      contact: Người Chat
+      assistant: Trợ Lý
+    gift_types:
+      show_gift_button: Hiện Nút Quà
+      unlimited_gifts: Quà Thường
+      limited_gifts: Quà Giới Hạn
+      unique_gifts: Quà Độc Nhất
+      premium_subscription: Telegram Premium
+      gifts_from_channels: Quà Từ Kênh
+    fields:
+      chat_id: ID Chat
+      text: Nội Dung
+      message_id: ID Tin
+      message_ids: ID Các Tin
+      first_name: Tên
+      last_name: Họ
+      username: Username
+      bio: Giới Thiệu
+      is_public: Ảnh Công Khai
+      owned_gift_id: ID Quà Sở Hữu
+      star_count: Số Sao
+      keep_original_details: Giữ Chi Tiết Gốc
+      new_owner_chat_id: ID Người Nhận
+      active_period: Thời Gian (giây)
+      caption: Chú Thích
+      story_id: ID Story
+      media: Loại File
+      show_gift_button: Hiện Nút Quà
+      accepted_gift_types: Loại Quà Nhận
+    operations:
+      send_message: Gửi Tin
+      send_media: Gửi File
+      edit_message: Sửa Tin Bot
+      mark_read: Đánh Dấu Đọc
+      delete_sent: Xóa Tin Bot
+      delete_all: Xóa Tin Trong Chat
+      set_name: Đổi Tên
+      set_bio: Đổi Giới Thiệu
+      set_username: Đổi Username
+      set_photo: Đổi Avatar
+      remove_photo: Xóa Avatar
+      get_gifts: Xem Quà
+      get_stars: Xem Sao
+      convert_gift: Quà Thành Sao
+      gift_settings: Cài Đặt Quà
+      upgrade_gift: Nâng Cấp Quà
+      transfer_gift: Chuyển Quà
+      transfer_stars: Chuyển Sao Về Bot
+      post_story: Đăng Story
+      edit_story: Sửa Story
+      delete_story: Xóa Story
+    rights_labels:
+      can_reply: Trả Lời Và Sửa Tin
+      can_read_messages: Đánh Dấu Đã Đọc
+      can_delete_sent_messages: Xóa Tin Bot Đã Gửi
+      can_delete_all_messages: Xóa Tin Trong Chat
+      can_edit_name: Sửa Tên
+      can_edit_bio: Sửa Giới Thiệu
+      can_edit_profile_photo: Sửa Avatar
+      can_edit_username: Sửa Username
+      can_view_gifts_and_stars: Xem Quà Và Sao
+      can_convert_gifts_to_stars: Đổi Quà Thành Sao
+      can_change_gift_settings: Cài Đặt Quà
+      can_transfer_and_upgrade_gifts: Chuyển Và Nâng Cấp Quà
+      can_transfer_stars: Chuyển Sao
+      can_manage_stories: Quản Lý Story
+    errors:
+      owner_only: Chỉ chủ tài khoản Business được dùng menu này trong DM với bot.
+      no_connection: Chưa ghi nhận kết nối Business. Kết nối bot, gửi một tin trong chat được quản lý, rồi mở lại
+        /business.
+      connection_disabled: Kết nối Business đã bị tắt hoặc thu hồi.
+      management_disabled: Bật Quản Lý rồi bấm Lưu, sau đó mở lại menu.
+      missing_right: Telegram chưa cấp quyền này. Đổi quyền trong cài đặt bot Business của tài khoản.
+      save_first: Bấm Lưu cài đặt trước, rồi mở lại menu để thực hiện thao tác.
+      invalid_input: Nội dung chưa đúng định dạng hoặc vượt giới hạn Telegram.
+      need_media: Gửi ảnh hoặc video phù hợp theo hướng dẫn.
+      media_limit: File không hợp lệ hoặc quá lớn (ảnh tối đa 10 MB, file khác 50 MB).
+      unobserved_chat: Bot chưa nhận tin từ chat này. Chọn ID trong Cuộc Chat và kiểm tra phạm vi truy cập ở Telegram.
+      unobserved_message: ID tin không có trong chat bot đã quan sát hoặc tin đã bị xóa.
+      not_bot_message: Thao tác này chỉ áp dụng với tin do chính bot gửi.
+      reply_window: Chat chưa có tin đến trong 24 giờ gần nhất; Telegram chưa cho gửi hoặc sửa tin.
+      expired: Menu hoặc lượt nhập đã hết hạn. Mở lại /business.
+      api_rejected: Telegram từ chối thao tác. Kiểm tra quyền, ID, định dạng và giới hạn tài khoản trước khi tạo
+        yêu cầu mới.
+      uncertain: Chưa xác nhận được kết quả. Kiểm tra Telegram trước khi tạo yêu cầu mới để tránh thực hiện trùng.
+    help:
+      send_message: Gửi ID chat ở dòng đầu, nội dung từ dòng thứ hai. Chọn ID trong Cuộc Chat.
+      send_media: 'Gửi file. Chú thích: dòng đầu là ID chat, các dòng sau là nội dung (tối đa 1024 ký tự).'
+      edit_message: 'Gửi 3 phần theo dòng: ID chat, ID tin do bot gửi, nội dung mới.'
+      mark_read: 'Gửi 2 dòng: ID chat, ID tin đến cần đánh dấu đã đọc.'
+      delete_sent: Gửi ID chat ở dòng đầu; dòng sau là ID tin do bot gửi, cách nhau bằng dấu cách hoặc dấu phẩy
+        (tối đa 100).
+      delete_all: Gửi ID chat ở dòng đầu; dòng sau là ID tin cần xóa, cách nhau bằng dấu cách hoặc dấu phẩy (tối
+        đa 100).
+      set_name: Gửi tên ở dòng đầu; họ ở dòng thứ hai (không bắt buộc). Dấu - để bỏ họ.
+      set_username: Gửi username mới, hoặc - để xóa username.
+      set_bio: Gửi giới thiệu mới (tối đa 140 ký tự), hoặc - để xóa.
+      set_photo: Gửi ảnh mới làm avatar của tài khoản Business.
+      convert_gift: Gửi ID quà sở hữu từ Xem Quà. Quà sẽ được đổi thành Sao.
+      upgrade_gift: 'Gửi 2 dòng: ID quà sở hữu; số Sao đồng ý trả. 0 = chỉ nâng cấp đã trả trước, không tự chi Sao.'
+      transfer_gift: 'Gửi 3 dòng: ID quà sở hữu; ID người nhận; số Sao đồng ý trả. 0 = chỉ chuyển miễn phí. Người
+        nhận phải có chat hoạt động trong 24 giờ.'
+      transfer_stars: Gửi số Sao (1–10000) để chuyển từ tài khoản Business về số dư bot.
+      post_story: Gửi ảnh story 1080×1920 hoặc video dọc 720×1280, tối đa 60 giây; chú thích nếu có. Story hiển
+        thị 24 giờ.
+      edit_story: 'Gửi ảnh/video story mới. Chú thích: dòng đầu là ID story, các dòng sau là chú thích mới. Chỉ
+        sửa story do bot đăng.'
+      delete_story: Gửi ID story cần xóa. Chỉ xóa story do bot đăng.
