@@ -21,6 +21,7 @@ hãy đọc lịch sử commit và sao lưu cấu hình, cơ sở dữ liệu, d
 - [Telegram Business](docs/docs/telegram-business.md)
 - [Sticker và emoji trên Telegram](docs/docs/telegram-stickers.md)
 - [File và tài liệu trên Telegram](docs/docs/telegram-files.md)
+- [Nguồn ảnh anime](docs/docs/anime-images.md)
 - [Quốc tế hóa và tiếng Việt](docs/docs/i18n.md)
 - [Đổi tên dự án và múi giờ](docs/docs/branding-timezone.md)
 

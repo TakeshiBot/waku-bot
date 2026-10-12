@@ -1,4 +1,5 @@
 import datetime
+import html
 import random
 from dataclasses import dataclass
 from hashlib import md5
@@ -16,6 +17,7 @@ from waku.logger import logger
 from waku.plugins.agent.localization import tr
 from waku.plugins.agent.output import record_tool_reply, text_already_sent
 from waku.plugins.manyacg import manyacg
+from waku.services.anime_images import fetch_anime_artwork, original_image_url
 from waku.services.telegram_images import image_allowed, telegram_image_settings
 from waku.timezone import BOT_TIMEZONE
 
@@ -393,7 +395,10 @@ async def send_sticker(
         raise ModelRetry(tr("sticker_no_match"))
 
     file_id, _description = result
-    logger.debug("send_sticker: selected a stored sticker ({})", app_config.agent_sticker_search_mode)
+    logger.debug(
+        "send_sticker: selected a stored sticker ({})",
+        app_config.agent_sticker_search_mode,
+    )
     try:
         await ctx.deps.client.send_sticker(
             chat_id=ctx.deps.chat_id,
@@ -435,7 +440,7 @@ class AnimePhotoResult:
     data: AnimePhotoInfo | None = None
 
 
-async def _fetch_anime_artwork(
+async def _fetch_manyacg_anime_artwork(
     keyword: str = "", r18_mode: int = 0
 ) -> tuple[dict, dict] | None:
     try:
@@ -474,13 +479,20 @@ async def _fetch_anime_artwork(
         return None
 
 
+async def _fetch_anime_artwork(keyword: str = "", r18_mode: int = 0):
+    return await fetch_anime_artwork(
+        keyword, r18_mode, _fetch_manyacg_anime_artwork, as_dict=True
+    )
+
+
 async def send_anime_photo(
     ctx: RunContext[datatype.ContextDeps], keyword: str = "", count: int = 1
 ) -> AnimePhotoResult:
     """Get and send anime photos (also called setu).
 
     Args:
-        keyword: Optional keyword to search for specific anime photos.
+        keyword: Optional keyword to search for anime photos. Use nekos:neko,
+            nekos:waifu, nekos:husbando or nekos:kitsune for the SFW nekos.best source.
         count: How many photos to send, 1-10.
     """
     if ctx.deps.message is None or ctx.deps.message.id is None:
@@ -529,7 +541,7 @@ async def send_anime_photo(
             pyrogram.types.InputMediaPhoto(
                 media=picture["regular"],
                 caption=(
-                    f"<a href='{artwork['source_url']}'>{artwork['title']}</a>"
+                    f"<a href='{html.escape(artwork['source_url'], quote=True)}'>{html.escape(artwork['title'])}</a>"
                     if i == 0
                     else ""
                 ),
@@ -585,7 +597,7 @@ async def _send_anime_photo_single(
     await ctx.deps.client.send_photo(
         chat_id=ctx.deps.chat_id,
         photo=picture["regular"],
-        caption=f"<a href='{artwork['source_url']}'>{artwork['title']}</a>",
+        caption=f"<a href='{html.escape(artwork['source_url'], quote=True)}'>{html.escape(artwork['title'])}</a>",
         parse_mode=pyrogram.enums.ParseMode.HTML,
         reply_markup=pyrogram.types.InlineKeyboardMarkup(
             [
@@ -596,7 +608,7 @@ async def _send_anime_photo_single(
                     ),
                     pyrogram.types.InlineKeyboardButton(
                         text=i18n.t("bot.button.manyacg.original", locale=lang),
-                        url=f"https://t.me/{app_config.manyacg_bot}/?start=file_{picture['id']}",
+                        url=original_image_url(artwork, picture),
                     ),
                 ]
             ]

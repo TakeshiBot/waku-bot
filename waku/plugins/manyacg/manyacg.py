@@ -13,6 +13,7 @@ from waku.config import app_config
 from waku.logger import logger
 from waku.services import aniobjcut
 from waku.services import manyacg as manyacg_service
+from waku.services.anime_images import fetch_anime_artwork, original_image_url
 from waku.services.manyacg import (
     FetchedPicture,
     FetchedUgoira,
@@ -152,10 +153,38 @@ async def parse_artwork(client: PyrogramClient, message: pyrogram.types.Message)
         logger.error(f"parse_artwork error: {e.__class__.__name__}:{e}")
 
 
+async def _fetch_seg_manyacg_artwork(keyword, image_mode):
+    if manyacg_client is None:
+        return None
+    if keyword:
+        response = await manyacg_client.client.get(
+            "/artwork/list",
+            params={
+                "keyword": keyword,
+                "r18": image_mode,
+                "hybrid": app_config.manyacg_hybrid_search,
+            },
+        )
+        if response.status_code != 200:
+            return None
+        result = manyacg_service.RandomArtworkResponse.model_validate(response.json())
+    else:
+        result = await manyacg_client.random_artwork(limit=1, r18=image_mode)
+    if result.status != 200 or not result.data:
+        return None
+    candidates = [
+        artwork
+        for artwork in result.data
+        if image_allowed(artwork.r18, image_mode) and artwork.pictures
+    ]
+    if not candidates:
+        return None
+    artwork = random.choice(candidates)
+    return artwork, random.choice(artwork.pictures)
+
+
 @PyrogramClient.on_message(pyrogram.filters.command("seg"), group=0)
 async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
-    if not manyacg_client:
-        return
     chat = message.chat
     user = message.sender_chat or message.from_user
     if not user or not user.id:
@@ -188,22 +217,24 @@ async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
         ttl=app_config.manyacg_setu_cd,
     )
     try:
-        resp = await manyacg_client.random_artwork(limit=1, r18=image_mode)
-        if resp.status != 200:
+        command = getattr(message, "command", None) or []
+        keyword = " ".join(command[1:])
+        item = await fetch_anime_artwork(
+            keyword, image_mode, _fetch_seg_manyacg_artwork
+        )
+        if item is None:
             await message.reply(
                 i18n.t("bot.msg.manyacg.setu_error", locale=lang),
             )
             return
-        assert resp.data is not None, "Random artwork data is None but status is 200"
-        artwork = resp.data[0]
+        artwork, picture = item
         if not image_allowed(artwork.r18, image_mode):
             await message.reply(i18n.t("bot.msg.manyacg.setu_error", locale=lang))
             return
-        picture = artwork.pictures[random.randint(0, len(artwork.pictures) - 1)]
         detail_link = artwork.source_url
         await message.reply_photo(
             photo=picture.regular,
-            caption=f"<a href='{artwork.source_url}'>{html.escape(artwork.title)}</a>",
+            caption=f"<a href='{html.escape(artwork.source_url, quote=True)}'>{html.escape(artwork.title)}</a>",
             parse_mode=pyrogram.enums.ParseMode.HTML,
             reply_markup=pyrogram.types.InlineKeyboardMarkup(
                 [
@@ -214,7 +245,7 @@ async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
                         ),
                         pyrogram.types.InlineKeyboardButton(
                             text=i18n.t("bot.button.manyacg.original", locale=lang),
-                            url=f"https://t.me/{app_config.manyacg_bot}/?start=file_{picture.id}",
+                            url=original_image_url(artwork, picture),
                         ),
                     ]
                 ]

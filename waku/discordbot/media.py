@@ -18,6 +18,7 @@ from waku.config import app_config
 from waku.i18n import i18n
 from waku.logger import logger
 from waku.services import manyacg as manyacg_service
+from waku.services.anime_images import fetch_anime_artwork, original_image_url
 from waku.services.manyacg import manyacg_client
 
 from .embeds import discord_command_embed
@@ -190,7 +191,7 @@ def _discord_artwork_embed(
     embed.set_footer(text="ManyACG / Pixiv")
     return embed
 
-async def _fetch_discord_anime_artwork(
+async def _fetch_manyacg_discord_artwork(
     keyword: str = "",
     r18_mode: int = 0,
 ) -> tuple[manyacg_service.Artwork, manyacg_service.Picture] | None:
@@ -250,6 +251,10 @@ async def _fetch_discord_anime_artwork(
         logger.error(f"Discord anime photo fetch error: {e.__class__.__name__}: {e}")
         return None
 
+async def _fetch_discord_anime_artwork(keyword: str = "", r18_mode: int = 0):
+    return await fetch_anime_artwork(keyword, r18_mode, _fetch_manyacg_discord_artwork)
+
+
 async def _send_discord_image_embed(
     message: discord.Message,
     embed: discord.Embed,
@@ -304,7 +309,7 @@ async def _send_discord_anime_photo_card(
     allowed_mentions: discord.AllowedMentions | None = None,
     reference: discord.Message | None = None,
 ) -> bool:
-    original_url = f"https://t.me/{app_config.manyacg_bot}/?start=file_{picture.id}"
+    original_url = original_image_url(artwork, picture)
     embed = _discord_artwork_embed(
         title=artwork.title,
         source_url=artwork.source_url,
@@ -369,13 +374,6 @@ async def _send_discord_seg(message: discord.Message, keyword: str = "") -> bool
             message, i18n.t("bot.msg.manyacg.chat_setu_disabled", locale=settings.lang)
         )
         return True
-    if manyacg_client is None:
-        await _send_discord_media_notice(
-            message,
-            "ManyACG is not configured, so Waku cannot send images yet.",
-        )
-        return True
-
     ratekey = f"discord_seg_cd:{message.channel.id}:{message.author.id}"
     if await common.memttlcache.get(ratekey, False):
         await _send_discord_media_notice(message, "Please wait a moment before requesting another image.")
@@ -456,14 +454,6 @@ async def _send_discord_seg_interaction(
         await _respond_to_discord_seg_interaction(
             interaction,
             i18n.t("bot.msg.manyacg.chat_setu_disabled", locale=settings.lang),
-        )
-        return
-
-    if manyacg_client is None:
-        await _respond_to_discord_seg_interaction(
-            interaction,
-            notice("Chưa cấu hình ManyACG nên Waku chưa thể gửi ảnh.", "ManyACG is not configured, so Waku cannot send images yet."),
-            ephemeral=True,
         )
         return
 
