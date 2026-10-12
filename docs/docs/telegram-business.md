@@ -67,8 +67,21 @@ cho cuộc chat riêng có tin đến trong 24 giờ gần nhất. Xem
   tiếp tục, quay lại gần đây và quay lại sau thời gian dài; tiếp nối chủ đề còn
   dang dở khi lịch sử thực sự cho thấy điều đó. Không tự bịa tình trạng, lịch hẹn
   hoặc thông tin cá nhân của chủ tài khoản.
+- Khi trợ lý chưa tiếp chuyện, Waku chờ 30 giây yên lặng rồi mới cân nhắc trả
+  lời. Các tin đến liên tiếp được gộp vào cùng một lượt. Nếu chủ tài khoản trả lời
+  trong thời gian chờ, Waku dừng lượt đó. Hết thời gian chờ, AI chỉ trả lời khi
+  ngữ cảnh còn dang dở hoặc cần hỗ trợ; cuộc trò chuyện đã xong, lời cảm ơn hoặc
+  câu trả lời đầy đủ của chủ tài khoản sẽ được để yên. Khoảng lặng không được xem
+  là bằng chứng chủ tài khoản đang bận hay ngoại tuyến.
+- Khi trợ lý đã trả lời, các tin tiếp theo của người liên hệ được xử lý ngay,
+  không chờ thêm 30 giây mỗi lượt. Chủ tài khoản nhắn vào sẽ dừng lượt trợ lý
+  đang chạy và lấy lại quyền tiếp chuyện; sau đó Waku lại dùng cửa sổ chờ 30 giây.
+  Trạng thái này tách theo từng cuộc chat và được giữ qua lần khởi động lại.
 - Khi chủ tài khoản tự trả lời, hủy lượt AI đang soạn trong chat đó để tránh nói
   chen. Tin đến cũ được giao muộn sau câu trả lời của chủ tài khoản cũng bị bỏ qua.
+- Mặc định câu trả lời có nhãn `Tên bot:`, lấy từ `nickname` trong cấu hình, để
+  người liên hệ biết đây là trợ lý. Tắt **Tag Tên** trong `/business` sẽ bỏ nhãn;
+  AI vẫn tự xưng là trợ lý của chủ tài khoản, không tự xưng là Telegram Business.
 - Khi bật streaming, thử draft gốc với Thinking trước khi AI sinh ra nội dung,
   sau đó cập nhật draft và gửi câu trả lời cuối. Nếu Telegram không hỗ trợ draft
   cho kết nối/cuộc chat này, gửi phần văn bản đầu tiên và sửa cùng tin đó khoảng
@@ -97,12 +110,27 @@ Các công tắc của **từng tài khoản**, không thêm tham số nâng cao
 | Nhớ Hội Thoại | Bật | Lưu và dùng nội dung hội thoại; tắt thì tin mới chỉ lưu ID, vai trò, thời điểm |
 | Tự Đánh Dấu Đọc | Tắt | Đánh dấu tin người dùng đã đọc nếu Telegram cấp quyền |
 | Quản Lý | Tắt | Cho chủ tài khoản dùng các thao tác tin nhắn, hồ sơ, quà/Sao và story |
+| Tag Tên | Bật | Thêm `nickname:` trước tin do trợ lý gửi |
+| Lời Nhắn | Bật | Cho phép nhận lời nhắn hoặc hẹn từ người liên hệ và chuyển riêng cho chủ tài khoản |
 
 **Lưu** áp dụng ngay rồi đóng; **Đóng** bỏ thay đổi. Menu lưu được dọn sau 5 giây.
 Trong các mục thao tác, nhập nội dung theo hướng dẫn; xem lại rồi **Lưu** mới thực
 hiện. Nút quay lại hoặc Đóng bỏ yêu cầu. Tin nhập không đồng thời gửi sang AI.
 Khách đang chat với tài khoản Business không có công cụ sửa tài khoản, chuyển
 quà/Sao hoặc xóa tin thông qua nội dung chat hay file họ gửi.
+
+## Lời nhắn và hẹn cho chủ tài khoản
+
+Khi người liên hệ nói rõ muốn nhắn lại, ghi nhớ hoặc hẹn chủ tài khoản, AI có thể
+ghi một lời nhắn bền vững theo đúng tin nguồn. Bot gửi lời nhắn đó vào **DM riêng
+của đúng chủ tài khoản đã kết nối**; không gửi sang người khác, nhóm hay Discord.
+Nếu có ngày giờ rõ ràng, lời nhắc sẽ được gửi vào hoặc sau thời điểm đó. Thiếu hay
+mơ hồ ngày giờ thì AI hỏi lại, không tự đặt lịch. Việc gửi chỉ được xác nhận sau
+khi Telegram nhận; lỗi không chắc chắn không bị tự gửi lặp lại.
+
+Trong `/business → Lời Nhắn`, chủ tài khoản xem các lời nhắn gần đây và có thể hủy
+lời nhắc còn chờ rồi bấm **Lưu**. Tắt công tắc **Lời Nhắn** ngăn các yêu cầu mới;
+những bản đã lưu vẫn chỉ hiện trong bảng của đúng chủ tài khoản.
 
 ## Quyền Telegram và thao tác tương ứng
 

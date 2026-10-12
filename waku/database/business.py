@@ -93,12 +93,15 @@ async def record_message(
 ) -> dict:
     if type(event.get("id")) is not int or event["id"] <= 0:
         raise ValueError("Business event requires a real message ID")
+    duplicate = False
 
     def merge(state):
+        nonlocal duplicate
         state.setdefault("first_observed_at", time.time())
         if event["id"] in state.get("deleted_ids", []):
             return state
         events = {item["id"]: item for item in state.get("events", [])}
+        duplicate = event["id"] in events
         item = {**events.get(event["id"], {}), **deepcopy(event)}
         if remember:
             text = str(item.get("text") or "")
@@ -108,15 +111,42 @@ async def record_message(
         else:
             item = {
                 key: item[key]
-                for key in ("id", "role", "timestamp", "answered_message_id")
+                for key in (
+                    "id",
+                    "role",
+                    "timestamp",
+                    "answered_message_id",
+                    "forwarded",
+                )
                 if key in item
             }
         events[item["id"]] = item
+        # Keep the latest responder even when the bounded dialog drops older
+        # messages or text memory is disabled. Contact messages do not change
+        # who currently holds the conversation; only the owner/assistant do.
+        responder = state.get("last_responder")
+        if responder is None:
+            responder = max(
+                (
+                    row
+                    for row in events.values()
+                    if row.get("role") in {"owner", "assistant"}
+                ),
+                key=lambda row: row["id"],
+                default=None,
+            )
+        if item.get("role") in {"owner", "assistant"} and (
+            responder is None or item["id"] >= responder["id"]
+        ):
+            responder = item
+        if responder is not None:
+            state["last_responder"] = {"id": responder["id"], "role": responder["role"]}
         state["events"] = sorted(events.values(), key=lambda row: row["id"])[-100:]
         state["last_observed_at"] = time.time()
         return state
 
-    return await _mutate(owner_id, peer_id, merge, session)
+    state = await _mutate(owner_id, peer_id, merge, session)
+    return {**state, "_duplicate_event": duplicate}
 
 
 @with_tx

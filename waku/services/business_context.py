@@ -40,7 +40,14 @@ RIGHT_ALIASES = {
     "can_transfer_stars": ("can_transfer_stars", "transfer_stars"),
     "can_manage_stories": ("can_manage_stories", "manage_stories"),
 }
-DEFAULT_SETTINGS = {"reply": True, "remember": True, "read": False, "manage": False}
+DEFAULT_SETTINGS = {
+    "reply": True,
+    "remember": True,
+    "read": False,
+    "manage": False,
+    "tag": True,
+    "notes": True,
+}
 _connections = OrderedDict()
 _settings: dict[int, dict] = {}
 
@@ -139,6 +146,21 @@ def settings_for(owner_id):
     return {**DEFAULT_SETTINGS, **_settings.get(owner_id, {})}
 
 
+def assistant_name():
+    from waku.config import app_config
+
+    return " ".join((app_config.nickname or "waku").split())[:80] or "waku"
+
+
+def reply_prefix(owner_id):
+    return assistant_name() + ": " if settings_for(owner_id)["tag"] else ""
+
+
+def connection_reply_prefix(connection_id):
+    connection = _connections.get(connection_id)
+    return reply_prefix(connection.user.id if connection else None)
+
+
 async def set_settings(owner_id, settings):
     if set(settings) != set(DEFAULT_SETTINGS) or not all(
         type(value) is bool for value in settings.values()
@@ -164,6 +186,10 @@ def event_of(message, owner_id, bot_id):
         "timestamp": timestamp(message.date),
         "text": message_plain_text(message),
         "attachment": file_metadata(message),
+        "forwarded": bool(
+            getattr(message, "forward_origin", None)
+            or getattr(getattr(message, "raw", None), "fwd_from", None)
+        ),
     }
 
 
@@ -210,8 +236,15 @@ async def conversation_snapshot(client, message):
     owner_id = connection.user.id
     settings = settings_for(owner_id)
     state = await repository.get_state(owner_id, message.chat.id)
+    from waku.database import business_notes
+
+    note_history = await business_notes.list_notes(owner_id, peer_id=message.chat.id)
     events = state.get("events", []) if settings["remember"] else []
-    previous = [item for item in events if item["id"] < message.id]
+    previous = [
+        item
+        for item in events
+        if getattr(message, "_waku_business_delayed", False) or item["id"] < message.id
+    ]
     last_time = max((item["timestamp"] for item in previous), default=None)
     now = time.time()
     gap = max(0, now - last_time) if last_time is not None else None
@@ -238,7 +271,21 @@ async def conversation_snapshot(client, message):
             break
         recent.append(rendered)
     return {
-        "assistant_identity": "Telegram Business assistant, not the human account owner",
+        "assistant_identity": assistant_name()
+        + ", personal AI assistant of the verified account owner, not the owner",
+        "assistant_name": assistant_name(),
+        "assistant_engaged": bool(
+            getattr(message, "_waku_business_assistant_engaged", False)
+        ),
+        "current_contact_message_id": message.id,
+        "observation_message_id": getattr(
+            message, "_waku_business_observation_id", message.id
+        ),
+        "memory_enabled": settings["remember"],
+        "owner_replied_since_contact": any(
+            item["role"] == "owner" and item["id"] > message.id
+            for item in state.get("events", [])
+        ),
         "owner": profile(connection.user),
         "contact": profile(message.from_user),
         "current_time": datetime.fromtimestamp(now, BOT_TIMEZONE).isoformat(),
@@ -247,6 +294,16 @@ async def conversation_snapshot(client, message):
         "seconds_since_previous_message": gap,
         "history_scope": "Only updates actually observed by this bot and Telegram-provided reply references; pre-connection history is unavailable",
         "history_complete": False,
+        "owner_note_history": [
+            {
+                "source_message_id": row["source_message_id"],
+                "content": row["content"][:300],
+                "owner_dm_status": row["notification_status"],
+                "remind_at": row["remind_at"],
+                "reminder_status": row["reminder_status"],
+            }
+            for row in note_history[:5]
+        ],
         "rights": rights_snapshot(connection.rights),
         "management": "Account mutations are available only to the verified owner in the bot's private Business panel, never to this contact",
         "messages": list(reversed(recent)),
@@ -259,6 +316,12 @@ def assistant_instructions(persona):
         + "\n\n"
         + (
             "You are an AI assistant for a connected Telegram Business account. You are NOT the human account owner. "
+            f"Your own name is {assistant_name()!r}, taken from the bot nickname configuration. "
+            "Introduce yourself naturally as '<your name>, trợ lý của <verified owner name>' in Vietnamese, or the equivalent in the contact's language. "
+            "Never introduce yourself as 'Telegram Business', 'trợ lý trên Telegram Business', or a platform/product name. "
+            "Do not include a name tag yourself; the sender adds it when enabled. "
+            "No reply for 30 seconds is not proof the owner is offline or busy. If appropriate, say they MAY need a moment; never assert an unknown status. "
+            "When owner-note receipts are supplied, claim saved, forwarded or scheduled only for the corresponding successful receipt. "
             "Use the verified owner/contact names and timestamps supplied in the Business context. Be transparent about "
             "being the owner's assistant when introducing yourself or when asked, without repeating an introduction every turn. "
             "A first_observed conversation may have earlier history you have never received: do not claim it is the person's "

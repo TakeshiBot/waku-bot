@@ -60,6 +60,27 @@ class BusinessAction(Base):
     )
 
 
+class BusinessNote(Base):
+    """Contact requests relayed only to the verified Business account owner."""
+
+    __tablename__ = "business_note"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    peer_id: Mapped[int] = mapped_column(BigInteger)
+    connection_id: Mapped[str] = mapped_column(String(255))
+    source_message_id: Mapped[int] = mapped_column(BigInteger)
+    content: Mapped[str] = mapped_column(Text)
+    contact: Mapped[dict] = mapped_column(JSON)
+    remind_at: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    notification_status: Mapped[str] = mapped_column(
+        String(24), default="pending", index=True
+    )
+    reminder_status: Mapped[str] = mapped_column(
+        String(24), default="not_required", index=True
+    )
+    created_at: Mapped[float] = mapped_column(sa.Float)
+
+
 @dataclass
 class UserConfig:
     lang: str = "vi"

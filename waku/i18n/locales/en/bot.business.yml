@@ -1,7 +1,7 @@
 bot:
   business:
     account: Business Account
-    title: <b>Business Assistant</b> · {name}
+    title: <b>Assistant</b> · {name}
     notice: 'Save applies and closes. Close discards changes.
 
       Memory contains messages received by this bot, not your complete Telegram history.'
@@ -25,6 +25,8 @@ bot:
       remember: Conversation Memory
       read: Auto Mark Read
       manage: Management
+      tag: Name Tag
+      notes: Notes And Reminders
     groups:
       chat: Messages
       profile: Profile
@@ -99,6 +101,7 @@ bot:
       can_transfer_stars: Transfer Stars
       can_manage_stories: Manage Stories
     errors:
+      review_first: Enter the required details and review the request before saving.
       owner_only: Only the Business account owner can use this menu in a private chat with the bot.
       no_connection: No Business connection recorded. Connect the bot, send a message in a managed chat, then reopen
         /business.
@@ -118,6 +121,7 @@ bot:
       api_rejected: Telegram rejected the operation. Check rights, IDs, formats and account limits before creating
         another request.
       uncertain: Result could not be confirmed. Check Telegram before creating another request to avoid duplication.
+      cancel_unavailable: This reminder was processed or is being sent and cannot be cancelled.
     help:
       send_message: Send chat ID on the first line, followed by message text. Find IDs in Conversations.
       send_media: 'Send a file. Caption: chat ID on the first line, then text (up to 1024 characters).'
@@ -140,3 +144,27 @@ bot:
       edit_story: 'Send new story photo/video. Caption: story ID on the first line, then new caption. Only bot-posted
         stories can be edited.'
       delete_story: Send a story ID to delete. Only bot-posted stories can be deleted.
+    command: Assistant and Business account settings
+    notes: Owner Notes
+    no_notes: No saved notes yet.
+    owner_note: '📩 Message from {name}
+
+
+      {content}'
+    reminder: '⏰ Reminder from {name}
+
+
+      {content}'
+    contact_link: Open Contact
+    appointment: Appointment
+    cancel_appointment: 'Cancel Reminder #{number}'
+    confirm_cancel_appointment: Save to cancel this reminder. Back or Close discards.
+    appointment_cancelled: Reminder cancelled.
+    delivery:
+      pending: Pending
+      sending: Sending
+      sent: Sent
+      failed: Not Delivered
+      uncertain: Unconfirmed
+      cancelled: Cancelled
+      not_required: No Reminder

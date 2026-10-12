@@ -192,6 +192,7 @@ async def init_bot(client: Client = client):
             BotCommand("panel", i18n.t("bot.cmd.panel", locale=app_config.lang))
         )
     private_commands = [
+        BotCommand("business", i18n.t("bot.business.command", locale=app_config.lang)),
         BotCommand("buygift", i18n.t("bot.cmd.buygift", locale=app_config.lang)),
         BotCommand("gift", i18n.t("bot.cmd.gift", locale=app_config.lang)),
     ]
@@ -247,6 +248,9 @@ async def init_bot(client: Client = client):
         logger.debug("Bot commands set and cached")
 
     common.jobqueue.add_daily_job("cleanup", jobs.cleanup, hour=4)
+    from waku.services.business_notes import drain_notes
+
+    common.jobqueue.add_interval_job("business_owner_notes", drain_notes, seconds=15)
 
     if app_config.agent and app_config.agent_sticker_memory:
         from waku.plugins.agent import sticker_memory, sticker_vec
@@ -319,6 +323,11 @@ async def _setup_menu_button(client: Client) -> None:
 @client.on_stop()
 async def stop_bot(client: Client = client):
     logger.info(i18n.t("log.stopping", locale=app_config.lang))
+    from waku.plugins.business_chat import shutdown_business_chat
+    from waku.services.business_notes import shutdown_business_notes
+
+    await shutdown_business_chat()
+    await shutdown_business_notes()
 
     # Discord uses shared model clients, the scheduler and DB: stop it first.
     try:

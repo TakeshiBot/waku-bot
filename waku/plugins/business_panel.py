@@ -64,6 +64,8 @@ class BusinessSession:
     gift_offsets: list[str] = field(default_factory=lambda: [""])
     gift_page: int = 0
     gift_next: str = ""
+    note_ids: list[str] = field(default_factory=list)
+    cancel_note_id: str | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
@@ -101,12 +103,9 @@ def _footer(token):
     buttons = []
     if session.location != "home":
         buttons.append(_button(token, "↩️", "home"))
-    buttons.extend(
-        (
-            _button(token, _tr("save", session), "save"),
-            _button(token, _tr("close", session), "close"),
-        )
-    )
+    if session.location not in {"input", "gift_settings"}:
+        buttons.append(_button(token, _tr("save", session), "save"))
+    buttons.append(_button(token, _tr("close", session), "close"))
     return buttons
 
 
@@ -156,6 +155,7 @@ async def _render(client, token, location="home"):
                 _button(token, _tr("dialogs", session), "dialogs"),
             ]
         )
+        rows.append([_button(token, _tr("notes", session), "notes")])
     elif location == "rights":
         text += "\n" + "\n".join(
             ("✅ " if granted else "❌ ") + _tr("rights_labels." + key, session)
@@ -168,7 +168,7 @@ async def _render(client, token, location="home"):
             messages = state.get("events", [])[-5:]
             text += (
                 "\n"
-                + html.escape(state.get("contact", {}).get("name", ""))
+                + html.escape(state.get("contact", {}).get("name", "")[:60])
                 + f" · <code>{peer}</code>"
             )
             text += "\n" + " · ".join(
@@ -177,6 +177,40 @@ async def _render(client, token, location="home"):
             )
         if not dialogs:
             text += "\n" + _tr("no_dialogs", session)
+    elif location == "notes":
+        from datetime import datetime
+
+        from waku.database import business_notes
+        from waku.timezone import BOT_TIMEZONE
+
+        notes = await business_notes.list_notes(session.owner_id)
+        session.note_ids = [note["id"] for note in notes[:10]]
+        for index, note in enumerate(notes[:10]):
+            text += (
+                f"\n\n{index + 1}. "
+                + html.escape(
+                    (note["contact"].get("name") or str(note["peer_id"]))[:60]
+                )
+                + "\n"
+                + html.escape(note["content"][:120])
+            )
+            if note["remind_at"]:
+                text += "\n" + datetime.fromtimestamp(
+                    note["remind_at"], BOT_TIMEZONE
+                ).strftime("%H:%M %d/%m/%Y")
+                text += " · " + _tr("delivery." + note["reminder_status"], session)
+                if note["reminder_status"] in {"pending", "failed"}:
+                    rows.append(
+                        [
+                            _button(
+                                token,
+                                _tr("cancel_appointment", session, number=index + 1),
+                                "cancel_note:" + str(index),
+                            )
+                        ]
+                    )
+        if not notes:
+            text += "\n" + _tr("no_notes", session)
     elif location.startswith("group:"):
         group = location.split(":", 1)[1]
         text += (
@@ -334,6 +368,12 @@ async def open_business_panel(client, message, owner_id, locale=None, *, replace
                 text, reply_markup=markup, parse_mode=enums.ParseMode.HTML
             )
             session.message_id = reply.id
+        from waku.services.business_notes import drain_notes
+
+        common.spawn(
+            drain_notes(client, owner_id=owner_id, retry_failed=True),
+            name="business-owner-inbox-recovery",
+        )
     except BaseException:
         _SESSIONS.pop(token, None)
         raise
@@ -428,6 +468,14 @@ async def business_callback(client, query):
         await query.answer()
         session.view += 1
         session.expires = time.monotonic() + 900
+        if action == "save" and session.location in {"input", "gift_settings"}:
+            await _edit(
+                client,
+                session,
+                _tr("errors.review_first", session),
+                InlineKeyboardMarkup([_footer(token)]),
+            )
+            return
         session.pending = None
         try:
             if action == "close":
@@ -436,7 +484,15 @@ async def business_callback(client, query):
                 return
             await _owner_connection(client, session)
             if action == "save":
-                if session.action_token and session.location == "review":
+                if session.cancel_note_id and session.location == "cancel_note":
+                    from waku.database import business_notes
+
+                    if not await business_notes.cancel_reminder(
+                        session.cancel_note_id, session.owner_id
+                    ):
+                        raise operations.BusinessOperationError("cancel_unavailable")
+                    text = _tr("appointment_cancelled", session)
+                elif session.action_token and session.location == "review":
                     result = await operations.execute_reviewed_action(
                         client, session.owner_id, session.action_token
                     )
@@ -460,6 +516,22 @@ async def business_callback(client, query):
             if action == "home":
                 session.action_token = None
                 session.review = {}
+                session.cancel_note_id = None
+            elif action.startswith("cancel_note:"):
+                if session.location != "notes":
+                    raise operations.BusinessOperationError("expired")
+                index = int(action.split(":", 1)[1])
+                if not 0 <= index < len(session.note_ids):
+                    raise operations.BusinessOperationError("expired")
+                session.cancel_note_id = session.note_ids[index]
+                session.location = "cancel_note"
+                await _edit(
+                    client,
+                    session,
+                    _tr("confirm_cancel_appointment", session),
+                    InlineKeyboardMarkup([_footer(token)]),
+                )
+                return
             elif action in {"gifts_next", "gifts_prev"}:
                 if session.location != "gift_list":
                     raise operations.BusinessOperationError("expired")
@@ -582,6 +654,7 @@ async def business_callback(client, query):
                 "home",
                 "rights",
                 "dialogs",
+                "notes",
                 "gift_settings",
             } and action not in {"group:" + group for group in _GROUPS}:
                 raise operations.BusinessOperationError("invalid_input")

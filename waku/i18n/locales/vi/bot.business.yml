@@ -1,7 +1,7 @@
 bot:
   business:
     account: Tài Khoản Business
-    title: <b>Trợ Lý Business</b> · {name}
+    title: <b>Trợ Lý</b> · {name}
     notice: 'Bấm Lưu để áp dụng và đóng. Đóng để bỏ thay đổi.
 
       Bộ nhớ chỉ gồm tin bot đã nhận, không phải toàn bộ lịch sử Telegram.'
@@ -25,6 +25,8 @@ bot:
       remember: Nhớ Hội Thoại
       read: Tự Đánh Dấu Đọc
       manage: Quản Lý
+      tag: Tag Tên
+      notes: Lời Nhắn Và Hẹn
     groups:
       chat: Tin Nhắn
       profile: Hồ Sơ
@@ -99,6 +101,7 @@ bot:
       can_transfer_stars: Chuyển Sao
       can_manage_stories: Quản Lý Story
     errors:
+      review_first: Nhập đủ nội dung và xem lại yêu cầu trước khi Lưu.
       owner_only: Chỉ chủ tài khoản Business được dùng menu này trong DM với bot.
       no_connection: Chưa ghi nhận kết nối Business. Kết nối bot, gửi một tin trong chat được quản lý, rồi mở lại
         /business.
@@ -117,6 +120,7 @@ bot:
       api_rejected: Telegram từ chối thao tác. Kiểm tra quyền, ID, định dạng và giới hạn tài khoản trước khi tạo
         yêu cầu mới.
       uncertain: Chưa xác nhận được kết quả. Kiểm tra Telegram trước khi tạo yêu cầu mới để tránh thực hiện trùng.
+      cancel_unavailable: Lịch hẹn đã được xử lý hoặc đang gửi; không thể hủy.
     help:
       send_message: Gửi ID chat ở dòng đầu, nội dung từ dòng thứ hai. Chọn ID trong Cuộc Chat.
       send_media: 'Gửi file. Chú thích: dòng đầu là ID chat, các dòng sau là nội dung (tối đa 1024 ký tự).'
@@ -140,3 +144,27 @@ bot:
       edit_story: 'Gửi ảnh/video story mới. Chú thích: dòng đầu là ID story, các dòng sau là chú thích mới. Chỉ
         sửa story do bot đăng.'
       delete_story: Gửi ID story cần xóa. Chỉ xóa story do bot đăng.
+    command: Cài đặt trợ lý và tài khoản Business
+    notes: Lời Nhắn
+    no_notes: Chưa có lời nhắn.
+    owner_note: '📩 Lời nhắn từ {name}
+
+
+      {content}'
+    reminder: '⏰ Nhắc hẹn từ {name}
+
+
+      {content}'
+    contact_link: Mở Người Liên Hệ
+    appointment: Lịch Hẹn
+    cancel_appointment: 'Hủy Hẹn #{number}'
+    confirm_cancel_appointment: Bấm Lưu để hủy lịch hẹn này. Quay lại hoặc Đóng để bỏ.
+    appointment_cancelled: Đã hủy lịch hẹn.
+    delivery:
+      pending: Đang Chờ
+      sending: Đang Gửi
+      sent: Đã Gửi
+      failed: Chưa Gửi Được
+      uncertain: Chưa Xác Nhận
+      cancelled: Đã Hủy
+      not_required: Không Có Hẹn
