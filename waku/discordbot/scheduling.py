@@ -13,7 +13,6 @@ from pydantic_ai import RunContext
 from waku import common
 from waku.config import app_config
 from waku.logger import logger
-from waku.services.manyacg import manyacg_client
 from waku.timezone import BOT_TIMEZONE
 
 from . import state
@@ -26,8 +25,17 @@ from .media import (
 )
 from .messages import _resolve_discord_channel
 from .models import DiscordContextDeps, DiscordScheduleResult, _DiscordScheduledJob
-from .permissions import _discord_allowed_mentions, _is_discord_bot_admin
-from .settings import _contains_r18_keyword, _discord_r18_mode
+from .permissions import (
+    _channel_allowed,
+    _discord_allowed_mentions,
+    _is_discord_bot_admin,
+)
+from .settings import (
+    _contains_r18_keyword,
+    _discord_dm_settings,
+    _discord_guild_settings,
+    _discord_r18_mode,
+)
 from .state import _discord_image_lock
 
 _DISCORD_SCHEDULE_PREFIXES = {
@@ -281,6 +289,19 @@ async def _scheduled_discord_image_job(
         logger.error(f"Scheduled Discord image target is not messageable: channel={channel_id}")
         return
 
+    guild = getattr(channel, "guild", None)
+    if not await _channel_allowed(SimpleNamespace(guild=guild, channel=channel)):
+        return
+    recipient = getattr(channel, "recipient", None)
+    settings = None
+    if guild is not None:
+        settings = await _discord_guild_settings(guild)
+    elif recipient is not None:
+        settings = await _discord_dm_settings(recipient)
+    if settings is not None and not settings.setu_enabled:
+        logger.info(f"Scheduled Discord image disabled by conversation settings: channel={channel_id}")
+        return
+
     message_content, embed_caption_text = _discord_image_message_parts(caption, target_user_ids)
     if message_content and len(message_content) > 2000:
         logger.error(f"Scheduled Discord image caption exceeds 2000 characters: channel={channel_id}")
@@ -289,11 +310,7 @@ async def _scheduled_discord_image_job(
     try:
         async with image_lock:
             if image_kind == "anime":
-                guild = getattr(channel, "guild", None)
                 r18_mode = await _discord_r18_mode(guild)
-                if manyacg_client is None:
-                    await channel.send("ManyACG is not configured, so Waku cannot send anime photos yet.")
-                    return
                 fetched = await _fetch_discord_anime_artwork((query or "").strip(), r18_mode=r18_mode)
                 if fetched is None:
                     await channel.send("Could not fetch a scheduled anime image.")

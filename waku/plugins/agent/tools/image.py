@@ -12,7 +12,15 @@ from waku.common.utils import is_explicit_reply
 from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.agent.localization import tr
+from waku.plugins.generated_image_save import send_generated_photo
 from waku.services import image_gen
+from waku.services.image_limits import (
+    OPERATION_TIMEOUT,
+    USER_COOLDOWN,
+    ImageLease,
+    ImageLimitDenied,
+    image_limiter,
+)
 
 from .. import datatype, state
 
@@ -49,6 +57,8 @@ async def _download_with_timeout(
 class ImageOperationResult:
     success: bool
     message: str | None = None
+    reason: str | None = None
+    retry_after: int | None = None
 
 
 async def _find_image_in_history(
@@ -87,6 +97,8 @@ async def _generate_image(
     ctx: RunContext[datatype.ContextDeps],
     prompt: str,
     size: str = "1024x1024",
+    *,
+    lease: ImageLease | None = None,
 ) -> ToolReturn:
     """Generate an image from a text description and send it to the chat.
 
@@ -116,17 +128,52 @@ async def _generate_image(
                 success=False, message=tr("current_context_unavailable")
             )
         )
+    # Image providers can need tens of seconds. Confirm the accepted request
+    # before the API call so the chat never looks frozen behind a typing state.
+    try:
+        await ctx.deps.client.send_message(
+            chat_id=ctx.deps.chat_id,
+            text=tr("image_generation_started"),
+            reply_parameters=pyrogram.types.ReplyParameters(
+                message_id=ctx.deps.message.id,
+            ),
+        )
+    except Exception as e:
+        # A status notice is helpful but must never stop the paid generation.
+        logger.debug(
+            "Could not send image-generation status: {}", e.__class__.__name__
+        )
     await ctx.deps.client.send_chat_action(
         chat_id=ctx.deps.chat_id,
         action=pyrogram.enums.chat_action.ChatAction.UPLOAD_PHOTO,
     )
+    if lease is not None:
+        lease.mark_started()
     result = await gen_client.generate(prompt=prompt, size=size)
     if not result.success or not result.data:
-        raise ModelRetry(tr("tool_image_generation_failed_p0", p0=result.error))
+        if (
+            lease is not None
+            and not result.success
+            and getattr(result, "retry_safe", False)
+        ):
+            lease.mark_failed()
+        return ToolReturn(
+            return_value=ImageOperationResult(
+                success=False,
+                message=tr("tool_image_generation_failed_p0", p0=result.error),
+            )
+        )
     try:
-        await ctx.deps.client.send_photo(
+        await send_generated_photo(
+            ctx.deps.client,
+            owner_id=getattr(ctx.deps, "user_id", None),
             chat_id=ctx.deps.chat_id,
             photo=BytesIO(result.data),
+            locale=getattr(ctx.deps, "locale", None),
+            native=not bool(
+                getattr(ctx.deps.message, "business_connection_id", None)
+                or getattr(ctx.deps.message, "guest_query_id", None)
+            ),
             reply_parameters=pyrogram.types.ReplyParameters(
                 message_id=ctx.deps.message.id,
             ),
@@ -143,7 +190,7 @@ async def _generate_image(
         return_value=tr("tool_image_generated_successfully"),
         content=[
             tr("tool_generated_image_based_on_prompt_p0", p0=repr(prompt)),
-            BinaryContent(data=result.data, media_type="image/png"),
+            BinaryContent(data=result.data, media_type=result.media_type),
         ],
     )
 
@@ -151,6 +198,8 @@ async def _generate_image(
 async def _edit_image(
     ctx: RunContext[datatype.ContextDeps],
     prompt: str,
+    *,
+    lease: ImageLease | None = None,
 ) -> ToolReturn:
     """Edit or modify an image provided by the user and send the result to the chat.
 
@@ -235,6 +284,8 @@ async def _edit_image(
         chat_id=ctx.deps.chat_id,
         action=pyrogram.enums.chat_action.ChatAction.UPLOAD_PHOTO,
     )
+    if lease is not None:
+        lease.mark_started()
     result = await edit_client.edit(
         prompt=prompt,
         image_data=image_bytes,
@@ -242,6 +293,12 @@ async def _edit_image(
         image_mime_type=mime_type,
     )
     if not result.success or not result.data:
+        if (
+            lease is not None
+            and not result.success
+            and getattr(result, "retry_safe", False)
+        ):
+            lease.mark_failed()
         return ToolReturn(
             return_value=ImageOperationResult(
                 success=False,
@@ -249,9 +306,16 @@ async def _edit_image(
             )
         )
     try:
-        sent = await ctx.deps.client.send_photo(
+        sent = await send_generated_photo(
+            ctx.deps.client,
+            owner_id=getattr(ctx.deps, "user_id", None),
             chat_id=ctx.deps.chat_id,
             photo=BytesIO(result.data),
+            locale=getattr(ctx.deps, "locale", None),
+            native=not bool(
+                getattr(ctx.deps.message, "business_connection_id", None)
+                or getattr(ctx.deps.message, "guest_query_id", None)
+            ),
             reply_parameters=pyrogram.types.ReplyParameters(
                 message_id=ctx.deps.message.id,
             ),
@@ -276,7 +340,7 @@ async def _edit_image(
         ),
         content=[
             tr("edited_image_caption", p0=repr(prompt)),
-            BinaryContent(data=result.data, media_type="image/png"),
+            BinaryContent(data=result.data, media_type=result.media_type),
         ],
     )
 
@@ -292,6 +356,8 @@ async def image_ops(
     Use "generate" when the user asks you to draw, create or produce an image
     from a text description. Use "edit" when the user attached an image (or
     replied to one) and asks you to modify it.
+    If admission is denied, explain the wait to the user. Do not retry this tool
+    or promise a queued/scheduled image; the user must request it again later.
 
     Args:
         operation: "generate" creates a new image; "edit" transforms the
@@ -301,9 +367,33 @@ async def image_ops(
         size: Only used for "generate" — image dimensions: "1024x1024"
             (default), "1792x1024" or "1024x1792" (where supported).
     """
-    if operation == "generate":
-        return await _generate_image(ctx, prompt, size)
-    return await _edit_image(ctx, prompt)
+    lease = image_limiter.acquire(ctx.deps.user_id)
+    if isinstance(lease, ImageLimitDenied):
+        return ToolReturn(
+            return_value=ImageOperationResult(
+                success=False,
+                message=tr(lease.reason, seconds=lease.retry_after),
+                reason=lease.reason,
+                retry_after=lease.retry_after,
+            )
+        )
+    try:
+        async with asyncio.timeout(OPERATION_TIMEOUT):
+            if operation == "generate":
+                return await _generate_image(ctx, prompt, size, lease=lease)
+            return await _edit_image(ctx, prompt, lease=lease)
+    except TimeoutError:
+        retry_after = USER_COOLDOWN if lease.started else 30
+        return ToolReturn(
+            return_value=ImageOperationResult(
+                success=False,
+                message=tr("image_limit_timeout", seconds=retry_after),
+                reason="image_limit_timeout",
+                retry_after=retry_after,
+            )
+        )
+    finally:
+        lease.release()
 
 
 __all__ = ["image_ops"]

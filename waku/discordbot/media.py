@@ -177,6 +177,7 @@ def _discord_artwork_embed(
     r18: bool,
     description: str | None = None,
     index: int | None = None,
+    source_type: str = "",
 ) -> discord.Embed:
     display_title = f"🔞 {title}" if r18 else title
     if index is not None:
@@ -188,7 +189,7 @@ def _discord_artwork_embed(
         color=0xFF8AC5 if not r18 else 0xFF5C8A,
     )
     embed.set_image(url=image_url)
-    embed.set_footer(text="ManyACG / Pixiv")
+    embed.set_footer(text="nekos.best" if source_type == "nekos.best" else "ManyACG / Pixiv")
     return embed
 
 async def _fetch_manyacg_discord_artwork(
@@ -315,6 +316,7 @@ async def _send_discord_anime_photo_card(
         source_url=artwork.source_url,
         image_url="",
         r18=artwork.r18,
+        source_type=artwork.source_type,
     )
     caption_text = (caption or "").strip()
     if caption_text:
@@ -395,7 +397,7 @@ async def _send_discord_seg(message: discord.Message, keyword: str = "") -> bool
             async with image_lock:
                 fetched = await _fetch_discord_anime_artwork(keyword=keyword, r18_mode=r18_mode)
                 if fetched is None:
-                    await _send_discord_media_notice(message, "Could not fetch an image from ManyACG.")
+                    await _send_discord_media_notice(message, "Could not fetch an image from the available image sources.")
                     return True
                 artwork, picture = fetched
                 await _send_discord_anime_photo_card(message, artwork, picture)
@@ -484,7 +486,7 @@ async def _send_discord_seg_interaction(
             if fetched is None:
                 await _respond_to_discord_seg_interaction(
                     interaction,
-                    notice("Không lấy được ảnh từ ManyACG. Thử lại sau nhé.", "Could not fetch an image from ManyACG."),
+                    notice("Không lấy được ảnh. Thử lại sau nhé.", "Could not fetch an image. Please try again later."),
                 )
                 return
             artwork, picture = fetched

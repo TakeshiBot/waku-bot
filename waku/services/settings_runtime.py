@@ -435,7 +435,10 @@ async def prepare_settings_application(
                     or candidate.agent_model
                 ),
             )
-        if sticker is not None and getattr(sticker, "_selector_agent", None) is not None:
+        if (
+            sticker is not None
+            and getattr(sticker, "_selector_agent", None) is not None
+        ):
             assign(
                 sticker._selector_agent,
                 "model",
@@ -468,9 +471,7 @@ async def prepare_settings_application(
                 (
                     "image_edit_client",
                     image._ImageEditClient,
-                    candidate.agent_image_edit_model or candidate.agent_image_gen_model
-                    if candidate.agent_image_gen_model
-                    else None,
+                    candidate.agent_image_edit_model or candidate.agent_image_gen_model,
                 ),
             ]:
                 obj = None
@@ -480,7 +481,9 @@ async def prepare_settings_application(
                     )
                     obj = klass.__new__(klass)
                     obj.model = args.pop("model")
-                    obj._client = AsyncOpenAI(**args, http_client=pool(spec))
+                    obj._client = AsyncOpenAI(
+                        **args, http_client=pool(spec), timeout=180, max_retries=0
+                    )
                     cfg, _ = provider.resolve_spec(
                         spec, providers=candidate.agent_providers
                     )

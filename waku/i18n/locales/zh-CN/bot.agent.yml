@@ -1,5 +1,13 @@
 bot:
   agent_i18n:
+    image_save_button: Save
+    image_save_saved_button: Saved
+    image_save_saved: The image is in your private chat with the bot.
+    image_save_expired: This Save button has expired. You can download the image from this message.
+    image_save_unavailable: Saving is temporarily unavailable. Please check your DM before trying again.
+    image_save_dm_unavailable: Cannot send to your DM. Open the bot and press Start or unblock it, then try again.
+    image_save_uncertain: Delivery could not be confirmed. Please check your DM; the bot will not resend to avoid duplicate images.
+    image_save_flood_wait: 'Telegram requires a {seconds}-second wait. Please try saving again later.'
     periodic_sticker_hint: 'Sticker hint for this turn: when appropriate, call send_sticker once with a description of the desired emotion. Do not send another sticker if one was already sent this turn. Skip it for serious or unsuitable content.'
     periodic_reaction_hint: 'Reaction hint for this turn: when appropriate, call tg("sendReaction", {"emoji": "…"}) once to react to the message being answered. Use a standard Telegram-supported reaction emoji. Skip it when unsuitable.'
     busy: 「回复不过来啦, 请稍等一会吧...」
@@ -249,6 +257,12 @@ bot:
     image_generation_unconfigured: Image generation service is not configured.
     current_context_unavailable: Current message context is unavailable.
     image_edit_unconfigured: Image editing service is not configured.
+    image_limit_identity: Could not identify the image requester. Please use your personal account.
+    image_limit_user_busy: You already have an image request in progress. Please wait for it to finish.
+    image_limit_cooldown: 'Wait another {seconds} seconds before generating or editing another image.'
+    image_limit_bot_busy: 'All image processing slots are busy. This request was not accepted; try again in about {seconds} seconds.'
+    image_limit_global: 'The bot reached its image request limit for this time window. This request was not accepted; try again in about {seconds} seconds.'
+    image_limit_timeout: 'The image request timed out without a confirmed result. Wait {seconds} seconds before trying again.'
     image_edit_failed: 'Image editing failed: {p0}'
     generated_image_send_failed: 'Image was generated but could not be sent: {p0}'
     source_image_download_failed: Failed to download source image (timeout or error).
@@ -398,6 +412,7 @@ bot:
     tool_a_non_empty_prompt_is_required_to_generate_an_image: A non-empty prompt is required to generate
       an image.
     tool_image_generation_failed_p0: 'Image generation failed: {p0}'
+    image_generation_started: 正在生成图片，请稍等片刻。
     tool_image_generated_successfully: Image generated successfully.
     tool_a_non_empty_prompt_is_required_to_edit_an_image: A non-empty prompt is required to edit an image.
     tool_image_edited_successfully_based_on_prompt_p0: 'Image edited successfully based on prompt: {p0}'

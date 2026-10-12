@@ -47,16 +47,17 @@ async def mention_me_filter_func(
     text = message_plain_text(message)
     if not text:
         return False
-    if app_config.nickname and app_config.nickname in text:
+    folded_text = text.casefold()
+    if app_config.nickname and app_config.nickname.casefold() in folded_text:
         return True
     if not client.me:
         return False
     username = client.me.username
     if not username:
         return False
-    if username in text:
+    if username.casefold() in folded_text:
         return True
-    if message.caption and username in message.caption:
+    if message.caption and username.casefold() in message.caption.casefold():
         return True
     return False
 

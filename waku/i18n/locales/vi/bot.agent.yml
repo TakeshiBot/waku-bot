@@ -1,5 +1,13 @@
 bot:
   agent_i18n:
+    image_save_button: Lưu
+    image_save_saved_button: Đã Lưu
+    image_save_saved: Ảnh đã có trong DM của bạn với bot.
+    image_save_expired: Nút Lưu đã hết hạn. Bạn có thể tải ảnh trực tiếp từ tin nhắn này.
+    image_save_unavailable: Tạm thời không xác nhận được thao tác Lưu. Hãy kiểm tra DM trước khi thử lại.
+    image_save_dm_unavailable: Không gửi được vào DM. Hãy mở bot, bấm Start hoặc bỏ chặn rồi thử lại.
+    image_save_uncertain: Chưa xác nhận được ảnh đã gửi. Hãy kiểm tra DM; bot không gửi lại để tránh trùng ảnh.
+    image_save_flood_wait: 'Telegram yêu cầu chờ {seconds} giây. Hãy thử Lưu lại sau.'
     periodic_sticker_hint: 'Đến lượt gợi ý sticker: nếu phù hợp với nội dung, gọi send_sticker một lần với mô tả cảm xúc cần dùng. Không gửi thêm nếu đã gửi sticker trong lượt này; có thể bỏ qua khi nội dung nghiêm túc hoặc không phù hợp.'
     periodic_reaction_hint: 'Đến lượt gợi ý cảm xúc: nếu phù hợp, gọi tg("sendReaction", {"emoji": "…"}) một lần để thả cảm xúc vào tin nhắn đang trả lời. Dùng emoji reaction thông thường được Telegram hỗ trợ. Có thể bỏ qua khi không phù hợp.'
     busy: Mình đang trả lời nhiều tin nhắn, vui lòng chờ một chút...
@@ -266,6 +274,12 @@ bot:
     image_generation_unconfigured: Dịch vụ tạo ảnh chưa được cấu hình.
     current_context_unavailable: Không có ngữ cảnh tin nhắn hiện tại.
     image_edit_unconfigured: Dịch vụ chỉnh sửa ảnh chưa được cấu hình.
+    image_limit_identity: Không xác định được người yêu cầu tạo/sửa ảnh. Hãy nhắn bằng tài khoản cá nhân.
+    image_limit_user_busy: Bạn đang có một yêu cầu tạo/sửa ảnh được xử lý. Đợi lượt đó hoàn tất nhé.
+    image_limit_cooldown: 'Bạn cần chờ thêm {seconds} giây trước khi tạo/sửa ảnh tiếp.'
+    image_limit_bot_busy: 'Bot đang xử lý đủ số lượt ảnh cùng lúc. Chưa nhận yêu cầu này; thử lại sau khoảng {seconds} giây nhé.'
+    image_limit_global: 'Bot đã đạt giới hạn tạo/sửa ảnh trong khoảng thời gian này. Chưa nhận yêu cầu; thử lại sau khoảng {seconds} giây nhé.'
+    image_limit_timeout: 'Lượt tạo/sửa ảnh đã quá thời gian chờ. Chưa xác nhận được kết quả; hãy đợi {seconds} giây rồi thử lại.'
     image_edit_failed: 'Chỉnh sửa ảnh thất bại: {p0}'
     generated_image_send_failed: 'Đã tạo ảnh nhưng không thể gửi: {p0}'
     source_image_download_failed: Không thể tải ảnh gốc (hết thời gian chờ hoặc xảy ra lỗi).
@@ -418,6 +432,7 @@ bot:
     tool_p0_lines_below: '... ({p0} dòng phía dưới)'
     tool_a_non_empty_prompt_is_required_to_generate_an_image: Cần yêu cầu không trống để tạo ảnh.
     tool_image_generation_failed_p0: 'Tạo ảnh thất bại: {p0}'
+    image_generation_started: Đang tạo ảnh, sẽ mất một chút thời gian nhé.
     tool_image_generated_successfully: Đã tạo ảnh thành công.
     tool_a_non_empty_prompt_is_required_to_edit_an_image: Cần yêu cầu không trống để chỉnh sửa ảnh.
     tool_image_edited_successfully_based_on_prompt_p0: 'Đã chỉnh sửa ảnh thành công theo yêu cầu: {p0}'

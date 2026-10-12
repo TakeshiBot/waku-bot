@@ -224,3 +224,25 @@ gửi lại khi trạng thái nhận của Telegram chưa xác định.
 
 Xem [Telegram: AI features for bots](https://core.telegram.org/api/bots/ai)
 và [rich message/streaming](https://core.telegram.org/bots/features).
+
+## Tạo, sửa và lưu ảnh AI
+
+`agent_image_gen_model` chọn model tạo ảnh; `agent_image_edit_model` chọn model
+sửa ảnh riêng, để trống thì dùng model tạo ảnh. Cả hai dùng dạng `provider/model`
+và URL/key của provider tương ứng, độc lập với model chat. Hai mục có trong
+`settings.ex.toml` và menu `/config` của admin bot.
+
+Mặc định mỗi user chỉ có một lượt tạo/sửa ảnh đang xử lý, sau đó chờ 1 phút.
+Toàn bot tối đa 5 lượt đồng thời và 20 yêu cầu API trong mỗi 10 phút. Khi đầy
+lượt, bot báo thử lại sau; không tự xếp hàng. Lỗi hoặc hủy tác vụ giải phóng chỗ
+xử lý. Nếu API đã trả về lỗi xác nhận hoặc không trả ảnh, user được thử lại ngay;
+lượt gọi đó vẫn tính vào giới hạn toàn bot. Timeout, mất kết nối hoặc lỗi gửi ảnh
+vẫn giữ cooldown 1 phút vì ảnh có thể đã được tạo ở phía API. Các bộ đếm chạy
+trong tiến trình bot và được làm mới khi khởi động lại.
+
+Ảnh AI tạo/sửa trong chat Telegram thường có nút **Lưu**. Người bấm nhận bản ảnh
+trong DM riêng với bot, dùng file Telegram đã lưu sẵn nên không tạo ảnh lần nữa.
+Mỗi người lưu cùng một ảnh tối đa một lần; ảnh đã ở trong DM của người bấm
+không được gửi lặp. Nếu chưa mở DM hoặc đã chặn bot, mở bot và bấm **Start**, rồi
+bấm lại **Lưu**. Nút phụ thuộc metadata cache; mất cache hoặc hết hạn thì không
+thể xác minh lượt lưu cũ.

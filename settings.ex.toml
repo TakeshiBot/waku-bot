@@ -14,6 +14,11 @@ agent = false
 agent_model = "default/gpt-4o-mini"
 agent_prompt = ''''''
 
+# Tạo/sửa ảnh: provider/model; để trống để tắt. Sửa ảnh trống dùng model tạo ảnh.
+# Giới hạn mặc định: 1 phút/user; 5 lượt cùng lúc; 20 lượt/10 phút toàn bot.
+agent_image_gen_model = ""
+agent_image_edit_model = ""
+
 # Sticker: model dưới đây cần đọc được ảnh; dùng để học/chọn sticker.
 agent_sticker_memory = true
 agent_sticker_description_model = "default/gpt-4o-mini"

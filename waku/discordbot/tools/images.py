@@ -9,7 +9,6 @@ import discord
 from pydantic_ai import RunContext
 
 from waku.logger import logger
-from waku.services.manyacg import manyacg_client
 
 from .. import state
 from ..constants import (
@@ -214,11 +213,6 @@ async def send_discord_anime_photo(
             success=False,
             message="R18 image sending is disabled in this Discord server.",
         )
-    if manyacg_client is None:
-        return DiscordAnimePhotoResult(
-            success=False,
-            message="ManyACG is not configured, so Discord cannot send anime photos.",
-        )
 
     requested_count = max(1, int(count or 1))
     capped_count = min(requested_count, _DISCORD_IMAGE_BATCH_MAX)
@@ -263,7 +257,7 @@ async def send_discord_anime_photo(
                 if sent_count == 0:
                     return DiscordAnimePhotoResult(
                         success=False,
-                        message="Failed to fetch anime artwork from ManyACG.",
+                        message="Failed to fetch anime artwork from the available image sources.",
                         sent_count=sent_count,
                         requested_count=requested_count,
                         capped_count=capped_count,
