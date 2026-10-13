@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Any, Literal, TypeVar
 
@@ -95,6 +96,8 @@ class _AppConfig(pydantic.BaseModel):
     # single port. When `webapp` is false only /health and /ready are served, so
     # container health checks keep working with the panel disabled.
     webapp: bool = False
+    # DM menu shortcut; does not enable the web panel itself.
+    webapp_menu_button: bool = True
     webapp_host: str = "0.0.0.0"
     webapp_port: int = 8180
     # Public HTTPS base URL of the panel. Required when `webapp` is enabled:
@@ -103,8 +106,6 @@ class _AppConfig(pydantic.BaseModel):
     # Empty uses Main Mini App; otherwise the actual /newapp short name.
     # Telegram's registered Main Mini App takes precedence over this fallback.
     webapp_short_name: str = ""
-    # Set the chat menu button to open the panel.
-    webapp_menu_button: bool = True
     # HS256 secret for session tokens. Derived from the bot token when empty.
     webapp_jwt_secret: str = ""
     webapp_jwt_ttl: int = 21600  # 6 hours
@@ -242,10 +243,10 @@ class _AppConfig(pydantic.BaseModel):
     agent_proxy: str | None = None
     # Model specs use the format "provider/model_name" or just "model_name"
     # (bare name uses the "default" provider).
-    agent_model: str | None = "default/gpt-4.1"
+    agent_chat_model: str | None = "default/gpt-4.1"
     # Shared image/sticker analysis model; chat model is the fallback.
-    agent_model_multimodal: str | None = None
-    agent_model_small: str | None = None  # falls back to agent_model if unset
+    agent_vision_model: str | None = None
+    agent_model_small: str | None = None  # falls back to agent_chat_model if unset
     agent_struct_model: str | None = None
     # Per-model pydantic-ai ModelSettings overrides: temperature, top_p,
     # max_tokens, thinking (minimal/low/medium/high/xhigh), openai_reasoning_effort,
@@ -336,7 +337,6 @@ class _AppConfig(pydantic.BaseModel):
     # Edit client falls back to gen model/provider when unset.
     agent_image_edit_model: str | None = None
     # Sticker semantic memory
-    agent_sticker_memory: bool = False
     # "chat" chooses stored descriptions with the chat model; no embedding API needed.
     agent_sticker_search_mode: Literal["embedding", "chat"] = "chat"
     agent_sticker_search_candidates: int = pydantic.Field(default=60, ge=1, le=200)
@@ -349,7 +349,7 @@ class _AppConfig(pydantic.BaseModel):
     agent_sticker_min_keep_count: int = (
         100  # Keep expired stickers below this stock count.
     )
-    # Embedding model spec: "provider/model". Falls back to agent_model provider.
+    # Embedding model spec: "provider/model". Falls back to chat model provider.
     agent_sticker_embed_model: str = "default/text-embedding-3-small"
     agent_sticker_embed_dimensions: int = pydantic.Field(default=1024, gt=0)
     # Read-only compatibility with existing deployments; use the shared model.
@@ -359,11 +359,19 @@ class _AppConfig(pydantic.BaseModel):
 
     @pydantic.model_validator(mode="before")
     @classmethod
-    def _shared_vision_model(cls, data):
-        if isinstance(data, dict) and data.get("agent_model_multimodal") is None:
-            legacy = data.get("agent_sticker_description_model")
-            if legacy:
-                data = {**data, "agent_model_multimodal": legacy}
+    def _legacy_model_names(cls, data):
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        # Presence, rather than truthiness, gives the canonical names priority
+        # even when an environment explicitly clears them.
+        if "agent_chat_model" not in data and "agent_model" in data:
+            data["agent_chat_model"] = data["agent_model"]
+        if "agent_vision_model" not in data:
+            if "agent_model_multimodal" in data:
+                data["agent_vision_model"] = data["agent_model_multimodal"]
+            elif "agent_sticker_description_model" in data:
+                data["agent_vision_model"] = data["agent_sticker_description_model"]
         return data
 
     agent_sticker_description_prompt: str = pydantic.Field(
@@ -578,10 +586,50 @@ def _get_typed_config[T: pydantic.BaseModel](
     if settings_obj is None:
         settings_obj = _settings
 
+    exists = getattr(settings_obj, "exists", None)
+
+    def has_setting(name: str) -> bool:
+        return bool(exists(name)) if callable(exists) else hasattr(settings_obj, name)
+
     config_dict = {}
     for field in config_class.__annotations__:
-        if hasattr(settings_obj, field):
+        if has_setting(field):
             config_dict[field] = getattr(settings_obj, field)
+    # Input-only compatibility for deployed TOML/environment names. These are
+    # deliberately not schema fields, so dumps and configuration menus expose
+    # only the canonical names.
+    aliases = {
+        "agent_chat_model": ("agent_model",),
+        "agent_vision_model": (
+            "agent_model_multimodal",
+            "agent_sticker_description_model",
+        ),
+    }
+    environment_names = {name.upper() for name in os.environ}
+
+    def set_in_environment(name: str) -> bool:
+        suffix = name.upper()
+        return any(
+            f"{prefix}_{suffix}" in environment_names for prefix in ("WAKU", "KMUA")
+        )
+
+    for canonical, legacy_names in aliases.items():
+        # Environment overrides are a deployment layer above TOML. Preserve an
+        # old environment override after its TOML key has been auto-migrated;
+        # an explicitly supplied canonical environment name still wins.
+        if set_in_environment(canonical):
+            continue
+        legacy_environment = next(
+            (name for name in legacy_names if set_in_environment(name)), None
+        )
+        if legacy_environment is not None and has_setting(legacy_environment):
+            config_dict[canonical] = getattr(settings_obj, legacy_environment)
+            continue
+        if canonical in config_dict:
+            continue
+        legacy = next((name for name in legacy_names if has_setting(name)), None)
+        if legacy is not None:
+            config_dict[canonical] = getattr(settings_obj, legacy)
     return config_class(**config_dict)
 
 
@@ -690,6 +738,12 @@ def _read_config_candidate() -> _AppConfig:
     _settings.reload()
     candidate = _get_typed_config(_AppConfig)
     _apply_legacy_health_aliases(candidate)
+    # Runtime controls are authoritative in the database after startup. A
+    # core-file reload must not reset switches or Mini App quota allowances.
+    from waku.runtime_fields import RUNTIME_FIELDS
+
+    for name in RUNTIME_FIELDS:
+        setattr(candidate, name, getattr(app_config, name))
     if candidate.agent and candidate.agent_powermem_config_path:
         with open(candidate.agent_powermem_config_path, encoding="utf-8") as stream:
             candidate.agent_powermem_config = json.load(stream)

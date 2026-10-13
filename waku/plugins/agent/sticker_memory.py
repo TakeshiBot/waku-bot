@@ -47,14 +47,16 @@ def _vision_timeout() -> float:
     )
 
 
-if app_config.agent_sticker_memory:
+# Build optional sticker resources whenever AI is available. The feature
+# switch only controls use, so enabling it later does not require a restart.
+if app_config.agent:
     vision_model = None
-    if app_config.agent_model:
-        chat_model = provider.make_chat_model(app_config.agent_model)
+    if app_config.agent_chat_model:
+        chat_model = provider.make_chat_model(app_config.agent_chat_model)
         vision_model = chat_model
-        if app_config.agent_model_multimodal:
+        if app_config.agent_vision_model:
             vision_model = provider.with_model_fallback(
-                provider.make_chat_model(app_config.agent_model_multimodal),
+                provider.make_chat_model(app_config.agent_vision_model),
                 chat_model,
             )
     if app_config.agent_sticker_search_mode == "embedding":
@@ -353,7 +355,7 @@ async def add_sticker_command(
     the same pipeline as automatic sampling (download, description,
     embedding, store).
     """
-    if not app_config.agent_sticker_memory:
+    if not app_config.agent:
         return
     if not await _is_admin_actor(client, message):
         return
@@ -362,6 +364,9 @@ async def add_sticker_command(
         return
     chat = message.chat
     if not chat or not chat.id:
+        return
+    if not (await database.get_chat_config(chat.id)).sticker_memory_enabled:
+        await message.reply_text(tr("stickers_chat_disabled"))
         return
     reply = message.reply_to_message
     if reply is None or reply.sticker is None:
@@ -393,8 +398,6 @@ async def del_sticker_command(
     Reply to a sticker message with /delsticker; the sticker is dropped from
     the chat's sticker store (automatic eviction still manages the rest).
     """
-    if not app_config.agent_sticker_memory:
-        return
     if not await _is_admin_actor(client, message):
         return
     user = message.from_user
@@ -424,8 +427,6 @@ async def clear_sticker_command(
     client: PyrogramClient, message: pyrogram.types.Message
 ) -> None:
     """Let a group administrator wipe this chat's entire sticker memory."""
-    if not app_config.agent_sticker_memory:
-        return
     if not await _is_admin_actor(client, message):
         return
     user = message.from_user
@@ -448,8 +449,6 @@ async def clear_sticker_command(
 @localized_message
 async def on_sticker(client: PyrogramClient, message: pyrogram.types.Message) -> None:
     if not app_config.agent:
-        return
-    if not app_config.agent_sticker_memory:
         return
     if not search_ready() or _description_agent is None:
         return

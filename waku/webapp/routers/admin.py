@@ -9,27 +9,17 @@ a coin balance gets the name change applied and the coins reported as skipped.
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path as FilePath
 
 from fastapi import APIRouter, Path, Query, Request
 
 from waku import database
 from waku.bot.client import client
 from waku.common import jobqueue, ops
-from waku.config import (
-    ProviderConfig,
-    _AppConfig,
-    _resolve_settings_files,
-    app_config,
-    reload_config,
-)
+from waku.config import app_config, reload_config
 from waku.database.models import ChatPolicy, UserData
 from waku.logger import logger
-from waku.services.settings_editor import SettingsEditError, SettingsEditor
-from waku.services.settings_runtime import (
-    SETTINGS_APPLICATION_LOCK,
-    prepare_settings_application,
-)
+from waku.services.bot_features import save_values as save_bot_feature_values
+from waku.services.settings_runtime import SETTINGS_APPLICATION_LOCK
 from waku.webapp import audit
 from waku.webapp.deps import RequireAdmin, RequireOwner, SessionUser, client_key
 from waku.webapp.errors import ApiError, ErrorCode, forbidden, not_found
@@ -349,39 +339,13 @@ async def read_quota_settings(user: RequireAdmin) -> QuotaSettingsOut:
 async def write_quota_settings(
     request: Request, user: RequireOwner, payload: QuotaSettingsIn
 ) -> QuotaSettingsOut:
-    """Persist the global personal allowance and apply it without a restart."""
+    """Persist the global personal allowance in DB and apply it immediately."""
     write_limiter.check(client_key(request, user.id))
     key = "agent_quota_free_daily_tokens"
     async with SETTINGS_APPLICATION_LOCK:
-        editor = SettingsEditor(
-            [FilePath(path) for path in _resolve_settings_files()],
-            _AppConfig,
-            ProviderConfig,
-            lambda: app_config.model_dump(),
-        )
-        plan = None
-        try:
-            _, revision = await asyncio.to_thread(editor.snapshot)
-            changes = {key: str(payload.free_daily_tokens)}
-            values = await asyncio.to_thread(editor.preview, changes, revision)
-            candidate = editor.effective_candidate(values)
-            if getattr(candidate, key) != payload.free_daily_tokens:
-                raise ApiError(ErrorCode.CONFLICT, api_text("quota_settings_override"))
-            plan = await prepare_settings_application(candidate, {key})
-            previous = getattr(app_config, key)
-            await asyncio.to_thread(editor.commit_batch, changes, revision)
-        except BaseException as error:
-            if plan is not None:
-                await plan.discard()
-            if isinstance(error, SettingsEditError):
-                raise ApiError(
-                    ErrorCode.CONFLICT
-                    if str(error) == "stale_file"
-                    else ErrorCode.VALIDATION_FAILED,
-                    api_text("quota_settings_failed"),
-                ) from None
-            raise
-        await plan.activate()
+        previous = getattr(app_config, key)
+        await save_bot_feature_values({key: payload.free_daily_tokens})
+        setattr(app_config, key, payload.free_daily_tokens)
     if previous != payload.free_daily_tokens:
         audit.record(
             action="config.quota.update",

@@ -2,11 +2,34 @@ bot:
   private_config:
     info_command: 'Xem các nhóm bot đã ghi nhận'
     title: ⌬ <b>Cấu hình Waku</b>
-    telegram_enabled: Bot Telegram
-    dm_sticker_download: Tải Sticker DM
-    vision_model: Model Ảnh Và Sticker
     runtime:
-      summary: "│\n┟ <b>AI · Cấu hình đang áp dụng</b>\n│ AI: {agent} · Streaming: {streaming} · Rich message: {rich}\n│ Chat: <code>{model}</code>\n│ Vision: <code>{vision}</code>\n│\n┠ <b>Sticker</b>\n│ Học sticker: {sticker} · Tìm kiếm: <code>{sticker_mode}</code>\n│ Model mô tả: <code>{sticker_model}</code>\n│\n┠ <b>Dịch vụ</b>\n│ Telegram: {telegram} · Discord: {discord}\n│ Telegram Business: {business} · Mini App: {webapp}\n│\n┖ <b>Cơ bản</b>\n  Tên: <code>{nickname}</code> · Ngôn ngữ: <code>{language}</code>\n  Múi giờ: <code>{timezone}</code> · Log: <code>{log_level}</code>"
+      summary: |-
+        │
+        ┟ <b>Telegram</b>
+        │ Bot: {telegram} · Tải Sticker DM: {dm_sticker}
+        │ Tên: <code>{nickname}</code> · Ngôn ngữ: <code>{language}</code>
+        │ Múi giờ: <code>{timezone}</code> · Log: <code>{log_level}</code>
+        │
+        ┠ <b>Agent · Cấu hình đang áp dụng</b>
+        │ AI: {agent} · Streaming: {streaming} · Rich message: {rich}
+        │ agent_chat_model: <code>{model}</code>
+        │ agent_vision_model: <code>{vision}</code>
+        │ agent_image_gen_model: <code>{image_gen}</code>
+        │ agent_image_edit_model: <code>{image_edit}</code>
+        │
+        ┠ <b>Business</b>
+        │ Chat: {business} · Business Prompt: {business_prompt}
+        │ Prompt đang dùng: {prompt_source}
+        │
+        ┠ <b>Discord</b>
+        │ {discord}
+        │
+        ┠ <b>Mini App</b>
+        │ webapp: {webapp} · webapp_menu_button: {webapp_button}
+        │
+        ┖ <b>Services · Providers</b>: {providers}
+      custom_prompt: Prompt Riêng
+      main_prompt: Prompt Chính
       enabled: ✅ Bật
       disabled: ❌ Tắt
       discord:
@@ -15,7 +38,16 @@ bot:
         connecting: 🟡 Đang kết nối
         offline: 🔴 Chưa kết nối
         error: 🔴 Lỗi kết nối
-    open_settings: ⚙️ Cài đặt
+    open_settings: Cấu Hình
+    open_features: Chức Năng
+    features_title: ⌬ <b>Chức Năng</b>
+    features_summary: "│\n┖ <b>Đã sửa</b> → {changed}"
+    features:
+      telegram_enabled: Bot Telegram
+      discord_enabled: Bot Discord
+      business_chat_enabled: Chat Business
+      dm_sticker_download_enabled: Tải Sticker DM
+      business_chat_prompt_enabled: Business Prompt
     variables_title: ⌬ <b>Biến cấu hình</b>
     groups_summary: "│\n┟ <b>Nhóm</b> → {count}\n┠ <b>Trang</b> → {page}/{pages}\n┖ <b>Đã sửa</b> → {changed}"
     section_title: "⌬ <b>{name}</b>"
@@ -23,7 +55,7 @@ bot:
     providers_summary: "│\n┟ <b>Tổng số</b> → {count}\n┖ <b>Default</b> → {default}"
     provider_title: "⌬ <b>Nhà cung cấp: {name}</b>"
     entry_summary: "⌬ <b>Biến cấu hình</b>\n│\n┟ <b>Key</b> → <code>{key}</code>\n┠ <b>Kiểu</b> → <code>{type}</code>\n┖ <b>Giá trị</b> → <pre>{value}</pre>"
-    summary: 'File: <code>{file}</code> · Đã sửa: {count} mục. Lưu để áp dụng và đóng menu.'
+    summary: 'File: <code>{file}</code> · Đã sửa: {count} mục. Lưu để áp dụng.'
     restart_pending: '{count} cài đặt đã lưu đang chờ khởi động lại.'
     denied: Chỉ chủ bot hoặc quản trị viên toàn cục được dùng cấu hình riêng tư.
     expired: Menu đã hết hạn hoặc không thuộc về bạn. Mở lại /config.
@@ -37,7 +69,7 @@ bot:
     closed: Đã đóng cấu hình.
     edit: ✏️ Sửa giá trị
     toggle: Bật / tắt
-    providers: Nhà Cung Cấp
+    providers: Providers
     add_provider: ➕ Thêm provider
     delete_provider: 🗑 Xoá provider
     restart: 🔄 Khởi động lại để áp dụng
@@ -45,14 +77,14 @@ bot:
     discard: ✖️ Huỷ bản nháp
     reload: ↻ Đọc lại
     staged: Đã sửa bản nháp. Bấm Lưu để áp dụng.
-    saved: 'Đã lưu và áp dụng các cài đặt có thể đổi ngay. Menu tự xóa sau 5 giây.'
-    saved_restart: 'Đã lưu. Có {count} cài đặt cần khởi động lại. Mở /config và bấm Khởi động lại để áp dụng. Menu tự xóa sau 5 giây.'
+    saved: 'Đã lưu và áp dụng các cài đặt có thể đổi ngay.'
+    saved_restart: 'Đã lưu. Có {count} cài đặt cần khởi động lại. Bấm Khởi động lại để áp dụng.'
     discord_stopped: Đã tắt Discord ngay. Telegram vẫn hoạt động.
     discord_starting: Đã bật Discord; bot đang kết nối.
     discord_failed: Đã lưu cấu hình nhưng Discord chưa kết nối được. Kiểm tra token và cấu hình AI.
     environment_override: Một số mục vẫn dùng giá trị biến môi trường; giá trị mới đã được lưu vào file.
     business_saved: Đã lưu và áp dụng công tắc Telegram Business ngay.
-    business_requires_agent: Đã bật Business, nhưng cần bật agent và cấu hình agent_model để chat.
+    business_requires_agent: Đã bật Business, nhưng cần bật agent và cấu hình agent_chat_model để chat.
     send_value: 'Gửi giá trị mới cho <code>{key}</code> trong 2 phút. Prompt/chuỗi: gửi nguyên văn; danh sách/object:
       dùng JSON hoặc TOML; dùng null để xoá giá trị tuỳ chọn. /cancel để huỷ. Tin giá trị sẽ được xoá nếu bot có
       thể xoá.'
@@ -64,12 +96,12 @@ bot:
     restarting: 'Bot đang khởi động lại và sẽ tự kết nối lại.'
     cancelled: Đã huỷ sửa giá trị.
     groups:
-      base: Cơ Bản
-      agent: AI & Prompt
+      base: Telegram
+      agent: Agent
       discord: Discord
       webapp: Mini App
       rss: RSS & Liên Kết
-      services: Dịch Vụ
+      services: Services
       cache: Cache & Avatar
       economy: Coin & Chi Phí
       business: Business
@@ -79,7 +111,7 @@ bot:
       invalid_file: Không đọc được file hoặc TOML không hợp lệ. Kiểm tra file trên máy.
       invalid_value: Giá trị không hợp lệ với kiểu dữ liệu/cấu hình của base hiện tại. Mở lại mục để thử.
       stale_file: 'File đã thay đổi. Mở lại /config để lấy cấu hình mới rồi chỉnh sửa; chưa ghi đè file.'
-      save_first: 'Bấm Lưu trước khi khởi động lại, hoặc mở lại /config để bỏ bản nháp.'
+      save_first: 'Bấm Lưu trước khi chuyển giữa Chức Năng và Cấu Hình hoặc khởi động lại. Bấm Đóng để bỏ bản nháp.'
       invalid_environment: Biến môi trường không hợp lệ với cấu hình mới. Kiểm tra trên máy; chưa lưu thay đổi.
       runtime_prepare_failed: Không tạo được model hoặc dịch vụ cho cấu hình mới. Kiểm tra provider trên máy; chưa lưu thay đổi.
       permission_changed: Quyền quản trị của bạn đã thay đổi. Bản nháp chưa được lưu.

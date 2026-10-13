@@ -14,32 +14,30 @@ rich message của base hiện tại.
 3. Thêm cấu hình ở **cấp gốc** của `settings.toml`, trước `[agent_providers.*]`:
 
    ```toml
-   business_chat_enabled = true
    agent = true
-   agent_model = "default/ten-model"
+   agent_chat_model = "default/ten-model"
    ```
 
-Business dùng `agent_model`,
+Business dùng `agent_chat_model`,
 `agent_streaming`, `agent_rich_output`, timeout và giới hạn AI của bot hiện tại;
 không cần token hoặc URL/key AI khác.
 
 Sau khi cập nhật source, khởi động lại `python -m waku` một lần để nạp handler.
-Chủ bot hoặc quản trị viên toàn cục có thể vào **DM với bot → /config → Cài đặt →
-trang tiếp theo → Telegram Business**, rồi bật/tắt `business_chat_enabled`.
+Chủ bot hoặc quản trị viên toàn cục có thể vào **DM với bot → /config → Chức Năng →
+Chat Business** để bật/tắt.
 Công tắc được lưu và áp dụng ngay, không cần khởi động lại. Những thay đổi model,
 provider và prompt vẫn theo cơ chế cấu hình của base hiện tại.
 
-Trong mục **Telegram Business**, bấm **Sửa Prompt** để nhập nội dung riêng,
-**Prompt Riêng** để bật/tắt rồi bấm **Lưu**. Khi bật và nội dung không trống,
+Trong **Cấu Hình → Business**, sửa biến **business_chat_prompt** và bật/tắt
+**Business Prompt**, rồi bấm **Lưu**. Khi bật và nội dung không trống,
 Business chỉ dùng prompt riêng này, không ghép thêm `agent_prompt`. Khi tắt
 hoặc để trống, Business dùng prompt chính. Tắt không xoá nội dung đã lưu;
 thay đổi áp dụng cho lượt tiếp theo, không cần khởi động lại.
 Nút **Đóng** trong menu admin bỏ các thay đổi chưa lưu.
 
-Hai mục tương ứng trong file cấu hình, đặt cùng `business_chat_enabled`:
+File cấu hình chỉ chứa nội dung prompt; công tắc lưu trong database:
 
 ```toml
-business_chat_prompt_enabled = true
 business_chat_prompt = '''Bạn là trợ lý trả lời khách hàng của tôi.'''
 ```
 
@@ -97,7 +95,7 @@ không dùng công tắc chat DM thường hoặc công tắc `telegram_enabled`
 ## Bảng điều khiển của chủ tài khoản
 
 Chủ tài khoản đã kết nối mở **`/business` trong DM với bot**. Admin bot cũng có
-nút **Tài Khoản Business** trong `/config → Cài đặt → Business`; nút này chỉ
+nút **Business** trong `/config → Cấu Hình → Business`; nút này chỉ
 quản lý tài khoản thực sự thuộc người mở, không cấp quyền cho admin bot quản lý
 tài khoản của người khác. Nếu chưa ghi nhận kết nối, gửi một tin trong chat đã
 cho phép bot truy cập, rồi mở lại menu.

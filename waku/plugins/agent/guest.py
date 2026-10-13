@@ -91,7 +91,7 @@ def _make_agent(message, lang):
         else app_config.agent_prompt
     )
     return Agent(
-        model=provider.make_chat_model(app_config.agent_model),
+        model=provider.make_chat_model(app_config.agent_chat_model),
         model_settings=provider.make_model_settings(app_config.agent_model_options),
         instructions=persona
         + "\n\n"
@@ -175,7 +175,7 @@ async def guest_chat(client, message):
             return
         lang = user.user_config.lang
         with locale_scope(lang):
-            if not app_config.agent or not app_config.agent_model:
+            if not app_config.agent or not app_config.agent_chat_model:
                 await answer(tr("guest.disabled"))
                 return
             if key in _active or len(_active) >= 8:

@@ -176,7 +176,7 @@ chỉ phần trước dấu `/` đầu tiên là tên provider.
 
 ```toml
 agent = true
-agent_model = "default/gpt-4o-mini"
+agent_chat_model = "default/gpt-4o-mini"
 
 # Đặt các cấu hình chung khác ở phía trên các bảng provider.
 [agent_providers.default]

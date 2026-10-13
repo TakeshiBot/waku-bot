@@ -2,11 +2,34 @@ bot:
   private_config:
     info_command: 'List groups known to the bot'
     title: ⌬ <b>Waku settings</b>
-    telegram_enabled: Telegram Bot
-    dm_sticker_download: DM Sticker Download
-    vision_model: Image And Sticker Model
     runtime:
-      summary: "│\n┟ <b>AI · Active settings</b>\n│ AI: {agent} · Streaming: {streaming} · Rich messages: {rich}\n│ Chat: <code>{model}</code>\n│ Vision: <code>{vision}</code>\n│\n┠ <b>Stickers</b>\n│ Learning: {sticker} · Search: <code>{sticker_mode}</code>\n│ Description model: <code>{sticker_model}</code>\n│\n┠ <b>Services</b>\n│ Telegram: {telegram} · Discord: {discord}\n│ Telegram Business: {business} · Mini App: {webapp}\n│\n┖ <b>Basics</b>\n  Name: <code>{nickname}</code> · Language: <code>{language}</code>\n  Timezone: <code>{timezone}</code> · Log: <code>{log_level}</code>"
+      summary: |-
+        │
+        ┟ <b>Telegram</b>
+        │ Bot: {telegram} · DM Sticker Download: {dm_sticker}
+        │ Name: <code>{nickname}</code> · Language: <code>{language}</code>
+        │ Timezone: <code>{timezone}</code> · Log: <code>{log_level}</code>
+        │
+        ┠ <b>Agent · Active settings</b>
+        │ AI: {agent} · Streaming: {streaming} · Rich messages: {rich}
+        │ agent_chat_model: <code>{model}</code>
+        │ agent_vision_model: <code>{vision}</code>
+        │ agent_image_gen_model: <code>{image_gen}</code>
+        │ agent_image_edit_model: <code>{image_edit}</code>
+        │
+        ┠ <b>Business</b>
+        │ Chat: {business} · Business Prompt: {business_prompt}
+        │ Active prompt: {prompt_source}
+        │
+        ┠ <b>Discord</b>
+        │ {discord}
+        │
+        ┠ <b>Mini App</b>
+        │ webapp: {webapp} · webapp_menu_button: {webapp_button}
+        │
+        ┖ <b>Services · Providers</b>: {providers}
+      custom_prompt: Custom Prompt
+      main_prompt: Main Prompt
       enabled: ✅ On
       disabled: ❌ Off
       discord:
@@ -15,7 +38,16 @@ bot:
         connecting: 🟡 Connecting
         offline: 🔴 Disconnected
         error: 🔴 Connection error
-    open_settings: ⚙️ Settings
+    open_settings: Configuration
+    open_features: Features
+    features_title: ⌬ <b>Features</b>
+    features_summary: "│\n┖ <b>Changed</b> → {changed}"
+    features:
+      telegram_enabled: Telegram Bot
+      discord_enabled: Discord Bot
+      business_chat_enabled: Business Chat
+      dm_sticker_download_enabled: Download DM Stickers
+      business_chat_prompt_enabled: Business Prompt
     variables_title: ⌬ <b>Config variables</b>
     groups_summary: "│\n┟ <b>Groups</b> → {count}\n┠ <b>Page</b> → {page}/{pages}\n┖ <b>Changed</b> → {changed}"
     section_title: "⌬ <b>{name}</b>"
@@ -23,7 +55,7 @@ bot:
     providers_summary: "│\n┟ <b>Total</b> → {count}\n┖ <b>Default</b> → {default}"
     provider_title: "⌬ <b>Provider: {name}</b>"
     entry_summary: "⌬ <b>Config variable</b>\n│\n┟ <b>Key</b> → <code>{key}</code>\n┠ <b>Type</b> → <code>{type}</code>\n┖ <b>Value</b> → <pre>{value}</pre>"
-    summary: 'File: <code>{file}</code> · Changed: {count} fields. Save to apply and close.'
+    summary: 'File: <code>{file}</code> · Changed: {count} fields. Save to apply.'
     restart_pending: '{count} saved settings are waiting for a restart.'
     denied: Only bot owners and global administrators can use private settings.
     expired: This menu expired or belongs to another user. Open /config again.
@@ -45,14 +77,14 @@ bot:
     discard: ✖️ Discard draft
     reload: ↻ Reload
     staged: Draft updated. Save to apply.
-    saved: 'Saved and applied live settings. This menu will be deleted in 5 seconds.'
-    saved_restart: 'Saved. {count} settings require a restart. Open /config and press Restart to apply them. This menu will be deleted in 5 seconds.'
+    saved: 'Saved and applied live settings.'
+    saved_restart: 'Saved. {count} settings require a restart. Press Restart to apply them.'
     discord_stopped: Discord is now off. Telegram remains running.
     discord_starting: Discord is enabled and connecting.
     discord_failed: Settings saved, but Discord could not connect. Check its token and AI settings.
     environment_override: Some settings still use environment overrides; the new values were saved to the file.
     business_saved: Saved and applied the Telegram Business switch immediately.
-    business_requires_agent: Business is enabled, but agent and agent_model must be configured for chat.
+    business_requires_agent: Business is enabled, but agent and agent_chat_model must be configured for chat.
     send_value: Send a new value for <code>{key}</code> within 2 minutes. Send strings/prompts as plain text, lists/objects
       as JSON or TOML, or null to clear an optional value. /cancel aborts. The input message will be deleted if
       possible.
@@ -63,8 +95,8 @@ bot:
     restarting: 'The bot is restarting and will reconnect automatically.'
     cancelled: Edit cancelled.
     groups:
-      base: General
-      agent: AI & Prompts
+      base: Telegram
+      agent: Agent
       discord: Discord
       webapp: Mini App
       rss: RSS & Links
@@ -78,7 +110,7 @@ bot:
       invalid_file: The settings file cannot be read or contains invalid TOML. Check it locally.
       invalid_value: The value does not match the current base configuration/type. Reopen the entry to retry.
       stale_file: 'The file changed. Open /config again to load the latest settings before editing. The file was not overwritten.'
-      save_first: 'Save before restarting, or open /config again to discard the draft.'
+      save_first: 'Save before switching between Features and Settings or restarting. Reopen /config to discard the draft.'
       invalid_environment: Environment overrides are incompatible with this configuration. Check them locally; nothing was saved.
       runtime_prepare_failed: Could not prepare models or services for these settings. Check providers locally; nothing was saved.
       permission_changed: Your administrator rights changed. The draft was not saved.

@@ -252,7 +252,7 @@ async def init_bot(client: Client = client):
 
     common.jobqueue.add_interval_job("business_owner_notes", drain_notes, seconds=15)
 
-    if app_config.agent and app_config.agent_sticker_memory:
+    if app_config.agent:
         from waku.plugins.agent import sticker_memory, sticker_vec
 
         embed_dims = await sticker_memory.ensure_embed_dimensions()
@@ -304,18 +304,18 @@ async def _setup_menu_button(client: Client) -> None:
     logged and swallowed: the inline button in /start is the primary entry point,
     this is just a shortcut.
     """
-    if not (app_config.webapp and app_config.webapp_menu_button):
-        return
-    if not app_config.webapp_url:
-        return
     try:
-        await client.set_chat_menu_button(
-            menu_button=pyrogram.types.MenuButtonWebApp(
+        if app_config.webapp and app_config.webapp_menu_button and app_config.webapp_url:
+            menu_button = pyrogram.types.MenuButtonWebApp(
                 text=i18n.t("bot.button.panel", locale=app_config.lang),
                 web_app=pyrogram.types.WebAppInfo(url=app_config.webapp_url),
             )
-        )
-        logger.debug("webapp: chat menu button set")
+            log_message = "webapp: chat menu button set"
+        else:
+            menu_button = pyrogram.types.MenuButtonCommands()
+            log_message = "webapp: chat menu button disabled"
+        await client.set_chat_menu_button(menu_button=menu_button)
+        logger.debug(log_message)
     except Exception as e:
         logger.warning(f"webapp: failed to set chat menu button: {e}")
 
@@ -371,6 +371,11 @@ async def stop_bot(client: Client = client):
 
 async def main():
     await db.init_db()
+    # Runtime feature values are DB-owned. Seed from legacy config only while
+    # a key is missing, then apply them before Telegram discovers plugins.
+    from waku.services.bot_features import initialize_runtime_values
+
+    await initialize_runtime_values()
 
     # Start event-loop lag monitor (helps diagnose freezes: logs a warning and
     # dumps running task stacks whenever the loop is blocked beyond a threshold).

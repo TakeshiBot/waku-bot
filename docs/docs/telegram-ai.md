@@ -83,8 +83,8 @@ Menu nhóm đọc từ trên xuống cột trái rồi sang cột phải. Các m
 đứng trước; mục nội dung, ghim và tiện ích ở cột phải. Mini App dùng tên tương
 ứng, có chú thích cho từng mục và thêm công tắc tổng **Phân Tích Liên Kết**.
 
-`agent_model_multimodal` là model chung cho đọc ảnh, mô tả và chọn sticker.
-Để trống thì dùng `agent_model`; khi model riêng không đáp ứng được, bot thử
+`agent_vision_model` là model chung cho đọc ảnh, mô tả và chọn sticker.
+Để trống thì dùng `agent_chat_model`; khi model riêng không đáp ứng được, bot thử
 model chat trong cùng lượt xử lý. Model chat dự phòng vẫn cần hỗ trợ đọc ảnh
 để mô tả được nội dung ảnh. Khóa cũ `agent_sticker_description_model` chỉ còn
 để đọc cấu hình cũ; menu admin hiển thị một mục chung **Model Ảnh Và Sticker**.

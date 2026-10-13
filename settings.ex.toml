@@ -1,6 +1,6 @@
+# Công tắc chức năng: /config → Chức Năng; Token Free: Mini App.
+# Các giá trị này lưu trong database, không cần khai báo ở file này.
 # Telegram
-telegram_enabled = true
-dm_sticker_download_enabled = true
 token = ""
 owners = []
 api_id = 1025907
@@ -11,9 +11,9 @@ log_level = "INFO"
 
 # AI: prefix trước tên model chọn provider ở cuối file.
 agent = false
-agent_model = "default/gpt-4o-mini"
+agent_chat_model = "default/gpt-4o-mini"
 # Model đọc ảnh và sticker chung; trống hoặc gặp lỗi thì dùng model chat.
-agent_model_multimodal = ""
+agent_vision_model = ""
 agent_prompt = ''''''
 
 # Tạo/sửa ảnh: provider/model; để trống để tắt. Sửa ảnh trống dùng model tạo ảnh.
@@ -21,17 +21,13 @@ agent_prompt = ''''''
 agent_image_gen_model = ""
 agent_image_edit_model = ""
 
-# Sticker dùng chung agent_model_multimodal ở trên.
-agent_sticker_memory = true
-
 # Telegram Business: kết nối tài khoản và bật Secretary Mode trong BotFather.
-business_chat_enabled = false
-# Bật và có nội dung: dùng prompt riêng. Tắt hoặc trống: dùng agent_prompt.
-business_chat_prompt_enabled = true
+# Bật Business Prompt ở /config → Cấu Hình → Business. Trống: dùng agent_prompt.
 business_chat_prompt = ''''''
 
 # Telegram Mini App management panel
 webapp = false
+webapp_menu_button = true
 webapp_host = "0.0.0.0"
 webapp_port = 8180
 # URL HTTPS công khai; điền trước khi bật webapp.
@@ -39,10 +35,8 @@ webapp_url = ""
 # Short name đã đăng ký trong BotFather bằng /newapp.
 # Leave empty for Main Mini App; otherwise use the short name registered via /newapp.
 webapp_short_name = ""
-webapp_menu_button = true
 
 # Discord: điền token và ID admin Discord khi bật bot.
-discord_enabled = false
 discord_token = ""
 discord_admin_users = []
 

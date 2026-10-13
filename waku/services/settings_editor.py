@@ -20,9 +20,25 @@ from typing import Any, get_args
 import pydantic
 import tomlkit
 
+from waku.runtime_fields import RETIRED_RUNTIME_FIELDS, RUNTIME_FIELDS
+
 _WRITE_LOCK = threading.RLock()
 _PROVIDER_NAME = re.compile(r"[A-Za-z0-9_-]{1,48}\Z")
 _BASIC_PROVIDER_FIELDS = ("url", "key", "type")
+_MODEL_FIELD_ALIASES = {
+    "agent_model": "agent_chat_model",
+    "agent_model_multimodal": "agent_vision_model",
+    "agent_sticker_description_model": "agent_vision_model",
+}
+
+
+def _canonical_model_fields(values: Mapping[str, Any]) -> dict[str, Any]:
+    """Canonicalize one settings layer while preserving new-name precedence."""
+    normalized = {key.lower(): value for key, value in values.items()}
+    for legacy, canonical in _MODEL_FIELD_ALIASES.items():
+        if canonical not in normalized and legacy in normalized:
+            normalized[canonical] = normalized[legacy]
+    return normalized
 
 
 class SettingsEditError(ValueError):
@@ -129,37 +145,40 @@ class SettingsEditor:
         runtime = self.runtime()
         # Only required fields may need an environment-only value. Optional
         # fields come from schema defaults/files, never a stale running model.
-        return self.schema.model_validate(
+        values = self.schema.model_validate(
             {
                 name: runtime[name]
                 for name, field in self.schema.model_fields.items()
                 if field.is_required() and name in runtime
             }
         ).model_dump()
+        return self._runtime_values(values)
+
+    def _runtime_values(self, values: dict[str, Any]) -> dict[str, Any]:
+        runtime = self.runtime()
+        return {
+            **values,
+            **{name: runtime[name] for name in RUNTIME_FIELDS if name in runtime},
+        }
 
     def snapshot(self) -> tuple[dict[str, Any], str]:
         _, revision = self._read()
         values = self._defaults()
         try:
             for path in self.paths:
+                layer = _canonical_model_fields(
+                    tomllib.loads(path.read_text(encoding="utf-8-sig"))
+                )
                 values.update(
                     {
-                        key.lower(): value
-                        for key, value in tomllib.loads(
-                            path.read_text(encoding="utf-8-sig")
-                        ).items()
-                        if key.lower() in self.schema.model_fields
+                        key: value
+                        for key, value in layer.items()
+                        if key in self.schema.model_fields
                     }
                 )
         except (OSError, ValueError):
             raise SettingsEditError("invalid_file") from None
-        # Show the unified setting even when a deployed file still declares
-        # only the old sticker-specific name. An explicit blank disables it.
-        if values.get("agent_model_multimodal") is None:
-            legacy = values.get("agent_sticker_description_model")
-            if legacy:
-                values["agent_model_multimodal"] = legacy
-        return values, revision
+        return self._runtime_values(values), revision
 
     def configured_keys(self) -> set[str]:
         """Editable fields explicitly present in the active TOML layers."""
@@ -184,13 +203,16 @@ class SettingsEditor:
                     values = tables.get(provider, {})
                     schema = self.provider_schema
                 for key in values:
-                    if key.lower() in schema.model_fields:
-                        canonical = (
-                            "agent_model_multimodal"
-                            if provider is None
-                            and key.lower() == "agent_sticker_description_model"
-                            else key.lower()
-                        )
+                    if provider is None and key.lower() in (
+                        RUNTIME_FIELDS | RETIRED_RUNTIME_FIELDS
+                    ):
+                        continue
+                    canonical = (
+                        _MODEL_FIELD_ALIASES.get(key.lower(), key.lower())
+                        if provider is None
+                        else key.lower()
+                    )
+                    if canonical in schema.model_fields:
                         fields[canonical] = None
             return list(fields)
         except (OSError, ValueError, AttributeError, TypeError):
@@ -223,14 +245,11 @@ class SettingsEditor:
         try:
             for path in self.paths[:-1]:
                 values.update(
-                    {
-                        k.lower(): v
-                        for k, v in tomllib.loads(
-                            path.read_text(encoding="utf-8-sig")
-                        ).items()
-                    }
+                    _canonical_model_fields(
+                        tomllib.loads(path.read_text(encoding="utf-8-sig"))
+                    )
                 )
-            values.update({k.lower(): v for k, v in document.unwrap().items()})
+            values.update(_canonical_model_fields(document.unwrap()))
             candidate = self.schema.model_validate(values)
             providers = getattr(candidate, "agent_providers", {})
             for provider in providers.values():
@@ -300,7 +319,126 @@ class SettingsEditor:
         document, _ = self._read()
         self._validate(document)
 
+    def remove_runtime_fields(self) -> None:
+        """Remove legacy controls only after their values are committed to DB.
+
+        Each layer is replaced atomically. Retrying after an interrupted startup
+        is safe because the database is already the source of these values.
+        """
+        with _WRITE_LOCK:
+            for path in self.paths:
+                temp_path = None
+                try:
+                    original = path.read_bytes()
+                    document = tomlkit.parse(original.decode("utf-8-sig"))
+                    keys = [
+                        key
+                        for key in document
+                        if key.lower() in (RUNTIME_FIELDS | RETIRED_RUNTIME_FIELDS)
+                    ]
+                    if not keys:
+                        continue
+                    for key in keys:
+                        del document[key]
+                    payload = tomlkit.dumps(document).encode("utf-8")
+                    tomllib.loads(payload.decode("utf-8"))
+                    with tempfile.NamedTemporaryFile(
+                        dir=path.parent, prefix=".settings-editor-", delete=False
+                    ) as stream:
+                        temp_path = Path(stream.name)
+                        original_stat = path.stat()
+                        os.chmod(temp_path, original_stat.st_mode & 0o777)
+                        if hasattr(os, "fchown") and os.geteuid() == 0:
+                            os.fchown(
+                                stream.fileno(),
+                                original_stat.st_uid,
+                                original_stat.st_gid,
+                            )
+                        stream.write(payload)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    if path.read_bytes() != original:
+                        raise SettingsEditError("stale_file")
+                    os.replace(temp_path, path)
+                except (OSError, ValueError) as exc:
+                    if isinstance(exc, SettingsEditError):
+                        raise
+                    raise SettingsEditError("write_failed") from None
+                finally:
+                    if temp_path is not None:
+                        temp_path.unlink(missing_ok=True)
+
+    def migrate_model_fields(self) -> None:
+        """Replace deprecated model keys in every TOML layer atomically.
+
+        A canonical key already present in a layer always wins, including an
+        explicitly blank value. Reusing the TOML item retains its inline
+        comment and formatting while the old key is removed.
+        """
+        with _WRITE_LOCK:
+            for path in self.paths:
+                temp_path = None
+                try:
+                    original = path.read_bytes()
+                    document = tomlkit.parse(original.decode("utf-8-sig"))
+                    names = {key.lower(): key for key in document}
+                    if not any(alias in names for alias in _MODEL_FIELD_ALIASES):
+                        continue
+                    for legacy, canonical in _MODEL_FIELD_ALIASES.items():
+                        old_key = names.get(legacy)
+                        if old_key is None:
+                            continue
+                        canonical_key = names.get(canonical)
+                        if canonical_key is None:
+                            index = next(
+                                position
+                                for position, (body_key, _item) in enumerate(
+                                    document.body
+                                )
+                                if body_key is not None
+                                and body_key.key.lower() == old_key.lower()
+                            )
+                            item = document[old_key]
+                            del document[old_key]
+                            # tomlkit exposes ordered insertion on its container;
+                            # use it so the renamed key stays beside its comment
+                            # instead of moving below provider tables.
+                            document._insert_at(index, canonical, item)
+                            names[canonical] = canonical
+                        else:
+                            del document[old_key]
+                        names.pop(legacy, None)
+                    payload = tomlkit.dumps(document).encode("utf-8")
+                    tomllib.loads(payload.decode("utf-8"))
+                    with tempfile.NamedTemporaryFile(
+                        dir=path.parent, prefix=".settings-editor-", delete=False
+                    ) as stream:
+                        temp_path = Path(stream.name)
+                        original_stat = path.stat()
+                        os.chmod(temp_path, original_stat.st_mode & 0o777)
+                        if hasattr(os, "fchown") and os.geteuid() == 0:
+                            os.fchown(
+                                stream.fileno(),
+                                original_stat.st_uid,
+                                original_stat.st_gid,
+                            )
+                        stream.write(payload)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    if path.read_bytes() != original:
+                        raise SettingsEditError("stale_file")
+                    os.replace(temp_path, path)
+                except (OSError, ValueError) as exc:
+                    if isinstance(exc, SettingsEditError):
+                        raise
+                    raise SettingsEditError("write_failed") from None
+                finally:
+                    if temp_path is not None:
+                        temp_path.unlink(missing_ok=True)
+
     def _value_change(self, key: str, text: str) -> Callable:
+        if key in (RUNTIME_FIELDS | RETIRED_RUNTIME_FIELDS):
+            raise SettingsEditError("invalid_value")
         if key.startswith("agent_providers."):
             name, field = key.removeprefix("agent_providers.").rsplit(".", 1)
             if field not in self.provider_schema.model_fields:
@@ -341,12 +479,10 @@ class SettingsEditor:
                     if field.default is not None:
                         raise SettingsEditError("invalid_value")
                     document.pop(name, None)
-                    if key == "agent_model_multimodal":
-                        # An old alias must not silently reactivate the model
-                        # after the admin clears the shared vision setting.
-                        document.pop(
-                            self._key(document, "agent_sticker_description_model"), None
-                        )
+                    if key in {"agent_chat_model", "agent_vision_model"}:
+                        for legacy, canonical in _MODEL_FIELD_ALIASES.items():
+                            if canonical == key:
+                                document.pop(self._key(document, legacy), None)
                     lower = self.snapshot()[0].get(key)
                     if lower is not None and any(
                         (
@@ -360,8 +496,11 @@ class SettingsEditor:
                                 }
                             )
                             or (
-                                key == "agent_model_multimodal"
-                                and "agent_sticker_description_model" in names
+                                key in {"agent_chat_model", "agent_vision_model"}
+                                and any(
+                                    canonical == key and legacy in names
+                                    for legacy, canonical in _MODEL_FIELD_ALIASES.items()
+                                )
                             )
                         )
                         for p in self.paths[:-1]
@@ -373,10 +512,10 @@ class SettingsEditor:
                     else:
                         value_to_write = value
                     document[name] = value_to_write
-                    if key == "agent_model_multimodal":
-                        document.pop(
-                            self._key(document, "agent_sticker_description_model"), None
-                        )
+                    if key in {"agent_chat_model", "agent_vision_model"}:
+                        for legacy, canonical in _MODEL_FIELD_ALIASES.items():
+                            if canonical == key:
+                                document.pop(self._key(document, legacy), None)
 
         return change
 
@@ -454,17 +593,12 @@ class SettingsEditor:
             values = self._defaults()
             for path in self.paths[:-1]:
                 values.update(
-                    {
-                        key.lower(): value
-                        for key, value in tomllib.loads(
-                            path.read_text(encoding="utf-8-sig")
-                        ).items()
-                    }
+                    _canonical_model_fields(
+                        tomllib.loads(path.read_text(encoding="utf-8-sig"))
+                    )
                 )
-            values.update(
-                {key.lower(): value for key, value in document.unwrap().items()}
-            )
-            return self.schema.model_validate(values).model_dump()
+            values.update(_canonical_model_fields(document.unwrap()))
+            return self.schema.model_validate(self._runtime_values(values)).model_dump()
 
     def commit_batch(
         self,
@@ -492,13 +626,31 @@ class SettingsEditor:
                 load_dotenv=False,
                 **dict(file_values),
             )
-            candidate = self.schema.model_validate(
-                {
-                    key: getattr(settings, key)
-                    for key in self.schema.model_fields
-                    if hasattr(settings, key)
-                }
-            )
+            resolved = {
+                key: getattr(settings, key)
+                for key in self.schema.model_fields
+                if hasattr(settings, key)
+            }
+            environment_names = {name.upper() for name in os.environ}
+            applied_aliases: set[str] = set()
+            for legacy, canonical in _MODEL_FIELD_ALIASES.items():
+                canonical_env = any(
+                    f"{prefix}_{canonical.upper()}" in environment_names
+                    for prefix in ("WAKU", "KMUA")
+                )
+                legacy_env = any(
+                    f"{prefix}_{legacy.upper()}" in environment_names
+                    for prefix in ("WAKU", "KMUA")
+                )
+                if (
+                    canonical not in applied_aliases
+                    and not canonical_env
+                    and legacy_env
+                    and hasattr(settings, legacy)
+                ):
+                    resolved[canonical] = getattr(settings, legacy)
+                    applied_aliases.add(canonical)
+            candidate = self.schema.model_validate(self._runtime_values(resolved))
             memory_path = getattr(candidate, "agent_powermem_config_path", None)
             if getattr(candidate, "agent", False) and memory_path:
                 with open(memory_path, encoding="utf-8") as stream:

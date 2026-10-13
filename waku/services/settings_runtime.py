@@ -26,9 +26,9 @@ SETTINGS_APPLICATION_LOCK = asyncio.Lock()
 _MODEL_FIELDS = {
     "agent_providers",
     "agent_proxy",
-    "agent_model",
+    "agent_chat_model",
     "agent_model_small",
-    "agent_model_multimodal",
+    "agent_vision_model",
     "agent_struct_model",
     "agent_model_options",
     "agent_model_small_options",
@@ -38,6 +38,14 @@ _MODEL_FIELDS = {
     "agent_sticker_description_prompt",
     "agent_image_gen_model",
     "agent_image_edit_model",
+}
+_LIVE_FIELDS = {
+    "webapp_menu_button",
+    "business_chat_enabled",
+    "business_chat_prompt_enabled",
+    "discord_enabled",
+    "dm_sticker_download_enabled",
+    "telegram_enabled",
 }
 _STARTUP_FIELDS = {
     "token",
@@ -62,7 +70,6 @@ _STARTUP_FIELDS = {
     "health_check_port",
     "webapp_allow_origins",
     "webapp_trusted_proxies",
-    "webapp_menu_button",
     "webapp_url",
     "loop_monitor_enabled",
     "loop_monitor_interval",
@@ -86,7 +93,6 @@ _STARTUP_FIELDS = {
     "redis_port",
     "redis_db",
     "redis_password",
-    "agent_sticker_memory",
     "agent_sticker_search_mode",
     "agent_sticker_embed_model",
     "agent_sticker_embed_dimensions",
@@ -201,28 +207,38 @@ class SettingsApplicationPlan:
         if self._activated:
             return
         self._activated = True
-        if not self.live_fields & {"discord_enabled", "discord_token"}:
-            return
-        from waku import discordbot
-        from waku.logger import logger
+        if self.live_fields & {"discord_enabled", "discord_token"}:
+            from waku import discordbot
+            from waku.logger import logger
 
-        try:
-            if "discord_token" in self.live_fields or not app_config.discord_enabled:
-                await discordbot.stop_discord_bot()
-            if app_config.discord_enabled:
-                await discordbot.start_discord_bot()
-                self.discord_status = discordbot.get_discord_runtime_status()
-                if self.discord_status in {"offline", "stopped", "error"}:
-                    self.discord_status = "error"
-            else:
-                self.discord_status = "offline"
-        except Exception as error:
-            # The file was saved; explain the service failure instead of
-            # claiming that persistence failed or rolling back the draft UI.
-            self.discord_status = "error"
-            logger.error(
-                "Discord configuration activation failed: {}", type(error).__name__
-            )
+            try:
+                if (
+                    "discord_token" in self.live_fields
+                    or not app_config.discord_enabled
+                ):
+                    await discordbot.stop_discord_bot()
+                if app_config.discord_enabled:
+                    await discordbot.start_discord_bot()
+                    self.discord_status = discordbot.get_discord_runtime_status()
+                    if self.discord_status in {"offline", "stopped", "error"}:
+                        self.discord_status = "error"
+                else:
+                    self.discord_status = "offline"
+            except Exception as error:
+                # The setting was saved; report lifecycle failure separately.
+                self.discord_status = "error"
+                logger.error(
+                    "Discord configuration activation failed: {}",
+                    type(error).__name__,
+                )
+        if "webapp_menu_button" in self.live_fields:
+            for name in ("waku.__main__", "__main__"):
+                module = sys.modules.get(name)
+                setup = getattr(module, "_setup_menu_button", None)
+                client = getattr(module, "client", None)
+                if callable(setup) and client is not None:
+                    await setup(client)
+                    break
 
 
 def _effective_roots(candidate: _AppConfig, changed_fields: set[str]) -> set[str]:
@@ -243,10 +259,7 @@ def _effective_roots(candidate: _AppConfig, changed_fields: set[str]) -> set[str
 
 
 def _embedding_provider_changed(candidate: _AppConfig) -> bool:
-    if (
-        not app_config.agent_sticker_memory
-        or app_config.agent_sticker_search_mode != "embedding"
-    ):
+    if not app_config.agent or app_config.agent_sticker_search_mode != "embedding":
         return False
     spec = app_config.agent_sticker_embed_model
     name = spec.split("/", 1)[0] if "/" in spec else "default"
@@ -259,7 +272,9 @@ def settings_restart_fields(
     """Classify effective changes without constructing models/HTTP clients."""
     roots = _effective_roots(candidate, changed_fields)
     bound, used = _source_config_usage()
-    restart = roots & (_STARTUP_FIELDS | (bound - _MODEL_FIELDS - {"lang"}))
+    restart = roots & (
+        (_STARTUP_FIELDS | (bound - _MODEL_FIELDS - {"lang"})) - _LIVE_FIELDS
+    )
     restart.update(roots - used - _MODEL_FIELDS - {"lang"})
     # The same provider may serve chat and embeddings. Do not let a new
     # embedding identity query an index containing vectors from the old one.
@@ -267,7 +282,7 @@ def settings_restart_fields(
     if embedding_provider_changed and "agent_providers" in roots:
         restart.add("agent_providers")
     if (
-        app_config.agent_sticker_memory
+        app_config.agent
         and app_config.agent_sticker_search_mode == "embedding"
         and "agent_proxy" in roots
     ):
@@ -282,13 +297,13 @@ def settings_restart_fields(
             and (
                 main is None
                 or getattr(main, "agent", None) is None
-                or not candidate.agent_model
+                or not candidate.agent_chat_model
             )
         )
         or restart & {"agent_providers", "agent_proxy", "agent"}
         or embedding_provider_changed
         or (
-            app_config.agent_sticker_memory
+            app_config.agent
             and app_config.agent_sticker_search_mode == "embedding"
             and candidate.agent_proxy != app_config.agent_proxy
         )
@@ -309,7 +324,7 @@ async def prepare_settings_application(
         plan.live_fields & {"discord_enabled", "discord_token"}
         and candidate.discord_enabled
         and not (
-            candidate.discord_token and app_config.agent and app_config.agent_model
+            candidate.discord_token and app_config.agent and app_config.agent_chat_model
         )
     ):
         raise ValueError("Discord requires an AI model and a token")
@@ -358,13 +373,13 @@ async def prepare_settings_application(
                         assign(module, attribute, new)
 
     try:
-        main_model = model(candidate.agent_model)
-        small = model(candidate.agent_model_small or candidate.agent_model)
+        main_model = model(candidate.agent_chat_model)
+        small = model(candidate.agent_model_small or candidate.agent_chat_model)
         multimodal_primary = model(
-            candidate.agent_model_multimodal or candidate.agent_model
+            candidate.agent_vision_model or candidate.agent_chat_model
         )
         multimodal = provider.with_model_fallback(multimodal_primary, main_model)
-        structured = model(candidate.agent_struct_model or candidate.agent_model)
+        structured = model(candidate.agent_struct_model or candidate.agent_chat_model)
         # Explicit bindings preserve the fallback aliases when several roles
         # previously referenced the same main model.
         for name, value in [
@@ -432,9 +447,7 @@ async def prepare_settings_application(
             assign(
                 sticker._description_agent,
                 "model_settings",
-                provider.make_model_settings(
-                    candidate.agent_model_multimodal_options
-                ),
+                provider.make_model_settings(candidate.agent_model_multimodal_options),
             )
         if (
             sticker is not None
@@ -448,9 +461,7 @@ async def prepare_settings_application(
             assign(
                 sticker._selector_agent,
                 "model_settings",
-                provider.make_model_settings(
-                    candidate.agent_model_multimodal_options
-                ),
+                provider.make_model_settings(candidate.agent_model_multimodal_options),
             )
         discord = sys.modules.get("waku.discordbot.state")
         if discord is not None:

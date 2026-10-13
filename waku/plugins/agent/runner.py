@@ -299,9 +299,9 @@ async def _run_agent_impl(
             provider.make_chat_model(multimodal_override),
             effective_text_model,
         )
-    elif override_name and app_config.agent_model_multimodal:
+    elif override_name and app_config.agent_vision_model:
         effective_multimodal = provider.with_model_fallback(
-            provider.make_chat_model(app_config.agent_model_multimodal),
+            provider.make_chat_model(app_config.agent_vision_model),
             effective_text_model,
         )
     elif override_name:

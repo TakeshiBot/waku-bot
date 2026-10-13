@@ -21,8 +21,6 @@ async def prepare_sticker_tools(
     ctx: RunContext[datatype.ContextDeps], tool_def: ToolDefinition
 ) -> ToolDefinition | None:
     """Show the sticker tool only in group chats with a usable sticker memory."""
-    if not app_config.agent_sticker_memory:
-        return None
     if ctx.deps.chat_id is None or ctx.deps.chat_id >= -100:
         return None
     try:

@@ -244,7 +244,7 @@ async def rss_push():
         broadcast_targets: dict[
             int, str
         ] = {}  # chat_id -> lang (group, not rate-limited)
-        if app_config.agent and app_config.agent_model:
+        if app_config.agent and app_config.agent_chat_model:
             from waku.plugins.agent import quota
             from waku.plugins.agent.rss_digest import (
                 generate_rss_broadcast,

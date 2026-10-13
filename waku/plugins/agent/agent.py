@@ -219,12 +219,12 @@ async def history_processor(
     return compressed
 
 
-if app_config.agent and app_config.agent_model:
-    model = provider.make_chat_model(app_config.agent_model)
+if app_config.agent and app_config.agent_chat_model:
+    model = provider.make_chat_model(app_config.agent_chat_model)
     multimodal_model = model
-    if app_config.agent_model_multimodal:
+    if app_config.agent_vision_model:
         multimodal_model = provider.with_model_fallback(
-            provider.make_chat_model(app_config.agent_model_multimodal),
+            provider.make_chat_model(app_config.agent_vision_model),
             model,
         )
     small_model = (
@@ -587,8 +587,8 @@ if app_config.agent and app_config.agent_model:
     ):
         if not app_config.agent:
             return
-        assert app_config.agent_model is not None, (
-            "Unexcepted None value for agent_model"
+        assert app_config.agent_chat_model is not None, (
+            "Unexpected None value for agent_chat_model"
         )
         user = message.from_user
         if not user or not user.id:
@@ -680,9 +680,9 @@ if app_config.agent and app_config.agent_model:
             cur_small = await get_chat_model_override(target_chat_id, "small")
             lines = [
                 tr("model_header", p0=chat_desc),
-                f"  main:       <code>{html.escape(cur_main or tr('model_global_default', p0=app_config.agent_model))}</code>",
-                f"  multimodal: <code>{html.escape(cur_mm or tr('model_global_default', p0=app_config.agent_model_multimodal or app_config.agent_model))}</code>",
-                f"  small:      <code>{html.escape(cur_small or tr('model_global_default', p0=app_config.agent_model_small or app_config.agent_model))}</code>",
+                f"  main:       <code>{html.escape(cur_main or tr('model_global_default', p0=app_config.agent_chat_model))}</code>",
+                f"  multimodal: <code>{html.escape(cur_mm or tr('model_global_default', p0=app_config.agent_vision_model or app_config.agent_chat_model))}</code>",
+                f"  small:      <code>{html.escape(cur_small or tr('model_global_default', p0=app_config.agent_model_small or app_config.agent_chat_model))}</code>",
                 "",
                 tr("model_usage"),
                 tr("model_reset_hint"),
@@ -697,10 +697,10 @@ if app_config.agent and app_config.agent_model:
         if subcommand == "both":
             prev_main = (
                 await get_chat_model_override(target_chat_id, "main")
-                or app_config.agent_model
+                or app_config.agent_chat_model
             )
             prev_mm = await get_chat_model_override(target_chat_id, "multimodal") or (
-                app_config.agent_model_multimodal or app_config.agent_model
+                app_config.agent_vision_model or app_config.agent_chat_model
             )
             await set_chat_model_override(target_chat_id, model_name, "main")
             await set_chat_model_override(target_chat_id, model_name, "multimodal")
@@ -723,7 +723,7 @@ if app_config.agent and app_config.agent_model:
             current = await get_chat_model_override(target_chat_id, "main")
             if model_name:
                 await set_chat_model_override(target_chat_id, model_name, "main")
-                prev = current or app_config.agent_model
+                prev = current or app_config.agent_chat_model
                 await message.reply_text(
                     tr(
                         "model_main_set",
@@ -739,12 +739,12 @@ if app_config.agent and app_config.agent_model:
                 )
             else:
                 await set_chat_model_override(target_chat_id, None, "main")
-                prev = current or app_config.agent_model
+                prev = current or app_config.agent_chat_model
                 await message.reply_text(
                     tr(
                         "model_main_reset",
                         p0=chat_desc,
-                        p1=html.escape(app_config.agent_model or ""),
+                        p1=html.escape(app_config.agent_chat_model or ""),
                         p2=html.escape(prev or ""),
                     ),
                     parse_mode=pyrogram.enums.ParseMode.HTML,
@@ -756,7 +756,9 @@ if app_config.agent and app_config.agent_model:
 
         elif subcommand == "multimodal":
             current = await get_chat_model_override(target_chat_id, "multimodal")
-            global_default = app_config.agent_model_multimodal or app_config.agent_model
+            global_default = (
+                app_config.agent_vision_model or app_config.agent_chat_model
+            )
             if model_name:
                 await set_chat_model_override(target_chat_id, model_name, "multimodal")
                 prev = current or global_default
@@ -792,7 +794,7 @@ if app_config.agent and app_config.agent_model:
 
         elif subcommand == "small":
             current = await get_chat_model_override(target_chat_id, "small")
-            global_default = app_config.agent_model_small or app_config.agent_model
+            global_default = app_config.agent_model_small or app_config.agent_chat_model
             if model_name:
                 await set_chat_model_override(target_chat_id, model_name, "small")
                 prev = current or global_default

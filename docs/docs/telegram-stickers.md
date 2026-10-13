@@ -4,12 +4,12 @@ Bot học mô tả sticker do người dùng gửi trong từng nhóm, sau đó 
 phù hợp với cảm xúc hoặc yêu cầu hiện tại. Đây là bộ nhớ sticker, không phải
 huấn luyện lại model AI. Nhóm cần bật AI trả lời và bộ nhớ sticker.
 
-Đặt các khóa này trước mọi mục `[agent_providers.…]` trong `settings.toml`:
+Bật **Học Và Gửi Sticker** trong `/config` của nhóm, rồi bấm **Lưu**.
+Đặt model đọc ảnh trước mọi mục `[agent_providers.…]` trong `settings.toml`:
 
 ```toml
-agent_sticker_memory = true
 # Điền model đọc ảnh đang có trên provider của bạn.
-agent_sticker_description_model = "default/gpt-4o-mini"
+agent_vision_model = "default/gpt-4o-mini"
 ```
 
 Bot mặc định dùng chế độ `chat`, học theo mẫu 50%, gửi được sau khi có ít nhất
@@ -28,12 +28,9 @@ embedding thực sự qua `agent_sticker_embed_model`. Không dùng model chat n
 hoặc Claude làm model embedding. Khi đổi phương pháp/model embedding, dùng một
 đường dẫn database sticker riêng để tránh trộn các chỉ mục không tương thích.
 
-Model mô tả sticker phải đọc được ảnh. Bot dùng `agent_sticker_description_model`
-nếu có, nếu không dùng `agent_model_multimodal`, rồi tới `agent_model`.
-Model chọn sticker dùng `agent_model_small` nếu có; nếu không dùng model
-mô tả sticker. Có thể giữ model chat chính riêng và dùng model nhanh hơn
-cho việc học/chọn sticker.
-Khởi động lại sau khi bật bộ nhớ hoặc đổi chế độ tìm kiếm, model embedding,
+Model mô tả và chọn sticker dùng chung `agent_vision_model` với đọc ảnh.
+Nếu không đặt model này hoặc model gặp lỗi, bot dùng `agent_chat_model`.
+Khởi động lại sau khi đổi chế độ tìm kiếm, model embedding,
 số chiều hay đường dẫn database. Model chat/mô tả và các chu kỳ có thể áp dụng
 ngay qua nút Lưu trong `/config` của admin bot.
 
@@ -61,7 +58,7 @@ tính vào quota. Bot chỉ lưu sticker sau khi mô tả thành công; học th
 ## Tải sticker trong DM
 
 Gửi sticker vào DM của bot để nhận file `.webp`, `.tgs` hoặc `.webm` tương ứng.
-Admin bot có thể bật/tắt **Tải Sticker DM** ở cuối trang **Cài đặt** trong `/config`,
+Admin bot có thể bật/tắt **Tải Sticker DM** trong `/config → Chức Năng`,
 rồi bấm **Lưu** để áp dụng ngay. **Đóng** bỏ thay đổi chưa lưu.
 Công tắc `dm_sticker_download_enabled` mặc định bật và không ảnh hưởng tới việc
 học/gửi sticker của AI trong nhóm.

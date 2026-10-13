@@ -30,7 +30,7 @@ async def assess_conversation(snapshot, current_input, usage):
     from waku.plugins.agent.safety import build_usage_limits
 
     agent = Agent(
-        model=make_chat_model(app_config.agent_model),
+        model=make_chat_model(app_config.agent_chat_model),
         model_settings=make_model_settings(app_config.agent_model_options),
         output_type=AssistantAssessment,
         instructions=(

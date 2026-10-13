@@ -55,11 +55,17 @@ Tên hiển thị của bot là `waku`; tên repository và phân phối Python 
 Thư mục và module Python là `waku`; chạy trực tiếp bằng `python -m waku`.
 Các dữ liệu cũ được xử lý theo [hướng dẫn nâng cấp](docs/docs/branding-timezone.md).
 
-Admin bot có thể tạm dừng Telegram bằng `/config` trong DM → Cài đặt →
-Cơ bản và vận hành → Bot Telegram → Lưu. Công tắc `telegram_enabled` có hiệu
+Admin bot có thể tạm dừng Telegram bằng `/config` trong DM → Chức Năng →
+Bot Telegram → Lưu. Công tắc `telegram_enabled` có hiệu
 lực ngay, áp dụng cho người dùng thường, nhóm và Guest Mode; tiến trình và Discord
 vẫn chạy. Khi tắt, admin bot vẫn chat và dùng lệnh trong DM như bình thường;
 bên ngoài DM cũng tắt với admin bot. Business dùng công tắc riêng, không bị ảnh hưởng.
+
+`/config → Cấu Hình` có danh sách biến cốt lõi cố định, với tên nút đúng tên
+khóa. Biến chưa có trong TOML vẫn hiển thị với giá trị `""`; chỉnh và lưu sẽ thêm biến vào file. Lưu giữ menu
+mở để sửa tiếp; Đóng bỏ bản nháp chưa lưu. Công tắc chức năng lưu riêng trong database; Token Free hằng ngày chỉ chỉnh
+trong Mini App. Khi nâng cấp, trạng thái cũ được chuyển sang database trước khi
+các khóa tương ứng được bỏ khỏi TOML.
 
 Guest Mode gửi Thinking trước khi gọi AI, rồi sửa đúng tin Guest đó thành câu trả
 lời; khi bật `agent_streaming`, nội dung được cập nhật trong lúc sinh. Bot thử khối

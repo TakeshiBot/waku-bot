@@ -312,7 +312,7 @@ def _run_model_matches_multimodal(ctx: RunContext[datatype.ContextDeps]) -> bool
     selected = getattr(ctx.deps, "multimodal_model", None)
     if selected is not None and ctx.model is selected:
         return True
-    spec = app_config.agent_model_multimodal or app_config.agent_model
+    spec = app_config.agent_vision_model or app_config.agent_chat_model
     model_name = getattr(ctx.model, "model_name", None)
     if not spec or not model_name:
         return False
@@ -350,12 +350,12 @@ def _read_transcription_model(
     selected = getattr(ctx.deps, "multimodal_model", None)
     if selected is not None:
         return selected
-    spec = app_config.agent_model_multimodal or app_config.agent_model
+    spec = app_config.agent_vision_model or app_config.agent_chat_model
     if not spec:
         return None
     try:
-        fallback = provider.make_chat_model(app_config.agent_model)
-        if spec == app_config.agent_model:
+        fallback = provider.make_chat_model(app_config.agent_chat_model)
+        if spec == app_config.agent_chat_model:
             return fallback
         return provider.with_model_fallback(
             provider.make_chat_model(spec),

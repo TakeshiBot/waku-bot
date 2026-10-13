@@ -3,7 +3,7 @@
 Independent of the main agent: importing this module must never build the
 chat agent (``waku.plugins.agent.agent``), so the RSS poll job can use it even
 when the chat agent is disabled. Both entry points are gated on
-``app_config.agent and app_config.agent_model``; when the gate fails they
+``app_config.agent and app_config.agent_chat_model``; when the gate fails they
 return the "no agent output" values (``{}`` / ``None``) and the caller falls
 back to the raw rendered entry.
 """
@@ -45,9 +45,9 @@ _broadcast_agent: Agent[Any, str] | None = None
 
 
 def _make_digest_agent() -> Agent[Any, RssDigestSummaries]:
-    assert app_config.agent_model is not None, "agent_model must be set"
+    assert app_config.agent_chat_model is not None, "agent_chat_model must be set"
     return Agent(
-        model=provider.make_chat_model(app_config.agent_model),
+        model=provider.make_chat_model(app_config.agent_chat_model),
         # PromptedOutput: the model returns the JSON as text, which pydantic-ai
         # parses afterwards. Native output forces tool_choice, which some
         # providers reject (DeepSeek with thinking enabled -> HTTP 400).
@@ -61,9 +61,9 @@ def _make_digest_agent() -> Agent[Any, RssDigestSummaries]:
 
 
 def _make_broadcast_agent() -> Agent[Any, str]:
-    assert app_config.agent_model is not None, "agent_model must be set"
+    assert app_config.agent_chat_model is not None, "agent_chat_model must be set"
     return Agent(
-        model=provider.make_chat_model(app_config.agent_model),
+        model=provider.make_chat_model(app_config.agent_chat_model),
         output_type=str,
         capabilities=[trace.AgentTraceCapability()],
         retries=2,
@@ -195,7 +195,7 @@ async def generate_rss_digest(
     `recipients` are the subscribed chats this batch is generated for; empty means
     nobody is charged (the caller did not name them)."""
     global _digest_agent
-    if not entries or not (app_config.agent and app_config.agent_model):
+    if not entries or not (app_config.agent and app_config.agent_chat_model):
         return {}
     session = await trace.start_trace("rss_digest")
     try:
@@ -241,7 +241,7 @@ async def generate_rss_broadcast(
 
     `recipients` are the group chats that will receive it; see `_settle_shared`."""
     global _broadcast_agent
-    if not entries or not (app_config.agent and app_config.agent_model):
+    if not entries or not (app_config.agent and app_config.agent_chat_model):
         return None
     session = await trace.start_trace("rss_broadcast")
     try:

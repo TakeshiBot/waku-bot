@@ -27,6 +27,14 @@ class Base(DeclarativeBase):
     pass
 
 
+class BotRuntimeSetting(Base):
+    """Small operator-controlled feature switches whose source of truth is DB."""
+
+    __tablename__ = "bot_runtime_setting"
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[object] = mapped_column(JSON, nullable=False)
+
+
 class BusinessState(Base):
     """peer_id=0 stores the owned account; positive IDs store isolated dialogs."""
 

@@ -4,7 +4,7 @@ Discord chạy cùng tiến trình `python -m waku`, dùng schema cấu hình, d
 scheduler và AI provider của base hiện tại. Thêm bot vào server là dùng được ngay,
 không có bước xin hoặc duyệt quyền Waku. Bot dùng slash command và menu embed
 riêng tư trong server; lệnh quản trị bot dùng tiền tố `!` trong DM. Discord không cần URL/key AI riêng:
-`agent_model` chọn provider trong `[agent_providers.*]` như Telegram.
+`agent_chat_model` chọn provider trong `[agent_providers.*]` như Telegram.
 
 ## Cấu hình và chạy
 
@@ -12,14 +12,13 @@ Thêm các dòng sau **ở cấp gốc** của `settings.toml`, trước các b�
 `[agent_providers.*]`. Không đặt chúng dưới một bảng provider.
 
 ```toml
-discord_enabled = true
 discord_token = "TOKEN_BOT_DISCORD"
 discord_admin_users = [123456789012345678]
 discord_channel_allowlist = []
 discord_keywords = ["waku"]
 
 agent = true
-agent_model = "default/ten-model"
+agent_chat_model = "default/ten-model"
 ```
 
 `discord_admin_users` chứa ID tài khoản Discord được quản trị Waku trên nhiều server.
@@ -48,7 +47,8 @@ uv sync
 uv run python -m waku
 ```
 
-Thay đổi token hoặc bật/tắt nền tảng cần khởi động lại. Khi chưa bật Discord,
+Bật/tắt Discord trong `/config → Chức Năng → Discord → Lưu` ở DM Telegram
+của admin bot; công tắc áp dụng ngay và lưu trong database. Khi chưa bật Discord,
 Telegram chạy như trước. Không đưa token thật vào repository; settings và env
 riêng đã được `.gitignore` loại trừ.
 

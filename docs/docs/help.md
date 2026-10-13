@@ -11,12 +11,15 @@ có thể đổi lựa chọn trong phần hồ sơ của Mini App. Các giới 
 
 Chủ bot và quản trị viên toàn cục có thể dùng các lệnh sau trong chat riêng:
 
-- `/config`: mở trang tổng quan, bấm **⚙️ Cài đặt** để chọn nhóm cấu hình. Các biến
+- `/config`: mở trang tổng quan, bấm **Cấu Hình** để chọn nhóm cấu hình. Các biến
   được xếp hai cột; bấm biến boolean để bật/tắt trực tiếp, bấm biến khác để xem
-  và sửa. Các nút quay lại, đổi trang và đóng nằm dưới menu. Chuỗi/prompt nhập nguyên
+  và sửa. **Chức Năng** có các công tắc Telegram, Discord, Chat Business và Tải
+  Sticker DM, lưu riêng trong database. Các nút quay lại, đổi trang và đóng nằm dưới menu. Chuỗi/prompt nhập nguyên
   văn; danh sách/object nhập JSON hoặc TOML; `null` xoá giá trị tuỳ chọn nếu không
-  kế thừa từ file trước. `/cancel` huỷ bước nhập. Nút bật/tắt lưu vào file trước,
-  chưa đổi ngay model đang chạy. Menu che key/token và thử xoá tin nhập giá trị.
+  kế thừa từ file trước. `/cancel` huỷ bước nhập. Danh sách biến cốt lõi cố định;
+  biến chưa khai báo trong TOML vẫn có nút, hiện giá trị `""`; chỉnh và lưu sẽ thêm biến vào file.
+  **Lưu** áp dụng bản nháp và giữ menu mở; **Đóng** bỏ thay đổi chưa lưu rồi đóng.
+  Menu che key/token và thử xoá tin nhập giá trị.
 - `/info`: xem các nhóm bot đã ghi nhận trong DB, 10 nhóm mỗi trang, kèm ID, liên
   kết và trạng thái truy cập. Dùng ◀️ / ▶️ để đổi trang, ✖️ để đóng; nút làm mới
   kiểm tra lại trang hiện tại.
@@ -26,10 +29,9 @@ schema của base hiện tại, giữ comment TOML, kiểm tra dữ liệu trư�
 chối ghi đè nếu file đã đổi. Nếu có `settings.dev.toml`, menu sửa lớp override đó;
 biến môi trường vẫn được ưu tiên sau khi khởi động lại.
 
-Sau khi lưu, dùng nút **Khởi động lại để áp dụng** để tạo lại model/client từ cấu
-hình mới. Nút có xác nhận và yêu cầu dừng bot bình thường. Docker/systemd cần có
-chính sách tự khởi động lại; nếu chạy trực tiếp bằng `python -m waku`, chạy lại
-lệnh sau khi bot dừng. Đổi cấu hình provider không cần lặp lại URL/key trong các
+Model, prompt và công tắc có thể đổi trực tiếp sẽ được áp dụng khi lưu. Chỉ khi
+menu báo có cấu hình cần khởi động lại mới dùng nút **Khởi động lại**.
+Đổi cấu hình provider không cần lặp lại URL/key trong các
 field model: dùng tên provider như `default/ten-model`.
 
 Xem thêm [hướng dẫn triển khai](self-host.md) và [bảng quản trị Mini App](webapp.md).

@@ -72,13 +72,13 @@ async def _start_discord_bot() -> None:
     if not app_config.discord_token:
         logger.warning("Discord AI chat enabled but discord_token is empty")
         return
-    if not app_config.agent or not app_config.agent_model:
-        logger.warning("Discord AI chat requires agent=true and agent_model")
+    if not app_config.agent or not app_config.agent_chat_model:
+        logger.warning("Discord AI chat requires agent=true and agent_chat_model")
         return
 
     state.discord_stopping = False
     state.discord_agent = Agent(
-        model=provider.make_chat_model(app_config.agent_model),
+        model=provider.make_chat_model(app_config.agent_chat_model),
         output_type=str,
         tools=[
             Tool(get_discord_server_info, sequential=True),
@@ -194,7 +194,7 @@ async def _start_discord_bot() -> None:
             f"{lang_instruction}"
         )
     state.discord_recovery_agent = Agent(
-        model=provider.make_chat_model(app_config.agent_model),
+        model=provider.make_chat_model(app_config.agent_chat_model),
         instructions=(
             "Bạn là Waku trên Discord. Trả lời ngắn, tự nhiên bằng tiếng Việt. "
             "Dùng khi lượt AI chính bị quá tải hoặc lỗi tạm thời; không nhắc API/tool/stack trace."

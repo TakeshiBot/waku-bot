@@ -55,7 +55,7 @@ def _should_reply(message: Message) -> bool:
     return bool(
         app_config.business_chat_enabled
         and app_config.agent
-        and app_config.agent_model
+        and app_config.agent_chat_model
         and message.business_connection_id
         and message.chat
         and message.chat.type == enums.ChatType.PRIVATE
@@ -104,9 +104,9 @@ def _make_business_agent() -> Agent:
     from waku.plugins.agent.safety import scrub_output
     from waku.services.business_context import assistant_instructions
 
-    assert app_config.agent_model is not None
+    assert app_config.agent_chat_model is not None
     return Agent(
-        model=make_chat_model(app_config.agent_model),
+        model=make_chat_model(app_config.agent_chat_model),
         model_settings=make_model_settings(app_config.agent_model_options),
         instructions=assistant_instructions(_business_prompt()),
         output_type=str,

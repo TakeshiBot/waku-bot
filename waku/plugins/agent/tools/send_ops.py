@@ -640,7 +640,7 @@ async def _send_sticker_checked(
     ctx: RunContext[datatype.ContextDeps], query: str
 ) -> str:
     """Send a sticker after the availability checks."""
-    if not app_config.agent_sticker_memory or not sticker_memory.search_ready():
+    if not sticker_memory.search_ready():
         return tr("sticker_memory_disabled")
     if ctx.deps.chat_id is None or ctx.deps.chat_id >= -100:
         return tr("stickers_group_only")

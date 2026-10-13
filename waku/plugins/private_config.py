@@ -24,7 +24,7 @@ from waku import common, database
 from waku.config import ProviderConfig, _AppConfig, _resolve_settings_files, app_config
 from waku.i18n import t
 from waku.logger import logger
-from waku.plugins.menu_cleanup import schedule_saved_menu_cleanup
+from waku.runtime_fields import APP_ONLY_FIELDS, FEATURE_FIELDS, RUNTIME_FIELDS
 from waku.services.settings_editor import (
     SettingsEditError,
     SettingsEditor,
@@ -39,17 +39,56 @@ _PAGE_SIZE = 8
 _MAX_SESSIONS = 100
 _SETTINGS_SAVE_LOCK = SETTINGS_APPLICATION_LOCK
 _RESTART_PENDING: set[str] = set()
+_FEATURE_KEYS = tuple(
+    key
+    for key in (
+        "telegram_enabled",
+        "discord_enabled",
+        "business_chat_enabled",
+        "dm_sticker_download_enabled",
+    )
+    if key in FEATURE_FIELDS
+)
+_BUSINESS_PROMPT_SWITCH = "business_chat_prompt_enabled"
+_RUNTIME_TOGGLE_KEYS = (*_FEATURE_KEYS, _BUSINESS_PROMPT_SWITCH)
 _GROUPS = (
     "base",
     "agent",
-    "discord",
-    "webapp",
-    "rss",
-    "services",
-    "cache",
-    "economy",
     "business",
+    "webapp",
+    "discord",
+    "services",
+    "providers",
 )
+# Stable core controls: missing TOML declarations do not hide menu entries.
+_CORE_FIELDS = (
+    "token",
+    "owners",
+    "api_id",
+    "api_hash",
+    "lang",
+    "nickname",
+    "log_level",
+    "agent",
+    "agent_chat_model",
+    "agent_vision_model",
+    "agent_prompt",
+    "agent_image_gen_model",
+    "agent_image_edit_model",
+    "business_chat_prompt",
+    "webapp",
+    "webapp_menu_button",
+    "webapp_host",
+    "webapp_port",
+    "webapp_url",
+    "webapp_short_name",
+    "discord_token",
+    "discord_admin_users",
+    "manyacg_api_url",
+    "manyacg_api_key",
+    "agent_providers",
+)
+_PROVIDER_FIELDS = ("url", "key", "type")
 _SESSIONS: dict[str, ConfigSession] = {}
 
 
@@ -69,9 +108,13 @@ class ConfigSession:
     changes: dict[str, str] = field(default_factory=dict)
     additions: set[str] = field(default_factory=set)
     deletions: set[str] = field(default_factory=set)
+    feature_values: dict[str, bool] = field(default_factory=dict)
+    feature_baseline: dict[str, bool] = field(default_factory=dict)
+    feature_changes: dict[str, bool] = field(default_factory=dict)
     values: dict = field(default_factory=dict)
     baseline: dict = field(default_factory=dict)
     field_keys: list[str] = field(default_factory=list)
+    configured_keys: set[str] = field(default_factory=set)
     view: int = 0
     confirmation: str | None = None
     location: str = "home"
@@ -81,6 +124,7 @@ class ConfigSession:
     provider_parent: str = "providers:0"
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     command_message_id: int | None = None
+    notice: str = ""
 
 
 def _tr(translation_key: str, session: ConfigSession | None = None, **values) -> str:
@@ -127,7 +171,7 @@ def _footer(
     row.append(_button(_tr("save", session), token, "save"))
     if (
         session.dirty
-        and not _draft_count(session)
+        and not (_draft_count(session) or session.feature_changes)
         and session.confirmation != "restart"
     ):
         row.append(_button(_tr("restart", session), token, "restart"))
@@ -155,25 +199,54 @@ def _entry_value(values: dict, key: str):
 
 
 def _label(key: str, value, session: ConfigSession) -> str:
-    status = "✅ " if value is True else "❌ " if value is False else ""
-    changed = "📝 " if key in session.changes else "🔄 " if key in session.dirty else ""
-    name = (
-        _tr("dm_sticker_download", session)
-        if key == "dm_sticker_download_enabled"
-        else _tr("vision_model", session)
-        if key == "agent_model_multimodal"
-        else _tr("telegram_enabled", session)
-        if key == "telegram_enabled"
-        else _tr("business_labels." + key, session)
-        if key
-        in {
-            "business_chat_enabled",
-            "business_chat_prompt_enabled",
-            "business_chat_prompt",
-        }
-        else key.rsplit(".", 1)[-1]
+    status = (
+        ""
+        if not _is_configured(key, session)
+        else "✅ "
+        if value is True
+        else "❌ "
+        if value is False
+        else ""
     )
+    changed = "📝 " if key in session.changes else "🔄 " if key in session.dirty else ""
+    name = key.rsplit(".", 1)[-1] if key.startswith("agent_providers.") else key
     return changed + status + name
+
+
+def _is_configured(key: str, session: ConfigSession) -> bool:
+    if key in session.changes:
+        return session.changes[key].strip().lower() not in {"null", "none"}
+    return _declared_key(key, session)
+
+
+def _declared_key(key: str, session: ConfigSession) -> bool:
+    if key.startswith("agent_providers."):
+        name, field_name = key.removeprefix("agent_providers.").rsplit(".", 1)
+        return (
+            name in session.additions
+            or field_name in session.editor.configured_fields(provider=name)
+        )
+    return key in session.configured_keys
+
+
+def _display_setting(
+    key: str, values: dict, session: ConfigSession, *, limit: int = 700
+) -> str:
+    if not _is_configured(key, session):
+        return '""'
+    value = _entry_value(values, key)
+    return '""' if value == "" else display_value(key, value, limit=limit)
+
+
+def _feature_label(key: str, session: ConfigSession) -> str:
+    enabled = _feature_values(session)[key]
+    changed = "📝 " if key in session.feature_changes else ""
+    status = "✅ " if enabled else "❌ "
+    return changed + status + _tr("features." + key, session)
+
+
+def _agent_chat_model():
+    return app_config.agent_chat_model
 
 
 def _variables_text(
@@ -183,7 +256,7 @@ def _variables_text(
     for index, key in enumerate(keys):
         branch = "┖" if index == len(keys) - 1 else "┠"
         label = html.escape(_label(key, _entry_value(values, key), session))
-        value = html.escape(display_value(key, _entry_value(values, key), limit=140))
+        value = html.escape(_display_setting(key, values, session, limit=140))
         lines.append(f"{branch} <b>{label}</b> → <code>{value}</code>")
     return "\n".join(lines)
 
@@ -226,19 +299,109 @@ def _draft_values(session: ConfigSession) -> dict:
         session.values = values
         session.baseline = values
         session.field_keys = _editable_fields(session.editor)
+        session.configured_keys = session.editor.configured_keys()
     return session.values
 
 
 def _editable_fields(editor: SettingsEditor) -> list[str]:
-    fields = [
+    return [
         key
-        for key in editor.configured_fields()
-        if key != "dm_sticker_download_enabled"
+        for key in _CORE_FIELDS
+        if key not in RUNTIME_FIELDS and key not in APP_ONLY_FIELDS
     ]
-    # Make recovery available even on an existing deployment's older TOML.
-    if "telegram_enabled" not in fields:
-        fields.insert(0, "telegram_enabled")
-    return fields
+
+
+def _feature_values(session: ConfigSession) -> dict[str, bool]:
+    if not session.feature_values:
+        session.feature_values = {
+            key: bool(getattr(app_config, key)) for key in _RUNTIME_TOGGLE_KEYS
+        }
+        session.feature_baseline = dict(session.feature_values)
+    return session.feature_values
+
+
+async def _load_feature_values(session: ConfigSession) -> None:
+    from waku.services.bot_features import get_runtime_values
+
+    values = await get_runtime_values()
+    session.feature_values = {key: bool(values[key]) for key in _RUNTIME_TOGGLE_KEYS}
+    session.feature_baseline = dict(session.feature_values)
+    session.feature_changes.clear()
+
+
+def _stage_feature(session: ConfigSession, key: str) -> None:
+    session.notice = ""
+    values = _feature_values(session)
+    values[key] = not values[key]
+    if values[key] == session.feature_baseline[key]:
+        session.feature_changes.pop(key, None)
+    else:
+        session.feature_changes[key] = values[key]
+
+
+async def _commit_feature_draft(session: ConfigSession) -> str:
+    from waku.services.bot_features import save_values
+    from waku.services.settings_runtime import prepare_settings_application
+
+    async with _SETTINGS_SAVE_LOCK:
+        if not await _is_admin(session.user_id):
+            raise SettingsEditError("permission_changed")
+        selected = dict(_feature_values(session))
+        candidate = app_config.model_copy(deep=True)
+        for key, value in selected.items():
+            setattr(candidate, key, value)
+        changed = set(session.feature_changes)
+        try:
+            plan = await prepare_settings_application(candidate, changed)
+        except Exception:
+            raise SettingsEditError("runtime_prepare_failed") from None
+        try:
+            if not await _is_admin(session.user_id):
+                raise SettingsEditError("permission_changed")
+            saved = await save_values(
+                selected, expected_values=dict(session.feature_baseline)
+            )
+        except ValueError as error:
+            await plan.discard()
+            if str(error) == "runtime_conflict":
+                raise SettingsEditError("stale_file") from None
+            raise SettingsEditError("write_failed") from None
+        except Exception:
+            await plan.discard()
+            raise SettingsEditError("write_failed") from None
+        except BaseException:
+            await plan.discard()
+            raise
+        await plan.activate()
+        session.feature_values = {
+            key: bool(saved.get(key, selected[key])) for key in _RUNTIME_TOGGLE_KEYS
+        }
+        session.feature_baseline = dict(session.feature_values)
+        session.feature_changes.clear()
+        _RESTART_PENDING.update(plan.restart_fields)
+        _RESTART_PENDING.difference_update(changed - plan.restart_fields)
+        session.dirty = set(_RESTART_PENDING)
+        notice = (
+            _tr("saved_restart", session, count=len(session.dirty))
+            if session.dirty
+            else _tr("saved", session)
+        )
+        if plan.discord_status is not None:
+            notice += "\n" + _tr(
+                "discord_failed"
+                if plan.discord_status == "error"
+                else "discord_stopped"
+                if not app_config.discord_enabled
+                else "discord_starting",
+                session,
+            )
+        if (
+            "business_chat_enabled" in changed
+            and app_config.business_chat_enabled
+            and not (app_config.agent and _agent_chat_model())
+        ):
+            notice += "\n" + _tr("business_requires_agent", session)
+        return notice
 
 
 def has_pending_config_input(message: Message) -> bool:
@@ -267,24 +430,35 @@ def _runtime_summary(session: ConfigSession) -> str:
         discord_status = "disabled"
     elif discord_status not in {"ready", "connecting", "offline", "error"}:
         discord_status = "offline"
+    chat_model = _agent_chat_model()
+    vision_model = app_config.agent_vision_model
     return _tr(
         "runtime.summary",
         session,
         agent=status(app_config.agent),
-        model=value(app_config.agent_model),
-        vision=value(app_config.agent_model_multimodal or app_config.agent_model),
+        model=value(chat_model),
+        vision=value(vision_model or chat_model),
         streaming=status(app_config.agent_streaming),
         rich=status(app_config.agent_rich_output),
-        sticker=status(app_config.agent_sticker_memory),
-        sticker_mode=value(app_config.agent_sticker_search_mode),
-        sticker_model=value(
-            app_config.agent_model_multimodal
-            or app_config.agent_model
+        image_gen=value(app_config.agent_image_gen_model),
+        image_edit=value(
+            app_config.agent_image_edit_model or app_config.agent_image_gen_model
         ),
         discord=_tr("runtime.discord." + discord_status, session),
         telegram=status(app_config.telegram_enabled),
         business=status(app_config.business_chat_enabled),
+        business_prompt=status(app_config.business_chat_prompt_enabled),
+        prompt_source=_tr(
+            "runtime.custom_prompt"
+            if app_config.business_chat_prompt_enabled
+            and app_config.business_chat_prompt
+            else "runtime.main_prompt",
+            session,
+        ),
+        dm_sticker=status(app_config.dm_sticker_download_enabled),
         webapp=status(app_config.webapp),
+        webapp_button=status(app_config.webapp_menu_button),
+        providers=len(app_config.agent_providers),
         nickname=value(app_config.nickname),
         language=value(app_config.lang),
         timezone=BOT_TIMEZONE_NAME,
@@ -293,6 +467,7 @@ def _runtime_summary(session: ConfigSession) -> str:
 
 
 async def _stage_setting(session: ConfigSession, key: str, text: str) -> None:
+    session.notice = ""
     _draft_values(session)
     changes = {**session.changes, key: text}
     values = await asyncio.to_thread(
@@ -302,13 +477,16 @@ async def _stage_setting(session: ConfigSession, key: str, text: str) -> None:
         additions=session.additions,
         deletions=session.deletions,
     )
-    # Toggling back to the baseline should leave no pending change.
-    if _entry_value(values, key) == _entry_value(session.baseline, key):
+    # Explicitly setting a missing declaration must still materialize it in TOML.
+    if _entry_value(values, key) == _entry_value(
+        session.baseline, key
+    ) and _declared_key(key, session):
         changes.pop(key)
     session.changes, session.values = changes, values
 
 
 async def _stage_provider(session: ConfigSession, name: str, *, delete: bool = False):
+    session.notice = ""
     _draft_values(session)
     additions, deletions = set(session.additions), set(session.deletions)
     changes = dict(session.changes)
@@ -351,17 +529,16 @@ def _reset_draft(session: ConfigSession):
     session.values, session.revision = session.editor.snapshot()
     session.baseline = session.values
     session.field_keys = _editable_fields(session.editor)
+    session.configured_keys = session.editor.configured_keys()
+
+
+async def _reset_all_drafts(session: ConfigSession) -> None:
+    _reset_draft(session)
+    await _load_feature_values(session)
 
 
 def _visible_groups(session: ConfigSession):
-    groups = dict.fromkeys(
-        "providers" if key == "agent_providers" else _group(key)
-        for key in session.field_keys
-        if key != "agent_powermem_config"
-    )
-    if session.values.get("agent_providers"):
-        groups.setdefault("providers", None)
-    return list(groups)
+    return list(_GROUPS)
 
 
 async def _refresh_restart_pending(session: ConfigSession):
@@ -432,12 +609,6 @@ async def _commit_draft(session: ConfigSession) -> str:
             for key in changed
         ):
             notice += "\n" + _tr("environment_override", session)
-        if (
-            "business_chat_enabled" in changed
-            and app_config.business_chat_enabled
-            and not (app_config.agent and app_config.agent_model)
-        ):
-            notice += "\n" + _tr("business_requires_agent", session)
         if plan.discord_status is not None:
             notice += "\n" + _tr(
                 "discord_failed"
@@ -468,12 +639,13 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
             "summary",
             session,
             file=html.escape(session.editor.path.name),
-            count=_draft_count(session),
+            count=_draft_count(session) + len(session.feature_changes),
         )
         if session.dirty:
             text += "\n" + _tr("restart_pending", session, count=len(session.dirty))
         rows.append(
             [
+                _button(_tr("open_features", session), token, "features"),
                 _button(_tr("open_settings", session), token, "groups:0"),
             ]
         )
@@ -485,7 +657,26 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
                 if not button.callback_data.endswith(":home")
             ]
         )
+        if session.notice:
+            text += "\n\n" + session.notice
         return text, InlineKeyboardMarkup(rows)
+    elif action == "features":
+        session.entries = []
+        session.provider_name = None
+        session.back = "home"
+        text = (
+            _tr("features_title", session)
+            + "\n"
+            + _tr("features_summary", session, changed=len(session.feature_changes))
+        )
+        rows.extend(
+            _rows(
+                [
+                    _button(_feature_label(key, session), token, f"feature:{index}")
+                    for index, key in enumerate(_FEATURE_KEYS)
+                ]
+            )
+        )
     elif action.startswith("groups:"):
         page, pages = _page(action.split(":")[1], len(visible_groups))
         session.entries = []
@@ -517,19 +708,6 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
             destination = "providers:0" if group == "providers" else f"group:{group}:0"
             buttons.append(_button(label, token, destination))
         rows.extend(_rows(buttons))
-        rows.append(
-            [
-                _button(
-                    _label(
-                        "dm_sticker_download_enabled",
-                        _entry_value(values, "dm_sticker_download_enabled"),
-                        session,
-                    ),
-                    token,
-                    "sticker_download",
-                )
-            ]
-        )
         previous = f"groups:{page - 1}" if page else None
         following = f"groups:{page + 1}" if page + 1 < pages else None
     elif action.startswith("group:"):
@@ -565,21 +743,30 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
         for index in range(page * _PAGE_SIZE, min(len(keys), (page + 1) * _PAGE_SIZE)):
             key = keys[index]
             value = _entry_value(values, key)
-            target = "toggle" if isinstance(value, bool) else "entry"
+            target = (
+                "toggle"
+                if isinstance(value, bool) and _is_configured(key, session)
+                else "entry"
+            )
             buttons.append(
                 _button(_label(key, value, session), token, f"{target}:{index}")
             )
-        rows.extend(_rows(buttons))
         if group == "business":
             rows.append(
                 [
                     _button(
-                        t("bot.business.account", locale=session.locale),
+                        _feature_label(_BUSINESS_PROMPT_SWITCH, session),
+                        token,
+                        "business_prompt_toggle",
+                    ),
+                    _button(
+                        "Business",
                         token,
                         "business_account",
-                    )
+                    ),
                 ]
             )
+        rows.extend(_rows(buttons))
         previous = f"group:{group}:{page - 1}" if page else None
         following = f"group:{group}:{page + 1}" if page + 1 < pages else None
     elif action == "providers" or action.startswith("providers:"):
@@ -621,10 +808,7 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
             session.provider_parent = session.entry_parent
         session.provider_name = name
         session.back = session.provider_parent
-        session.entries = [
-            f"agent_providers.{name}.{key}"
-            for key in session.editor.editable_provider_fields(name)
-        ]
+        session.entries = [f"agent_providers.{name}.{key}" for key in _PROVIDER_FIELDS]
         session.entry_parent = "provider_view"
         text = _variables_text(
             _tr("provider_title", session, name=html.escape(name)),
@@ -655,7 +839,7 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
             session,
             key=html.escape(key),
             type=html.escape(type(value).__name__),
-            value=html.escape(display_value(key, value)),
+            value=html.escape(_display_setting(key, values, session)),
         )
         rows.append([_button(_tr("edit", session), token, f"edit:{index}")])
         if isinstance(value, bool):
@@ -663,6 +847,8 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
     else:
         raise SettingsEditError("invalid_value")
     rows.append(_footer(token, session, previous=previous, following=following))
+    if session.notice:
+        text += "\n\n" + session.notice
     return text, InlineKeyboardMarkup(rows)
 
 
@@ -703,6 +889,7 @@ async def private_config_command(client: Client, message: Message):
         )
         session = ConfigSession(user.id, message.chat.id, 0, config.lang, editor)
         session.command_message_id = message.id
+        await _load_feature_values(session)
         await _refresh_restart_pending(session)
         token = secrets.token_hex(5)
         _SESSIONS[token] = session
@@ -757,7 +944,7 @@ async def private_config_callback(client: Client, query: CallbackQuery):
             _SESSIONS.pop(token, None)
             await query.answer(_tr("denied", session), show_alert=True)
             return
-        if int(view) != session.view:
+        if int(view) != session.view and action != "close":
             await query.answer(_tr("expired", session), show_alert=True)
             return
         previous_view = session.view
@@ -777,6 +964,11 @@ async def private_config_callback(client: Client, query: CallbackQuery):
             session.values,
             session.baseline,
             list(session.field_keys),
+            dict(session.feature_values),
+            dict(session.feature_baseline),
+            dict(session.feature_changes),
+            set(session.configured_keys),
+            session.notice,
         )
         session.view += 1
         session.pending = None
@@ -800,7 +992,9 @@ async def private_config_callback(client: Client, query: CallbackQuery):
                 await query.answer()
                 answered = True
                 notice = (
-                    await _commit_draft(session)
+                    await _commit_feature_draft(session)
+                    if session.feature_changes
+                    else await _commit_draft(session)
                     if _draft_count(session)
                     else (
                         _tr("saved_restart", session, count=len(session.dirty))
@@ -808,17 +1002,17 @@ async def private_config_callback(client: Client, query: CallbackQuery):
                         else _tr("saved", session)
                     )
                 )
-                _SESSIONS.pop(token, None)
                 committed = True
-                try:
-                    await _edit(message, notice)
-                finally:
-                    schedule_saved_menu_cleanup(
-                        client, message, session.command_message_id
-                    )
+                session.pending = None
+                session.pending_until = 0
+                await _reset_all_drafts(session)
+                await _refresh_restart_pending(session)
+                session.notice = notice
+                text, markup = _menu(token, session, session.location)
+                await _edit(message, text, markup)
                 return
             elif action == "business_account":
-                if _draft_count(session):
+                if _draft_count(session) or session.feature_changes:
                     raise SettingsEditError("save_first")
                 await query.answer()
                 answered = True
@@ -838,20 +1032,35 @@ async def private_config_callback(client: Client, query: CallbackQuery):
                 committed = True
                 return
             elif action in {"discard", "reload"}:
-                _reset_draft(session)
+                await _reset_all_drafts(session)
                 await _refresh_restart_pending(session)
                 action = "home"
-            elif action == "sticker_download":
-                value = _entry_value(
-                    _draft_values(session), "dm_sticker_download_enabled"
-                )
-                await _stage_setting(
-                    session, "dm_sticker_download_enabled", str(not value).lower()
-                )
+            elif action == "features":
+                if _draft_count(session):
+                    raise SettingsEditError("save_first")
+            elif action.startswith("feature:"):
+                if _draft_count(session):
+                    raise SettingsEditError("save_first")
+                index = int(action.split(":")[1])
+                _stage_feature(session, _FEATURE_KEYS[index])
+                await query.answer(_tr("staged", session), show_alert=True)
+                answered = True
+                action = "features"
+            elif action == "business_prompt_toggle":
+                if _draft_count(session):
+                    raise SettingsEditError("save_first")
+                _stage_feature(session, _BUSINESS_PROMPT_SWITCH)
                 await query.answer(_tr("staged", session), show_alert=True)
                 answered = True
                 action = session.location
+            elif action in {"providers", "provider_view"} or action.startswith(
+                ("groups:", "group:", "providers:", "provider:", "entry:")
+            ):
+                if session.feature_changes:
+                    raise SettingsEditError("save_first")
             elif action.startswith(("edit:", "toggle:")):
+                if session.feature_changes:
+                    raise SettingsEditError("save_first")
                 index = int(action.split(":")[1])
                 key = session.entries[index]
                 if action.startswith("toggle:"):
@@ -921,7 +1130,7 @@ async def private_config_callback(client: Client, query: CallbackQuery):
                 answered = True
                 action = session.provider_parent
             elif action in {"restart", "restart_confirm"}:
-                if _draft_count(session):
+                if _draft_count(session) or session.feature_changes:
                     raise SettingsEditError("save_first")
                 if action == "restart":
                     session.confirmation = "restart"
@@ -993,7 +1202,19 @@ async def private_config_callback(client: Client, query: CallbackQuery):
                     session.values,
                     session.baseline,
                     session.field_keys,
+                    session.feature_values,
+                    session.feature_baseline,
+                    session.feature_changes,
+                    session.configured_keys,
+                    session.notice,
                 ) = previous_state
+            elif (
+                session.entries == previous_state[0]
+                and session.location == previous_state[2]
+            ):
+                # A failed refresh after a successful save can keep the same
+                # visible keyboard usable without rolling back committed data.
+                session.view = previous_view
             logger.error(f"private config menu failed: {exc.__class__.__name__}")
             if not answered:
                 await query.answer(_tr("errors.menu_failed", session), show_alert=True)
