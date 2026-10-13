@@ -18,8 +18,13 @@ from waku.config import app_config
 from waku.i18n import i18n
 from waku.logger import logger
 from waku.services import manyacg as manyacg_service
-from waku.services.anime_images import fetch_anime_artwork, original_image_url
+from waku.services.anime_images import (
+    fetch_anime_artwork,
+    original_image_url,
+    search_manyacg_artworks,
+)
 from waku.services.manyacg import manyacg_client
+from waku.services.telegram_images import image_allowed
 
 from .embeds import discord_command_embed
 from .permissions import _channel_allowed
@@ -205,22 +210,13 @@ async def _fetch_manyacg_discord_artwork(
                 "Discord anime fetch: "
                 f"keyword={keyword!r} r18_mode={r18_mode}({_r18_mode_label(r18_mode)})"
             )
-            resp = await manyacg_client.client.get(
-                "/artwork/list",
-                params={
-                    "r18": r18_mode,
-                    "hybrid": app_config.manyacg_hybrid_search,
-                    "keyword": keyword,
-                },
+            items = await search_manyacg_artworks(
+                manyacg_client.client, keyword, r18_mode
             )
-            if resp.status_code != 200:
-                logger.error(
-                    "Discord anime photo API returned "
-                    f"{resp.status_code}: {resp.text[:300]!r}"
-                )
+            if not items:
                 return None
             resp_model = manyacg_service.RandomArtworkResponse.model_validate(
-                resp.json()
+                {"status": 200, "message": "", "data": items}
             )
         else:
             logger.debug(
@@ -235,13 +231,13 @@ async def _fetch_manyacg_discord_artwork(
                 f"r18_mode={r18_mode}({_r18_mode_label(r18_mode)})"
             )
             return None
-        artwork = random.choice(resp_model.data)
-        if not artwork.pictures:
-            logger.error(
-                "Discord anime fetch returned artwork without pictures: "
-                f"title={artwork.title!r} r18={artwork.r18}"
-            )
+        candidates = [
+            artwork for artwork in resp_model.data
+            if artwork.pictures and image_allowed(artwork.r18, r18_mode)
+        ]
+        if not candidates:
             return None
+        artwork = random.choice(candidates)
         logger.debug(
             "Discord anime fetch success: "
             f"title={artwork.title!r} r18={artwork.r18} "

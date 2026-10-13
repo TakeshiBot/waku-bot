@@ -9,6 +9,7 @@ import discord
 from pydantic_ai import RunContext
 
 from waku.logger import logger
+from waku.services.anime_images import resolve_image_search
 
 from .. import state
 from ..constants import (
@@ -136,12 +137,15 @@ async def send_discord_anime_photo(
 
     Call this tool when the user naturally asks Waku to send/show/give an
     anime/Pixiv image, picture, photo, seg, ảnh, hình, or similar. The current
-    Discord server R18 mode is applied inside this tool as an API filter only.
+    Discord server R18 mode and the user's requested rating are enforced.
     If this tool returns success=False, tell the user the image could not be
     sent instead of claiming that an image was sent.
 
     Args:
-        keyword: Optional keyword to search for specific anime/Pixiv images.
+        keyword: Character name and series, or search tags, without chat filler.
+            Preserve the requested name, never substitute another character.
+            Append r18 or sfw if explicitly requested. An empty keyword is only
+            for random requests. No match means no image, not a random substitute.
         target_channel_id: Optional target channel ID for immediate cross-channel sends.
             Bot-admin-only when different from the current channel.
         target_user_ids: Discord user IDs to mention in the sent image message.
@@ -209,11 +213,15 @@ async def send_discord_anime_photo(
         )
 
     r18_mode = settings.r18_mode if message.guild is not None else 0
-    if r18_mode == 0 and _contains_r18_keyword(keyword):
+    request = resolve_image_search(
+        keyword, r18_mode, request_text=getattr(message, "content", "") or ""
+    )
+    if request is None:
         return DiscordAnimePhotoResult(
             success=False,
-            message="R18 image sending is disabled in this Discord server.",
+            message="The requested Safe/R18 rating is not permitted by this conversation's image mode.",
         )
+    keyword, r18_mode = request
 
     requested_count = max(1, int(count or 1))
     capped_count = min(requested_count, _DISCORD_IMAGE_BATCH_MAX)

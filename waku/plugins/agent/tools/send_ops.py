@@ -11,13 +11,19 @@ from pydantic_ai import ModelRetry, RunContext
 
 from waku import common, database, i18n
 from waku.bot.client import client
+from waku.common.rich_message import message_plain_text
 from waku.common.telegram_runtime import telegram_chat_allowed
 from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.agent.localization import tr
 from waku.plugins.agent.output import record_tool_reply, text_already_sent
 from waku.plugins.manyacg import manyacg
-from waku.services.anime_images import fetch_anime_artwork, original_image_url
+from waku.services.anime_images import (
+    fetch_anime_artwork,
+    original_image_url,
+    resolve_image_search,
+    search_manyacg_artworks,
+)
 from waku.services.telegram_images import image_allowed, telegram_image_settings
 from waku.timezone import BOT_TIMEZONE
 
@@ -450,28 +456,22 @@ async def _fetch_manyacg_anime_artwork(
 ) -> tuple[dict, dict] | None:
     try:
         if keyword:
-            params = {
-                "r18": r18_mode,
-                "hybrid": app_config.manyacg_hybrid_search,
-                "keyword": keyword,
-            }
-            resp = await manyacg.httpx_client.get(
-                url="/artwork/list",
-                params=params,
+            artworks = await search_manyacg_artworks(
+                manyacg.httpx_client, keyword, r18_mode
             )
         else:
             resp = await manyacg.httpx_client.get(
                 url="/artwork/random",
                 params={"r18": r18_mode},
             )
-        if resp.status_code != 200:
-            logger.error(f"Anime API returned {resp.status_code}")
-            return None
-        artworks = [
-            artwork
-            for artwork in resp.json()["data"]
-            if image_allowed(artwork.get("r18"), r18_mode) and artwork.get("pictures")
-        ]
+            if resp.status_code != 200:
+                logger.error(f"Anime API returned {resp.status_code}")
+                return None
+            artworks = [
+                artwork
+                for artwork in resp.json()["data"]
+                if image_allowed(artwork.get("r18"), r18_mode) and artwork.get("pictures")
+            ]
         if not artworks:
             return None
         artwork: dict = random.choice(artworks)
@@ -496,7 +496,10 @@ async def send_anime_photo(
     """Get and send anime photos (also called setu).
 
     Args:
-        keyword: Optional keyword to search for anime photos. Use nekos:neko,
+        keyword: Character name and series, or search tags, without chat filler.
+            Preserve the requested name; never replace it with another character.
+            Append r18 or sfw if explicitly requested. No matching result means
+            no image, not a request for a random substitute. Use nekos:neko,
             nekos:waifu, nekos:husbando or nekos:kitsune for the SFW nekos.best source.
         count: How many photos to send, 1-10.
     """
@@ -511,6 +514,13 @@ async def send_anime_photo(
     enabled, image_mode = await telegram_image_settings(ctx.deps.chat_id)
     if not enabled:
         return AnimePhotoResult(success=False, message=tr("anime_chat_disabled"))
+    request = resolve_image_search(
+        keyword, image_mode,
+        request_text=message_plain_text(ctx.deps.message),
+    )
+    if request is None:
+        return AnimePhotoResult(success=False, message="The requested Safe/R18 rating is not permitted by this conversation's image mode.")
+    keyword, image_mode = request
     try:
         ratekey = f"anime_photo_rate_limit:{ctx.deps.chat_id}:{ctx.deps.user_id}"
         if await common.memttlcache.get(ratekey, 0) > 3:

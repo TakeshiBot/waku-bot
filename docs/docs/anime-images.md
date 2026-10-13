@@ -22,14 +22,19 @@ Với ảnh ngẫu nhiên ở chế độ **An Toàn** hoặc **Cả Hai**, bot 
 hai nguồn. Khi một nguồn lỗi, thử nguồn còn lại. **Chỉ R18** dùng ManyACG,
 không lấy ảnh SFW từ nekos.best để thay thế yêu cầu R18.
 
-Tìm từ khóa thông thường ưu tiên ManyACG, rồi thử tìm metadata trên nekos.best;
-không đổi sang ảnh ngẫu nhiên khi không tìm thấy. Muốn chọn nekos.best trực tiếp:
+Tìm tên nhân vật/tag dùng ManyACG: ưu tiên tìm từ khóa, chỉ lấy kết quả có tên/tag
+khớp yêu cầu. Tìm ngữ nghĩa chỉ là bước bổ sung và vẫn phải qua bộ lọc này.
+Không đổi sang ảnh ngẫu nhiên hoặc nhân vật khác khi không tìm thấy. nekos.best
+không có chỉ mục tag nhân vật, nên chỉ dùng cho ảnh ngẫu nhiên/category hoặc
+khi chọn nguồn này trực tiếp:
 
 ```text
 /seg nekos:neko
 /seg nekos:waifu
 /seg nekos:husbando
 /seg nekos:kitsune
+/seg Hatsune Miku
+/seg Rem r18
 ```
 
 Trên Discord, nhập cùng từ khóa vào lệnh `/seg`. AI cũng dùng được các từ khóa
@@ -39,6 +44,13 @@ nekos.best dẫn tới file ảnh tương ứng; ảnh ManyACG giữ đường d
 Các request nekos.best có User-Agent nhận diện dự án, có giới hạn nhịp tìm kiếm
 chung và tạm ngừng khi API báo 429. Việc bật/tắt ảnh và chọn chế độ trong config
 Telegram/Discord vẫn áp dụng cho cả hai nguồn.
+
+`r18`/`nsfw` trong từ khóa chọn ảnh R18, kể cả khi menu đang để **Cả Hai**;
+`sfw`/`an toàn` chọn ảnh an toàn. Các dấu này không được gửi như tên nhân vật.
+Yêu cầu R18 bị từ chối khi đang ở **An Toàn**, và yêu cầu SFW bị từ chối khi
+đang ở **Chỉ R18**. Không nới chế độ của nhóm để đáp ứng một yêu cầu riêng.
+Tên ngắn có thể trùng nhiều nhân vật; thêm họ hoặc tên bộ anime để thu hẹp.
+Việc đối chiếu dựa trên metadata của API, không phải nhận diện nhân vật bằng ảnh.
 
 ## Xin ảnh và tạo ảnh AI
 

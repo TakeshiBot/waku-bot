@@ -1,11 +1,13 @@
-"""ManyACG and nekos.best share the existing image mode and delivery format."""
+"""Shared anime search, rating filters and source adapters for both platforms."""
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
 import random
+import re
 import time
+import unicodedata
 from datetime import datetime
 from urllib.parse import urlsplit
 
@@ -14,6 +16,7 @@ import httpx
 from waku.common.http import _clients
 from waku.config import app_config
 from waku.logger import logger
+from waku.services.image_requests import contains_r18_request
 from waku.services.manyacg import Artist, Artwork, Picture
 from waku.services.telegram_images import image_allowed, normalize_image_mode
 
@@ -25,6 +28,88 @@ _catalog_lock = asyncio.Lock()
 _search_lock = asyncio.Lock()
 _next_search = 0.0
 _blocked_until = 0.0
+_RATING_MARKER = re.compile(r"\b(?:r[ -]?18|nsfw|sfw)\b|18\+|🔞", re.IGNORECASE)
+_SAFE_MARKER = re.compile(r"\bsfw\b|\ban toàn\b|\ban toan\b", re.IGNORECASE)
+_SAFE_NEGATION = re.compile(
+    r"\b(?:no|not|non|without|không|khong|ko)\s*-?\s*(?:r[ -]?18|nsfw)\b",
+    re.IGNORECASE,
+)
+
+
+def resolve_image_search(keyword, mode, *, request_text=""):
+    """Separate rating instructions from character names without relaxing policy."""
+    mode = normalize_image_mode(mode)
+    keyword = unicodedata.normalize("NFC", keyword or "").strip()
+    keyword = re.sub(r"\br[ -]18\b", "r18", keyword, flags=re.IGNORECASE)
+    rating_text = re.sub(r"\br[ -]18\b", "r18", request_text or keyword, flags=re.IGNORECASE)
+    adult = contains_r18_request(rating_text) or contains_r18_request(keyword)
+    safe = any(
+        _SAFE_MARKER.search(text) or _SAFE_NEGATION.search(text)
+        for text in (rating_text, keyword)
+    )
+    if adult and (mode == 0 or safe):
+        return None
+    if safe and mode == 1:
+        return None
+    effective_mode = 1 if adult else 0 if safe else mode
+    query = _SAFE_NEGATION.sub(" ", keyword)
+    query = _SAFE_MARKER.sub(" ", query)
+    query = _RATING_MARKER.sub(" ", query)
+    query = re.sub(r"\s+", " ", query).strip(" ,;")
+    return query, effective_mode
+
+
+def _search_tokens(value):
+    value = unicodedata.normalize("NFKC", str(value)).casefold()
+    return re.findall(r"[^\W_]+", value)
+
+
+def artwork_matches_keyword(artwork, keyword):
+    """Require name/tag evidence; semantic proximity alone is not a match."""
+    tokens = _search_tokens(keyword)
+    if not tokens:
+        return not keyword.strip()
+    fields = [_value(artwork, "title", ""), *(_value(artwork, "tags", []) or [])]
+    for token in tokens:
+        if not any(
+            token in _search_tokens(field)
+            or (not token.isascii() and token in " ".join(_search_tokens(field)))
+            for field in fields
+        ):
+            return False
+    return True
+
+
+async def search_manyacg_artworks(client, keyword, mode):
+    """Prefer literal matches, then validate candidates from semantic search."""
+    keyword = keyword.replace("_", " ").strip()
+    # The API limits keywords to 50 characters. Never silently drop constraints.
+    if not keyword or len(keyword) > 50:
+        return []
+    variants = [False, True] if app_config.manyacg_hybrid_search else [False]
+    for hybrid in variants:
+        response = await client.get(
+            "/artwork/list",
+            params={"keyword": keyword, "r18": mode, "hybrid": hybrid, "page_size": 30},
+        )
+        if response.status_code != 200:
+            continue
+        payload = response.json()
+        if not isinstance(payload, dict) or payload.get("status", 200) != 200:
+            continue
+        items = payload.get("data")
+        if not isinstance(items, list):
+            continue
+        candidates = [
+            item for item in items
+            if isinstance(item, dict)
+            and image_allowed(item.get("r18"), mode)
+            and item.get("pictures")
+            and artwork_matches_keyword(item, keyword)
+        ]
+        if candidates:
+            return candidates
+    return []
 
 
 def _client() -> httpx.AsyncClient:
@@ -201,8 +286,12 @@ def original_image_url(artwork, picture) -> str:
 
 
 async def fetch_anime_artwork(keyword, r18_mode, manyacg_fetch, *, as_dict=False):
-    mode = normalize_image_mode(r18_mode)
-    keyword = (keyword or "").strip()[:200]
+    request = resolve_image_search(keyword, r18_mode)
+    if request is None:
+        return None
+    keyword, mode = request
+    if len(keyword) > 200:
+        return None
     forced_nekos = keyword.lower().startswith(("nekos:", "nekos.best:"))
     if forced_nekos:
         if mode == 1:
@@ -212,7 +301,11 @@ async def fetch_anime_artwork(keyword, r18_mode, manyacg_fetch, *, as_dict=False
     elif mode == 1:
         providers = ["manyacg"]
     else:
-        providers = ["manyacg", "nekos"]
+        # nekos.best has artist/source metadata, not a character-tag index.
+        # Do not use it as a substitute for a named-character search.
+        providers = ["manyacg"]
+        if not keyword or keyword.casefold() in {"neko", "waifu", "husbando", "kitsune"}:
+            providers.append("nekos")
         if not keyword:
             random.shuffle(providers)
     for provider in providers:
@@ -223,6 +316,8 @@ async def fetch_anime_artwork(keyword, r18_mode, manyacg_fetch, *, as_dict=False
                 else await manyacg_fetch(keyword, mode)
             )
             if item is None or not image_allowed(_value(item[0], "r18"), mode):
+                continue
+            if provider == "manyacg" and not artwork_matches_keyword(item[0], keyword):
                 continue
             if provider == "nekos" and as_dict:
                 return item[0].model_dump(), item[1].model_dump()

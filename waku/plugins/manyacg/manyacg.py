@@ -13,7 +13,11 @@ from waku.config import app_config
 from waku.logger import logger
 from waku.services import aniobjcut
 from waku.services import manyacg as manyacg_service
-from waku.services.anime_images import fetch_anime_artwork, original_image_url
+from waku.services.anime_images import (
+    fetch_anime_artwork,
+    original_image_url,
+    search_manyacg_artworks,
+)
 from waku.services.manyacg import (
     FetchedPicture,
     FetchedUgoira,
@@ -157,17 +161,14 @@ async def _fetch_seg_manyacg_artwork(keyword, image_mode):
     if manyacg_client is None:
         return None
     if keyword:
-        response = await manyacg_client.client.get(
-            "/artwork/list",
-            params={
-                "keyword": keyword,
-                "r18": image_mode,
-                "hybrid": app_config.manyacg_hybrid_search,
-            },
+        items = await search_manyacg_artworks(
+            manyacg_client.client, keyword, image_mode
         )
-        if response.status_code != 200:
+        if not items:
             return None
-        result = manyacg_service.RandomArtworkResponse.model_validate(response.json())
+        result = manyacg_service.RandomArtworkResponse.model_validate(
+            {"status": 200, "message": "", "data": items}
+        )
     else:
         result = await manyacg_client.random_artwork(limit=1, r18=image_mode)
     if result.status != 200 or not result.data:
