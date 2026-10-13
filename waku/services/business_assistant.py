@@ -23,7 +23,7 @@ class AssistantAssessment(BaseModel):
 
 
 async def assess_conversation(snapshot, current_input, usage):
-    from pydantic_ai import Agent
+    from pydantic_ai import Agent, PromptedOutput
 
     from waku.config import app_config
     from waku.plugins.agent.provider import make_chat_model, make_model_settings
@@ -32,7 +32,9 @@ async def assess_conversation(snapshot, current_input, usage):
     agent = Agent(
         model=make_chat_model(app_config.agent_chat_model),
         model_settings=make_model_settings(app_config.agent_model_options),
-        output_type=AssistantAssessment,
+        # Assessment needs validated JSON, not a tool action. Forced output-tool
+        # choice is rejected by some reasoning-enabled chat providers.
+        output_type=PromptedOutput(AssistantAssessment),
         instructions=(
             "Decide whether a named personal assistant should reply in this private conversation. "
             "When assistant_engaged is true, the contact is continuing a conversation with the assistant: respond normally without waiting for the owner, "

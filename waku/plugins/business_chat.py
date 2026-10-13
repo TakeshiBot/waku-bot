@@ -401,6 +401,7 @@ async def _run_business_turn(client, message, revision, timeout):
 
     lock_key = (message.business_connection_id, message.chat.id)
     output = None
+    stage = "context"
     try:
         async with asyncio.timeout(timeout):
             history_key = f"business_chat_history:{lock_key[0]}:{lock_key[1]}"
@@ -432,6 +433,7 @@ async def _run_business_turn(client, message, revision, timeout):
                 engaged = bool(context.get("assistant_engaged"))
                 decision = None
                 if not engaged or context["notes_enabled"]:
+                    stage = "assessment"
                     try:
                         decision = await assess_conversation(context, user_input, usage)
                     except Exception as error:
@@ -450,6 +452,7 @@ async def _run_business_turn(client, message, revision, timeout):
                     else []
                 )
                 if not engaged and not decision.should_reply and not receipts:
+                    logger.info("Telegram Business no reply: assessment chose silence")
                     return
                 context["intervention_reason"] = (
                     "Continue the active assistant conversation with a brief, useful reply."
@@ -459,6 +462,7 @@ async def _run_business_turn(client, message, revision, timeout):
                 context["owner_note_receipts"] = receipts
                 if not _still_authorized(message, revision):
                     return
+            stage = "answer"
             chat_agent = _make_business_agent()
             history = await _compact_business_history(history, chat_agent, usage)
             if context is not None:
@@ -492,6 +496,7 @@ async def _run_business_turn(client, message, revision, timeout):
                     await _abort_output(output)
                     return
                 output.current_text = answer
+                stage = "delivery"
                 if not await output.finalize():
                     return
                 await _persist_business_answer(
@@ -507,9 +512,12 @@ async def _run_business_turn(client, message, revision, timeout):
                 answer = result.output.strip()
                 if not answer or not _still_authorized(message, revision):
                     return
+                stage = "delivery"
                 if not await _send_business_reply(client, message, answer, revision):
                     return
                 next_history = result.all_messages()
+            logger.info("Telegram Business reply delivered")
+            stage = "history"
             if context is not None or not remember:
                 await memttlcache.delete(history_key)
             elif _still_authorized(message, revision):
@@ -520,16 +528,20 @@ async def _run_business_turn(client, message, revision, timeout):
                 )
     except TimeoutError:
         await _abort_output(output)
-        logger.warning("Telegram Business chat timed out")
+        logger.warning("Telegram Business chat timed out (stage={})", stage)
     except asyncio.CancelledError:
         await _abort_output(output)
         raise
     except Exception as error:
         await _abort_output(output)
         chain = []
+        status = None
         current = error
         while current is not None and len(chain) < 5:
             chain.append(type(current).__name__)
+            code = getattr(current, "status_code", None)
+            if type(code) is int:
+                status = code
             current = current.__cause__
         if type(error).__name__ == "DeliveryUncertain" and str(error) in {
             "Missing Business streaming receipt",
@@ -538,7 +550,12 @@ async def _run_business_turn(client, message, revision, timeout):
             "Unconfirmed generation delivery",
         }:
             chain.append(str(error))
-        logger.warning("Telegram Business chat failed: {}", " <- ".join(chain))
+        logger.warning(
+            "Telegram Business chat failed (stage={}, http_status={}): {}",
+            stage,
+            status or "unknown",
+            " <- ".join(chain),
+        )
     finally:
         _active_outputs.pop(lock_key, None)
 
