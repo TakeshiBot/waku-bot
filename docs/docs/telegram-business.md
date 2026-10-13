@@ -65,20 +65,23 @@ cho cuộc chat riêng có tin đến trong 24 giờ gần nhất. Xem
   tiếp tục, quay lại gần đây và quay lại sau thời gian dài; tiếp nối chủ đề còn
   dang dở khi lịch sử thực sự cho thấy điều đó. Không tự bịa tình trạng, lịch hẹn
   hoặc thông tin cá nhân của chủ tài khoản.
-- Khi trợ lý chưa tiếp chuyện, Waku chờ 30 giây yên lặng rồi mới cân nhắc trả
+- Khi trợ lý chưa tiếp chuyện, Waku chờ 15 giây yên lặng rồi mới cân nhắc trả
   lời. Các tin đến liên tiếp được gộp vào cùng một lượt. Nếu chủ tài khoản trả lời
   trong thời gian chờ, Waku dừng lượt đó. Hết thời gian chờ, AI chỉ trả lời khi
   ngữ cảnh còn dang dở hoặc cần hỗ trợ; cuộc trò chuyện đã xong, lời cảm ơn hoặc
   câu trả lời đầy đủ của chủ tài khoản sẽ được để yên. Khoảng lặng không được xem
   là bằng chứng chủ tài khoản đang bận hay ngoại tuyến.
 - Khi trợ lý đã trả lời, các tin tiếp theo của người liên hệ được xử lý ngay,
-  không chờ thêm 30 giây mỗi lượt. Chủ tài khoản nhắn vào sẽ dừng lượt trợ lý
-  đang chạy và lấy lại quyền tiếp chuyện; sau đó Waku lại dùng cửa sổ chờ 30 giây.
+  không chờ thêm 15 giây và không bị quyết định giữ im lặng chặn lại. Bot ưu tiên
+  trả lời ngắn, thường một hoặc hai câu, tập trung vào yêu cầu cần trợ lý xử lý.
+  Chủ tài khoản nhắn vào sẽ dừng lượt trợ lý đang chạy và lấy lại quyền tiếp chuyện;
+  Waku không tự trả lời lại tin cũ sau đó. Khi có tin mới từ người liên hệ, Waku
+  lại dùng cửa sổ chờ 15 giây trước khi cân nhắc tiếp chuyện.
   Trạng thái này tách theo từng cuộc chat và được giữ qua lần khởi động lại.
 - Khi chủ tài khoản tự trả lời, hủy lượt AI đang soạn trong chat đó để tránh nói
   chen. Tin đến cũ được giao muộn sau câu trả lời của chủ tài khoản cũng bị bỏ qua.
 - Mặc định câu trả lời có nhãn `Tên bot:`, lấy từ `nickname` trong cấu hình, để
-  người liên hệ biết đây là trợ lý. Tắt **Tag Tên** trong `/business` sẽ bỏ nhãn;
+  người liên hệ biết đây là trợ lý. Tắt **Bot ký tên** trong `/business` sẽ bỏ nhãn;
   AI vẫn tự xưng là trợ lý của chủ tài khoản, không tự xưng là Telegram Business.
 - Khi bật streaming, thử draft gốc với Thinking trước khi AI sinh ra nội dung,
   sau đó cập nhật draft và gửi câu trả lời cuối. Nếu Telegram không hỗ trợ draft
@@ -104,12 +107,12 @@ Các công tắc của **từng tài khoản**, không thêm tham số nâng cao
 
 | Công tắc | Mặc định | Tác dụng |
 | --- | --- | --- |
-| AI Trả Lời | Bật | Tự trả lời người dùng trong chat được quản lý |
+| Bot trả lời | Bật | Tự trả lời người dùng trong chat được quản lý |
 | Nhớ Hội Thoại | Bật | Lưu và dùng nội dung hội thoại; tắt thì tin mới chỉ lưu ID, vai trò, thời điểm |
-| Tự Đánh Dấu Đọc | Tắt | Đánh dấu tin người dùng đã đọc nếu Telegram cấp quyền |
-| Quản Lý | Tắt | Cho chủ tài khoản dùng các thao tác tin nhắn, hồ sơ, quà/Sao và story |
-| Tag Tên | Bật | Thêm `nickname:` trước tin do trợ lý gửi |
-| Lời Nhắn | Bật | Cho phép nhận lời nhắn hoặc hẹn từ người liên hệ và chuyển riêng cho chủ tài khoản |
+| Bot đánh dấu đọc | Tắt | Đánh dấu tin người dùng đã đọc nếu Telegram cấp quyền |
+| Quyền quản lý | Tắt | Cho chủ tài khoản dùng các thao tác tin nhắn, hồ sơ, quà/Sao và story |
+| Bot ký tên | Bật | Thêm `nickname:` trước tin do trợ lý gửi |
+| Gửi lời nhắn | Bật | Cho phép nhận lời nhắn hoặc hẹn từ người liên hệ và chuyển riêng cho chủ tài khoản |
 
 **Lưu** áp dụng ngay rồi đóng; **Đóng** bỏ thay đổi. Menu lưu được dọn sau 5 giây.
 Trong các mục thao tác, nhập nội dung theo hướng dẫn; xem lại rồi **Lưu** mới thực
@@ -126,7 +129,7 @@ Nếu có ngày giờ rõ ràng, lời nhắc sẽ được gửi vào hoặc sa
 mơ hồ ngày giờ thì AI hỏi lại, không tự đặt lịch. Việc gửi chỉ được xác nhận sau
 khi Telegram nhận; lỗi không chắc chắn không bị tự gửi lặp lại.
 
-Trong `/business → Lời Nhắn`, chủ tài khoản xem các lời nhắn gần đây và có thể hủy
+Trong `/business → Xem chat → Xem lời nhắn`, chủ tài khoản xem các lời nhắn gần đây và có thể hủy
 lời nhắc còn chờ rồi bấm **Lưu**. Tắt công tắc **Lời Nhắn** ngăn các yêu cầu mới;
 những bản đã lưu vẫn chỉ hiện trong bảng của đúng chủ tài khoản.
 
@@ -134,7 +137,7 @@ những bản đã lưu vẫn chỉ hiện trong bảng của đúng chủ tài 
 
 Đối chiếu [BusinessBotRights chính thức](https://core.telegram.org/bots/api#businessbotrights).
 Menu **Quyền Telegram** hiển thị đủ 14 quyền thực tế của kết nối. Các nút có dấu
-✅/❌ theo quyền Telegram đã cấp; bật Quản Lý trong Waku không tự cấp thêm quyền.
+✅/❌ theo quyền Telegram đã cấp; bật Quyền quản lý trong Waku không tự cấp thêm quyền.
 
 | Quyền | Thao tác trong Waku |
 | --- | --- |

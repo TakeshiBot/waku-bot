@@ -132,30 +132,29 @@ async def _render(client, token, location="home"):
     rows = []
     if location == "home":
         text += "\n" + _tr("notice", session)
-        buttons = [
-            _button(
+
+        def toggle(key):
+            return _button(
                 token,
-                ("✅ " if value else "❌ ") + _tr("settings." + key, session),
+                ("✅ " if session.settings[key] else "❌ ")
+                + _tr("settings." + key, session),
                 "toggle:" + key,
             )
-            for key, value in session.settings.items()
-        ]
-        rows.extend(_rows(buttons))
-        rows.extend(
-            _rows(
-                [
-                    _button(token, _tr("groups." + group, session), "group:" + group)
-                    for group in _GROUPS
-                ]
-            )
-        )
-        rows.append(
+
+        def group(name):
+            return _button(token, _tr("groups." + name, session), "group:" + name)
+
+        rows = [
+            [toggle("reply"), toggle("manage")],
+            [toggle("tag"), group("chat")],
+            [toggle("read"), group("profile")],
+            [toggle("remember"), group("gifts")],
+            [toggle("notes"), group("stories")],
             [
-                _button(token, _tr("rights", session), "rights"),
                 _button(token, _tr("dialogs", session), "dialogs"),
-            ]
-        )
-        rows.append([_button(token, _tr("notes", session), "notes")])
+                _button(token, _tr("rights", session), "rights"),
+            ],
+        ]
     elif location == "rights":
         text += "\n" + "\n".join(
             ("✅ " if granted else "❌ ") + _tr("rights_labels." + key, session)
@@ -177,6 +176,7 @@ async def _render(client, token, location="home"):
             )
         if not dialogs:
             text += "\n" + _tr("no_dialogs", session)
+        rows.append([_button(token, _tr("notes", session), "notes")])
     elif location == "notes":
         from datetime import datetime
 

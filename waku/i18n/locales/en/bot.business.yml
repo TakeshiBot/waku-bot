@@ -10,8 +10,8 @@ bot:
     close: ✖ Close
     saved: Business settings saved.
     completed: Telegram confirmed the operation succeeded.
-    rights: Telegram Rights
-    dialogs: Conversations
+    rights: View Rights
+    dialogs: View Chats
     dialogs_notice: 'Observed chats: chat ID and last 5 message IDs. Up to 15 recent chats.'
     no_dialogs: No conversations received yet.
     total: Total Gifts
@@ -21,17 +21,17 @@ bot:
     stars_destination: Stars move from the Business account to the bot's balance.
     gift_settings_notice: These are the choices to apply, not settings retrieved from Telegram.
     settings:
-      reply: AI Replies
+      reply: Bot Replies
       remember: Conversation Memory
-      read: Auto Mark Read
-      manage: Management
-      tag: Name Tag
-      notes: Notes And Reminders
+      read: Bot Marks Read
+      manage: Management Permission
+      tag: Bot Signature
+      notes: Send Owner Notes
     groups:
-      chat: Messages
-      profile: Profile
-      gifts: Gifts And Stars
-      stories: Stories
+      chat: 1. Messages
+      profile: 2. Profile
+      gifts: 3. Gifts And Stars
+      stories: 4. Stories
     roles:
       owner: Owner
       contact: Contact

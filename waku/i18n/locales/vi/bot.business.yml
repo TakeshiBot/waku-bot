@@ -5,13 +5,13 @@ bot:
     notice: 'Bấm Lưu để áp dụng và đóng. Đóng để bỏ thay đổi.
 
       Bộ nhớ chỉ gồm tin bot đã nhận, không phải toàn bộ lịch sử Telegram.'
-    management_notice: Bật Quản Lý rồi Lưu trước khi dùng. ✅ = Telegram đã cấp quyền.
+    management_notice: Bật Quyền quản lý rồi Lưu trước khi dùng. ✅ = Telegram đã cấp quyền.
     save: 💾 Lưu
     close: ✖ Đóng
     saved: Đã lưu cài đặt Business.
     completed: Telegram đã xác nhận thao tác thành công.
-    rights: Quyền Telegram
-    dialogs: Cuộc Chat
+    rights: Xem quyền
+    dialogs: Xem chat
     dialogs_notice: 'Chat bot đã nhận tin: ID chat và ID 5 tin gần nhất. Tối đa 15 chat gần đây.'
     no_dialogs: Chưa nhận được hội thoại nào.
     total: Tổng Quà
@@ -21,17 +21,17 @@ bot:
     stars_destination: Sao sẽ chuyển từ tài khoản Business về số dư của bot.
     gift_settings_notice: Đây là lựa chọn sẽ áp dụng, không phải cài đặt hiện tại đọc từ Telegram.
     settings:
-      reply: AI Trả Lời
-      remember: Nhớ Hội Thoại
-      read: Tự Đánh Dấu Đọc
-      manage: Quản Lý
-      tag: Tag Tên
-      notes: Lời Nhắn Và Hẹn
+      reply: Bot trả lời
+      remember: Nhớ hội thoại
+      read: Bot đánh dấu đọc
+      manage: Quyền quản lý
+      tag: Bot ký tên
+      notes: Gửi lời nhắn
     groups:
-      chat: Tin Nhắn
-      profile: Hồ Sơ
-      gifts: Quà Và Sao
-      stories: Story
+      chat: 1. Tin nhắn
+      profile: 2. Hồ sơ
+      gifts: 3. Quà và Sao
+      stories: 4. Tin
     roles:
       owner: Chủ Acc
       contact: Người Chat
@@ -106,13 +106,13 @@ bot:
       no_connection: Chưa ghi nhận kết nối Business. Kết nối bot, gửi một tin trong chat được quản lý, rồi mở lại
         /business.
       connection_disabled: Kết nối Business đã bị tắt hoặc thu hồi.
-      management_disabled: Bật Quản Lý rồi bấm Lưu, sau đó mở lại menu.
+      management_disabled: Bật Quyền quản lý rồi bấm Lưu, sau đó mở lại menu.
       missing_right: Telegram chưa cấp quyền này. Đổi quyền trong cài đặt bot Business của tài khoản.
       save_first: Bấm Lưu cài đặt trước, rồi mở lại menu để thực hiện thao tác.
       invalid_input: Nội dung chưa đúng định dạng hoặc vượt giới hạn Telegram.
       need_media: Gửi ảnh hoặc video phù hợp theo hướng dẫn.
       media_limit: File không hợp lệ hoặc quá lớn (ảnh tối đa 10 MB, file khác 50 MB).
-      unobserved_chat: Bot chưa nhận tin từ chat này. Chọn ID trong Cuộc Chat và kiểm tra phạm vi truy cập ở Telegram.
+      unobserved_chat: Bot chưa nhận tin từ chat này. Chọn ID trong Xem chat và kiểm tra phạm vi truy cập ở Telegram.
       unobserved_message: ID tin không có trong chat bot đã quan sát hoặc tin đã bị xóa.
       not_bot_message: Thao tác này chỉ áp dụng với tin do chính bot gửi.
       reply_window: Chat chưa có tin đến trong 24 giờ gần nhất; Telegram chưa cho gửi hoặc sửa tin.
@@ -122,7 +122,7 @@ bot:
       uncertain: Chưa xác nhận được kết quả. Kiểm tra Telegram trước khi tạo yêu cầu mới để tránh thực hiện trùng.
       cancel_unavailable: Lịch hẹn đã được xử lý hoặc đang gửi; không thể hủy.
     help:
-      send_message: Gửi ID chat ở dòng đầu, nội dung từ dòng thứ hai. Chọn ID trong Cuộc Chat.
+      send_message: Gửi ID chat ở dòng đầu, nội dung từ dòng thứ hai. Chọn ID trong Xem chat.
       send_media: 'Gửi file. Chú thích: dòng đầu là ID chat, các dòng sau là nội dung (tối đa 1024 ký tự).'
       edit_message: 'Gửi 3 phần theo dòng: ID chat, ID tin do bot gửi, nội dung mới.'
       mark_read: 'Gửi 2 dòng: ID chat, ID tin đến cần đánh dấu đã đọc.'
@@ -145,7 +145,7 @@ bot:
         sửa story do bot đăng.'
       delete_story: Gửi ID story cần xóa. Chỉ xóa story do bot đăng.
     command: Cài đặt trợ lý và tài khoản Business
-    notes: Lời Nhắn
+    notes: Xem lời nhắn
     no_notes: Chưa có lời nhắn.
     owner_note: '📩 Lời nhắn từ {name}
 

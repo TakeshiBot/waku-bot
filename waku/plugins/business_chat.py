@@ -40,7 +40,7 @@ _MAX_PROCESSED_MESSAGES = 4096
 _rights_fingerprints: dict[str, tuple] = {}
 _owner_revisions: dict[tuple[str, int], int] = {}
 _active_message_ids: dict[tuple[str, int], int] = {}
-_RESPONSE_DELAY = 30.0
+_RESPONSE_DELAY = 15.0
 _pending_dialogs: dict[tuple[str, int], asyncio.Task] = {}
 _dialog_generations: dict[tuple[str, int], int] = {}
 _last_contacts: OrderedDict[tuple[str, int], Message] = OrderedDict()
@@ -429,17 +429,33 @@ async def _run_business_turn(client, message, revision, timeout):
                 context["notes_enabled"] = settings_for(
                     _connection_permissions[lock_key[0]][1]
                 )["notes"]
-                decision = await assess_conversation(context, user_input, usage)
+                engaged = bool(context.get("assistant_engaged"))
+                decision = None
+                if not engaged or context["notes_enabled"]:
+                    try:
+                        decision = await assess_conversation(context, user_input, usage)
+                    except Exception as error:
+                        if not engaged:
+                            raise
+                        # Optional note extraction must not silence an active
+                        # assistant exchange. No note is claimed without a receipt.
+                        logger.warning(
+                            "Business note assessment failed: {}", type(error).__name__
+                        )
                 if not _still_authorized(message, revision):
                     return
                 receipts = (
                     await accept_requests(client, message, decision.owner_notes)
-                    if decision.owner_notes
+                    if decision is not None and decision.owner_notes
                     else []
                 )
-                if not decision.should_reply and not receipts:
+                if not engaged and not decision.should_reply and not receipts:
                     return
-                context["intervention_reason"] = decision.reason
+                context["intervention_reason"] = (
+                    "Continue the active assistant conversation with a brief, useful reply."
+                    if engaged
+                    else decision.reason
+                )
                 context["owner_note_receipts"] = receipts
                 if not _still_authorized(message, revision):
                     return
@@ -589,14 +605,9 @@ async def _schedule_business_message(client, message):
         and (message.outgoing or message.from_user and message.from_user.id == owner_id)
     )
     if owner_message:
-        # The observer already cancels the current turn. Reassess only if a real contact turn is known.
-        anchor = _last_contacts.get(key)
-        if anchor is None or anchor.id >= message.id or not _should_reply(anchor):
-            return
-        from waku.services.business_context import timestamp
-
-        if timestamp(anchor.date) < time.time() - 86400:
-            return
+        # The observer cancels the assistant and gives the conversation back
+        # to the owner. Never rearm an old contact message after a human reply.
+        return
     elif _should_reply(message):
         if getattr(message, "_waku_business_owner_revision", 0) == -1:
             return
@@ -613,7 +624,7 @@ async def _schedule_business_message(client, message):
     if not can_reply and owner_id is not None:
         return
     # Publish the generation BEFORE any cleanup awaits. Otherwise an older
-    # worker can resume late and replace the newer contact's 30-second timer.
+    # worker can resume late and replace the newer contact's 15-second timer.
     _dialog_generations[key] = _dialog_generations.get(key, 0) + 1
     generation = _dialog_generations[key]
     epoch = _scheduler_epoch
