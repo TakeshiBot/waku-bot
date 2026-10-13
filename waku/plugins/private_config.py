@@ -636,6 +636,7 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
                 _button(_tr("open_settings", session), token, "groups:0"),
             ]
         )
+        rows.append([_button("AGENTS.md", token, "admin_agents")])
         session.back = "home"
         rows.append(
             [
@@ -858,8 +859,10 @@ async def private_config_command(client: Client, message: Message):
         await message.reply_text(_tr("denied"))
         return
     config = await database.get_user_config(user)
+    from waku.plugins.admin_dm_panel import clear_user_sessions
     from waku.plugins.business_panel import _SESSIONS as business_sessions
 
+    clear_user_sessions(user.id)
     for old_token, old_session in list(business_sessions.items()):
         if old_session.owner_id == user.id:
             business_sessions.pop(old_token, None)
@@ -997,6 +1000,25 @@ async def private_config_callback(client: Client, query: CallbackQuery):
                 session.notice = notice
                 text, markup = _menu(token, session, session.location)
                 await _edit(message, text, markup)
+                return
+            elif action == "admin_agents":
+                if _draft_count(session) or session.feature_changes:
+                    raise SettingsEditError("save_first")
+                from waku.plugins.admin_dm_panel import open_panel
+                from waku.services.admin_dm_instructions import InstructionsError
+
+                try:
+                    await open_panel(client, message, user.id, session.locale)
+                except (OSError, InstructionsError):
+                    await query.answer(
+                        t("bot.admin_dm_agents.storage", locale=session.locale), show_alert=True
+                    )
+                    answered = True
+                    return
+                _SESSIONS.pop(token, None)
+                committed = True
+                await query.answer()
+                answered = True
                 return
             elif action == "business_account":
                 if _draft_count(session) or session.feature_changes:

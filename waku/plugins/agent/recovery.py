@@ -10,6 +10,7 @@ from waku.config import app_config
 from waku.logger import logger
 
 from . import provider, quota
+from .admin_dm_context import AdminDMContextLayer
 from .localization import tr
 from .output import DeliveryUncertain, record_sent_text, reply_output
 
@@ -49,11 +50,12 @@ async def compose_status_reply(model, deps, lang, facts, additional_instructions
             model=model,
             output_type=str,
             instructions=instructions,
+            capabilities=[AdminDMContextLayer()],
             model_settings=provider.make_model_settings(app_config.agent_model_options),
             retries=0,
         )
         result = await asyncio.wait_for(
-            agent.run(payload, usage_limits=UsageLimits(request_limit=1)),
+            agent.run(payload, deps=deps, usage_limits=UsageLimits(request_limit=1)),
             timeout=12,
         )
         text = result.output.strip()

@@ -45,6 +45,7 @@ from pydantic_ai_harness.tool_output_limits import (
 from waku.config import app_config
 from waku.logger import logger
 
+from .admin_dm_context import AdminDMContextLayer
 from .model_log import ModelActivityLog
 from .state import drain_steering
 from .trace import AgentTraceCapability, note_steering
@@ -247,6 +248,7 @@ def build_agent_capabilities(history_processor: Any) -> list[Any]:
     """
     caps: list[Any] = [
         ProcessHistory(history_processor),
+        AdminDMContextLayer(),
         ModelActivityLog(),
         AgentTraceCapability(),
         SteeringInjection(),
