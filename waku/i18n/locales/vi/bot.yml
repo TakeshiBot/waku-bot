@@ -620,6 +620,7 @@ bot:
       ai_comment: AI Bình Luận
       group_memory_enabled: Bộ Nhớ Nhóm
       sticker_memory_enabled: Học Và Gửi Sticker
+      bot_reply: Bot Trả Lời
       verify: Xác Minh Thành Viên
       save: Lưu
     waifu:

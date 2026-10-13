@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import asyncio
+from collections.abc import AsyncGenerator, Mapping, Sequence
+from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Any
 
 import httpx
@@ -12,8 +14,16 @@ from pydantic_ai.embeddings import (
 from pydantic_ai.embeddings.openai import OpenAIEmbeddingModel
 from pydantic_ai.embeddings.result import EmbedInputType
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
-from pydantic_ai.models import check_allow_model_requests
+from pydantic_ai.messages import ModelMessage, ModelResponse
+from pydantic_ai.models import (
+    Model,
+    ModelRequestParameters,
+    StreamedResponse,
+    check_allow_model_requests,
+)
+from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.openai import OpenAIResponsesModel
+from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RequestUsage
@@ -23,6 +33,78 @@ from waku.config import ProviderConfig, app_config
 from .video_model import VideoCapableOpenAIChatModel
 
 _EMBED_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+
+
+def is_recoverable_model_error(error: Exception) -> bool:
+    """Whether one model failure is safe to retry on the fallback model."""
+    if isinstance(error, TimeoutError | httpx.TimeoutException):
+        return True
+    return isinstance(error, ModelAPIError)
+
+
+class _RequestTimeoutModel(WrapperModel):
+    """Bound the primary request while leaving fallback time in the turn budget."""
+
+    def __init__(self, wrapped: Model, timeout: float):
+        super().__init__(wrapped)
+        self.timeout = timeout
+
+    async def request(
+        self,
+        messages: list[ModelMessage],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+    ) -> ModelResponse:
+        async with asyncio.timeout(self.timeout):
+            return await self.wrapped.request(
+                messages, model_settings, model_request_parameters
+            )
+
+    @asynccontextmanager
+    async def request_stream(
+        self,
+        messages: list[ModelMessage],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+        run_context: Any | None = None,
+    ) -> AsyncGenerator[StreamedResponse]:
+        # OpenAI-style models consume the first response chunk while entering
+        # this context. A timeout here is therefore safe to fall back from:
+        # no text or tool call has reached the agent yet.
+        async with AsyncExitStack() as stack:
+            async with asyncio.timeout(self.timeout):
+                response = await stack.enter_async_context(
+                    self.wrapped.request_stream(
+                        messages,
+                        model_settings,
+                        model_request_parameters,
+                        run_context,
+                    )
+                )
+            yield response
+
+
+def with_model_fallback(
+    primary: Model,
+    fallback: Model,
+    *,
+    primary_timeout: float | None = None,
+) -> Model:
+    """Use *fallback* for recoverable primary API failures within one run.
+
+    FallbackModel switches at the individual model-request boundary, so agent
+    tools that already produced side effects are not run a second time.
+    """
+    if primary is fallback:
+        return primary
+    if primary_timeout is None:
+        total_timeout = float(getattr(app_config, "agent_model_timeout", 120) or 120)
+        primary_timeout = min(30.0, max(1.0, total_timeout / 3))
+    return FallbackModel(
+        _RequestTimeoutModel(primary, primary_timeout),
+        fallback,
+        fallback_on=is_recoverable_model_error,
+    )
 
 
 def _get_http_client_for_provider(provider_name: str):  # type: ignore[no-untyped-def]

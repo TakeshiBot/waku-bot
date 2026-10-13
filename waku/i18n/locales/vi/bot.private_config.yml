@@ -4,6 +4,7 @@ bot:
     title: ⌬ <b>Cấu hình Waku</b>
     telegram_enabled: Bot Telegram
     dm_sticker_download: Tải Sticker DM
+    vision_model: Model Ảnh Và Sticker
     runtime:
       summary: "│\n┟ <b>AI · Cấu hình đang áp dụng</b>\n│ AI: {agent} · Streaming: {streaming} · Rich message: {rich}\n│ Chat: <code>{model}</code>\n│ Vision: <code>{vision}</code>\n│\n┠ <b>Sticker</b>\n│ Học sticker: {sticker} · Tìm kiếm: <code>{sticker_mode}</code>\n│ Model mô tả: <code>{sticker_model}</code>\n│\n┠ <b>Dịch vụ</b>\n│ Telegram: {telegram} · Discord: {discord}\n│ Telegram Business: {business} · Mini App: {webapp}\n│\n┖ <b>Cơ bản</b>\n  Tên: <code>{nickname}</code> · Ngôn ngữ: <code>{language}</code>\n  Múi giờ: <code>{timezone}</code> · Log: <code>{log_level}</code>"
       enabled: ✅ Bật

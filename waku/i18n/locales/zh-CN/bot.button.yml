@@ -26,6 +26,7 @@ bot:
       ai_comment: AI评论
       group_memory_enabled: 群组记忆
       sticker_memory_enabled: Learn and send stickers
+      bot_reply: 默认机器人回复
       verify: 新人验证
       save: 保存设置
     waifu:

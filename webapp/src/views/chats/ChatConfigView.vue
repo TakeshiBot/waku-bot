@@ -50,8 +50,10 @@ const EMPTY_CONFIG: ChatConfigInput = {
   quote_pin_message: true,
   greeting: null,
   ai_reply: true,
+  bot_reply: false,
   ai_reply_other_bots_enabled: false,
   ai_comment: false,
+  agent_moderation_enabled: false,
   setu_enabled: true,
   convert_b23_enabled: true,
   parse_links_enabled: true,
@@ -198,6 +200,7 @@ function go(name: string): void {
         v-if="group.labelKey === 'interaction'"
         v-model="form.draft.value.quote_probability"
         :label="t('chats.quoteProbability')"
+        :hint="t('chats.quoteProbabilityHint')"
       />
 
       <SettingsRow
@@ -221,13 +224,18 @@ function go(name: string): void {
       <SelectField
         v-model="form.draft.value.lang"
         :label="t('chats.lang')"
+        :hint="t('chats.langHint')"
         :options="localeOptions"
         :changed="changed('lang')"
       />
     </SettingsSection>
 
     <SettingsSection :label="t('chats.verify')">
-      <SettingsRow :label="t('chatConfig.verify_enabled')" :changed="changed('verify_enabled')">
+      <SettingsRow
+        :label="t('chatConfig.verify_enabled')"
+        :hint="t('chatConfig.verify_enabledHint')"
+        :changed="changed('verify_enabled')"
+      >
         <template #control>
           <ToggleSwitch
             v-model="form.draft.value.verify_enabled as boolean"
@@ -238,24 +246,28 @@ function go(name: string): void {
       <SelectField
         v-model="form.draft.value.verify_strategy"
         :label="t('chatConfig.verify_strategy')"
+        :hint="t('chatConfig.verify_strategyHint')"
         :options="strategyOptions"
         :changed="changed('verify_strategy')"
       />
       <SelectField
         v-model="form.draft.value.verify_method"
         :label="t('chatConfig.verify_method')"
+        :hint="t('chatConfig.verify_methodHint')"
         :options="methodOptions"
         :changed="changed('verify_method')"
       />
       <SelectField
         v-model="form.draft.value.verify_fail_action"
         :label="t('chatConfig.verify_fail_action')"
+        :hint="t('chatConfig.verify_fail_actionHint')"
         :options="failActionOptions"
         :changed="changed('verify_fail_action')"
       />
       <NumberField
         v-model="form.draft.value.verify_max_attempts"
         :label="t('chatConfig.verify_max_attempts')"
+        :hint="t('chatConfig.verify_max_attemptsHint')"
         :min="1"
         :max="10"
         :changed="changed('verify_max_attempts')"
@@ -263,6 +275,7 @@ function go(name: string): void {
       <NumberField
         v-model="form.draft.value.verify_timeout_seconds"
         :label="t('chatConfig.verify_timeout_seconds')"
+        :hint="t('chatConfig.verify_timeout_secondsHint')"
         :min="30"
         :max="600"
         :changed="changed('verify_timeout_seconds')"

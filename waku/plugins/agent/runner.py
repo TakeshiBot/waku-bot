@@ -291,11 +291,23 @@ async def _run_agent_impl(
 
     override_name = await get_chat_model_override(chat_id, "main")
     multimodal_override = await get_chat_model_override(chat_id, "multimodal")
-    effective_multimodal = (
-        provider.make_chat_model(multimodal_override)
-        if multimodal_override
-        else multimodal_model
+    effective_text_model = (
+        provider.make_chat_model(override_name) if override_name else model
     )
+    if multimodal_override:
+        effective_multimodal = provider.with_model_fallback(
+            provider.make_chat_model(multimodal_override),
+            effective_text_model,
+        )
+    elif override_name and app_config.agent_model_multimodal:
+        effective_multimodal = provider.with_model_fallback(
+            provider.make_chat_model(app_config.agent_model_multimodal),
+            effective_text_model,
+        )
+    elif override_name:
+        effective_multimodal = effective_text_model
+    else:
+        effective_multimodal = multimodal_model
     deps.multimodal_model = effective_multimodal
     if app_config.agent_multimodal_mode == "transcribe":
         if needs_multimodal:
@@ -324,13 +336,7 @@ async def _run_agent_impl(
         # A text-model run must never receive historical or current media,
         # including when the transcription provider is unavailable.
         needs_multimodal = False
-    if override_name:
-        if needs_multimodal and effective_multimodal:
-            use_model = effective_multimodal
-        else:
-            use_model = provider.make_chat_model(override_name)
-    else:
-        use_model = effective_multimodal if needs_multimodal else model
+    use_model = effective_multimodal if needs_multimodal else effective_text_model
 
     # Pair the per-model config options with the model actually used. Override
     # models (per-chat /command) have no options of their own and fall back to

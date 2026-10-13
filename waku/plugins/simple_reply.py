@@ -1,4 +1,5 @@
 import random
+import re
 
 import pyrogram
 import zhconv
@@ -7,7 +8,8 @@ from pyrogram.client import Client
 
 from waku import database, i18n, resources
 from waku.common.memory_store import memttlcache
-from waku.common.utils import is_explicit_reply
+from waku.common.rich_message import message_plain_text
+from waku.common.utils import GROUP_CHAT_TYPES, is_explicit_reply
 from waku.config import app_config
 from waku.services import manyacg
 
@@ -19,15 +21,22 @@ async def word_reply(client: Client, message: pyrogram.types.Message):
     user = message.from_user
     if not user:
         return
-    user_config = await database.get_user_config(user)
-    if not message.text or not client.me or not client.me.username:
+    chat = message.chat
+    if chat and chat.type in GROUP_CHAT_TYPES:
+        config = await database.get_chat_config(chat)
+        if not config.bot_reply:
+            return
+    else:
+        config = await database.get_user_config(user)
+    text = message_plain_text(message)
+    if not text or not client.me:
         return
-    text = zhconv.convert(
-        message.text.replace(client.me.username, "").strip().lower(), "zh-cn"
-    )
+    if client.me.username:
+        text = re.sub(re.escape(client.me.username), "", text, flags=re.IGNORECASE)
+    text = zhconv.convert(text.strip().casefold(), "zh-cn")
     await message.reply_chat_action(pyrogram.enums.ChatAction.TYPING)
     all_replies = []
-    word_dict = resources.get_word_dict()
+    word_dict = resources.get_word_dict(config.lang)
     for keyword, replies in word_dict.items():
         if keyword in text:
             all_replies.extend(replies)
@@ -37,16 +46,16 @@ async def word_reply(client: Client, message: pyrogram.types.Message):
         )
     else:
         await message.reply_text(
-            text=i18n.trl("bot.msg.reply.default", locale=user_config.lang)
+            text=i18n.trl("bot.msg.reply.default", locale=config.lang)
         )
 
 
 async def _base_filter_func(_, __, message: pyrogram.types.Message) -> bool:
     if not message:
         return False
-    text = message.text or message.caption or ""
+    text = message_plain_text(message)
     if (
-        message.entities is not None
+        message.entities
         and message.entities[0].type == pyrogram.enums.MessageEntityType.BOT_COMMAND
     ):
         return False
@@ -74,7 +83,7 @@ async def _reply_me_filter_func(
 async def _mention_me_filter_func(
     _, client: Client, message: pyrogram.types.Message
 ) -> bool:
-    text = message.text or message.caption or ""
+    text = message_plain_text(message)
     if not text:
         return False
     folded_text = text.casefold()

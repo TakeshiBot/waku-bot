@@ -243,7 +243,8 @@ class _AppConfig(pydantic.BaseModel):
     # Model specs use the format "provider/model_name" or just "model_name"
     # (bare name uses the "default" provider).
     agent_model: str | None = "default/gpt-4.1"
-    agent_model_multimodal: str | None = None  # falls back to agent_model if unset
+    # Shared image/sticker analysis model; chat model is the fallback.
+    agent_model_multimodal: str | None = None
     agent_model_small: str | None = None  # falls back to agent_model if unset
     agent_struct_model: str | None = None
     # Per-model pydantic-ai ModelSettings overrides: temperature, top_p,
@@ -351,8 +352,20 @@ class _AppConfig(pydantic.BaseModel):
     # Embedding model spec: "provider/model". Falls back to agent_model provider.
     agent_sticker_embed_model: str = "default/text-embedding-3-small"
     agent_sticker_embed_dimensions: int = pydantic.Field(default=1024, gt=0)
-    # Description model spec. Falls back to agent_model when unset.
-    agent_sticker_description_model: str | None = None
+    # Read-only compatibility with existing deployments; use the shared model.
+    agent_sticker_description_model: str | None = pydantic.Field(
+        default=None, exclude=True
+    )
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def _shared_vision_model(cls, data):
+        if isinstance(data, dict) and data.get("agent_model_multimodal") is None:
+            legacy = data.get("agent_sticker_description_model")
+            if legacy:
+                data = {**data, "agent_model_multimodal": legacy}
+        return data
+
     agent_sticker_description_prompt: str = pydantic.Field(
         default_factory=lambda data: i18n.t(
             "bot.prompts.agent_sticker_description_prompt", locale=data.get("lang")

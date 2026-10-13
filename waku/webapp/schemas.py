@@ -265,8 +265,10 @@ class ChatConfigOut(ApiModel):
     title_permissions: dict[str, bool]
     greeting: str | None
     ai_reply: bool
+    bot_reply: bool
     ai_reply_other_bots_enabled: bool
     ai_comment: bool
+    agent_moderation_enabled: bool
     setu_enabled: bool
     convert_b23_enabled: bool
     parse_links_enabled: bool
@@ -296,8 +298,10 @@ class ChatConfigIn(ApiModel):
     quote_pin_message: bool
     greeting: str | None = Field(default=None, max_length=1024)
     ai_reply: bool
+    bot_reply: bool = False
     ai_reply_other_bots_enabled: bool
     ai_comment: bool
+    agent_moderation_enabled: bool = False
     setu_enabled: bool
     convert_b23_enabled: bool
     parse_links_enabled: bool

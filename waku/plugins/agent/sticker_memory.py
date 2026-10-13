@@ -35,7 +35,28 @@ _selector_agent: Agent[None, StickerChoice] | None = None
 _embed_dimensions: int | None = None
 _embed_dimensions_resolved = False
 
+
+def _vision_timeout() -> float:
+    return float(
+        getattr(
+            app_config,
+            "agent_model_timeout",
+            getattr(app_config, "agent_small_model_timeout", 0),
+        )
+        or 0
+    )
+
+
 if app_config.agent_sticker_memory:
+    vision_model = None
+    if app_config.agent_model:
+        chat_model = provider.make_chat_model(app_config.agent_model)
+        vision_model = chat_model
+        if app_config.agent_model_multimodal:
+            vision_model = provider.with_model_fallback(
+                provider.make_chat_model(app_config.agent_model_multimodal),
+                chat_model,
+            )
     if app_config.agent_sticker_search_mode == "embedding":
         _embed_model = provider.make_embed_model(app_config.agent_sticker_embed_model)
         embed_settings: EmbeddingSettings | None = None
@@ -44,14 +65,9 @@ if app_config.agent_sticker_memory:
                 dimensions=app_config.agent_sticker_embed_dimensions
             )
         embedder = Embedder(_embed_model, settings=embed_settings)
-    elif app_config.agent_model:
+    elif vision_model is not None:
         _selector_agent = Agent(
-            model=provider.make_chat_model(
-                app_config.agent_model_small
-                or app_config.agent_sticker_description_model
-                or app_config.agent_model_multimodal
-                or app_config.agent_model
-            ),
+            model=vision_model,
             output_type=StickerChoice,
             instructions=(
                 "Select one stored sticker whose description best matches the requested "
@@ -60,20 +76,18 @@ if app_config.agent_sticker_memory:
                 "candidates, or null if none fits. Never invent IDs."
             ),
             model_settings=provider.make_model_settings(
-                app_config.agent_model_small_options
+                app_config.agent_model_multimodal_options
             ),
             capabilities=[trace.AgentTraceCapability()],
             retries=1,
         )
 
-    _desc_spec = (
-        app_config.agent_sticker_description_model
-        or app_config.agent_model_multimodal
-        or app_config.agent_model
-    )
-    if _desc_spec:
+    if vision_model is not None:
         _description_agent = Agent(
-            model=provider.make_chat_model(_desc_spec),
+            model=vision_model,
+            model_settings=provider.make_model_settings(
+                app_config.agent_model_multimodal_options
+            ),
             output_type=str,
             capabilities=[trace.AgentTraceCapability()],
             retries=2,
@@ -113,10 +127,10 @@ async def select_sticker(
         },
         ensure_ascii=False,
     )
-    session = await trace.start_trace("sticker_selection", model_role="small")
+    session = await trace.start_trace("sticker_selection", model_role="multimodal")
     try:
         coro = _selector_agent.run(payload)
-        timeout = app_config.agent_small_model_timeout
+        timeout = _vision_timeout()
         result = await asyncio.wait_for(coro, timeout) if timeout > 0 else await coro
         await quota.settle(subject, result.usage)
         trace.mark_trace(session, usage=result.usage, output=result.output)
@@ -199,9 +213,11 @@ async def _get_description(
             content_part = BinaryContent(data=image_bytes, media_type=mime_type)  # type: ignore
 
         # Enforce the small-model timeout for sticker descriptions to avoid stalling the event loop.
-        session = await trace.start_trace("sticker_description", model_role="small")
+        session = await trace.start_trace(
+            "sticker_description", model_role="multimodal"
+        )
         try:
-            timeout = app_config.agent_small_model_timeout
+            timeout = _vision_timeout()
             coro = _description_agent.run(
                 [content_part, configured_prompt("agent_sticker_description_prompt")]
             )

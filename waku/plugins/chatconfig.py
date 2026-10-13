@@ -39,6 +39,26 @@ _FIELDS = (
     ("verify", "verify_enabled"),
     ("moderation", "agent_moderation_enabled"),
     ("sticker_memory_enabled", "sticker_memory_enabled"),
+    ("bot_reply", "bot_reply"),
+)
+# Read each column top to bottom; keep callback indices stable for open menus.
+_BUTTON_ORDER = (
+    "ai_reply",
+    "ai_comment",
+    "agent_moderation_enabled",
+    "group_memory_enabled",
+    "ai_reply_other_bots_enabled",
+    "bot_reply",
+    "sticker_memory_enabled",
+    "verify_enabled",
+    "delete_events_enabled",
+    "unpin_channel_pin_enabled",
+    "quote_pin_message",
+    "parse_artwork_enabled",
+    "convert_b23_enabled",
+    "setu_enabled",
+    "waifu_enabled",
+    "pick_bottle_enabled",
 )
 _TTL = 15 * 60
 _SESSIONS = {}
@@ -88,7 +108,9 @@ class ChatConfigMarkup:
 
     def build(self):
         buttons = []
-        for index, (label, name) in enumerate(_FIELDS):
+        fields = {name: (index, label) for index, (label, name) in enumerate(_FIELDS)}
+        for name in _BUTTON_ORDER:
+            index, label = fields[name]
             if name == "setu_enabled":
                 mode = (
                     ("image_safe", "image_r18", "image_mixed")[
@@ -106,7 +128,11 @@ class ChatConfigMarkup:
             )
             status = "✔️" if getattr(self.chat_config, name) else "❌"
             buttons.append(self._button(f"{status} {title}", f"toggle:{index}"))
-        rows = [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
+        height = (len(buttons) + 1) // 2
+        rows = [
+            [buttons[index], *buttons[index + height : index + height + 1]]
+            for index in range(height)
+        ]
         rows.append([self._button(_tr("save", self.lang), "save")])
         if self.chat_id is not None:
             button = chat_panel_button(self.chat_id, self.lang)

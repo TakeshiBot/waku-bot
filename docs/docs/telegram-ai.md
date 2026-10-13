@@ -73,6 +73,22 @@ bấm **Lưu** mới áp dụng và đóng menu. Menu cùng tin gọi lệnh t�
 Menu gắn với người mở và tin nhắn, hết hạn sau 15 phút, kiểm tra lại quyền khi lưu. Thay đổi cấu hình nhóm có hiệu
 lực ngay và không cần khởi động lại.
 
+**Bot Trả Lời** là công tắc riêng, mặc định **Tắt**, giống base cũ.
+Khi **AI Trả Lời** tắt, bật công tắc này để dùng câu trả lời theo từ khóa;
+tắt cả hai để bot không trả lời chat gọi tên hoặc reply trong nhóm.
+Các lệnh vẫn hoạt động. Câu mặc định dùng ngôn ngữ nhóm, còn DM dùng ngôn ngữ
+người dùng; từ điển tiếng Việt/Anh/Trung được tải riêng, không trộn ngôn ngữ.
+
+Menu nhóm đọc từ trên xuống cột trái rồi sang cột phải. Các mục AI và quản trị
+đứng trước; mục nội dung, ghim và tiện ích ở cột phải. Mini App dùng tên tương
+ứng, có chú thích cho từng mục và thêm công tắc tổng **Phân Tích Liên Kết**.
+
+`agent_model_multimodal` là model chung cho đọc ảnh, mô tả và chọn sticker.
+Để trống thì dùng `agent_model`; khi model riêng không đáp ứng được, bot thử
+model chat trong cùng lượt xử lý. Model chat dự phòng vẫn cần hỗ trợ đọc ảnh
+để mô tả được nội dung ảnh. Khóa cũ `agent_sticker_description_model` chỉ còn
+để đọc cấu hình cũ; menu admin hiển thị một mục chung **Model Ảnh Và Sticker**.
+
 Nút **Ảnh** trong `/config` nhóm chuyển **An toàn → R18 → Cả hai → Tắt**.
 Mặc định là **An toàn**. Bấm **Lưu** để áp dụng cho `/seg`, `/randavatar`
 và ảnh anime do AI gửi; R18 vẫn được che bằng spoiler. Ảnh lấy từ liên kết

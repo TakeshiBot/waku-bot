@@ -155,11 +155,12 @@ async def _handle_discord_message_turn(message: discord.Message, user_prompt: st
             )
 
     prompt, needs_multimodal = await _build_prompt(message, user_prompt + periodic_reaction_nudge)
-    model_override = (
-        provider.make_chat_model(app_config.agent_model_multimodal)
-        if needs_multimodal and app_config.agent_model_multimodal
-        else None
-    )
+    model_override = None
+    if needs_multimodal and app_config.agent_model_multimodal:
+        model_override = provider.with_model_fallback(
+            provider.make_chat_model(app_config.agent_model_multimodal),
+            provider.make_chat_model(app_config.agent_model),
+        )
     model_history = (
         history
         if model_override is not None

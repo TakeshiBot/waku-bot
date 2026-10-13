@@ -282,6 +282,7 @@ bot:
       delete_events: 이벤트 메시지 삭제
       quote_pin_message: 인용 메시지 고정
       ai_reply: AI 답장
+      bot_reply: 봇 기본 응답
       ai_reply_other_bots_enabled: 다른 봇에 응답
       ai_comment: AI 댓글
       setu_enabled: 랜덤 숭한 짤

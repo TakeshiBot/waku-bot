@@ -160,6 +160,8 @@ def _label(key: str, value, session: ConfigSession) -> str:
     name = (
         _tr("dm_sticker_download", session)
         if key == "dm_sticker_download_enabled"
+        else _tr("vision_model", session)
+        if key == "agent_model_multimodal"
         else _tr("telegram_enabled", session)
         if key == "telegram_enabled"
         else _tr("business_labels." + key, session)
@@ -276,8 +278,7 @@ def _runtime_summary(session: ConfigSession) -> str:
         sticker=status(app_config.agent_sticker_memory),
         sticker_mode=value(app_config.agent_sticker_search_mode),
         sticker_model=value(
-            app_config.agent_sticker_description_model
-            or app_config.agent_model_multimodal
+            app_config.agent_model_multimodal
             or app_config.agent_model
         ),
         discord=_tr("runtime.discord." + discord_status, session),

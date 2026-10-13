@@ -153,6 +153,12 @@ class SettingsEditor:
                 )
         except (OSError, ValueError):
             raise SettingsEditError("invalid_file") from None
+        # Show the unified setting even when a deployed file still declares
+        # only the old sticker-specific name. An explicit blank disables it.
+        if values.get("agent_model_multimodal") is None:
+            legacy = values.get("agent_sticker_description_model")
+            if legacy:
+                values["agent_model_multimodal"] = legacy
         return values, revision
 
     def configured_keys(self) -> set[str]:
@@ -168,14 +174,24 @@ class SettingsEditor:
                 schema = self.schema
                 if provider is not None:
                     tables = next(
-                        (value for key, value in values.items() if key.lower() == "agent_providers"),
+                        (
+                            value
+                            for key, value in values.items()
+                            if key.lower() == "agent_providers"
+                        ),
                         {},
                     )
                     values = tables.get(provider, {})
                     schema = self.provider_schema
                 for key in values:
                     if key.lower() in schema.model_fields:
-                        fields[key.lower()] = None
+                        canonical = (
+                            "agent_model_multimodal"
+                            if provider is None
+                            and key.lower() == "agent_sticker_description_model"
+                            else key.lower()
+                        )
+                        fields[canonical] = None
             return list(fields)
         except (OSError, ValueError, AttributeError, TypeError):
             raise SettingsEditError("invalid_file") from None
@@ -265,7 +281,9 @@ class SettingsEditor:
                     # A root Docker process must not turn a host user's 0600
                     # config into a root-owned file after an atomic replacement.
                     if hasattr(os, "fchown") and os.geteuid() == 0:
-                        os.fchown(stream.fileno(), original_stat.st_uid, original_stat.st_gid)
+                        os.fchown(
+                            stream.fileno(), original_stat.st_uid, original_stat.st_gid
+                        )
                     stream.write(payload)
                     stream.flush()
                     os.fsync(stream.fileno())
@@ -323,13 +341,29 @@ class SettingsEditor:
                     if field.default is not None:
                         raise SettingsEditError("invalid_value")
                     document.pop(name, None)
+                    if key == "agent_model_multimodal":
+                        # An old alias must not silently reactivate the model
+                        # after the admin clears the shared vision setting.
+                        document.pop(
+                            self._key(document, "agent_sticker_description_model"), None
+                        )
                     lower = self.snapshot()[0].get(key)
                     if lower is not None and any(
-                        key
-                        in {
-                            k.lower()
-                            for k in tomllib.loads(p.read_text(encoding="utf-8-sig"))
-                        }
+                        (
+                            key
+                            in (
+                                names := {
+                                    k.lower()
+                                    for k in tomllib.loads(
+                                        p.read_text(encoding="utf-8-sig")
+                                    )
+                                }
+                            )
+                            or (
+                                key == "agent_model_multimodal"
+                                and "agent_sticker_description_model" in names
+                            )
+                        )
                         for p in self.paths[:-1]
                     ):
                         raise SettingsEditError("inherited_value")
@@ -339,6 +373,10 @@ class SettingsEditor:
                     else:
                         value_to_write = value
                     document[name] = value_to_write
+                    if key == "agent_model_multimodal":
+                        document.pop(
+                            self._key(document, "agent_sticker_description_model"), None
+                        )
 
         return change
 

@@ -483,6 +483,7 @@ bot:
       quote_pin_message: 語錄📍頂
 
       ai_reply: AI📎複
+      bot_reply: 🤖默認📎複
 
       ai_reply_other_bots_enabled: 📎🔁萁牠Bot
 

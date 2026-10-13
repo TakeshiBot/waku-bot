@@ -221,11 +221,12 @@ async def history_processor(
 
 if app_config.agent and app_config.agent_model:
     model = provider.make_chat_model(app_config.agent_model)
-    multimodal_model = (
-        model
-        if not app_config.agent_model_multimodal
-        else provider.make_chat_model(app_config.agent_model_multimodal)
-    )
+    multimodal_model = model
+    if app_config.agent_model_multimodal:
+        multimodal_model = provider.with_model_fallback(
+            provider.make_chat_model(app_config.agent_model_multimodal),
+            model,
+        )
     small_model = (
         model
         if not app_config.agent_model_small

@@ -35,7 +35,6 @@ _MODEL_FIELDS = {
     "agent_model_multimodal_options",
     "agent_struct_model_options",
     "agent_memory_prompt",
-    "agent_sticker_description_model",
     "agent_sticker_description_prompt",
     "agent_image_gen_model",
     "agent_image_edit_model",
@@ -361,7 +360,10 @@ async def prepare_settings_application(
     try:
         main_model = model(candidate.agent_model)
         small = model(candidate.agent_model_small or candidate.agent_model)
-        multimodal = model(candidate.agent_model_multimodal or candidate.agent_model)
+        multimodal_primary = model(
+            candidate.agent_model_multimodal or candidate.agent_model
+        )
+        multimodal = provider.with_model_fallback(multimodal_primary, main_model)
         structured = model(candidate.agent_struct_model or candidate.agent_model)
         # Explicit bindings preserve the fallback aliases when several roles
         # previously referenced the same main model.
@@ -426,13 +428,12 @@ async def prepare_settings_application(
             assign(comment_module, "comment_agent", comment)
         sticker = sys.modules.get("waku.plugins.agent.sticker_memory")
         if sticker is not None and sticker._description_agent is not None:
+            assign(sticker._description_agent, "model", multimodal)
             assign(
                 sticker._description_agent,
-                "model",
-                model(
-                    candidate.agent_sticker_description_model
-                    or candidate.agent_model_multimodal
-                    or candidate.agent_model
+                "model_settings",
+                provider.make_model_settings(
+                    candidate.agent_model_multimodal_options
                 ),
             )
         if (
@@ -442,17 +443,14 @@ async def prepare_settings_application(
             assign(
                 sticker._selector_agent,
                 "model",
-                model(
-                    candidate.agent_model_small
-                    or candidate.agent_sticker_description_model
-                    or candidate.agent_model_multimodal
-                    or candidate.agent_model
-                ),
+                multimodal,
             )
             assign(
                 sticker._selector_agent,
                 "model_settings",
-                provider.make_model_settings(candidate.agent_model_small_options),
+                provider.make_model_settings(
+                    candidate.agent_model_multimodal_options
+                ),
             )
         discord = sys.modules.get("waku.discordbot.state")
         if discord is not None:

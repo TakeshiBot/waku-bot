@@ -132,8 +132,10 @@ export interface ChatConfig {
   title_permissions: Record<string, boolean>;
   greeting: string | null;
   ai_reply: boolean;
+  bot_reply: boolean;
   ai_reply_other_bots_enabled: boolean;
   ai_comment: boolean;
+  agent_moderation_enabled: boolean;
   setu_enabled: boolean;
   convert_b23_enabled: boolean;
   parse_links_enabled: boolean;

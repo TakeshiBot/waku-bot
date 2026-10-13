@@ -113,6 +113,7 @@ class ChatConfig:
     title_permissions: dict | None = None
     greeting: str | None = None
     ai_reply: bool = True
+    bot_reply: bool = False
     ai_reply_other_bots_enabled: bool = False
     ai_comment: bool = False
     agent_moderation_enabled: bool = False
@@ -164,6 +165,7 @@ class ChatConfig:
             title_permissions=data.get("title_permissions", {}),
             greeting=data.get("greeting", None),
             ai_reply=data.get("ai_reply", True),
+            bot_reply=data.get("bot_reply", False),
             ai_reply_other_bots_enabled=data.get("ai_reply_other_bots_enabled", False),
             setu_enabled=data.get("setu_enabled", True),
             telegram_r18_mode=data.get("telegram_r18_mode", 0),

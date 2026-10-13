@@ -112,7 +112,9 @@ async def update_chat_config(
 
     current = ctx.chat.chat_config
     new_config = copy.deepcopy(current)
-    fields = payload.model_dump()
+    # Older cached Mini App bundles do not know newly added switches. Treat omitted
+    # fields as "leave unchanged" so one ordinary save cannot reset newer settings.
+    fields = payload.model_dump(exclude_unset=True)
     for name, value in fields.items():
         setattr(new_config, name, value)
 
@@ -120,9 +122,13 @@ async def update_chat_config(
         audit.FieldChange(field=name, old=old, new=new)
         for name, old, new in _diff_config(current, new_config)
     ]
-    if any(
-        change.field.startswith("verify_") for change in changes
-    ) and not await can_manage_group_settings(
+    privileged_changes = {
+        change.field
+        for change in changes
+        if change.field.startswith("verify_")
+        or change.field == "agent_moderation_enabled"
+    }
+    if privileged_changes and not await can_manage_group_settings(
         client, ctx.user.id, ctx.chat.id, require_restrict_members=True
     ):
         raise forbidden(ErrorCode.FORBIDDEN)

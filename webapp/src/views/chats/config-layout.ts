@@ -32,9 +32,11 @@ export const TOGGLE_GROUPS: ToggleGroup[] = [
     labelKey: "ai",
     keys: [
       "ai_reply",
-      "ai_reply_other_bots_enabled",
       "ai_comment",
+      "agent_moderation_enabled",
       "group_memory_enabled",
+      "ai_reply_other_bots_enabled",
+      "bot_reply",
       "sticker_memory_enabled",
       "rss_agent_summary",
       "rss_agent_broadcast",
@@ -42,7 +44,7 @@ export const TOGGLE_GROUPS: ToggleGroup[] = [
   },
   {
     labelKey: "content",
-    keys: ["setu_enabled", "convert_b23_enabled", "parse_links_enabled"],
+    keys: ["setu_enabled", "convert_b23_enabled", "parse_links_enabled", "parse_artwork_enabled"],
   },
   {
     labelKey: "housekeeping",
@@ -51,16 +53,12 @@ export const TOGGLE_GROUPS: ToggleGroup[] = [
 ];
 
 /**
- * Settings that need a line of explanation.
- *
- * Only these. A hint under every row is noise that trains people to skip all of
- * them, so the ones whose name does not carry its meaning get one and the rest do
- * not.
+ * Every switch carries a short explanation so the Mini App mirrors the compact
+ * /config labels without making administrators guess what each switch controls.
  */
-export const TOGGLES_WITH_HINTS: ReadonlySet<ChatToggleKey> = new Set<ChatToggleKey>([
-  "group_memory_enabled",
-  "sticker_memory_enabled",
-]);
+export const TOGGLES_WITH_HINTS: ReadonlySet<ChatToggleKey> = new Set(
+  TOGGLE_GROUPS.flatMap((group) => group.keys),
+);
 
 /** Group administrator rights used by the AI promotion preset in /sett. */
 export const TITLE_PERMISSION_KEYS = [

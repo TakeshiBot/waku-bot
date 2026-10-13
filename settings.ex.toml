@@ -12,6 +12,8 @@ log_level = "INFO"
 # AI: prefix trước tên model chọn provider ở cuối file.
 agent = false
 agent_model = "default/gpt-4o-mini"
+# Model đọc ảnh và sticker chung; trống hoặc gặp lỗi thì dùng model chat.
+agent_model_multimodal = ""
 agent_prompt = ''''''
 
 # Tạo/sửa ảnh: provider/model; để trống để tắt. Sửa ảnh trống dùng model tạo ảnh.
@@ -19,9 +21,8 @@ agent_prompt = ''''''
 agent_image_gen_model = ""
 agent_image_edit_model = ""
 
-# Sticker: model dưới đây cần đọc được ảnh; dùng để học/chọn sticker.
+# Sticker dùng chung agent_model_multimodal ở trên.
 agent_sticker_memory = true
-agent_sticker_description_model = "default/gpt-4o-mini"
 
 # Telegram Business: kết nối tài khoản và bật Secretary Mode trong BotFather.
 business_chat_enabled = false
