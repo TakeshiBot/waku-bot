@@ -33,6 +33,10 @@ dữ liệu nếu đã có instance/dữ liệu cũ, rồi chờ health check b�
 Build hoặc kiểm tra cấu hình thất bại sẽ giữ container hiện tại chạy tiếp.
 Script không tự prune Docker hay xóa dữ liệu khi thiếu dung lượng.
 
+Trước khi build, script giữ image hiện tại bằng tag `<project>-snapshot:deploy-base`
+để việc thay tag `:local` không làm mất tham chiếu image cũ trong Docker.
+Nếu image của container cũ đã mất, script báo rõ lần triển khai này không có
+image để tự rollback; dữ liệu vẫn được sao lưu trước khi thay container.
 Khi thay container, script giữ image trước và ghi dấu cấu trúc database cùng
 phiên bản migration vào `.backups/rollback.state`. Nếu bản mới không sẵn sàng,
 script thử quay lại image trước khi dấu database còn khớp. Nếu migration đã

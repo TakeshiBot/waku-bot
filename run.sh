@@ -239,6 +239,15 @@ deploy() {
   old_container="$(compose ps -a -q waku)"
   if [[ -n "$old_container" ]]; then
     old_image="$(docker inspect --format '{{.Image}}' "$old_container")"
+    if docker image inspect "$old_image" >/dev/null 2>&1; then
+      # Preserve a name before build replaces :local. With the containerd
+      # image store, an untagged in-use image may no longer resolve by ID.
+      docker image tag "$old_image" "${WAKU_PROJECT_NAME//_/-}-snapshot:deploy-base" ||
+        die "Không giữ được image cũ trước build; chưa dừng bot hiện tại."
+    else
+      log "Image của container cũ không còn trong kho Docker. Vẫn sao lưu dữ liệu và triển khai, nhưng lần này không có image cũ để tự rollback." >&2
+      old_image=""
+    fi
   fi
   export WAKU_COMMIT WAKU_VERSION WAKU_COMMIT_SUBJECT WAKU_COMMIT_DATE
   WAKU_COMMIT="$(git rev-parse HEAD 2>/dev/null || printf unknown)"
