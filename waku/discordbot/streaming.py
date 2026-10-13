@@ -26,7 +26,7 @@ class DiscordReplyStream:
         self._finalized = False
 
     async def update(self, text: str):
-        if self._closed:
+        if self._closed or self.deps.image_delivered:
             return
         if self._error is not None:
             raise self._error
@@ -36,6 +36,8 @@ class DiscordReplyStream:
             self._task = asyncio.create_task(self._loop(), name="discord-reply-stream")
 
     async def _publish(self):
+        if self.deps.image_delivered:
+            return
         chunks = _split_reply(self.text)
         if not chunks or chunks[0] == self._displayed:
             return
@@ -83,6 +85,9 @@ class DiscordReplyStream:
                 pass
 
     async def finalize(self, text: str):
+        if self.deps.image_delivered:
+            await self._stop()
+            return True
         if self._finalized:
             return self.preview is not None
         self._finalized = True
@@ -116,7 +121,7 @@ class DiscordReplyStream:
 
     async def abort(self, note: str | None = None):
         await self._stop()
-        if note and self.preview is not None:
+        if note and self.preview is not None and not self.deps.image_delivered:
             content = (
                 _split_reply(self.text)[0] if self.text.strip() else self._displayed
             )

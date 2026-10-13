@@ -20,6 +20,7 @@ from .scheduling import (
     schedule_discord_message,
 )
 from .settings import _discord_dm_settings, _discord_guild_settings
+from .tools.generated_images import discord_image_ops, prepare_discord_image_tools
 from .tools.images import send_discord_anime_photo, send_discord_web_image
 from .tools.reactions import send_discord_reaction
 from .tools.search import (
@@ -91,6 +92,7 @@ async def _start_discord_bot() -> None:
             Tool(send_discord_reaction, sequential=True),
             Tool(send_discord_web_image, sequential=True),
             Tool(send_discord_anime_photo, sequential=True),
+            Tool(discord_image_ops, sequential=True, prepare=prepare_discord_image_tools),
             Tool(schedule_discord_message, sequential=True),
             Tool(schedule_discord_image_action, sequential=True),
             Tool(list_discord_scheduled_messages, sequential=True),
@@ -118,8 +120,17 @@ async def _start_discord_bot() -> None:
             "Use natural emojis/emoticons in most casual replies, usually 1-3, "
             "but do not spam them or add them to serious/admin/error messages. "
             "Discord image behavior: when the user asks Waku to send/show/give "
+            "an existing image, use the existing free image APIs, not an image model. "
+            "Only call discord_image_ops for an explicit create/draw/generate-image request, "
+            "or an explicit request to edit an image. Ordinary send/show/photo requests "
+            "must not trigger generation, even if you can describe a matching image. "
+            "After any confirmed image delivery, end silently: the caption and image "
+            "are the reply. Do not send a completion sentence after the image. "
+            "When a request is to inspect/describe/analyze an image, answer from the "
+            "provided media, without fetching or generating another image. "
+            "For ordinary anime/Pixiv photo requests, when the user asks for "
             "a new anime/Pixiv image, photo, picture, seg, ảnh, or hình, call "
-            "send_discord_anime_photo at most once before final text unless you "
+            "send_discord_anime_photo at most once in the turn unless you "
             "are intentionally refusing. For a normal image request use count=1. "
             "If the user asks for many images, never request more than count=3; "
             "the backend will space them safely. Do not call image-sending tools "
@@ -138,9 +149,8 @@ async def _start_discord_bot() -> None:
             "image search or requests an image from the internet/web. "
             "If an image tool returns success=False with wait_seconds or a busy "
             "message, tell the user to wait a few seconds and do not claim an image "
-            "was sent. If it returns a capped result, clearly tell the user that "
-            "Waku could only send up to 3 images in one batch for Discord safety, "
-            "and they can ask for more later. If any image tool "
+            "was sent. For requests above 3 images, explain the batch limit in "
+            "the image caption rather than a separate completion message. If any image tool "
             "returns success=False, explain that failure and do not claim an image "
             "was sent. Do not mention tool internals to the user. "
             "Discord reminder behavior: when the user asks Waku to remind, "

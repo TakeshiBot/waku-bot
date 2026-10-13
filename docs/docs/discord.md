@@ -118,6 +118,14 @@ dữ liệu chạy hoặc credentials từ source cũ.
 
 ## Cách trả lời và dùng biểu cảm
 
+Discord dùng chung dịch vụ tạo/sửa ảnh với Telegram và các model
+`agent_image_gen_model`, `agent_image_edit_model`. Yêu cầu “cho/gửi ảnh” dùng
+nguồn ảnh API; chỉ yêu cầu rõ “tạo/vẽ ảnh” mới gọi model tạo ảnh. Sửa ảnh dùng
+ảnh đính kèm, ảnh đang reply hoặc ảnh bot vừa tạo cho người gọi trong cùng kênh.
+Nếu ảnh được chọn không đọc được, bot báo lỗi thay vì sửa một ảnh cũ khác.
+Ảnh tạo/sửa có caption `Tạo bởi waku meow~!` và không kèm tin nhắn hoàn tất
+riêng. Công tắc ảnh, chế độ an toàn/R18 và quyền đính kèm file vẫn được kiểm tra.
+
 Streaming được bật mặc định theo `agent_streaming` chung. Khi model bắt đầu
 trả lời, Waku gửi một tin rồi cập nhật dần nội dung, tối đa khoảng một lần mỗi
 2 giây. Khi hoàn tất, bot chốt tin đó và gửi các đoạn còn lại nếu câu trả lời

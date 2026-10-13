@@ -8,6 +8,7 @@ from pydantic_ai import ModelRetry, RunContext, ToolReturn
 from pydantic_ai.messages import BinaryContent, ModelRequest, UserPromptPart
 
 from waku.common import memttlcache
+from waku.common.rich_message import message_plain_text
 from waku.common.utils import is_explicit_reply
 from waku.config import app_config
 from waku.logger import logger
@@ -22,6 +23,7 @@ from waku.services.image_limits import (
     ImageLimitDenied,
     image_limiter,
 )
+from waku.services.image_requests import explicit_image_operation
 
 from .. import datatype, state
 
@@ -361,6 +363,7 @@ async def image_ops(
     Use "generate" when the user asks you to draw, create or produce an image
     from a text description. Use "edit" when the user attached an image (or
     replied to one) and asks you to modify it.
+    Ordinary send/show/photo requests must use send_anime_photo, never this tool.
     If admission is denied, explain the wait to the user. Do not retry this tool
     or promise a queued/scheduled image; the user must request it again later.
     Write progress_message yourself in your current persona and language. The
@@ -382,6 +385,14 @@ async def image_ops(
             to create/edit the requested image and it may take a little time.
             Use the user's context and your persona, not a fixed stock phrase.
     """
+    if not explicit_image_operation(message_plain_text(ctx.deps.message), operation):
+        return ToolReturn(
+            return_value=ImageOperationResult(
+                success=False,
+                reason="explicit_image_request_required",
+                message="The current user did not explicitly request image generation/editing. For ordinary image requests use send_anime_photo; do not call the image model.",
+            )
+        )
     progress_message = progress_message.strip()
     if not progress_message or len(progress_message) > 600:
         raise ModelRetry(

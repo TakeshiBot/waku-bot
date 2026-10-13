@@ -105,6 +105,7 @@ async def send_discord_web_image(
         try:
             await message.channel.send(embed=embed, file=file, reference=message)
             ctx.deps.side_effects_started = True
+            ctx.deps.image_delivered = True
         except discord.HTTPException as e:
             logger.warning(f"Discord web image upload failed: {e}")
             return DiscordWebImageResult(
@@ -299,6 +300,7 @@ async def send_discord_anime_photo(
                     )
                 break
             ctx.deps.side_effects_started = True
+            ctx.deps.image_delivered = True
             sent_count += 1
             artist = None
             if artwork.artist is not None:

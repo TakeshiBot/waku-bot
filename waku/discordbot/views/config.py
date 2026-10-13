@@ -9,6 +9,7 @@ import discord
 
 from waku.i18n import normalize_locale
 from waku.logger import logger
+from waku.version import commit_info
 
 from .. import state
 from ..embeds import discord_command_embed
@@ -131,6 +132,19 @@ class DiscordConfigView(discord.ui.View):
             description,
             title=self._t("Cấu hình Waku", "Waku settings"),
         )
+        if self.guild is None and _is_discord_user_bot_admin(self.origin.user):
+            commit = commit_info()
+            if commit["commit"]:
+                info = f"`{commit['commit']}` · {commit['date']}"
+                if commit["subject"]:
+                    info += "\n" + discord.utils.escape_markdown(
+                        discord.utils.escape_mentions(commit["subject"])
+                    )
+                embed.add_field(
+                    name=self._t("Bản cập nhật", "Build commit"),
+                    value=info,
+                    inline=False,
+                )
         embed.set_footer(
             text=self._t(
                 "Chỉ bạn thấy menu • Hết hạn sau 15 phút",

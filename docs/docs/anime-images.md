@@ -39,3 +39,15 @@ nekos.best dẫn tới file ảnh tương ứng; ảnh ManyACG giữ đường d
 Các request nekos.best có User-Agent nhận diện dự án, có giới hạn nhịp tìm kiếm
 chung và tạm ngừng khi API báo 429. Việc bật/tắt ảnh và chọn chế độ trong config
 Telegram/Discord vẫn áp dụng cho cả hai nguồn.
+
+## Xin ảnh và tạo ảnh AI
+
+Khi trò chuyện trên Telegram hoặc Discord, yêu cầu thông thường như “cho mình
+ảnh mèo” dùng nguồn ảnh API có sẵn. Bot chỉ gọi model tạo ảnh khi người gọi
+nói rõ muốn tạo/vẽ ảnh, chẳng hạn “waku tạo ảnh mèo”. Sửa ảnh cũng cần yêu cầu
+sửa rõ ràng. Việc kiểm tra dựa vào tin nhắn hiện tại của người gọi, không dựa
+vào prompt do AI tự viết. Tạo/sửa ảnh cần model tương ứng đã được cấu hình.
+
+Ảnh tạo/sửa được gửi với caption `Tạo bởi waku meow~!`; sau khi gửi thành công,
+bot kết thúc lượt đó mà không gửi thêm lời hoàn tất. Ảnh lấy từ API giữ thông
+tin tác phẩm và nguồn ảnh như trước.

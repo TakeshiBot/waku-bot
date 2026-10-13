@@ -12,11 +12,12 @@ from waku.common import memttlcache
 from waku.common.telegram_runtime import prepare_telegram_output
 from waku.i18n import i18n
 from waku.logger import logger
+from waku.services.image_requests import GENERATED_IMAGE_CAPTION
 
 _PREFIX = "img_save:"
 _TTL = 7 * 24 * 60 * 60
 _DELIVERY_TIMEOUT = 25
-_CAPTION = "Tạo bởi waku meow~!"
+_CAPTION = GENERATED_IMAGE_CAPTION
 _locks: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
 
 

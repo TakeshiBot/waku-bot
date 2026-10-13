@@ -112,7 +112,18 @@ async def _run_discord_agent_once(
 
         stream = DiscordReplyStream(message, deps)
 
+    async def publish_image_progress(text):
+        nonlocal stream
+        deps.side_effects_started = True
+        delivered = await stream.finalize(text) if stream is not None else False
+        if not delivered:
+            await _send_reply(message, text)
+        stream = None
+
+    deps.publish_image_progress = publish_image_progress
+
     async def stream_events(ctx, events):
+        nonlocal stream
         from pydantic_ai.messages import (
             FunctionToolCallEvent,
             PartDeltaEvent,
@@ -126,6 +137,12 @@ async def _run_discord_agent_once(
         # intermediate pre-tool narration with the final answer.
         text = ""
         async for event in events:
+            if deps.image_delivered:
+                continue
+            if stream is None:
+                from .streaming import DiscordReplyStream
+
+                stream = DiscordReplyStream(message, deps)
             if isinstance(event, PartStartEvent) and isinstance(event.part, TextPart):
                 text += event.part.content
                 if text.strip():
@@ -196,7 +213,9 @@ async def _run_discord_agent_once(
     except BaseException as error:
         if stream is not None:
             await stream.abort(
-                _discord_fallback_reply(error) if isinstance(error, Exception) else None
+                _discord_fallback_reply(error)
+                if isinstance(error, Exception) and not deps.image_delivered
+                else None
             )
         if deps.side_effects_started:
             if not isinstance(error, Exception):
@@ -206,17 +225,24 @@ async def _run_discord_agent_once(
             ) from error
         raise
     try:
-        streamed = (
-            await stream.finalize(str(result.output or ""))
-            if stream is not None
-            else False
-        )
+        if deps.image_delivered:
+            if stream is not None:
+                await stream.finalize("")
+            streamed = True
+        else:
+            streamed = (
+                await stream.finalize(str(result.output or ""))
+                if stream is not None
+                else False
+            )
         if result.output and not streamed:
             await _send_reply(message, str(result.output))
     except BaseException as error:
         if stream is not None:
             await stream.abort(
-                _discord_fallback_reply(error) if isinstance(error, Exception) else None
+                _discord_fallback_reply(error)
+                if isinstance(error, Exception) and not deps.image_delivered
+                else None
             )
         if not isinstance(error, Exception):
             raise

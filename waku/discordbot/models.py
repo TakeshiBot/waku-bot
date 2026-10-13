@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -20,6 +21,8 @@ class DiscordGuildSettings:
 class DiscordContextDeps:
     message: discord.Message
     side_effects_started: bool = False
+    image_delivered: bool = False
+    publish_image_progress: Callable[[str], Awaitable[None]] | None = None
 
 @dataclass
 class DiscordGroupMemoryMessage:
