@@ -4,30 +4,13 @@ bot:
     title: ⌬ <b>Waku settings</b>
     runtime:
       summary: |-
-        │
-        ┟ <b>Telegram</b>
-        │ 机器人: {telegram} · 私聊贴纸下载: {dm_sticker}
-        │ 名称: <code>{nickname}</code> · 语言: <code>{language}</code>
-        │ 时区: <code>{timezone}</code> · 日志: <code>{log_level}</code>
-        │
-        ┠ <b>Agent · 当前配置</b>
-        │ AI: {agent} · 流式输出: {streaming} · 富文本: {rich}
-        │ agent_chat_model: <code>{model}</code>
-        │ agent_vision_model: <code>{vision}</code>
-        │ agent_image_gen_model: <code>{image_gen}</code>
-        │ agent_image_edit_model: <code>{image_edit}</code>
-        │
-        ┠ <b>Business</b>
-        │ 聊天: {business} · Business Prompt: {business_prompt}
-        │ 当前提示词: {prompt_source}
-        │
-        ┠ <b>Discord</b>
-        │ {discord}
-        │
-        ┠ <b>Mini App</b>
-        │ webapp: {webapp} · webapp_menu_button: {webapp_button}
-        │
-        ┖ <b>Services · Providers</b>: {providers}
+        Bot: <code>{nickname}</code> · <code>{language}</code>
+        Telegram: {telegram} · Business: {business}
+        Discord: {discord} · Mini App: {webapp}
+        AI: {agent} · <code>{model}</code>
+        Commit: <code>{commit}</code> · {commit_date}
+        {commit_subject}
+      unknown: Unknown
       custom_prompt: 独立提示词
       main_prompt: 主提示词
       enabled: ✅ On

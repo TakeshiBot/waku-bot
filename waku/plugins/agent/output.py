@@ -286,13 +286,17 @@ async def reply_output(
     *,
     deps: datatype.ContextDeps | None = None,
 ) -> bool:
+    if getattr(deps, "image_delivered", False):
+        return False
     if not await prepare_telegram_output(message):
         return False
     caller_should_send = should_send
 
     def should_send():
-        return telegram_output_allowed(message) and (
-            caller_should_send is None or caller_should_send()
+        return (
+            not getattr(deps, "image_delivered", False)
+            and telegram_output_allowed(message)
+            and (caller_should_send is None or caller_should_send())
         )
 
     if should_send is not None and not should_send():
@@ -512,6 +516,7 @@ class StreamingOutput:
         return (
             telegram_output_allowed(self.message)
             and not self._cancelled
+            and not getattr(self.deps, "image_delivered", False)
             and (self.should_send is None or self.should_send())
         )
 

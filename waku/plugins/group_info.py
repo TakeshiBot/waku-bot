@@ -7,7 +7,7 @@ import time
 from collections import OrderedDict
 
 from pyrogram import Client, filters
-from pyrogram.enums import ChatMemberStatus, ChatType, ParseMode
+from pyrogram.enums import ButtonStyle, ChatMemberStatus, ChatType, ParseMode
 from pyrogram.errors import MessageNotModified, RPCError
 from pyrogram.types import (
     InlineKeyboardButton,
@@ -116,6 +116,7 @@ def _keyboard(page, pages, user_id, locale):
         InlineKeyboardButton(
             t("bot.info.close", locale=locale),
             callback_data=f"group_info:{user_id}:x:{page}",
+            style=ButtonStyle.DANGER,
         )
     )
     if page < pages:

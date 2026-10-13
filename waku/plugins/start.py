@@ -84,6 +84,7 @@ class PrivateStartBotMarkup:
                 InlineKeyboardButton(
                     i18n.t("bot.start_menu.close", locale=self.lang),
                     callback_data=f"start_close:{self.user_id or 0}",
+                    style=enums.ButtonStyle.DANGER,
                 )
             ]
         )
@@ -132,6 +133,7 @@ async def start(client: Client, message: Message):
                         InlineKeyboardButton(
                             i18n.t("bot.start_menu.close", locale=lang),
                             callback_data=f"start_close:{user_id}",
+                            style=enums.ButtonStyle.DANGER,
                         )
                     ],
                 ]
@@ -344,6 +346,7 @@ async def start_group(client: Client, message: Message):
                 InlineKeyboardButton(
                     i18n.t("bot.start_menu.close", locale=lang),
                     callback_data=f"start_close:{message.from_user.id}",
+                    style=enums.ButtonStyle.DANGER,
                 )
             ]
         )

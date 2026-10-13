@@ -186,6 +186,11 @@ async def schedule_message(
     chat_id = ctx.deps.chat_id
 
     if send_immediately:
+        if has_text and getattr(ctx.deps, "image_delivered", False):
+            return SendResult(
+                success=False,
+                message="The generated image was delivered. End the turn without additional text.",
+            ).text()
         try:
             if has_text:
                 assert text is not None

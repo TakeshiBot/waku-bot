@@ -171,6 +171,8 @@ class ContextDeps:
     # Successful text deliveries in this run, shared by tools and the runner.
     # Never carried into conversation history: the next user turn may repeat text.
     sent_texts: set[str] = field(default_factory=set)
+    # A confirmed generated/edited photo is the final Telegram output this turn.
+    image_delivered: bool = False
     publish_image_progress: Callable[[str], Awaitable[bool]] | None = field(
         default=None, repr=False
     )

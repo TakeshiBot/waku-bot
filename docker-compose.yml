@@ -7,6 +7,8 @@ services:
       args:
         WAKU_VERSION: ${WAKU_VERSION:-local}
         WAKU_COMMIT: ${WAKU_COMMIT:-unknown}
+        WAKU_COMMIT_SUBJECT: ${WAKU_COMMIT_SUBJECT:-}
+        WAKU_COMMIT_DATE: ${WAKU_COMMIT_DATE:-}
     image: ${WAKU_IMAGE_NAME:-waku-bot:local}
     restart: unless-stopped
     stop_signal: SIGINT

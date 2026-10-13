@@ -2,7 +2,7 @@ bot:
   business:
     account: Tài Khoản Business
     title: <b>Trợ Lý</b> · {name}
-    notice: 'Bấm Lưu để áp dụng và đóng. Đóng để bỏ thay đổi.
+    notice: 'Bấm Lưu để áp dụng. Đóng để bỏ thay đổi chưa lưu.
 
       Bộ nhớ chỉ gồm tin bot đã nhận, không phải toàn bộ lịch sử Telegram.'
     management_notice: Bật Quyền quản lý rồi Lưu trước khi dùng. ✅ = Telegram đã cấp quyền.

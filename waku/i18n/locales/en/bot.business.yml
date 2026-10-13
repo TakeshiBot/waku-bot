@@ -2,7 +2,7 @@ bot:
   business:
     account: Business Account
     title: <b>Assistant</b> · {name}
-    notice: 'Save applies and closes. Close discards changes.
+    notice: 'Save applies changes and keeps the menu open. Close discards unsaved changes.
 
       Memory contains messages received by this bot, not your complete Telegram history.'
     management_notice: Enable Management and Save first. ✅ = granted by Telegram.

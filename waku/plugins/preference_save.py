@@ -100,6 +100,7 @@ def save_markup(token: str, lang: str) -> types.InlineKeyboardMarkup:
                 types.InlineKeyboardButton(
                     i18n.t("bot.preference_save.save", locale=lang),
                     callback_data=f"prefs:{token}:save",
+                    style=enums.ButtonStyle.SUCCESS,
                 ),
             ]
         ]

@@ -1,3 +1,4 @@
+from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from waku import i18n
@@ -33,10 +34,12 @@ class TitlePermissionsMarkup:
                 InlineKeyboardButton(
                     "💾 " + i18n.t("title_menu.save", locale=self.lang),
                     callback_data=f"sett:{self.token}:{self.revision}:save",
+                    style=ButtonStyle.SUCCESS,
                 ),
                 InlineKeyboardButton(
                     "✖️ " + i18n.t("title_menu.close", locale=self.lang),
                     callback_data=f"sett:{self.token}:{self.revision}:close",
+                    style=ButtonStyle.DANGER,
                 ),
             ]
         )

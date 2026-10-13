@@ -365,6 +365,9 @@ async def tg(
     if ctx.deps.message is None or ctx.deps.message.id is None:
         return tr("error_context_unavailable")
 
+    if method == "sendMessage" and getattr(ctx.deps, "image_delivered", False):
+        return "The generated image was delivered. End the turn without additional text."
+
     if not await prepare_telegram_output(ctx.deps.message):
         return tr("guest.disabled")
 

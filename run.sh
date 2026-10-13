@@ -181,9 +181,11 @@ deploy() {
   require_docker
   require_wait
   check_build_space
-  export WAKU_COMMIT WAKU_VERSION
+  export WAKU_COMMIT WAKU_VERSION WAKU_COMMIT_SUBJECT WAKU_COMMIT_DATE
   WAKU_COMMIT="$(git rev-parse HEAD 2>/dev/null || printf unknown)"
   WAKU_VERSION="$(git describe --tags --always --dirty 2>/dev/null || printf local)"
+  WAKU_COMMIT_SUBJECT="$(git log -1 --format=%s 2>/dev/null || true)"
+  WAKU_COMMIT_DATE="$(git log -1 --format=%cI 2>/dev/null || true)"
   log "Build cả bot và Mini App trong Docker; container hiện tại tiếp tục chạy trong lúc build."
   compose build waku
   check_config

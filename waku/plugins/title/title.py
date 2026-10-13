@@ -109,7 +109,12 @@ async def delete_member_title(client, message):
 def _markup(session):
     def button(text, action):
         return InlineKeyboardButton(
-            text, callback_data=f"sett:{session.token}:{session.revision}:{action}"
+            text,
+            callback_data=f"sett:{session.token}:{session.revision}:{action}",
+            style={
+                "save": pyrogram.enums.ButtonStyle.SUCCESS,
+                "close": pyrogram.enums.ButtonStyle.DANGER,
+            }.get(action, pyrogram.enums.ButtonStyle.DEFAULT),
         )
 
     if session.page == "rights":

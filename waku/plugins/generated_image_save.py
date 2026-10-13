@@ -31,6 +31,7 @@ def _markup(token, locale, *, saved=False):
                 InlineKeyboardButton(
                     _tr("saved_button" if saved else "button", locale),
                     callback_data=_PREFIX + token,
+                    style=enums.ButtonStyle.SUCCESS,
                 )
             ]
         ]

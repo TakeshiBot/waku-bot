@@ -16,7 +16,6 @@ from waku import common, database
 from waku.database import business as repository
 from waku.i18n import t
 from waku.logger import logger
-from waku.plugins.menu_cleanup import schedule_saved_menu_cleanup
 from waku.services import business_context as context
 from waku.services import business_ops as operations
 
@@ -94,7 +93,11 @@ def _error_text(error, session=None):
 
 def _button(token, label, action):
     return InlineKeyboardButton(
-        label, callback_data=f"busi:{token}:{_SESSIONS[token].view}:{action}"
+        label,
+        callback_data=f"busi:{token}:{_SESSIONS[token].view}:{action}",
+        style={"save": enums.ButtonStyle.SUCCESS, "close": enums.ButtonStyle.DANGER}.get(
+            action, enums.ButtonStyle.DEFAULT
+        ),
     )
 
 
@@ -484,6 +487,7 @@ async def business_callback(client, query):
                 return
             await _owner_connection(client, session)
             if action == "save":
+                location = session.location
                 if session.cancel_note_id and session.location == "cancel_note":
                     from waku.database import business_notes
 
@@ -492,6 +496,7 @@ async def business_callback(client, query):
                     ):
                         raise operations.BusinessOperationError("cancel_unavailable")
                     text = _tr("appointment_cancelled", session)
+                    location = "notes"
                 elif session.action_token and session.location == "review":
                     result = await operations.execute_reviewed_action(
                         client, session.owner_id, session.action_token
@@ -503,15 +508,23 @@ async def business_callback(client, query):
                                 text += f"\nID: <code>{int(result[key])}</code>"
                     if result is not True and not isinstance(result, dict):
                         raise operations.BusinessOperationError("uncertain")
+                    location = "home"
                 else:
+                    changed = session.settings != context.settings_for(session.owner_id)
                     await context.set_settings(session.owner_id, session.settings)
                     from waku.plugins.business_chat import account_settings_changed
 
-                    await account_settings_changed(session.owner_id)
+                    if changed:
+                        await account_settings_changed(session.owner_id)
                     text = _tr("saved", session)
-                _SESSIONS.pop(token, None)
-                await _edit(client, session, text)
-                schedule_saved_menu_cleanup(client, message, session.command_id)
+                # Keep the menu usable, but clear executed actions so another
+                # Save cannot repeat a mutation or an appointment cancellation.
+                session.action_token = None
+                session.cancel_note_id = None
+                session.review.clear()
+                session.settings = dict(context.settings_for(session.owner_id))
+                menu_text, markup = await _render(client, token, location)
+                await _edit(client, session, menu_text + "\n\n" + text, markup)
                 return
             if action == "home":
                 session.action_token = None

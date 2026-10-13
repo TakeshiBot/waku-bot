@@ -114,7 +114,8 @@ Các công tắc của **từng tài khoản**, không thêm tham số nâng cao
 | Bot ký tên | Bật | Thêm `nickname:` trước tin do trợ lý gửi |
 | Gửi lời nhắn | Bật | Cho phép nhận lời nhắn hoặc hẹn từ người liên hệ và chuyển riêng cho chủ tài khoản |
 
-**Lưu** áp dụng ngay rồi đóng; **Đóng** bỏ thay đổi. Menu lưu được dọn sau 5 giây.
+**Lưu** áp dụng ngay và giữ menu mở để tiếp tục chỉnh; **Đóng** bỏ thay đổi chưa lưu
+và đóng menu. Các thao tác đã thực hiện không được chạy lại khi bấm Lưu lần nữa.
 Trong các mục thao tác, nhập nội dung theo hướng dẫn; xem lại rồi **Lưu** mới thực
 hiện. Nút quay lại hoặc Đóng bỏ yêu cầu. Tin nhập không đồng thời gửi sang AI.
 Khách đang chat với tài khoản Business không có công cụ sửa tài khoản, chuyển

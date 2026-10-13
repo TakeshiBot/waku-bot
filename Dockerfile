@@ -44,6 +44,12 @@ COPY --from=webui /build/waku/webapp/dist /app/waku/webapp/dist
 
 ARG WAKU_VERSION=local
 ARG WAKU_COMMIT=unknown
+ARG WAKU_COMMIT_SUBJECT=
+ARG WAKU_COMMIT_DATE=
+ENV WAKU_VERSION=${WAKU_VERSION} \
+    WAKU_COMMIT=${WAKU_COMMIT} \
+    WAKU_COMMIT_SUBJECT=${WAKU_COMMIT_SUBJECT} \
+    WAKU_COMMIT_DATE=${WAKU_COMMIT_DATE}
 LABEL org.opencontainers.image.title="waku-bot" \
       org.opencontainers.image.version="${WAKU_VERSION}" \
       org.opencontainers.image.revision="${WAKU_COMMIT}"

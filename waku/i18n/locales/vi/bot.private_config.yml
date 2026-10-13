@@ -4,30 +4,13 @@ bot:
     title: ⌬ <b>Cấu hình Waku</b>
     runtime:
       summary: |-
-        │
-        ┟ <b>Telegram</b>
-        │ Bot: {telegram} · Tải Sticker DM: {dm_sticker}
-        │ Tên: <code>{nickname}</code> · Ngôn ngữ: <code>{language}</code>
-        │ Múi giờ: <code>{timezone}</code> · Log: <code>{log_level}</code>
-        │
-        ┠ <b>Agent · Cấu hình đang áp dụng</b>
-        │ AI: {agent} · Streaming: {streaming} · Rich message: {rich}
-        │ agent_chat_model: <code>{model}</code>
-        │ agent_vision_model: <code>{vision}</code>
-        │ agent_image_gen_model: <code>{image_gen}</code>
-        │ agent_image_edit_model: <code>{image_edit}</code>
-        │
-        ┠ <b>Business</b>
-        │ Chat: {business} · Business Prompt: {business_prompt}
-        │ Prompt đang dùng: {prompt_source}
-        │
-        ┠ <b>Discord</b>
-        │ {discord}
-        │
-        ┠ <b>Mini App</b>
-        │ webapp: {webapp} · webapp_menu_button: {webapp_button}
-        │
-        ┖ <b>Services · Providers</b>: {providers}
+        Bot: <code>{nickname}</code> · <code>{language}</code>
+        Telegram: {telegram} · Business: {business}
+        Discord: {discord} · Mini App: {webapp}
+        AI: {agent} · <code>{model}</code>
+        Commit: <code>{commit}</code> · {commit_date}
+        {commit_subject}
+      unknown: Chưa xác định
       custom_prompt: Prompt Riêng
       main_prompt: Prompt Chính
       enabled: ✅ Bật

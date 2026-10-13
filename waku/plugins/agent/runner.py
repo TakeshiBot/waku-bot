@@ -369,8 +369,8 @@ async def _run_agent_impl(
                 sent = await streaming_output.finalize()
                 if streaming_output.delivered:
                     record_sent_text(deps, text, markdown=True)
-                # The completion must be a NEW reply after the photo, rather
-                # than editing this earlier acknowledgment above the photo.
+                # The progress acknowledgment ends before the photo. A failed
+                # image operation may still publish an error in a new output.
                 streaming_output = None
                 return sent
             sent = await reply_output(client, message, text, deps=deps)
@@ -473,7 +473,9 @@ async def _run_agent_impl(
                             f"Agent run end with result: {agent_run.result.output}"
                         )
                         output = agent_run.result.output
-                        if isinstance(output, (EndTurn, AskUserOutput)):
+                        if getattr(deps, "image_delivered", False) or isinstance(
+                            output, (EndTurn, AskUserOutput)
+                        ):
                             if streaming_output is not None:
                                 await streaming_output.abort()
                         else:
@@ -605,7 +607,9 @@ async def _run_agent_impl(
                         logger.warning(
                             f"The stupid agent returned 'final_result' as text🤡 for user {user_id}"
                         )
-                    elif isinstance(output, (EndTurn, AskUserOutput)):
+                    elif getattr(deps, "image_delivered", False) or isinstance(
+                        output, (EndTurn, AskUserOutput)
+                    ):
                         logger.debug(
                             f"Agent returned {type(output).__name__} for user {user_id}"
                         )

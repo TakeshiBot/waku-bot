@@ -103,7 +103,11 @@ class ChatConfigMarkup:
 
     def _button(self, label, action):
         return InlineKeyboardButton(
-            label, callback_data=f"config_chat:{self.token}:{self.revision}:{action}"
+            label,
+            callback_data=f"config_chat:{self.token}:{self.revision}:{action}",
+            style=pyrogram.enums.ButtonStyle.SUCCESS
+            if action == "save"
+            else pyrogram.enums.ButtonStyle.DEFAULT,
         )
 
     def build(self):

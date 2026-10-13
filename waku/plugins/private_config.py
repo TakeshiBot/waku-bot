@@ -153,7 +153,11 @@ def _prune() -> None:
 def _button(label: str, token: str, action: str) -> InlineKeyboardButton:
     session = _SESSIONS[token]
     return InlineKeyboardButton(
-        label, callback_data=f"{_PREFIX}:{token}:{session.view}:{action}"
+        label,
+        callback_data=f"{_PREFIX}:{token}:{session.view}:{action}",
+        style={"save": enums.ButtonStyle.SUCCESS, "close": enums.ButtonStyle.DANGER}.get(
+            action, enums.ButtonStyle.DEFAULT
+        ),
     )
 
 
@@ -417,7 +421,7 @@ def has_pending_config_input(message: Message) -> bool:
 def _runtime_summary(session: ConfigSession) -> str:
     """Show active settings, separately from the file and unsaved draft."""
     from waku.discordbot import get_discord_runtime_status
-    from waku.timezone import BOT_TIMEZONE_NAME
+    from waku.version import commit_info
 
     def status(enabled: bool) -> str:
         return _tr("runtime.enabled" if enabled else "runtime.disabled", session)
@@ -431,38 +435,21 @@ def _runtime_summary(session: ConfigSession) -> str:
     elif discord_status not in {"ready", "connecting", "offline", "error"}:
         discord_status = "offline"
     chat_model = _agent_chat_model()
-    vision_model = app_config.agent_vision_model
+    commit = commit_info()
     return _tr(
         "runtime.summary",
         session,
         agent=status(app_config.agent),
         model=value(chat_model),
-        vision=value(vision_model or chat_model),
-        streaming=status(app_config.agent_streaming),
-        rich=status(app_config.agent_rich_output),
-        image_gen=value(app_config.agent_image_gen_model),
-        image_edit=value(
-            app_config.agent_image_edit_model or app_config.agent_image_gen_model
-        ),
         discord=_tr("runtime.discord." + discord_status, session),
         telegram=status(app_config.telegram_enabled),
         business=status(app_config.business_chat_enabled),
-        business_prompt=status(app_config.business_chat_prompt_enabled),
-        prompt_source=_tr(
-            "runtime.custom_prompt"
-            if app_config.business_chat_prompt_enabled
-            and app_config.business_chat_prompt
-            else "runtime.main_prompt",
-            session,
-        ),
-        dm_sticker=status(app_config.dm_sticker_download_enabled),
         webapp=status(app_config.webapp),
-        webapp_button=status(app_config.webapp_menu_button),
-        providers=len(app_config.agent_providers),
         nickname=value(app_config.nickname),
         language=value(app_config.lang),
-        timezone=BOT_TIMEZONE_NAME,
-        log_level=value(app_config.log_level),
+        commit=value(commit["commit"] or _tr("runtime.unknown", session)),
+        commit_subject=value(commit["subject"]),
+        commit_date=value(commit["date"]),
     )
 
 

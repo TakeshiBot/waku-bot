@@ -161,7 +161,7 @@ async def _generate_image(
             )
         )
     try:
-        await send_generated_photo(
+        sent = await send_generated_photo(
             ctx.deps.client,
             owner_id=getattr(ctx.deps, "user_id", None),
             chat_id=ctx.deps.chat_id,
@@ -183,6 +183,8 @@ async def _generate_image(
                 message=tr("generated_image_send_failed", p0=e.__class__.__name__),
             )
         )
+    if sent is not None:
+        ctx.deps.image_delivered = True
     return ToolReturn(
         return_value=tr("tool_image_generated_successfully"),
         content=[
@@ -327,6 +329,8 @@ async def _edit_image(
                 message=tr("edited_image_send_failed", p0=e.__class__.__name__),
             )
         )
+    if sent is not None:
+        ctx.deps.image_delivered = True
     if sent and sent.photo:
         await memttlcache.set(
             state.last_edited_image_key(ctx.deps.chat_id, ctx.deps.user_id),
@@ -363,8 +367,8 @@ async def image_ops(
     backend will replace Thinking with this text before starting image work.
     Do not also send a separate pre-tool text or call a messaging tool for it.
     Do not claim the image is done before this tool confirms successful delivery.
-    After success, write a NEW short completion reply describing the delivered
-    image, rather than repeating progress_message. After failure, explain the
+    After successful delivery, end the turn silently; the image is the final
+    reply. Do not send any completion text or another messaging tool. After failure, explain the
     actual failure naturally without claiming that an image was sent.
 
     Args:
