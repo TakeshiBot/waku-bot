@@ -18,6 +18,8 @@ bot:
     expired: 'Menu or upload session expired. Open /config again.'
     denied: 'Only bot admins can use this feature.'
     invalid_file: 'Send a nonempty .md file, not a text message.'
+    empty_file: 'File received, but its content is empty or contains only whitespace.'
+    invalid_content: 'Invalid file content. Send a plain-text UTF-8 Markdown file.'
     too_large: 'File exceeds 32 KB.'
     encoding: 'The file must use UTF-8 encoding.'
     storage: 'Unable to read or save the file. Try opening /config again.'

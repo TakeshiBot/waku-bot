@@ -37,8 +37,10 @@ def decode_markdown(data: bytes) -> str:
         content = data.decode("utf-8-sig")
     except UnicodeDecodeError as error:
         raise InstructionsError("encoding") from error
-    if not content.strip() or "\x00" in content:
-        raise InstructionsError("invalid_file")
+    if not content.strip():
+        raise InstructionsError("empty_file")
+    if "\x00" in content:
+        raise InstructionsError("invalid_content")
     return content
 
 

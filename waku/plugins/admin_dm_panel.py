@@ -257,8 +257,10 @@ async def instructions_input(client, message):
                     or Path(document.file_name or "").suffix.lower() != ".md"
                 ):
                     raise store.InstructionsError("invalid_file")
-                if not isinstance(document.file_size, int) or document.file_size <= 0:
+                if not isinstance(document.file_size, int) or document.file_size < 0:
                     raise store.InstructionsError("invalid_file")
+                if document.file_size == 0:
+                    raise store.InstructionsError("empty_file")
                 if document.file_size > store.MAX_FILE_BYTES:
                     raise store.InstructionsError("too_large")
                 file = await asyncio.wait_for(
@@ -267,6 +269,8 @@ async def instructions_input(client, message):
                 if file is None:
                     raise store.InstructionsError("storage")
                 try:
+                    # Kurigram leaves in-memory downloads at EOF after writing.
+                    file.seek(0)
                     content = store.decode_markdown(file.read(store.MAX_FILE_BYTES + 1))
                 finally:
                     file.close()

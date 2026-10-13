@@ -18,6 +18,8 @@ bot:
     expired: 'Menu hoặc phiên tải file đã hết hạn. Mở lại /config.'
     denied: 'Chỉ admin bot được dùng chức năng này.'
     invalid_file: 'Gửi file .md có nội dung, không gửi văn bản thường.'
+    empty_file: 'File đã nhận nhưng nội dung rỗng hoặc chỉ có khoảng trắng.'
+    invalid_content: 'Nội dung file không hợp lệ. Gửi file Markdown UTF-8 dạng văn bản.'
     too_large: 'File vượt quá 32 KB.'
     encoding: 'File cần mã hoá UTF-8.'
     storage: 'Không đọc hoặc lưu được file. Thử mở lại /config.'
