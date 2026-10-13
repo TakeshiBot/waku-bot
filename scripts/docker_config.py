@@ -6,6 +6,50 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 
+def config_error_message(error: Exception) -> str:
+    """Render known error codes without printing configuration input or secrets."""
+    from waku.services.settings_editor import SettingsEditError
+
+    if isinstance(error, SettingsEditError):
+        messages = {
+            "provider_in_use": "Có model tham chiếu provider chưa được khai báo. Kiểm tra các mục agent_*model và [agent_providers.*].",
+            "invalid_value": "Có giá trị cấu hình sai kiểu hoặc không hợp lệ. Kiểm tra TOML, loại provider và tên model.",
+            "invalid_file": "Không đọc được cấu hình hoặc cú pháp TOML sai. Kiểm tra config/settings.toml và settings.dev.toml nếu có.",
+            "missing_file": "Không tìm thấy file cấu hình trong thư mục config/.",
+            "write_failed": "Không ghi được cấu hình. Kiểm tra quyền ghi thư mục config/.",
+            "stale_file": "File cấu hình vừa thay đổi trong lúc kiểm tra; chạy lại lệnh.",
+        }
+        message = messages.get(str(error))
+        if message:
+            return message
+    if isinstance(error, PermissionError):
+        return "Không có quyền đọc/ghi cấu hình. Kiểm tra quyền thư mục config/."
+    return (
+        "Không kiểm tra/lưu được cấu hình. Kiểm tra cú pháp TOML, kiểu dữ liệu, "
+        "provider/model, file phụ trợ và quyền ghi thư mục config/."
+    )
+
+
+def image_config_error(config) -> str | None:
+    """Image SDKs require a key at construction, before any bot connection."""
+    if not config.agent:
+        return None
+    for field in ("agent_image_gen_model", "agent_image_edit_model"):
+        spec = getattr(config, field)
+        if not spec:
+            continue
+        name, separator, _ = spec.partition("/")
+        name = name.strip() if separator else "default"
+        provider = config.agent_providers.get(name)
+        if provider is None:
+            return (
+                f"{field} dùng provider chưa được khai báo trong [agent_providers.*]."
+            )
+        if not provider.key.strip():
+            return f"Provider của {field} thiếu key. Điền key hoặc để model trống nếu không sử dụng."
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--miniapp-url")
@@ -28,14 +72,22 @@ def main() -> int:
             paths, _AppConfig, ProviderConfig, app_config.model_dump
         )
         editor.validate_for_restart()
+        image_error = image_config_error(app_config)
+        if image_error:
+            print(image_error, file=sys.stderr)
+            return 1
         if not app_config.token.strip() or ":" not in app_config.token:
-            print("Cần điền token Telegram hợp lệ trong settings.toml.", file=sys.stderr)
+            print(
+                "Cần điền token Telegram hợp lệ trong settings.toml.", file=sys.stderr
+            )
             return 1
         if not app_config.owners or any(owner <= 0 for owner in app_config.owners):
             print("Cần điền owners bằng ID Telegram của admin bot.", file=sys.stderr)
             return 1
         if app_config.discord_enabled and not app_config.discord_token.strip():
-            print("discord_enabled đang bật nhưng thiếu discord_token.", file=sys.stderr)
+            print(
+                "discord_enabled đang bật nhưng thiếu discord_token.", file=sys.stderr
+            )
             return 1
         if args.miniapp_url:
             url = urlsplit(args.miniapp_url)
@@ -56,13 +108,9 @@ def main() -> int:
             print("Đã lưu URL HTTPS và bật Mini App.")
         print("Cấu hình hợp lệ. Không kết nối Telegram/Discord.")
         return 0
-    except Exception:
+    except Exception as error:
         # Pydantic/Dynaconf exception text can include tokens, keys and URLs.
-        print(
-            "Không kiểm tra/lưu được cấu hình. Kiểm tra cú pháp TOML, kiểu dữ liệu, "
-            "provider/model, file phụ trợ và quyền ghi thư mục config/.",
-            file=sys.stderr,
-        )
+        print(config_error_message(error), file=sys.stderr)
         return 1
 
 

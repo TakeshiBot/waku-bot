@@ -259,6 +259,13 @@ class SettingsEditor:
                     raise SettingsEditError("invalid_value")
             # Named model specs must retain their provider when it is removed.
             for key, value in values.items():
+                # Chat-based sticker search never constructs an embedding client.
+                # Its hidden embedding default must not require a default provider.
+                if (
+                    key == "agent_sticker_embed_model"
+                    and candidate.agent_sticker_search_mode != "embedding"
+                ):
+                    continue
                 if (
                     key.startswith("agent_")
                     and "model" in key
