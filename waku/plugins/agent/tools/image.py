@@ -12,6 +12,7 @@ from waku.common.utils import is_explicit_reply
 from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.agent.localization import tr
+from waku.plugins.agent.output import record_sent_text, reply_output
 from waku.plugins.generated_image_save import send_generated_photo
 from waku.services import image_gen
 from waku.services.image_limits import (
@@ -93,11 +94,21 @@ async def _find_image_in_history(
     return None
 
 
+async def _publish_progress(ctx, text: str) -> None:
+    """Only model-authored text is delivered; backend facts are never a canned reply."""
+    publish = getattr(ctx.deps, "publish_image_progress", None)
+    if publish is not None:
+        await publish(text)
+    elif await reply_output(ctx.deps.client, ctx.deps.message, text, deps=ctx.deps):
+        record_sent_text(ctx.deps, text, markdown=True)
+
+
 async def _generate_image(
     ctx: RunContext[datatype.ContextDeps],
     prompt: str,
     size: str = "1024x1024",
     *,
+    progress_message: str,
     lease: ImageLease | None = None,
 ) -> ToolReturn:
     """Generate an image from a text description and send it to the chat.
@@ -128,21 +139,7 @@ async def _generate_image(
                 success=False, message=tr("current_context_unavailable")
             )
         )
-    # Image providers can need tens of seconds. Confirm the accepted request
-    # before the API call so the chat never looks frozen behind a typing state.
-    try:
-        await ctx.deps.client.send_message(
-            chat_id=ctx.deps.chat_id,
-            text=tr("image_generation_started"),
-            reply_parameters=pyrogram.types.ReplyParameters(
-                message_id=ctx.deps.message.id,
-            ),
-        )
-    except Exception as e:
-        # A status notice is helpful but must never stop the paid generation.
-        logger.debug(
-            "Could not send image-generation status: {}", e.__class__.__name__
-        )
+    await _publish_progress(ctx, progress_message)
     await ctx.deps.client.send_chat_action(
         chat_id=ctx.deps.chat_id,
         action=pyrogram.enums.chat_action.ChatAction.UPLOAD_PHOTO,
@@ -199,6 +196,7 @@ async def _edit_image(
     ctx: RunContext[datatype.ContextDeps],
     prompt: str,
     *,
+    progress_message: str,
     lease: ImageLease | None = None,
 ) -> ToolReturn:
     """Edit or modify an image provided by the user and send the result to the chat.
@@ -280,6 +278,7 @@ async def _edit_image(
         image_bytes, mime_type = history_image
 
     assert image_bytes is not None
+    await _publish_progress(ctx, progress_message)
     await ctx.deps.client.send_chat_action(
         chat_id=ctx.deps.chat_id,
         action=pyrogram.enums.chat_action.ChatAction.UPLOAD_PHOTO,
@@ -350,6 +349,8 @@ async def image_ops(
     operation: Literal["generate", "edit"],
     prompt: str,
     size: str = "1024x1024",
+    *,
+    progress_message: str,
 ) -> ToolReturn:
     """Generate or edit an image and send the result to the chat.
 
@@ -358,6 +359,13 @@ async def image_ops(
     replied to one) and asks you to modify it.
     If admission is denied, explain the wait to the user. Do not retry this tool
     or promise a queued/scheduled image; the user must request it again later.
+    Write progress_message yourself in your current persona and language. The
+    backend will replace Thinking with this text before starting image work.
+    Do not also send a separate pre-tool text or call a messaging tool for it.
+    Do not claim the image is done before this tool confirms successful delivery.
+    After success, write a NEW short completion reply describing the delivered
+    image, rather than repeating progress_message. After failure, explain the
+    actual failure naturally without claiming that an image was sent.
 
     Args:
         operation: "generate" creates a new image; "edit" transforms the
@@ -366,7 +374,15 @@ async def image_ops(
             about subject, style, colors, composition.
         size: Only used for "generate" — image dimensions: "1024x1024"
             (default), "1792x1024" or "1024x1792" (where supported).
+        progress_message: One short natural acknowledgment that you are about
+            to create/edit the requested image and it may take a little time.
+            Use the user's context and your persona, not a fixed stock phrase.
     """
+    progress_message = progress_message.strip()
+    if not progress_message or len(progress_message) > 600:
+        raise ModelRetry(
+            "Provide a short, non-empty progress_message in your persona before starting image work."
+        )
     lease = image_limiter.acquire(ctx.deps.user_id)
     if isinstance(lease, ImageLimitDenied):
         return ToolReturn(
@@ -380,8 +396,12 @@ async def image_ops(
     try:
         async with asyncio.timeout(OPERATION_TIMEOUT):
             if operation == "generate":
-                return await _generate_image(ctx, prompt, size, lease=lease)
-            return await _edit_image(ctx, prompt, lease=lease)
+                return await _generate_image(
+                    ctx, prompt, size, progress_message=progress_message, lease=lease
+                )
+            return await _edit_image(
+                ctx, prompt, progress_message=progress_message, lease=lease
+            )
     except TimeoutError:
         retry_after = USER_COOLDOWN if lease.started else 30
         return ToolReturn(

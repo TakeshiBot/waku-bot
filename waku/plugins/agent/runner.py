@@ -354,11 +354,33 @@ async def _run_agent_impl(
         if ctx is None:
             ctx = TypingKeepAlive(client, message)
             await ctx.__aenter__()
+        streaming_output: StreamingOutput | None = getattr(
+            ctx, "streaming_output", None
+        )
+        previous_image_progress = getattr(deps, "publish_image_progress", None)
+
+        async def publish_image_progress(text: str) -> bool:
+            nonlocal streaming_output
+            if streaming_output is None and app_config.agent_streaming:
+                streaming_output = StreamingOutput(client, message, deps=deps)
+            if streaming_output is not None:
+                streaming_output.deps = deps
+                await streaming_output.replace_text(text)
+                sent = await streaming_output.finalize()
+                if streaming_output.delivered:
+                    record_sent_text(deps, text, markdown=True)
+                # The completion must be a NEW reply after the photo, rather
+                # than editing this earlier acknowledgment above the photo.
+                streaming_output = None
+                return sent
+            sent = await reply_output(client, message, text, deps=deps)
+            if sent:
+                record_sent_text(deps, text, markdown=True)
+            return sent
+
+        deps.publish_image_progress = publish_image_progress
         try:
             if app_config.agent_streaming:
-                streaming_output: StreamingOutput | None = getattr(
-                    ctx, "streaming_output", None
-                )
                 if streaming_output is not None:
                     streaming_output.deps = deps
                     await streaming_output.start_thinking()
@@ -416,8 +438,18 @@ async def _run_agent_impl(
                                     part.part_kind == "tool-call"
                                     for part in node.model_response.parts
                                 )
+                                has_image_call = any(
+                                    part.part_kind == "tool-call"
+                                    and getattr(part, "tool_name", None) == "image_ops"
+                                    for part in node.model_response.parts
+                                )
+                                if has_image_call and streaming_output is not None:
+                                    # A denied/invalid image request must not keep
+                                    # an optimistic preamble before its error reply.
+                                    await streaming_output.replace_text("")
                                 if (
                                     has_tool_calls
+                                    and not has_image_call
                                     and streaming_output is not None
                                     and streaming_output.current_text
                                 ):
@@ -535,6 +567,14 @@ async def _run_agent_impl(
                     while not Agent.is_end_node(node):
                         if Agent.is_call_tools_node(node):
                             for part in node.model_response.parts:
+                                if any(
+                                    item.part_kind == "tool-call"
+                                    and getattr(item, "tool_name", None) == "image_ops"
+                                    for item in node.model_response.parts
+                                ):
+                                    # image_ops publishes its own AI-authored
+                                    # acknowledgment, including non-streaming runs.
+                                    break
                                 if part.part_kind == "text" and part.content:
                                     if "final_result" in part.content:
                                         logger.warning(
@@ -612,6 +652,7 @@ async def _run_agent_impl(
                         await advance_prompt_coverage(chat_id, user_id, coverage_meta)
                     log_run_cache_stats(use_model.model_name, agent_run.usage)
         finally:
+            deps.publish_image_progress = previous_image_progress
             if ctx is not None and ctx_owned:
                 await ctx.__aexit__(None, None, None)
     except DeliveryUncertain as e:

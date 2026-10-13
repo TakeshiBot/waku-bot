@@ -556,6 +556,15 @@ class StreamingOutput:
         self.official_draft.update(self.current_text)
         await self.start_thinking()
 
+    async def replace_text(self, text: str) -> None:
+        """Replace the pending draft, for example with an AI-written tool status."""
+        if self._finalized or not self._may_send():
+            return
+        self.current_text = text
+        if self.official_draft is not None:
+            self.official_draft.update(text)
+        await self.start_thinking()
+
     async def _finalize_generation(self):
         if self._finalized:
             return self._completion_success

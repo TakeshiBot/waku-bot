@@ -4,7 +4,7 @@ import asyncio
 import secrets
 from weakref import WeakValueDictionary
 
-from pyrogram import Client, filters
+from pyrogram import Client, enums, filters
 from pyrogram.errors import BadRequest, FloodWait, Forbidden, Unauthorized
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -16,6 +16,7 @@ from waku.logger import logger
 _PREFIX = "img_save:"
 _TTL = 7 * 24 * 60 * 60
 _DELIVERY_TIMEOUT = 25
+_CAPTION = "Tạo bởi waku meow~!"
 _locks: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
 
 
@@ -40,7 +41,13 @@ async def send_generated_photo(
     client, *, owner_id, chat_id, photo, reply_parameters, locale=None, native=True
 ):
     """Upload once; retain the returned Telegram file ID for the Save callback."""
-    kwargs = dict(chat_id=chat_id, photo=photo, reply_parameters=reply_parameters)
+    kwargs = dict(
+        chat_id=chat_id,
+        photo=photo,
+        reply_parameters=reply_parameters,
+        caption=_CAPTION,
+        parse_mode=enums.ParseMode.DISABLED,
+    )
     if not native:
         return await client.send_photo(**kwargs)
     token = secrets.token_urlsafe(16)
@@ -51,6 +58,7 @@ async def send_generated_photo(
             message_id=sent.id,
             file_id=sent.photo.file_id,
             locale=locale,
+            caption=_CAPTION,
         )
         try:
             await memttlcache.set(_PREFIX + token, record, ttl=_TTL)
@@ -130,7 +138,12 @@ async def _save_generated_image(client, callback_query):
             return
         try:
             sent = await asyncio.wait_for(
-                client.send_photo(chat_id=user.id, photo=record["file_id"]),
+                client.send_photo(
+                    chat_id=user.id,
+                    photo=record["file_id"],
+                    caption=record.get("caption", _CAPTION),
+                    parse_mode=enums.ParseMode.DISABLED,
+                ),
                 timeout=_DELIVERY_TIMEOUT,
             )
             if (

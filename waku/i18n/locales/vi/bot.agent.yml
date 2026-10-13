@@ -432,7 +432,6 @@ bot:
     tool_p0_lines_below: '... ({p0} dòng phía dưới)'
     tool_a_non_empty_prompt_is_required_to_generate_an_image: Cần yêu cầu không trống để tạo ảnh.
     tool_image_generation_failed_p0: 'Tạo ảnh thất bại: {p0}'
-    image_generation_started: Đang tạo ảnh, sẽ mất một chút thời gian nhé.
     tool_image_generated_successfully: Đã tạo ảnh thành công.
     tool_a_non_empty_prompt_is_required_to_edit_an_image: Cần yêu cầu không trống để chỉnh sửa ảnh.
     tool_image_edited_successfully_based_on_prompt_p0: 'Đã chỉnh sửa ảnh thành công theo yêu cầu: {p0}'

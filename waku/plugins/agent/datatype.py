@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
@@ -170,6 +171,9 @@ class ContextDeps:
     # Successful text deliveries in this run, shared by tools and the runner.
     # Never carried into conversation history: the next user turn may repeat text.
     sent_texts: set[str] = field(default_factory=set)
+    publish_image_progress: Callable[[str], Awaitable[bool]] | None = field(
+        default=None, repr=False
+    )
     # Turn-local moderation receipts prevent repeating successful mutations.
     side_effects_started: bool = False
     moderation_results: dict[str, str] = field(default_factory=dict)

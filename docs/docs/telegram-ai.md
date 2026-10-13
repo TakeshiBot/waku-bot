@@ -248,6 +248,12 @@ sửa ảnh riêng, để trống thì dùng model tạo ảnh. Cả hai dùng d
 và URL/key của provider tương ứng, độc lập với model chat. Hai mục có trong
 `settings.ex.toml` và menu `/config` của admin bot.
 
+AI tự viết câu báo đang xử lý trong tham số `progress_message` của công cụ ảnh,
+theo persona và ngôn ngữ hiện tại. Trong DM, câu này thay vào đúng tin Thinking
+trước khi gọi API ảnh. Sau khi gửi ảnh, AI gửi lời hoàn tất thành tin mới bên dưới
+ảnh; lỗi được trả về cho AI giải thích. Backend không gửi câu báo tiến độ cố định
+và không gọi thêm model riêng chỉ để viết câu báo này.
+
 Mặc định mỗi user chỉ có một lượt tạo/sửa ảnh đang xử lý, sau đó chờ 1 phút.
 Toàn bot tối đa 5 lượt đồng thời và 20 yêu cầu API trong mỗi 10 phút. Khi đầy
 lượt, bot báo thử lại sau; không tự xếp hàng. Lỗi hoặc hủy tác vụ giải phóng chỗ

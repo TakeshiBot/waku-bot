@@ -424,7 +424,6 @@ bot:
     tool_a_non_empty_prompt_is_required_to_generate_an_image: A non-empty prompt is required to generate
       an image.
     tool_image_generation_failed_p0: 'Image generation failed: {p0}'
-    image_generation_started: Creating the image now; this may take a moment.
     tool_image_generated_successfully: Image generated successfully.
     tool_a_non_empty_prompt_is_required_to_edit_an_image: A non-empty prompt is required to edit an image.
     tool_image_edited_successfully_based_on_prompt_p0: 'Image edited successfully based on prompt: {p0}'

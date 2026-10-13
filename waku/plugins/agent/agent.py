@@ -253,6 +253,7 @@ if app_config.agent and app_config.agent_chat_model:
             Tool(
                 tools.image_ops,
                 prepare=tools.prepare_image_tools,
+                sequential=True,
             ),
             Tool(
                 tools.tg,
