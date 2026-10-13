@@ -22,6 +22,7 @@ from waku.services.image_limits import (
 from waku.services.image_requests import (
     GENERATED_IMAGE_CAPTION,
     explicit_image_operation,
+    safe_image_prompt,
 )
 
 from ..media import _DISCORD_MEDIA_MAX_BYTES, _download_discord_media, _image_filename
@@ -201,11 +202,11 @@ async def discord_image_ops(
                 await ctx.deps.publish_image_progress(progress_message)
             lease.mark_started()
             if operation == "generate":
-                result = await service.generate(prompt=prompt, size=size)
+                result = await service.generate(prompt=safe_image_prompt(prompt, r18=r18), size=size)
             else:
                 data, mime = source
                 result = await service.edit(
-                    prompt=prompt,
+                    prompt=safe_image_prompt(prompt, r18=r18),
                     image_data=data,
                     image_filename=_image_filename(mime),
                     image_mime_type=mime,

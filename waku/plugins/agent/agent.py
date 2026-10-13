@@ -9,6 +9,7 @@ from aiocache import SimpleMemoryCache
 from pydantic_ai import (
     Agent,
     ModelMessage,
+    PromptedOutput,
     RunContext,
     Tool,
 )
@@ -329,7 +330,7 @@ if app_config.agent and app_config.agent_chat_model:
         model_settings=provider.make_model_settings(
             app_config.agent_struct_model_options
         ),
-        output_type=datatype.UserMemoryResult,
+        output_type=PromptedOutput(datatype.UserMemoryResult),
         instructions=app_config.agent_memory_prompt,
         capabilities=[ModelActivityLog(), trace.AgentTraceCapability()],
         retries=5,

@@ -8,6 +8,7 @@ from waku.logger import logger
 from waku.plugins.agent import datatype
 from waku.services import image_gen
 from waku.services.image_requests import explicit_image_operation
+from waku.services.telegram_images import telegram_image_settings
 
 
 async def prepare_manyacg_tools(
@@ -51,6 +52,8 @@ async def prepare_image_tools(
     """Show the image tool when either image service is available."""
     text = message_plain_text(ctx.deps.message)
     if not any(explicit_image_operation(text, action) for action in ("generate", "edit")):
+        return None
+    if ctx.deps.chat_id is None or not (await telegram_image_settings(ctx.deps.chat_id))[0]:
         return None
     if (
         image_gen.image_gen_client is not None

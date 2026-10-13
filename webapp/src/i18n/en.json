@@ -299,6 +299,28 @@
     "roleChangeConfirm": "Change global admin rights for {name}? A global admin can read the developer panel and manage every group.",
     "fullName": "Display name",
     "runtime": "Live runtime",
+    "services": "Services",
+    "servicesHint": "Counts since the bot last started.",
+    "businessDelivered": "Business replies delivered",
+    "businessFailed": "Failed Business turns",
+    "businessLastFailure": "Last Business error",
+    "serviceStatus": {
+      "ready": "Ready",
+      "offline": "Offline",
+      "disabled": "Disabled",
+      "stopped": "Stopped",
+      "connecting": "Connecting",
+      "error": "Error",
+      "enabled": "Enabled",
+      "degraded": "Recent failure"
+    },
+    "serviceStage": {
+      "context": "Read context",
+      "assessment": "Assess conversation",
+      "answer": "AI response",
+      "delivery": "Deliver response",
+      "history": "Save history"
+    },
     "uptime": "Uptime",
     "memory": "Peak memory",
     "loopLag": "Latest event-loop lag",

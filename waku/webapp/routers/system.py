@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from waku.bot.client import client
 from waku.config import app_config
 from waku.logger import logger
+from waku.services.service_status import public_service_status
 
 router = APIRouter(tags=["system"])
 
@@ -34,6 +35,7 @@ async def health_check() -> Response:
                     "status": "healthy",
                     "bot_connected": True,
                     "bot_id": client.me.id if client.me else None,
+                    "services": public_service_status(client),
                 },
                 status_code=status.HTTP_200_OK,
             )
@@ -72,6 +74,7 @@ async def readiness_check() -> Response:
                     "status": "ready",
                     "bot_username": client.me.username,
                     "bot_id": client.me.id,
+                    "services": public_service_status(client),
                 },
                 status_code=status.HTTP_200_OK,
             )

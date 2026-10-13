@@ -202,6 +202,15 @@ export interface AffectionStats {
 }
 
 export interface RuntimeStats {
+  services?: {
+    telegram: { status: string };
+    discord: { status: string };
+    business: {
+      status: string;
+      counts: Record<string, number>;
+      last_failure: { stage: string; http_status: number | null; time: string } | null;
+    };
+  };
   uptime_seconds: number;
   max_rss_bytes: number;
   threads: number;

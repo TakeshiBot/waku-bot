@@ -1,0 +1,31 @@
+name: Backend source checks
+
+on:
+  push:
+    paths: ["waku/**", "scripts/**", "alembic/**", "alembic.ini", "run.sh", "docker-compose.yml", "settings.ex.toml", ".python-version", "pyproject.toml", "uv.lock", ".github/workflows/backend.yml"]
+  pull_request:
+    paths: ["waku/**", "scripts/**", "alembic/**", "alembic.ini", "run.sh", "docker-compose.yml", "settings.ex.toml", ".python-version", "pyproject.toml", "uv.lock", ".github/workflows/backend.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - run: uv sync --frozen
+      - name: Prepare isolated test configuration
+        run: cp settings.ex.toml settings.toml
+      - name: Check Python and shell syntax
+        run: |
+          uv run --no-sync python -m compileall -q waku scripts alembic
+          bash -n run.sh
+      - name: Check i18n
+        run: uv run --no-sync python scripts/check_i18n.py

@@ -299,6 +299,28 @@
     "roleChangeConfirm": "确定要更改 {name} 的全局管理员权限吗? 全局管理员可以查看后台并管理所有群组。",
     "fullName": "昵称",
     "runtime": "实时运行状况",
+    "services": "Services",
+    "servicesHint": "Counts since the bot last started.",
+    "businessDelivered": "Business replies delivered",
+    "businessFailed": "Failed Business turns",
+    "businessLastFailure": "Last Business error",
+    "serviceStatus": {
+      "ready": "Ready",
+      "offline": "Offline",
+      "disabled": "Disabled",
+      "stopped": "Stopped",
+      "connecting": "Connecting",
+      "error": "Error",
+      "enabled": "Enabled",
+      "degraded": "Recent failure"
+    },
+    "serviceStage": {
+      "context": "Read context",
+      "assessment": "Assess conversation",
+      "answer": "AI response",
+      "delivery": "Deliver response",
+      "history": "Save history"
+    },
     "uptime": "运行时长",
     "memory": "最大内存",
     "loopLag": "最新事件循环延迟",

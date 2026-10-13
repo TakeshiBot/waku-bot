@@ -398,10 +398,12 @@ async def _persist_business_answer(message, answer, reply_id):
 
 async def _run_business_turn(client, message, revision, timeout):
     from waku.common.document_inputs import business_document_input
+    from waku.services.service_status import business_diagnostics
 
     lock_key = (message.business_connection_id, message.chat.id)
     output = None
     stage = "context"
+    outcome = "skipped"
     try:
         async with asyncio.timeout(timeout):
             history_key = f"business_chat_history:{lock_key[0]}:{lock_key[1]}"
@@ -423,6 +425,8 @@ async def _run_business_turn(client, message, revision, timeout):
             if getattr(message, "_waku_business_delayed", False):
                 if context is None:
                     # Without the observed dialog, we cannot safely judge a human takeover.
+                    outcome = "failed"
+                    business_diagnostics.record(outcome, "context")
                     return
                 from waku.services.business_assistant import assess_conversation
                 from waku.services.business_notes import accept_requests
@@ -478,7 +482,9 @@ async def _run_business_turn(client, message, revision, timeout):
                 output = _active_outputs[lock_key] = _new_streaming_output(
                     client, message, revision
                 )
+                stage = "delivery"
                 await output.start_thinking()
+                stage = "answer"
                 async with chat_agent.run_stream(
                     user_input,
                     message_history=history,
@@ -489,7 +495,9 @@ async def _run_business_turn(client, message, revision, timeout):
                         if not _still_authorized(message, revision):
                             await _abort_output(output)
                             return
+                        stage = "delivery"
                         await output.append_delta(delta)
+                        stage = "answer"
                     answer = (await result.get_output()).strip()
                     next_history = result.all_messages()
                 if not answer or not _still_authorized(message, revision):
@@ -517,6 +525,8 @@ async def _run_business_turn(client, message, revision, timeout):
                     return
                 next_history = result.all_messages()
             logger.info("Telegram Business reply delivered")
+            business_diagnostics.record("delivered", "delivery")
+            outcome = "delivered"
             stage = "history"
             if context is not None or not remember:
                 await memttlcache.delete(history_key)
@@ -527,9 +537,13 @@ async def _run_business_turn(client, message, revision, timeout):
                     ttl=app_config.cachettl_agent_history,
                 )
     except TimeoutError:
+        outcome = "failed"
+        business_diagnostics.record(outcome, stage)
         await _abort_output(output)
         logger.warning("Telegram Business chat timed out (stage={})", stage)
     except asyncio.CancelledError:
+        outcome = "cancelled"
+        business_diagnostics.record(outcome, stage)
         await _abort_output(output)
         raise
     except Exception as error:
@@ -556,7 +570,11 @@ async def _run_business_turn(client, message, revision, timeout):
             status or "unknown",
             " <- ".join(chain),
         )
+        outcome = "failed"
+        business_diagnostics.record(outcome, stage, status)
     finally:
+        if outcome == "skipped":
+            business_diagnostics.record(outcome, stage)
         _active_outputs.pop(lock_key, None)
 
 

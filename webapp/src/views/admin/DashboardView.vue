@@ -87,6 +87,30 @@ const runtime = computed<DefinitionItem[]>(() => {
   ];
 });
 
+const services = computed<DefinitionItem[]>(() => {
+  const data = stats.data.value?.runtime.services;
+  if (!data) return [];
+  const status = (value: string): string => t(`admin.serviceStatus.${value}`);
+  const rows = [
+    { label: "Telegram", value: status(data.telegram.status) },
+    { label: "Discord", value: status(data.discord.status) },
+    { label: "Business AI", value: status(data.business.status) },
+    {
+      label: t("admin.businessDelivered"),
+      value: formatNumber(data.business.counts.delivered ?? 0),
+    },
+    { label: t("admin.businessFailed"), value: formatNumber(data.business.counts.failed ?? 0) },
+  ];
+  if (data.business.last_failure) {
+    const last = data.business.last_failure;
+    rows.push({
+      label: t("admin.businessLastFailure"),
+      value: `${t(`admin.serviceStage.${last.stage}`)}${last.http_status ? ` · HTTP ${last.http_status}` : ""}`,
+    });
+  }
+  return rows;
+});
+
 const updateProfile = computed<DefinitionItem[]>(() => {
   const data = stats.data.value?.runtime.telegram_update_types;
   if (!data) return [];
@@ -172,6 +196,14 @@ function go(name: string): void {
 
     <SettingsSection v-if="runtime.length" :label="t('admin.runtime')">
       <DefinitionList :items="runtime" />
+    </SettingsSection>
+
+    <SettingsSection
+      v-if="services.length"
+      :label="t('admin.services')"
+      :hint="t('admin.servicesHint')"
+    >
+      <DefinitionList :items="services" />
     </SettingsSection>
 
     <SettingsSection v-if="updateProfile.length" :label="t('admin.updateProfile')">

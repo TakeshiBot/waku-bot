@@ -299,6 +299,28 @@
     "roleChangeConfirm": "Thay đổi quyền quản trị toàn hệ thống của {name}? Quản trị viên toàn hệ thống có thể xem bảng quản trị và quản lý tất cả nhóm.",
     "fullName": "Tên hiển thị",
     "runtime": "Trạng thái hoạt động trực tiếp",
+    "services": "Dịch vụ",
+    "servicesHint": "Số lượt tính từ lần khởi động bot gần nhất.",
+    "businessDelivered": "Business đã trả lời",
+    "businessFailed": "Lượt Business bị lỗi",
+    "businessLastFailure": "Lỗi Business gần nhất",
+    "serviceStatus": {
+      "ready": "Sẵn sàng",
+      "offline": "Mất kết nối",
+      "disabled": "Đã tắt",
+      "stopped": "Đã dừng",
+      "connecting": "Đang kết nối",
+      "error": "Có lỗi",
+      "enabled": "Đã bật",
+      "degraded": "Gặp lỗi gần đây"
+    },
+    "serviceStage": {
+      "context": "Đọc ngữ cảnh",
+      "assessment": "Đánh giá hội thoại",
+      "answer": "AI trả lời",
+      "delivery": "Gửi trả lời",
+      "history": "Lưu hội thoại"
+    },
     "uptime": "Thời gian hoạt động",
     "memory": "Bộ nhớ tối đa đã dùng",
     "loopLag": "Độ trễ vòng lặp sự kiện gần nhất",

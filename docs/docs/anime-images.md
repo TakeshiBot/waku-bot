@@ -51,3 +51,8 @@ vào prompt do AI tự viết. Tạo/sửa ảnh cần model tương ứng đã 
 Ảnh tạo/sửa được gửi với caption `Tạo bởi waku meow~!`; sau khi gửi thành công,
 bot kết thúc lượt đó mà không gửi thêm lời hoàn tất. Ảnh lấy từ API giữ thông
 tin tác phẩm và nguồn ảnh như trước.
+
+Công cụ tạo/sửa ảnh AI cũng kiểm tra công tắc ảnh và chế độ An Toàn/Chỉ R18/Cả Hai
+trước khi gọi model, rồi kiểm tra lại trước khi gửi. Ở chế độ An Toàn, yêu cầu
+R18 bị chặn và prompt yêu cầu kết quả SFW. Đây là kiểm tra yêu cầu và ràng buộc
+prompt, chưa phải hệ thống phân loại nội dung ảnh sau khi model tạo.

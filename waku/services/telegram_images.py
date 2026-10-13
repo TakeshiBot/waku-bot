@@ -2,6 +2,7 @@
 
 from waku import database
 from waku.config import app_config
+from waku.services.image_requests import contains_r18_request
 
 
 def normalize_image_mode(value) -> int:
@@ -21,3 +22,12 @@ async def telegram_image_settings(chat_id: int) -> tuple[bool, int]:
         config = await database.get_chat_config(chat_id)
         return config.setu_enabled, normalize_image_mode(config.telegram_r18_mode)
     return True, normalize_image_mode(app_config.manyacg_r18_mode)
+
+
+async def generated_image_allowed(chat_id: int, prompt: str) -> tuple[bool, str | None]:
+    enabled, mode = await telegram_image_settings(chat_id)
+    if not enabled:
+        return False, "image_disabled"
+    if not image_allowed(contains_r18_request(prompt), mode):
+        return False, "image_mode_mismatch"
+    return True, None

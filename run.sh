@@ -12,6 +12,7 @@ readonly HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-240}"
 readonly MIN_FREE_GB="${MIN_FREE_GB:-5}"
 COMPOSE=(docker compose --project-directory "$ROOT_DIR" -p "$WAKU_PROJECT_NAME" -f "$ROOT_DIR/docker-compose.yml")
 RESUME_ON_EXIT=0
+DEPLOY_ROLLBACK=0
 cd -- "$ROOT_DIR"
 
 log() { printf '\n[waku] %s\n' "$*"; }
@@ -39,6 +40,7 @@ Waku — triển khai trên Linux VPS bằng Docker Compose
   bash run.sh update            git pull --ff-only rồi deploy
   bash run.sh start             Chạy image đã build, không build lại
   bash run.sh restart           Kiểm tra cấu hình rồi tạo lại container
+  bash run.sh rollback          Quay về image trước nếu cấu trúc database không đổi
   bash run.sh stop              Dừng bot, giữ cấu hình và dữ liệu
   bash run.sh status            Trạng thái container
   bash run.sh logs [số-dòng]     Theo dõi log (mặc định 100 dòng cuối)
@@ -165,22 +167,79 @@ backup_files() {
   log "Nếu dùng database ngoài SQLite local, cần sao lưu database đó riêng."
 }
 
+database_fingerprint() {
+  local value
+  value="$(compose run --rm --no-deps -T -v "$ROOT_DIR/scripts/deploy_state.py:/app/scripts/deploy_state.py:ro" --entrypoint /app/.venv/bin/python waku scripts/deploy_state.py)" || return 1
+  [[ "$value" =~ ^[a-f0-9]{64}$ ]] || return 1
+  printf '%s\n' "$value"
+}
+
+save_rollback_state() {
+  local image="$1" schema
+  [[ "$image" =~ ^sha256:[a-f0-9]{64}$ ]] || die "Không xác định được image đang chạy để sao lưu rollback."
+  schema="$(database_fingerprint)" || die "Không đọc được cấu trúc database; chưa dừng bot cũ."
+  docker image tag "$image" "${WAKU_PROJECT_NAME//_/-}-snapshot:rollback"
+  printf '%s\n' "$image" "$schema" > "$ROOT_DIR/.backups/rollback.state.tmp"
+  mv -- "$ROOT_DIR/.backups/rollback.state.tmp" "$ROOT_DIR/.backups/rollback.state"
+}
+
+rollback_waku() {
+  local image expected actual current container
+  [[ -f "$ROOT_DIR/.backups/rollback.state" ]] || { log "Chưa có image trước để rollback." >&2; return 1; }
+  { IFS= read -r image; IFS= read -r expected; } < "$ROOT_DIR/.backups/rollback.state"
+  [[ "$image" =~ ^sha256:[a-f0-9]{64}$ && "$expected" =~ ^[a-f0-9]{64}$ ]] || { log "Thông tin rollback không hợp lệ." >&2; return 1; }
+  docker image inspect "$image" >/dev/null 2>&1 || { log "Image trước không còn trên VPS." >&2; return 1; }
+  container="$(compose ps -a -q waku)"
+  current="$(docker inspect --format '{{.Image}}' "$container" 2>/dev/null || true)"
+  if [[ "$current" == "$image" && -n "$(compose ps --status running -q waku)" ]]; then
+    log "Container đang dùng image rollback; kiểm tra sẵn sàng."
+    WAKU_IMAGE_NAME="$image" compose up -d --no-build --wait --wait-timeout "$HEALTH_TIMEOUT" waku
+    return $?
+  fi
+  actual="$(database_fingerprint)" || return 1
+  [[ "$actual" == "$expected" ]] || { log "Cấu trúc database đã thay đổi. Không tự chạy code cũ hoặc khôi phục dữ liệu cũ; cần kiểm tra migration." >&2; return 1; }
+  log "Chạy lại image trước; giữ nguyên cấu hình và dữ liệu hiện tại."
+  if WAKU_IMAGE_NAME="$image" compose up -d --no-build --force-recreate --wait --wait-timeout "$HEALTH_TIMEOUT" waku; then
+    # Keep ordinary start/restart on the restored image too, while retaining
+    # the unsuccessful candidate for inspection or another deployment.
+    if ! docker image tag "$WAKU_IMAGE_NAME" "${WAKU_PROJECT_NAME//_/-}-snapshot:failed" ||
+       ! docker image tag "$image" "$WAKU_IMAGE_NAME"; then
+      log "Bot đã chạy image cũ nhưng chưa cập nhật được tag image. Chưa thể xác nhận rollback hoàn tất; không khởi động lại trước khi kiểm tra tag." >&2
+      return 1
+    fi
+    log "Rollback thành công."
+    return 0
+  fi
+  log "Image trước chưa sẵn sàng. Xem bash run.sh logs." >&2
+  return 1
+}
+
 start_waku() {
   require_wait
   # --force-recreate also refreshes the environment and bind mounts after edits.
   RESUME_ON_EXIT=0
   if ! compose up -d --no-build --force-recreate --wait --wait-timeout "$HEALTH_TIMEOUT" waku; then
     compose ps -a waku >&2 || true
+    if ((DEPLOY_ROLLBACK)); then
+      if rollback_waku; then
+        die "Bản deploy mới lỗi; đã quay về image trước."
+      fi
+    fi
     die "Bot chưa sẵn sàng. Xem 'bash run.sh logs'; cấu hình và dữ liệu vẫn được giữ."
   fi
   log "Bot đã sẵn sàng. HTTP: http://127.0.0.1:${WAKU_PORT}; xem log: bash run.sh logs"
 }
 
 deploy() {
+  local old_container old_image=""
   prepare_files
   require_docker
   require_wait
   check_build_space
+  old_container="$(compose ps -a -q waku)"
+  if [[ -n "$old_container" ]]; then
+    old_image="$(docker inspect --format '{{.Image}}' "$old_container")"
+  fi
   export WAKU_COMMIT WAKU_VERSION WAKU_COMMIT_SUBJECT WAKU_COMMIT_DATE
   WAKU_COMMIT="$(git rev-parse HEAD 2>/dev/null || printf unknown)"
   WAKU_VERSION="$(git describe --tags --always --dirty 2>/dev/null || printf local)"
@@ -189,6 +248,10 @@ deploy() {
   log "Build cả bot và Mini App trong Docker; container hiện tại tiếp tục chạy trong lúc build."
   compose build waku
   check_config
+  if [[ -n "$old_image" ]]; then
+    save_rollback_state "$old_image"
+    DEPLOY_ROLLBACK=1
+  fi
   if [[ -n "$(compose ps -a -q waku)" ]] || [[ -n "$(find data .agentfs -type f -print -quit)" ]]; then
     backup_files
   fi
@@ -300,12 +363,12 @@ EOF
 
 menu() {
   local choice
-  printf '\nWaku Docker\n  1) Triển khai source hiện tại\n  2) Cập nhật từ Git và triển khai\n  3) Khởi động lại\n  4) Dừng bot\n  5) Xem trạng thái\n  6) Xem log\n  7) Sao lưu\n  8) Thiết lập Mini App + HTTPS\n  9) Chuẩn bị cấu hình\n  0) Thoát\n\n'
-  read -r -p "Chọn [0-9]: " choice
+  printf '\nWaku Docker\n  1) Triển khai source hiện tại\n  2) Cập nhật từ Git và triển khai\n  3) Khởi động lại\n  4) Dừng bot\n  5) Xem trạng thái\n  6) Xem log\n  7) Sao lưu\n  8) Thiết lập Mini App + HTTPS\n  9) Chuẩn bị cấu hình\n  10) Quay về image trước\n  0) Thoát\n\n'
+  read -r -p "Chọn [0-10]: " choice
   case "$choice" in
     1) main deploy ;; 2) main update ;; 3) main restart ;; 4) main stop ;;
     5) main status ;; 6) main logs ;; 7) main backup ;; 8) main miniapp ;;
-    9) main init ;; 0) return ;; *) die "Lựa chọn không hợp lệ." ;;
+    9) main init ;; 10) main rollback ;; 0) return ;; *) die "Lựa chọn không hợp lệ." ;;
   esac
 }
 
@@ -319,7 +382,7 @@ main() {
   case "$action" in
     help) usage; return ;;
     '') if [[ -t 0 ]]; then menu; return; else action=deploy; fi ;;
-    init|deploy|update|start|restart|stop|status|logs|check|backup|disk|miniapp|all) ;;
+    init|deploy|update|start|restart|rollback|stop|status|logs|check|backup|disk|miniapp|all) ;;
     *) usage >&2; die "Lệnh không hợp lệ: $action" ;;
   esac
   case "$action" in
@@ -337,6 +400,7 @@ main() {
     deploy) deploy ;;
     update) update_source ;;
     start|restart) prepare_files; require_docker; check_config; start_waku ;;
+    rollback) prepare_files; require_docker; require_wait; rollback_waku ;;
     stop) require_docker; compose stop -t 60 waku ;;
     status) require_docker; compose ps -a waku ;;
     logs)

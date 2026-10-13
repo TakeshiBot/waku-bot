@@ -71,6 +71,8 @@ _OWNER_ONLY_FIELDS = frozenset(
 
 @router.get("/stats", response_model=StatsOut)
 async def read_stats(user: RequireAdmin) -> StatsOut:
+    from waku.bot.client import client
+    from waku.services.service_status import service_snapshot
     stats = await ops.collect_stats()
     dashboard = await database.get_dashboard_stats()
     snapshot = runtime_metrics.snapshot()
@@ -82,6 +84,7 @@ async def read_stats(user: RequireAdmin) -> StatsOut:
         bottles=stats["bottles"],  # type: ignore[arg-type]
         affection=stats["affection"],  # type: ignore[arg-type]
         runtime={
+            "services": service_snapshot(client),
             "uptime_seconds": snapshot.uptime_seconds,
             "max_rss_bytes": snapshot.max_rss_bytes,
             "threads": snapshot.threads,

@@ -2,7 +2,7 @@ import asyncio
 
 import pyrogram
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, ModelMessage
+from pydantic_ai import Agent, ModelMessage, PromptedOutput
 from pyrogram.client import Client as PyrogramClient
 
 from waku import common, database, enums
@@ -42,7 +42,7 @@ if small_model:
         model_settings=provider.make_model_settings(
             app_config.agent_model_small_options
         ),
-        output_type=RelevanceCheck,
+        output_type=PromptedOutput(RelevanceCheck),
         system_prompt=tr("relevance_system"),
         capabilities=[trace.AgentTraceCapability()],
         retries=2,
@@ -62,7 +62,7 @@ def _make_relevance_check_agent(
             model_settings=provider.make_model_settings(
                 app_config.agent_model_small_options
             ),
-            output_type=RelevanceCheck,
+            output_type=PromptedOutput(RelevanceCheck),
             system_prompt=tr("relevance_system"),
             capabilities=[trace.AgentTraceCapability()],
             retries=2,

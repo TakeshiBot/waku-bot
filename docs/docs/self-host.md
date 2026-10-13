@@ -33,6 +33,30 @@ dữ liệu nếu đã có instance/dữ liệu cũ, rồi chờ health check b�
 Build hoặc kiểm tra cấu hình thất bại sẽ giữ container hiện tại chạy tiếp.
 Script không tự prune Docker hay xóa dữ liệu khi thiếu dung lượng.
 
+Khi thay container, script giữ image trước và ghi dấu cấu trúc database cùng
+phiên bản migration vào `.backups/rollback.state`. Nếu bản mới không sẵn sàng,
+script thử quay lại image trước khi dấu database còn khớp. Nếu migration đã
+thay đổi database, script dừng và báo lý do; không phục hồi dữ liệu cũ tự động.
+Sau một lần deploy thất bại đã khôi phục dịch vụ, lệnh vẫn trả mã lỗi để thể hiện
+bản mới chưa triển khai được.
+
+Quay lại thủ công bằng **mục 10** trong menu hoặc:
+
+```bash
+bash run.sh rollback
+```
+
+Rollback giữ cấu hình và dữ liệu hiện tại; không hoàn tác các chỉnh sửa trong
+`settings.toml`. Image trước được giữ bằng tag `<project>-snapshot:rollback`, image bị
+thay thế khi rollback được giữ bằng `<project>-snapshot:failed` (dấu `_` trong project được đổi thành `-` cho tên image). Một lần deploy thành công
+tiếp theo sẽ cập nhật image trước. Không prune các image này khi còn cần rollback.
+
+Mini App → trang quản trị hiển thị trạng thái Telegram, Discord và Business AI
+riêng, số lượt Business đã gửi/bị lỗi và giai đoạn lỗi gần nhất. Các số lượt tính
+từ lần khởi động gần nhất. `/ready` vẫn dựa trên Telegram để lỗi Discord/Business
+không làm dịch vụ Telegram đang chạy mất trạng thái sẵn sàng; trường `services`
+cho biết trạng thái từng dịch vụ.
+
 ### Cấu hình và dữ liệu lưu trên VPS
 
 `init` chuyển file riêng hiện có vào `config/` và giữ `settings.toml` ở thư mục gốc

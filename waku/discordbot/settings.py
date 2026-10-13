@@ -11,12 +11,12 @@ from waku.config import app_config
 from waku.database import discord as repository
 from waku.i18n import normalize_locale
 from waku.logger import logger
+from waku.services.image_requests import contains_r18_request
 
 from . import state
 from .constants import (
     _DISCORD_GUILD_SETTINGS_CACHE_PREFIX,
     _DISCORD_GUILD_SETTINGS_CACHE_TTL,
-    _R18_KEYWORDS,
 )
 from .models import DiscordGuildSettings
 
@@ -190,5 +190,4 @@ async def _discord_ai_reply_enabled(guild) -> bool:
 
 
 def _contains_r18_keyword(text: str) -> bool:
-    lowered = text.casefold()
-    return any(keyword in lowered for keyword in _R18_KEYWORDS)
+    return contains_r18_request(text)

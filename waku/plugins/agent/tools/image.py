@@ -13,7 +13,7 @@ from waku.common.utils import is_explicit_reply
 from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.agent.localization import tr
-from waku.plugins.agent.output import record_sent_text, reply_output
+from waku.plugins.agent.output import DeliveryUncertain, record_sent_text, reply_output
 from waku.plugins.generated_image_save import send_generated_photo
 from waku.services import image_gen
 from waku.services.image_limits import (
@@ -23,7 +23,12 @@ from waku.services.image_limits import (
     ImageLimitDenied,
     image_limiter,
 )
-from waku.services.image_requests import explicit_image_operation
+from waku.services.image_requests import (
+    contains_r18_request,
+    explicit_image_operation,
+    safe_image_prompt,
+)
+from waku.services.telegram_images import generated_image_allowed
 
 from .. import datatype, state
 
@@ -62,6 +67,30 @@ class ImageOperationResult:
     message: str | None = None
     reason: str | None = None
     retry_after: int | None = None
+
+
+async def _image_policy_error(ctx, prompt):
+    if ctx.deps.chat_id is None:
+        return ImageOperationResult(False, message=tr("current_context_unavailable"))
+    allowed, reason = await generated_image_allowed(ctx.deps.chat_id, prompt)
+    if allowed:
+        return None
+    return ImageOperationResult(
+        False,
+        message="Image sending is disabled or the request does not match this conversation's Safe/R18 image mode. Do not generate or upload the image.",
+        reason=reason,
+    )
+
+
+def _confirm_image_delivery(ctx, sent):
+    if (
+        type(getattr(sent, "id", None)) is not int
+        or sent.id <= 0
+        or not isinstance(getattr(getattr(sent, "photo", None), "file_id", None), str)
+        or not sent.photo.file_id
+    ):
+        raise DeliveryUncertain("Missing generated image delivery receipt")
+    ctx.deps.image_delivered = True
 
 
 async def _find_image_in_history(
@@ -133,6 +162,10 @@ async def _generate_image(
         )
     gen_client = image_gen.image_gen_client
 
+    denied = await _image_policy_error(ctx, prompt)
+    if denied:
+        return ToolReturn(return_value=denied)
+
     if not prompt or not prompt.strip():
         raise ModelRetry(tr("tool_a_non_empty_prompt_is_required_to_generate_an_image"))
     if ctx.deps.message is None or ctx.deps.chat_id is None:
@@ -148,7 +181,7 @@ async def _generate_image(
     )
     if lease is not None:
         lease.mark_started()
-    result = await gen_client.generate(prompt=prompt, size=size)
+    result = await gen_client.generate(prompt=safe_image_prompt(prompt, r18=contains_r18_request(prompt)), size=size)
     if not result.success or not result.data:
         if (
             lease is not None
@@ -162,6 +195,10 @@ async def _generate_image(
                 message=tr("tool_image_generation_failed_p0", p0=result.error),
             )
         )
+    denied = await _image_policy_error(ctx, prompt)
+    if denied:
+        return ToolReturn(return_value=denied)
+    ctx.deps.side_effects_started = True
     try:
         sent = await send_generated_photo(
             ctx.deps.client,
@@ -185,8 +222,7 @@ async def _generate_image(
                 message=tr("generated_image_send_failed", p0=e.__class__.__name__),
             )
         )
-    if sent is not None:
-        ctx.deps.image_delivered = True
+    _confirm_image_delivery(ctx, sent)
     return ToolReturn(
         return_value=tr("tool_image_generated_successfully"),
         content=[
@@ -218,6 +254,10 @@ async def _edit_image(
             )
         )
     edit_client = image_gen.image_edit_client
+
+    denied = await _image_policy_error(ctx, prompt)
+    if denied:
+        return ToolReturn(return_value=denied)
     if not prompt or not prompt.strip():
         raise ModelRetry(tr("tool_a_non_empty_prompt_is_required_to_edit_an_image"))
     if ctx.deps.message is None or ctx.deps.chat_id is None:
@@ -270,6 +310,13 @@ async def _edit_image(
                 )
             )
         image_bytes = file_obj.getvalue()
+    elif is_reply:
+        # A specified reply must not silently select a different cached image.
+        return ToolReturn(
+            return_value=ImageOperationResult(
+                success=False, message=tr("image_not_found")
+            )
+        )
     else:
         history_image = await _find_image_in_history(ctx)
         if history_image is None:
@@ -290,7 +337,7 @@ async def _edit_image(
     if lease is not None:
         lease.mark_started()
     result = await edit_client.edit(
-        prompt=prompt,
+        prompt=safe_image_prompt(prompt, r18=contains_r18_request(prompt)),
         image_data=image_bytes,
         image_filename="image.jpg" if mime_type == "image/jpeg" else "image.png",
         image_mime_type=mime_type,
@@ -308,6 +355,10 @@ async def _edit_image(
                 message=tr("image_edit_failed", p0=result.error),
             )
         )
+    denied = await _image_policy_error(ctx, prompt)
+    if denied:
+        return ToolReturn(return_value=denied)
+    ctx.deps.side_effects_started = True
     try:
         sent = await send_generated_photo(
             ctx.deps.client,
@@ -331,14 +382,15 @@ async def _edit_image(
                 message=tr("edited_image_send_failed", p0=e.__class__.__name__),
             )
         )
-    if sent is not None:
-        ctx.deps.image_delivered = True
-    if sent and sent.photo:
+    _confirm_image_delivery(ctx, sent)
+    try:
         await memttlcache.set(
             state.last_edited_image_key(ctx.deps.chat_id, ctx.deps.user_id),
             sent.photo.file_id,
             ttl=app_config.cachettl_agent_history,
         )
+    except Exception as error:
+        logger.warning("Edited image cache failed after delivery: {}", type(error).__name__)
     return ToolReturn(
         return_value=tr(
             "tool_image_edited_successfully_based_on_prompt_p0", p0=repr(prompt)
@@ -398,6 +450,9 @@ async def image_ops(
         raise ModelRetry(
             "Provide a short, non-empty progress_message in your persona before starting image work."
         )
+    denied = await _image_policy_error(ctx, prompt)
+    if denied:
+        return ToolReturn(return_value=denied)
     lease = image_limiter.acquire(ctx.deps.user_id)
     if isinstance(lease, ImageLimitDenied):
         return ToolReturn(
