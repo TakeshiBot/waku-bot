@@ -17,6 +17,7 @@ from waku.plugins.agent.runner import get_chat_prompt_override
 from waku.timezone import bot_now
 
 from . import provider, quota, trace
+from .admin_dm_context import AdminDMContextLayer
 from .agent import struct_model
 from .whitelist import is_chat_allowed
 
@@ -38,7 +39,7 @@ _comment_model_options.setdefault("thinking", False)
 comment_agent = Agent(
     model=struct_model,
     output_type=CommentResult,
-    capabilities=[trace.AgentTraceCapability()],
+    capabilities=[AdminDMContextLayer(), trace.AgentTraceCapability()],
     retries=5,
     model_settings=provider.make_model_settings(_comment_model_options),
 )
@@ -293,6 +294,7 @@ async def comment_channel_message(client: Client, message: pyrogram.types.Messag
         async with TypingKeepAlive(client, message):
             result = await comment_agent.run(
                 model=struct_model,
+                deps=message,
                 instructions=instructions,
                 user_prompt=prompts,
             )

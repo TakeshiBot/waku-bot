@@ -13,7 +13,7 @@ Nút **Phạm vi** nằm một hàng riêng ngay dưới danh sách file. Mỗi 
 - **DM**: các lượt chat AI riêng trên Telegram và Discord; không áp dụng cho
   Telegram Business, nhóm hoặc server.
 - **Global**: các lượt chat AI trên toàn bộ Telegram và Discord, gồm nhóm,
-  server, Business và Guest.
+  server, Business, Guest và bình luận AI dưới bài đăng kênh.
 
 Phạm vi là thiết lập chung cho file đang chọn, được giữ khi chuyển/thêm/xoá file.
 Không có file đang bật thì không thêm lớp Markdown, ở mọi chế độ. Chỉ admin bot

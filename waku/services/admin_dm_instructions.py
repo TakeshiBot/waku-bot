@@ -307,10 +307,15 @@ async def _scope_applies(scope: str, deps) -> bool:
 
 async def load_for_context(deps) -> str | None:
     try:
-        library = await list_files()
-        if not library.selected or not await _scope_applies(library.scope, deps):
-            return None
-        return await _locked(_selected_content, library.selected, library.scope)
+        while True:
+            library = await list_files()
+            if not library.selected or not await _scope_applies(library.scope, deps):
+                return None
+            content = await _locked(_selected_content, library.selected, library.scope)
+            if content is not None:
+                return content
+            # A menu update may happen while checking admin rights. Recheck the
+            # latest selection/scope instead of silently omitting the MD layer.
     except (OSError, InstructionsError) as error:
         logger.warning("Markdown context unavailable: {}", type(error).__name__)
         return None
