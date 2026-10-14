@@ -280,6 +280,7 @@ async def _discord_recovery_reply(
         result = await asyncio.wait_for(
             state.discord_recovery_agent.run(
                 user_prompt=recovery_prompt,
+                deps=DiscordContextDeps(message=message),
                 message_history=[],
                 model_settings=provider.make_model_settings(
                     app_config.agent_model_small_options

@@ -1,4 +1,4 @@
-"""An independent AGENTS.md context layer before the main bot instructions."""
+"""An independent, scope-aware Markdown layer before main bot instructions."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelRequest, SystemPromptPart
 from pydantic_ai.models import ModelRequestContext
 
-from waku.services.admin_dm_instructions import load_for_admin_dm
+from waku.services.admin_dm_instructions import load_for_context
 
 _LAYER_MARKER = "waku_admin_dm_context"
 
@@ -39,7 +39,7 @@ class AdminDMContextLayer(AbstractCapability[Any]):
                         continue
                     message = replace(message, parts=parts)
             messages.append(message)
-        content = await load_for_admin_dm(ctx.deps)
+        content = await load_for_context(ctx.deps)
         if content:
             messages.insert(
                 0,

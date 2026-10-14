@@ -15,6 +15,7 @@ from waku.config import app_config
 from waku.enums import ChatID
 from waku.logger import logger
 from waku.plugins.agent import provider, quota
+from waku.plugins.agent.admin_dm_context import AdminDMContextLayer
 from waku.plugins.agent.guest_output import GuestStreamingOutput
 from waku.plugins.agent.localization import locale_scope, tr
 
@@ -99,6 +100,7 @@ def _make_agent(message, lang):
         + "\n\n"
         + tr("output_language", locale=lang),
         output_type=str,
+        capabilities=[AdminDMContextLayer()],
         retries=1,
     )
 
@@ -201,14 +203,14 @@ async def guest_chat(client, message):
                 user_input = await _prepared_input(client, message)
                 if app_config.agent_streaming:
                     async with chat_agent.run_stream(
-                        user_input, usage_limits=UsageLimits(request_limit=3)
+                        user_input, deps=message, usage_limits=UsageLimits(request_limit=3)
                     ) as result:
                         async for delta in result.stream_text(delta=True):
                             await output.append_delta(delta)
                         text = (await result.get_output()).strip()
                 else:
                     result = await chat_agent.run(
-                        user_input, usage_limits=UsageLimits(request_limit=3)
+                        user_input, deps=message, usage_limits=UsageLimits(request_limit=3)
                     )
                     text = result.output.strip()
             # Charge generated tokens even when Telegram cannot deliver the answer.

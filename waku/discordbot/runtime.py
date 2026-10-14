@@ -9,6 +9,7 @@ from waku.config import app_config
 from waku.i18n import normalize_locale
 from waku.logger import logger
 from waku.plugins.agent import provider
+from waku.plugins.agent.admin_dm_context import AdminDMContextLayer
 
 from . import state
 from .client import _create_client
@@ -81,6 +82,7 @@ async def _start_discord_bot() -> None:
     state.discord_agent = Agent(
         model=provider.make_chat_model(app_config.agent_chat_model),
         output_type=str,
+        capabilities=[AdminDMContextLayer()],
         tools=[
             Tool(get_discord_server_info, sequential=True),
             Tool(find_discord_channel, sequential=True),
@@ -213,6 +215,7 @@ async def _start_discord_bot() -> None:
             "Dùng khi lượt AI chính bị quá tải hoặc lỗi tạm thời; không nhắc API/tool/stack trace."
         ),
         output_type=str,
+        capabilities=[AdminDMContextLayer()],
         retries=1,
     )
     state.discord_client = _create_client()

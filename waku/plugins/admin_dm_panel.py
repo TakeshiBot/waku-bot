@@ -86,6 +86,10 @@ def _menu(token, session, notice=""):
         for file in files[session.page * _PAGE_SIZE : (session.page + 1) * _PAGE_SIZE]
     ]
     rows = [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
+    scope_label = {"admin": "Admin", "dm": "DM", "global": "Global"}[
+        session.library.scope
+    ]
+    rows.append([button(_tr("scope_button", session, value=scope_label), "scope")])
     if not files:
         text += "\n" + _tr("absent", session)
     if pages > 1:
@@ -211,6 +215,8 @@ async def instructions_callback(client, query):
                 return
             if action.startswith("file:"):
                 await store.toggle_file(action.split(":", 1)[1])
+            elif action == "scope":
+                await store.cycle_scope(session.library.scope)
             elif action == "upload":
                 session.pending = True
                 session.pending_until = time.monotonic() + 180

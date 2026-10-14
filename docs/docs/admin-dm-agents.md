@@ -1,10 +1,24 @@
-# File md cho DM của admin bot
+# File md và phạm vi áp dụng
 
 Mở `/config` trong DM Telegram của admin bot, chọn **File md** bên dưới
 **Chức Năng / Cấu Hình**. Khi có file đang bật, nút này hiển thị tên file đó.
 Danh sách file có 2 cột, tên nút giữ nguyên tên file tải lên. Dấu ✅ đánh dấu
 file đang dùng. Chỉ chọn được một file: bấm file khác để chuyển, bấm lại file
 đang chọn để tắt. Các thao tác có hiệu lực ngay, không có nút Lưu.
+
+Nút **Phạm vi** nằm một hàng riêng ngay dưới danh sách file. Mỗi lần bấm chuyển
+**Admin → DM → Global → Admin** và lưu ngay:
+
+- **Admin** (mặc định): chỉ DM Telegram của owners và bot global admins, như bản cũ.
+- **DM**: các lượt chat AI riêng trên Telegram và Discord; không áp dụng cho
+  Telegram Business, nhóm hoặc server.
+- **Global**: các lượt chat AI trên toàn bộ Telegram và Discord, gồm nhóm,
+  server, Business và Guest.
+
+Phạm vi là thiết lập chung cho file đang chọn, được giữ khi chuyển/thêm/xoá file.
+Không có file đang bật thì không thêm lớp Markdown, ở mọi chế độ. Chỉ admin bot
+được quản lý danh sách và đổi phạm vi; chế độ này không bật thêm quyền chat hay
+cấp quyền thực thi công cụ cho người dùng.
 
 **Thêm file** đổi thành **Huỷ thêm** trong lúc chờ tải lên. Gửi file `.md`
 UTF-8 (tối đa 32 KB) trong 3 phút; bot lưu file và xoá tin nhắn upload đã nhận.
@@ -20,14 +34,14 @@ trong danh sách. Dữ liệu nằm trong volume `data` của Docker, được g
 lại và nằm trong bản sao lưu dữ liệu. Không cần thêm biến vào `settings.toml`
 hoặc restart để đổi file. Danh sách dài có phân trang; hỗ trợ tối đa 100 file.
 
-File dùng chung cho owners và bot global admins. Đây là **lớp ngữ cảnh riêng**
+Danh sách file được admin bot quản lý chung. Đây là **lớp ngữ cảnh riêng**
 chứa thông tin, kiến thức, kỹ năng hoặc tính cách bổ sung: bot đọc file đang chọn
 trước, rồi đến prompt chính của cuộc chat (kể cả prompt riêng đã đặt cho DM).
 Nội dung được gửi thành message ngữ cảnh riêng, không nối vào chuỗi prompt chính
 và không sửa `agent_prompt`. Hai lớp nằm trong cùng request tới model. Các hướng
-dẫn ngôn ngữ và ngữ cảnh hiện có vẫn được giữ. File không áp dụng cho nhóm, DM của người dùng
-thường, Telegram Business, guest chat hoặc Discord. Nó không cấp thêm quyền
-cho công cụ và không thay đổi prompt chung.
+dẫn ngôn ngữ và ngữ cảnh hiện có vẫn được giữ. Phạm vi được kiểm tra trước mỗi
+request; đổi chế độ sẽ gỡ lớp Markdown cũ khỏi các request ngoài phạm vi mới.
+Các tác vụ nội bộ như embedding, đánh giá hội thoại, học sticker không dùng lớp này.
 
 Có thể dùng [file mẫu](examples/admin-dm-agents.md), chỉnh nội dung rồi tải lên.
 Nếu admin khác vừa đổi lựa chọn, nút xoá trong menu cũ sẽ không xoá nhầm file mới.

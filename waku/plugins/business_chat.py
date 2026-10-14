@@ -100,6 +100,7 @@ def _make_business_agent() -> Agent:
     from pydantic_ai import Agent
     from pydantic_ai_harness.guardrails import OutputGuardrail
 
+    from waku.plugins.agent.admin_dm_context import AdminDMContextLayer
     from waku.plugins.agent.provider import make_chat_model, make_model_settings
     from waku.plugins.agent.safety import scrub_output
     from waku.services.business_context import assistant_instructions
@@ -110,9 +111,9 @@ def _make_business_agent() -> Agent:
         model_settings=make_model_settings(app_config.agent_model_options),
         instructions=assistant_instructions(_business_prompt()),
         output_type=str,
-        capabilities=[OutputGuardrail(guard=scrub_output)]
-        if app_config.agent_secret_masking
-        else [],
+        capabilities=[AdminDMContextLayer(), *(
+            [OutputGuardrail(guard=scrub_output)] if app_config.agent_secret_masking else []
+        )],
     )
 
 
@@ -487,6 +488,7 @@ async def _run_business_turn(client, message, revision, timeout):
                 stage = "answer"
                 async with chat_agent.run_stream(
                     user_input,
+                    deps=message,
                     message_history=history,
                     usage_limits=_usage_limits(),
                     usage=usage,
@@ -513,6 +515,7 @@ async def _run_business_turn(client, message, revision, timeout):
             else:
                 result = await chat_agent.run(
                     user_input,
+                    deps=message,
                     message_history=history,
                     usage_limits=_usage_limits(),
                     usage=usage,

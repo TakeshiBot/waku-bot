@@ -1,4 +1,4 @@
-"""Persistent Markdown files and one live context selection for admin DMs."""
+"""Persistent Markdown files, one live selection and its application scope."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ MAX_FILE_BYTES = 32 * 1024
 MAX_FILES = 100
 _SAVE_LOCK = asyncio.Lock()
 _FILE_ID = re.compile(r"^[a-f0-9]{16}$")
+SCOPES = ("admin", "dm", "global")
 
 
 class InstructionsError(ValueError):
@@ -39,6 +40,7 @@ class MarkdownFile:
 class LibrarySnapshot:
     files: tuple[MarkdownFile, ...] = ()
     selected: str | None = None
+    scope: str = "admin"
 
     @property
     def active_name(self) -> str | None:
@@ -102,6 +104,7 @@ def _write_library(library: LibrarySnapshot):
     data = {
         "version": 1,
         "selected": library.selected,
+        "scope": library.scope,
         "files": [{"id": file.id, "name": file.name} for file in library.files],
     }
     _atomic_write(
@@ -156,7 +159,10 @@ def _read_library() -> LibrarySnapshot:
         selected = payload.get("selected")
         if selected is not None and selected not in ids:
             raise ValueError("Invalid selection")
-        return LibrarySnapshot(files, selected)
+        scope = payload.get("scope", "admin")
+        if scope not in SCOPES:
+            raise ValueError("Invalid scope")
+        return LibrarySnapshot(files, selected, scope)
     except (ValueError, TypeError, KeyError) as error:
         raise InstructionsError("storage") from error
 
@@ -186,7 +192,9 @@ def _add_file(name: str, content: str):
     file = existing or MarkdownFile(secrets.token_hex(8), name)
     _atomic_write(_blob(file.id), data)
     updated = LibrarySnapshot(
-        library.files if existing else (*library.files, file), library.selected
+        library.files if existing else (*library.files, file),
+        library.selected,
+        library.scope,
     )
     if existing is None:
         _write_library(updated)
@@ -202,7 +210,7 @@ def _toggle(file_id: str):
     if not any(file.id == file_id for file in library.files):
         raise InstructionsError("stale")
     selected = None if library.selected == file_id else file_id
-    updated = LibrarySnapshot(library.files, selected)
+    updated = LibrarySnapshot(library.files, selected, library.scope)
     _write_library(updated)
     return updated
 
@@ -218,7 +226,8 @@ def _delete_selected(expected: str | None):
     if library.selected != expected:
         raise InstructionsError("stale")
     updated = LibrarySnapshot(
-        tuple(file for file in library.files if file.id != expected)
+        tuple(file for file in library.files if file.id != expected),
+        scope=library.scope,
     )
     _write_library(updated)
     try:
@@ -233,9 +242,25 @@ async def delete_selected(expected: str | None):
     return await _locked(_delete_selected, expected)
 
 
-def _active_content():
+def _cycle_scope(expected: str):
     library = _read_library()
-    return _read_content(_blob(library.selected)) if library.selected else None
+    if library.scope != expected:
+        raise InstructionsError("stale")
+    scope = SCOPES[(SCOPES.index(library.scope) + 1) % len(SCOPES)]
+    updated = LibrarySnapshot(library.files, library.selected, scope)
+    _write_library(updated)
+    return updated
+
+
+async def cycle_scope(expected: str):
+    return await _locked(_cycle_scope, expected)
+
+
+def _selected_content(selected: str, scope: str):
+    library = _read_library()
+    if (library.selected, library.scope) != (selected, scope):
+        return None
+    return _read_content(_blob(selected))
 
 
 async def is_admin(user_id: int) -> bool:
@@ -245,22 +270,47 @@ async def is_admin(user_id: int) -> bool:
     return bool(user and user.is_bot_global_admin and not user.is_blocked)
 
 
-async def load_for_admin_dm(deps) -> str | None:
+async def _scope_applies(scope: str, deps) -> bool:
     message = getattr(deps, "message", None)
+    if message is None and getattr(deps, "chat", None) is not None:
+        message = deps  # Business and Guest agents use the native Message as deps.
+    if message is None:
+        return False
+    if hasattr(message, "guild") and getattr(message, "channel", None) is not None:
+        return scope == "global" or (scope == "dm" and message.guild is None)
     chat = getattr(message, "chat", None)
+    if chat is None:
+        return False
+    if scope == "global":
+        return chat.type in (
+            ChatType.PRIVATE,
+            ChatType.BOT,
+            ChatType.GROUP,
+            ChatType.SUPERGROUP,
+            ChatType.CHANNEL,
+        )
+    if scope == "dm":
+        return not getattr(message, "business_connection_id", None) and chat.type in (
+            ChatType.PRIVATE,
+            ChatType.BOT,
+        )
     user_id = getattr(deps, "user_id", None)
-    if (
-        chat is None
-        or chat.type != ChatType.PRIVATE
+    return not (
+        chat.type != ChatType.PRIVATE
         or chat.id != user_id
         or getattr(deps, "chat_id", None) != chat.id
         or getattr(message, "business_connection_id", None)
         or getattr(message, "guest_query_id", None)
         or not await is_admin(user_id)
-    ):
-        return None
+    )
+
+
+async def load_for_context(deps) -> str | None:
     try:
-        return await _locked(_active_content)
+        library = await list_files()
+        if not library.selected or not await _scope_applies(library.scope, deps):
+            return None
+        return await _locked(_selected_content, library.selected, library.scope)
     except (OSError, InstructionsError) as error:
-        logger.warning("Admin DM instructions unavailable: {}", type(error).__name__)
+        logger.warning("Markdown context unavailable: {}", type(error).__name__)
         return None

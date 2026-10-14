@@ -3,6 +3,7 @@ bot:
     label: "MD files"
     title: "<b>MD files · Admin DM</b>"
     scope: "Select one file to use. Tap the selected file again to disable it. Changes apply immediately."
+    scope_button: "Scope: {value}"
     active: "Active: <b>{name}</b>"
     inactive: "No file enabled."
     absent: "No Markdown files added."

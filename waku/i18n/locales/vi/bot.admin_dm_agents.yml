@@ -3,6 +3,7 @@ bot:
     label: "File md"
     title: "<b>File md · DM admin</b>"
     scope: "Chọn 1 file để dùng. Bấm lại file đang chọn để tắt. Áp dụng ngay."
+    scope_button: "Phạm vi: {value}"
     active: "Đang dùng: <b>{name}</b>"
     inactive: "Chưa bật file nào."
     absent: "Chưa có file md."
