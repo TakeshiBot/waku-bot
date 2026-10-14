@@ -1,10 +1,12 @@
-"""A runtime Markdown instruction file scoped to Telegram bot-admin DMs."""
+"""Persistent Markdown files and one live context selection for admin DMs."""
 
 from __future__ import annotations
 
 import asyncio
-import hashlib
+import json
 import os
+import re
+import secrets
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,9 +17,12 @@ from waku import database
 from waku.config import app_config
 from waku.logger import logger
 
+# Also serves as the source for automatic migration from the single-file menu.
 INSTRUCTIONS_FILE = Path("data/admin_dm/AGENTS.md")
 MAX_FILE_BYTES = 32 * 1024
+MAX_FILES = 100
 _SAVE_LOCK = asyncio.Lock()
+_FILE_ID = re.compile(r"^[a-f0-9]{16}$")
 
 
 class InstructionsError(ValueError):
@@ -25,9 +30,21 @@ class InstructionsError(ValueError):
 
 
 @dataclass(frozen=True)
-class InstructionsSnapshot:
-    content: str | None
-    revision: str
+class MarkdownFile:
+    id: str
+    name: str
+
+
+@dataclass(frozen=True)
+class LibrarySnapshot:
+    files: tuple[MarkdownFile, ...] = ()
+    selected: str | None = None
+
+    @property
+    def active_name(self) -> str | None:
+        return next(
+            (file.name for file in self.files if file.id == self.selected), None
+        )
 
 
 def decode_markdown(data: bytes) -> str:
@@ -44,32 +61,29 @@ def decode_markdown(data: bytes) -> str:
     return content
 
 
-def _read_snapshot() -> InstructionsSnapshot:
-    path = INSTRUCTIONS_FILE
+def validate_name(name: str) -> str:
+    if (
+        not isinstance(name, str)
+        or not name
+        or "/" in name
+        or "\\" in name
+        or any(ord(char) < 32 or ord(char) == 127 for char in name)
+        or len(name.encode("utf-8")) > 255
+        or Path(name).suffix.lower() != ".md"
+    ):
+        raise InstructionsError("invalid_file")
+    return name
+
+
+def _blob(file_id: str) -> Path:
+    if not _FILE_ID.fullmatch(file_id):
+        raise InstructionsError("storage")
+    return INSTRUCTIONS_FILE.parent / "files" / (file_id + ".md")
+
+
+def _atomic_write(path: Path, data: bytes):
     if path.is_symlink():
         raise InstructionsError("storage")
-    try:
-        with path.open("rb") as source:
-            data = source.read(MAX_FILE_BYTES + 1)
-    except FileNotFoundError:
-        return InstructionsSnapshot(None, "missing")
-    return InstructionsSnapshot(decode_markdown(data), hashlib.sha256(data).hexdigest())
-
-
-async def read_snapshot() -> InstructionsSnapshot:
-    return await asyncio.to_thread(_read_snapshot)
-
-
-def _write(content: str | None, revision: str) -> InstructionsSnapshot:
-    current = _read_snapshot()
-    if current.revision != revision:
-        raise InstructionsError("stale")
-    path = INSTRUCTIONS_FILE
-    if content is None:
-        path.unlink(missing_ok=True)
-        return InstructionsSnapshot(None, "missing")
-    data = content.encode("utf-8")
-    decode_markdown(data)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
@@ -82,18 +96,146 @@ def _write(content: str | None, revision: str) -> InstructionsSnapshot:
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
-    return InstructionsSnapshot(content, hashlib.sha256(data).hexdigest())
 
 
-async def save(content: str | None, revision: str) -> InstructionsSnapshot:
+def _write_library(library: LibrarySnapshot):
+    data = {
+        "version": 1,
+        "selected": library.selected,
+        "files": [{"id": file.id, "name": file.name} for file in library.files],
+    }
+    _atomic_write(
+        INSTRUCTIONS_FILE.parent / "library.json",
+        json.dumps(data, ensure_ascii=False).encode("utf-8"),
+    )
+
+
+def _read_content(path: Path) -> str:
+    if path.is_symlink():
+        raise InstructionsError("storage")
+    with path.open("rb") as source:
+        return decode_markdown(source.read(MAX_FILE_BYTES + 1))
+
+
+def _read_library() -> LibrarySnapshot:
+    path = INSTRUCTIONS_FILE.parent / "library.json"
+    if path.is_symlink():
+        raise InstructionsError("storage")
+    if not path.exists():
+        if not INSTRUCTIONS_FILE.exists():
+            return LibrarySnapshot()
+        content = _read_content(INSTRUCTIONS_FILE)
+        file = MarkdownFile(secrets.token_hex(8), "AGENTS.md")
+        _atomic_write(_blob(file.id), content.encode("utf-8"))
+        library = LibrarySnapshot((file,), file.id)
+        _write_library(library)
+        # Publish the new state before removing the legacy file.
+        try:
+            INSTRUCTIONS_FILE.unlink()
+        except OSError as error:
+            logger.warning("Legacy admin MD cleanup failed: {}", type(error).__name__)
+        return library
+    try:
+        with path.open("rb") as source:
+            payload = json.loads(source.read(128 * 1024))
+        rows = payload["files"]
+        if (
+            payload.get("version") != 1
+            or not isinstance(rows, list)
+            or len(rows) > MAX_FILES
+        ):
+            raise ValueError("Invalid library")
+        files = tuple(
+            MarkdownFile(row["id"], validate_name(row["name"])) for row in rows
+        )
+        ids = {file.id for file in files}
+        if len(ids) != len(files) or len({file.name for file in files}) != len(files):
+            raise ValueError("Duplicate file")
+        for file in files:
+            _blob(file.id)
+        selected = payload.get("selected")
+        if selected is not None and selected not in ids:
+            raise ValueError("Invalid selection")
+        return LibrarySnapshot(files, selected)
+    except (ValueError, TypeError, KeyError) as error:
+        raise InstructionsError("storage") from error
+
+
+async def _locked(operation, *args):
     async with _SAVE_LOCK:
-        task = asyncio.create_task(asyncio.to_thread(_write, content, revision))
+        task = asyncio.create_task(asyncio.to_thread(operation, *args))
         try:
             return await asyncio.shield(task)
         except asyncio.CancelledError:
-            # Hold the lock until the atomic disk write actually finishes.
             await task
             raise
+
+
+async def list_files() -> LibrarySnapshot:
+    return await _locked(_read_library)
+
+
+def _add_file(name: str, content: str):
+    name = validate_name(name)
+    data = content.encode("utf-8")
+    decode_markdown(data)
+    library = _read_library()
+    existing = next((file for file in library.files if file.name == name), None)
+    if existing is None and len(library.files) >= MAX_FILES:
+        raise InstructionsError("too_many_files")
+    file = existing or MarkdownFile(secrets.token_hex(8), name)
+    _atomic_write(_blob(file.id), data)
+    updated = LibrarySnapshot(
+        library.files if existing else (*library.files, file), library.selected
+    )
+    if existing is None:
+        _write_library(updated)
+    return updated, existing is not None
+
+
+async def add_file(name: str, content: str):
+    return await _locked(_add_file, name, content)
+
+
+def _toggle(file_id: str):
+    library = _read_library()
+    if not any(file.id == file_id for file in library.files):
+        raise InstructionsError("stale")
+    selected = None if library.selected == file_id else file_id
+    updated = LibrarySnapshot(library.files, selected)
+    _write_library(updated)
+    return updated
+
+
+async def toggle_file(file_id: str):
+    return await _locked(_toggle, file_id)
+
+
+def _delete_selected(expected: str | None):
+    if expected is None:
+        raise InstructionsError("choose_file")
+    library = _read_library()
+    if library.selected != expected:
+        raise InstructionsError("stale")
+    updated = LibrarySnapshot(
+        tuple(file for file in library.files if file.id != expected)
+    )
+    _write_library(updated)
+    try:
+        _blob(expected).unlink(missing_ok=True)
+    except OSError as error:
+        # Removed from the library already; an orphan is never loaded by the bot.
+        logger.warning("Deleted admin MD cleanup failed: {}", type(error).__name__)
+    return updated
+
+
+async def delete_selected(expected: str | None):
+    return await _locked(_delete_selected, expected)
+
+
+def _active_content():
+    library = _read_library()
+    return _read_content(_blob(library.selected)) if library.selected else None
 
 
 async def is_admin(user_id: int) -> bool:
@@ -118,8 +260,7 @@ async def load_for_admin_dm(deps) -> str | None:
     ):
         return None
     try:
-        snapshot = await read_snapshot()
+        return await _locked(_active_content)
     except (OSError, InstructionsError) as error:
         logger.warning("Admin DM instructions unavailable: {}", type(error).__name__)
         return None
-    return snapshot.content

@@ -1,13 +1,12 @@
-"""Upload, replace and remove AGENTS.md through the bot-admin DM menu."""
+"""Manage a named Markdown library with one immediately active admin-DM file."""
 
 from __future__ import annotations
 
 import asyncio
-import io
+import html
 import secrets
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from pyrogram import Client, enums, filters
 from pyrogram.errors import MessageNotModified
@@ -19,6 +18,7 @@ from waku.logger import logger
 from waku.services import admin_dm_instructions as store
 
 _SESSIONS = {}
+_PAGE_SIZE = 20
 
 
 @dataclass
@@ -27,18 +27,19 @@ class InstructionsSession:
     chat_id: int
     message_id: int
     locale: str
-    content: str | None
-    baseline: str | None
-    revision: str
+    library: store.LibrarySnapshot
     view: int = 0
+    page: int = 0
     pending: bool = False
     pending_until: float = 0
     expires: float = field(default_factory=lambda: time.monotonic() + 900)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
-def _tr(key, session=None):
-    return t("bot.admin_dm_agents." + key, locale=session.locale if session else "")
+def _tr(key, session=None, **values):
+    return t(
+        "bot.admin_dm_agents." + key, locale=session.locale if session else ""
+    ).format(**values)
 
 
 def clear_user_sessions(user_id):
@@ -58,30 +59,59 @@ def _prune():
 def _menu(token, session, notice=""):
     session.view += 1
 
-    def button(key, action):
+    def button(label, action):
         return InlineKeyboardButton(
-            _tr(key, session),
+            label,
             callback_data=f"admd:{token}:{session.view}:{action}",
-            style={
-                "save": enums.ButtonStyle.SUCCESS,
-                "close": enums.ButtonStyle.DANGER,
-            }.get(action, enums.ButtonStyle.DEFAULT),
+            style=enums.ButtonStyle.DANGER
+            if action in {"delete", "close"}
+            else enums.ButtonStyle.DEFAULT,
         )
 
     text = _tr("title", session) + "\n" + _tr("scope", session)
-    text += "\n\n" + _tr(
-        "present" if session.content is not None else "absent", session
+    name = session.library.active_name
+    text += "\n\n" + (
+        _tr("active", session, name=html.escape(name))
+        if name
+        else _tr("inactive", session)
     )
-    if session.content != session.baseline:
-        text += "\n" + _tr("unsaved", session)
+    files = session.library.files
+    pages = max(1, (len(files) + _PAGE_SIZE - 1) // _PAGE_SIZE)
+    session.page = max(0, min(session.page, pages - 1))
+    buttons = [
+        button(
+            ("✅ " if file.id == session.library.selected else "") + file.name,
+            "file:" + file.id,
+        )
+        for file in files[session.page * _PAGE_SIZE : (session.page + 1) * _PAGE_SIZE]
+    ]
+    rows = [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
+    if not files:
+        text += "\n" + _tr("absent", session)
+    if pages > 1:
+        text += "\n" + _tr("page", session, page=session.page + 1, pages=pages)
+        navigation = []
+        if session.page:
+            navigation.append(button("‹", f"page:{session.page - 1}"))
+        if session.page + 1 < pages:
+            navigation.append(button("›", f"page:{session.page + 1}"))
+        rows.append(navigation)
     if session.pending:
         text += "\n\n" + _tr("upload_help", session)
     if notice:
         text += "\n\n" + notice
-    rows = [[button("upload", "upload")]]
-    if session.content is not None:
-        rows.append([button("download", "download"), button("delete", "delete")])
-    rows.append([button("save", "save"), button("close", "close")])
+    rows.append(
+        [
+            button(
+                _tr("cancel_add" if session.pending else "upload", session),
+                "cancel_add" if session.pending else "upload",
+            ),
+            button(_tr("delete", session), "delete"),
+        ]
+    )
+    rows.append(
+        [button(_tr("back", session), "back"), button(_tr("close", session), "close")]
+    )
     return text, InlineKeyboardMarkup(rows)
 
 
@@ -98,6 +128,17 @@ async def _edit(client, session, text, markup=None):
         pass
 
 
+async def _render(client, token, session, notice=""):
+    previous_library, previous_view = session.library, session.view
+    session.library = await store.list_files()
+    text, markup = _menu(token, session, notice)
+    try:
+        await _edit(client, session, text, markup)
+    except BaseException:
+        session.library, session.view = previous_library, previous_view
+        raise
+
+
 async def open_panel(client, message, user_id, locale):
     if (
         message.chat is None
@@ -106,23 +147,14 @@ async def open_panel(client, message, user_id, locale):
         or not await store.is_admin(user_id)
     ):
         raise store.InstructionsError("denied")
-    snapshot = await store.read_snapshot()
+    library = await store.list_files()
     clear_user_sessions(user_id)
-    _prune()
     token = secrets.token_hex(5)
-    session = InstructionsSession(
-        user_id,
-        message.chat.id,
-        message.id,
-        locale,
-        snapshot.content,
-        snapshot.content,
-        snapshot.revision,
-    )
+    session = InstructionsSession(user_id, message.chat.id, message.id, locale, library)
     _SESSIONS[token] = session
+    _prune()
     try:
-        text, markup = _menu(token, session)
-        await _edit(client, session, text, markup)
+        await _render(client, token, session)
     except BaseException:
         _SESSIONS.pop(token, None)
         raise
@@ -132,7 +164,7 @@ async def open_panel(client, message, user_id, locale):
 async def instructions_callback(client, query):
     _prune()
     data = query.data.decode() if isinstance(query.data, bytes) else query.data
-    parts = str(data).split(":")
+    parts = str(data).split(":", 3)
     session = (
         _SESSIONS.get(parts[1]) if len(parts) == 4 and parts[2].isdigit() else None
     )
@@ -157,53 +189,50 @@ async def instructions_callback(client, query):
             _SESSIONS.pop(token, None)
             await query.answer(_tr("denied", session), show_alert=True)
             return
-        if int(view) != session.view:
+        if int(view) != session.view and action != "close":
             await query.answer(_tr("expired", session), show_alert=True)
             return
-        session.pending = False
         session.expires = time.monotonic() + 900
         try:
-            if action in {"close", "save"}:
-                if action == "save":
-                    await store.save(session.content, session.revision)
+            if action == "close":
                 _SESSIONS.pop(token, None)
-                await query.answer(
-                    _tr("saved" if action == "save" else "closed", session)
-                )
+                await query.answer()
                 try:
                     await message.delete()
                 except Exception:
-                    await _edit(
-                        client,
-                        session,
-                        _tr("saved" if action == "save" else "closed", session),
-                    )
+                    await _edit(client, session, _tr("closed", session))
                 return
+            if action == "back":
+                from waku.plugins.private_config import reopen_private_config
+
+                await reopen_private_config(client, message, user.id, session.locale)
+                _SESSIONS.pop(token, None)
+                await query.answer()
+                return
+            if action.startswith("file:"):
+                await store.toggle_file(action.split(":", 1)[1])
             elif action == "upload":
                 session.pending = True
                 session.pending_until = time.monotonic() + 180
+            elif action == "cancel_add":
+                session.pending = False
             elif action == "delete":
-                session.content = None
-            elif action == "download":
-                if session.content is None:
-                    raise store.InstructionsError("invalid_file")
-                document = io.BytesIO(session.content.encode("utf-8"))
-                document.name = "AGENTS.md"
-                await client.send_document(session.chat_id, document)
+                await store.delete_selected(session.library.selected)
+            elif action.startswith("page:"):
+                session.page = max(0, int(action.split(":", 1)[1]))
             else:
                 raise store.InstructionsError("expired")
-            text, markup = _menu(token, session)
-            await _edit(client, session, text, markup)
+            await _render(client, token, session)
             await query.answer()
         except (OSError, store.InstructionsError) as error:
             key = (
                 str(error) if isinstance(error, store.InstructionsError) else "storage"
             )
+            if key in {"stale", "choose_file"}:
+                await _render(client, token, session)
             await query.answer(_tr(key, session), show_alert=True)
         except Exception as error:
-            logger.warning(
-                "Admin DM instructions menu failed: {}", type(error).__name__
-            )
+            logger.warning("Admin DM Markdown menu failed: {}", type(error).__name__)
             await query.answer(_tr("storage", session), show_alert=True)
 
 
@@ -230,19 +259,18 @@ async def instructions_input(client, message):
     if pair is None:
         return
     token, session = pair
-    # Opening /config again cancels this upload and lets its command handler run.
     text = common.message_plain_text(message)
     command = (text.split(maxsplit=1) or [""])[0].split("@", 1)[0]
     if command == "/config":
         clear_user_sessions(message.from_user.id)
         return
+    accepted = False
     async with session.lock:
         try:
-            if (
-                not session.pending
-                or _SESSIONS.get(token) is not session
-                or not await store.is_admin(message.from_user.id)
-            ):
+            if not session.pending or _SESSIONS.get(token) is not session:
+                return
+            if not await store.is_admin(message.from_user.id):
+                clear_user_sessions(message.from_user.id)
                 return
             if text == "/cancel":
                 session.pending = False
@@ -252,11 +280,9 @@ async def instructions_input(client, message):
                     session.pending = False
                     raise store.InstructionsError("expired")
                 document = message.document
-                if (
-                    document is None
-                    or Path(document.file_name or "").suffix.lower() != ".md"
-                ):
+                if document is None:
                     raise store.InstructionsError("invalid_file")
+                name = store.validate_name(document.file_name or "")
                 if not isinstance(document.file_size, int) or document.file_size < 0:
                     raise store.InstructionsError("invalid_file")
                 if document.file_size == 0:
@@ -269,7 +295,6 @@ async def instructions_input(client, message):
                 if file is None:
                     raise store.InstructionsError("storage")
                 try:
-                    # Kurigram leaves in-memory downloads at EOF after writing.
                     file.seek(0)
                     content = store.decode_markdown(file.read(store.MAX_FILE_BYTES + 1))
                 finally:
@@ -278,23 +303,27 @@ async def instructions_input(client, message):
                     message.from_user.id
                 ):
                     return
-                session.content = content
+                _, replaced = await store.add_file(name, content)
+                accepted = True
                 session.pending = False
-                notice = _tr("staged", session)
-            text, markup = _menu(token, session, notice)
-            await _edit(client, session, text, markup)
+                notice = _tr("replaced" if replaced else "added", session)
+            session.expires = time.monotonic() + 900
+            await _render(client, token, session, notice)
         except (OSError, store.InstructionsError, TimeoutError) as error:
             key = (
                 str(error) if isinstance(error, store.InstructionsError) else "storage"
             )
-            text, markup = _menu(token, session, _tr(key, session))
-            await _edit(client, session, text, markup)
+            await _render(client, token, session, _tr(key, session))
         except Exception as error:
-            logger.warning(
-                "Admin DM instructions upload failed: {}", type(error).__name__
-            )
-            text, markup = _menu(token, session, _tr("storage", session))
-            await _edit(client, session, text, markup)
+            logger.warning("Admin DM Markdown upload failed: {}", type(error).__name__)
+            await _render(client, token, session, _tr("storage", session))
         finally:
-            # An uploaded instruction file must never also become an AI prompt.
+            if accepted:
+                try:
+                    await message.delete()
+                except Exception as error:
+                    logger.warning(
+                        "Admin MD upload message cleanup failed: {}",
+                        type(error).__name__,
+                    )
             message.stop_propagation()

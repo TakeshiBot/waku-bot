@@ -125,6 +125,7 @@ class ConfigSession:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     command_message_id: int | None = None
     notice: str = ""
+    md_name: str | None = None
 
 
 def _tr(translation_key: str, session: ConfigSession | None = None, **values) -> str:
@@ -529,6 +530,13 @@ def _visible_groups(session: ConfigSession):
 
 
 async def _refresh_restart_pending(session: ConfigSession):
+    from waku.services.admin_dm_instructions import InstructionsError, list_files
+
+    try:
+        session.md_name = (await list_files()).active_name
+    except (OSError, InstructionsError) as error:
+        session.md_name = None
+        logger.warning("Admin MD menu label unavailable: {}", type(error).__name__)
     from waku.services.settings_runtime import settings_restart_fields
 
     candidate = session.editor.effective_candidate(_draft_values(session))
@@ -636,7 +644,7 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
                 _button(_tr("open_settings", session), token, "groups:0"),
             ]
         )
-        rows.append([_button("AGENTS.md", token, "admin_agents")])
+        rows.append([_button(session.md_name or t("bot.admin_dm_agents.label", locale=session.locale), token, "admin_agents")])
         session.back = "home"
         rows.append(
             [
@@ -893,6 +901,36 @@ async def private_config_command(client: Client, message: Message):
         await message.reply_text(
             t("bot.private_config.errors." + str(exc), locale=config.lang)
         )
+
+
+async def reopen_private_config(client: Client, message: Message, user_id: int, locale: str):
+    """Return from File md to the main menu in the same Telegram message."""
+    from waku.services.admin_dm_instructions import InstructionsError
+
+    if (
+        message.chat is None or message.chat.type != enums.ChatType.PRIVATE
+        or message.chat.id != user_id or not await _is_admin(user_id)
+    ):
+        raise InstructionsError("denied")
+    editor = SettingsEditor(
+        [Path(p) for p in _resolve_settings_files()], _AppConfig, ProviderConfig,
+        lambda: app_config.model_dump(),
+    )
+    session = ConfigSession(user_id, message.chat.id, message.id, locale, editor)
+    await _load_feature_values(session)
+    await _refresh_restart_pending(session)
+    _prune()
+    for old_token, old in list(_SESSIONS.items()):
+        if old.user_id == user_id:
+            _SESSIONS.pop(old_token, None)
+    token = secrets.token_hex(5)
+    _SESSIONS[token] = session
+    try:
+        text, markup = _menu(token, session)
+        await _edit(message, text, markup)
+    except BaseException:
+        _SESSIONS.pop(token, None)
+        raise
 
 
 @Client.on_callback_query(filters.regex(r"^pcfg:"), group=0)

@@ -1,26 +1,30 @@
 bot:
   admin_dm_agents:
-    title: '<b>AGENTS.md · DM admin</b>'
-    scope: 'Lớp thông tin / kỹ năng / tính cách riêng, đọc trước prompt chính. Chỉ dùng trong DM Telegram của admin bot.'
-    present: 'Đã có file AGENTS.md.'
-    absent: 'Chưa có file AGENTS.md.'
-    unsaved: 'Có thay đổi chưa lưu.'
-    upload: 'Thêm / thay file'
-    download: 'Xem file'
-    delete: 'Xoá file'
-    save: 'Lưu'
-    close: 'Đóng'
-    upload_help: 'Gửi file .md UTF-8, tối đa 32 KB trong 3 phút. /cancel để huỷ. Chỉ áp dụng sau khi bấm Lưu.'
-    staged: 'Đã nhận file. Bấm Lưu để áp dụng và đóng menu.'
-    saved: 'Đã lưu. Áp dụng từ lượt chat tiếp theo.'
-    closed: 'Đã đóng, bỏ thay đổi chưa lưu.'
-    cancelled: 'Đã huỷ tải file.'
-    expired: 'Menu hoặc phiên tải file đã hết hạn. Mở lại /config.'
-    denied: 'Chỉ admin bot được dùng chức năng này.'
-    invalid_file: 'Gửi file .md có nội dung, không gửi văn bản thường.'
-    empty_file: 'File đã nhận nhưng nội dung rỗng hoặc chỉ có khoảng trắng.'
-    invalid_content: 'Nội dung file không hợp lệ. Gửi file Markdown UTF-8 dạng văn bản.'
-    too_large: 'File vượt quá 32 KB.'
-    encoding: 'File cần mã hoá UTF-8.'
-    storage: 'Không đọc hoặc lưu được file. Thử mở lại /config.'
-    stale: 'File đã được thay đổi ở phiên khác. Mở lại /config để xem bản mới.'
+    label: "File md"
+    title: "<b>File md · DM admin</b>"
+    scope: "Chọn 1 file để dùng. Bấm lại file đang chọn để tắt. Áp dụng ngay."
+    active: "Đang dùng: <b>{name}</b>"
+    inactive: "Chưa bật file nào."
+    absent: "Chưa có file md."
+    upload: "Thêm file"
+    cancel_add: "Huỷ thêm"
+    delete: "Xoá file"
+    back: "Trở lại"
+    close: "Đóng"
+    upload_help: "Gửi file .md UTF-8, tối đa 32 KB trong 3 phút. Bấm Huỷ thêm để dừng."
+    added: "Đã thêm file. Bấm vào tên file để sử dụng."
+    replaced: "Đã thay nội dung file cùng tên."
+    closed: "Đã đóng menu."
+    cancelled: "Đã huỷ thêm file."
+    choose_file: "Chọn file cần xoá trước."
+    expired: "Menu hoặc phiên thêm file đã hết hạn. Mở lại /config."
+    denied: "Chỉ admin bot được dùng chức năng này."
+    invalid_file: "Gửi file .md có tên hợp lệ, không gửi văn bản thường."
+    empty_file: "File đã nhận nhưng nội dung rỗng hoặc chỉ có khoảng trắng."
+    invalid_content: "Nội dung file không hợp lệ. Gửi file Markdown UTF-8 dạng văn bản."
+    too_large: "File vượt quá 32 KB."
+    encoding: "File cần mã hoá UTF-8."
+    storage: "Không đọc hoặc lưu được file. Thử mở lại /config."
+    stale: "Danh sách hoặc file đang chọn đã thay đổi. Chọn lại file."
+    too_many_files: "Tối đa 100 file. Xoá file cũ trước khi thêm."
+    page: "Trang {page}/{pages}"
