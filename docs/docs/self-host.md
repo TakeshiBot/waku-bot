@@ -82,6 +82,10 @@ Các thư mục được giữ khi tạo lại container:
 
 Các đường dẫn riêng này được Git/Docker build bỏ qua. `backup` tạm dừng container
 để sao lưu SQLite/session nhất quán, rồi khởi động lại nếu trước đó đang chạy.
+Khi đã có image bot, script dùng container phụ để đọc các thư mục dữ liệu qua
+mount chỉ đọc, kể cả file do Docker tạo với quyền `600`. Container này không chạy
+bot và không kết nối mạng; không cần `chown` hoặc mở rộng quyền dữ liệu trên VPS.
+File `.tar.gz` chỉ được công nhận sau khi sao lưu thành công và giữ quyền `600`.
 Nếu dùng PostgreSQL/MySQL hoặc đường dẫn dữ liệu tùy chỉnh ngoài các thư mục trên,
 cần sao lưu chúng riêng. Khi khôi phục, dừng bot, giải nén bản sao lưu vào thư mục
 project, kiểm tra cấu hình và chạy lại; không dùng `docker compose down -v` để cập nhật.

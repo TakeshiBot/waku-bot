@@ -151,18 +151,42 @@ check_build_space() {
   ((free_bytes >= required_bytes)) || die "Docker còn ít hơn ${MIN_FREE_GB} GiB trống. Kiểm tra bằng 'bash run.sh disk' và giải phóng dung lượng trước khi build."
 }
 
+backup_archive() {
+  if docker image inspect "$WAKU_IMAGE_NAME" >/dev/null 2>&1; then
+    # Atomic files saved by the bot can be root-owned with mode 600. Read them
+    # with a short-lived helper; never start the bot or change host permissions.
+    docker run --rm --pull never --network none --read-only --user 0:0 \
+      --security-opt no-new-privileges --cap-drop ALL --cap-add DAC_OVERRIDE \
+      --mount "type=bind,source=$ROOT_DIR/config,target=/backup/config,readonly" \
+      --mount "type=bind,source=$ROOT_DIR/data,target=/backup/data,readonly" \
+      --mount "type=bind,source=$ROOT_DIR/logs,target=/backup/logs,readonly" \
+      --mount "type=bind,source=$ROOT_DIR/.agentfs,target=/backup/.agentfs,readonly" \
+      --entrypoint /bin/tar "$WAKU_IMAGE_NAME" \
+      --numeric-owner -czf - -C /backup config data logs .agentfs
+  else
+    # Permit backups before the first image build, when files are host-owned.
+    tar --numeric-owner -czf - -C "$ROOT_DIR" config data logs .agentfs
+  fi
+}
+
 backup_files() {
-  local archive running
+  local archive temporary running
   require tar
   archive="$ROOT_DIR/.backups/waku-$(date -u +%Y%m%dT%H%M%SZ)-$$.tar.gz"
+  temporary="$(mktemp "$ROOT_DIR/.backups/.waku-backup-XXXXXXXX.partial")"
   running="$(compose ps --status running -q waku)"
   if [[ -n "$running" ]]; then
     RESUME_ON_EXIT=1
     compose stop -t 60 waku
   fi
   log "Sao lưu cấu hình, dữ liệu, session, log và workspace AI."
-  tar -czf "$archive" -C "$ROOT_DIR" config data logs .agentfs
-  chmod 600 "$archive"
+  if ! backup_archive > "$temporary"; then
+    rm -f -- "$temporary"
+    log "Sao lưu thất bại; chưa thay container hiện tại. Không giữ bản sao lưu dở dang." >&2
+    return 1
+  fi
+  chmod 600 "$temporary"
+  mv -- "$temporary" "$archive"
   log "Bản sao lưu: $archive"
   log "Nếu dùng database ngoài SQLite local, cần sao lưu database đó riêng."
 }
