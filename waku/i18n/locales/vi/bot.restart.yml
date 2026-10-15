@@ -1,0 +1,5 @@
+bot:
+  restart:
+    denied: Bạn không có quyền khởi động lại bot.
+    invalid_config: Cấu hình hiện tại không hợp lệ. Hãy kiểm tra settings.toml trước khi khởi động lại bot.
+    restarting: Bot đang khởi động lại và sẽ tự kết nối lại Telegram, Discord cùng các dịch vụ đã bật.

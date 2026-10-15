@@ -1,0 +1,5 @@
+bot:
+  restart:
+    denied: You do not have permission to restart the bot.
+    invalid_config: The current configuration is invalid. Check settings.toml before restarting the bot.
+    restarting: The bot is restarting and will reconnect Telegram, Discord and all enabled services automatically.

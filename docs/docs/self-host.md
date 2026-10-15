@@ -113,6 +113,11 @@ có thể chạy riêng bước này bằng `sudo bash run.sh miniapp panel.exam
 | `bash run.sh disk` | Xem dung lượng Docker và ổ đĩa |
 | `bash run.sh help` | Xem đầy đủ tùy chọn |
 
+Trong Telegram, owner hoặc admin bot có thể dùng `/restart` để khởi động lại
+toàn bộ tiến trình bot sau khi kiểm tra cấu hình. Lệnh thay thế `/reload`, đóng
+kết nối rồi tự chạy lại Telegram, Discord và các dịch vụ đã bật. Lệnh này không
+build image hoặc thay biến môi trường Docker; để cập nhật source dùng `run.sh`.
+
 Compose giữ `network_mode: host` cho VPS Linux, hỗ trợ database/proxy ở localhost.
 HTTP mặc định chỉ nghe `127.0.0.1:8180`; Nginx trên VPS cung cấp HTTPS. Cổng, địa chỉ
 lắng nghe và health server được Compose đặt qua env, ưu tiên hơn giá trị TOML.

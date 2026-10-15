@@ -466,6 +466,7 @@ bot:
     quotes_message: Click the button below to search for quotes.
     quotes_button: 🔍
   cmd:
+    restart: Restart the bot
     start: One-click meow|Summon menu
     waifu: Today's Waifu!
     waifu_graph: Waifu Relationship Graph!

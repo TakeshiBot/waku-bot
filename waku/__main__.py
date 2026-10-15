@@ -199,7 +199,7 @@ async def init_bot(client: Client = client):
     owner_commands = [
         BotCommand("botpromote", i18n.t("bot.cmd.botpromote", locale=app_config.lang)),
         BotCommand("botdemote", i18n.t("bot.cmd.botdemote", locale=app_config.lang)),
-        BotCommand("reload", i18n.t("bot.cmd.reload", locale=app_config.lang)),
+        BotCommand("restart", i18n.t("bot.cmd.restart", locale=app_config.lang)),
         BotCommand("config", i18n.t("bot.cmd.config", locale=app_config.lang)),
         BotCommand(
             "info", i18n.t("bot.private_config.info_command", locale=app_config.lang)

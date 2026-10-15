@@ -691,7 +691,7 @@ bot:
     botdemote: Gỡ quyền quản trị toàn bot bằng ID
     help: Trợ giúp | Các tính năng khác
     randmyavatar: Đổi ảnh đại diện của bot ngay
-    reload: Tải lại cấu hình
+    restart: Khởi động lại bot
     infographic: Kết xuất infographic
     rss: Quản lý đăng ký RSS
   inline:
