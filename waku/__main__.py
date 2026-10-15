@@ -1,3 +1,4 @@
+import asyncio
 import faulthandler
 
 faulthandler.enable()
@@ -421,7 +422,14 @@ async def main():
         )
         session_health.start()
 
-    await idle()
+    from waku.services.maintenance import monitor
+
+    maintenance_monitor = common.spawn(monitor(client), name="maintenance-status")
+    try:
+        await idle()
+    finally:
+        maintenance_monitor.cancel()
+        await asyncio.gather(maintenance_monitor, return_exceptions=True)
     await client.stop()  # type: ignore
 
     await webapp_server.stop()

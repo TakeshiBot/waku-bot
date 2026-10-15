@@ -113,10 +113,26 @@ có thể chạy riêng bước này bằng `sudo bash run.sh miniapp panel.exam
 | `bash run.sh disk` | Xem dung lượng Docker và ổ đĩa |
 | `bash run.sh help` | Xem đầy đủ tùy chọn |
 
-Trong Telegram, owner hoặc admin bot có thể dùng `/restart` để khởi động lại
-toàn bộ tiến trình bot sau khi kiểm tra cấu hình. Lệnh thay thế `/reload`, đóng
-kết nối rồi tự chạy lại Telegram, Discord và các dịch vụ đã bật. Lệnh này không
-build image hoặc thay biến môi trường Docker; để cập nhật source dùng `run.sh`.
+Trong Telegram, owner hoặc admin bot có thể dùng `/restart` để mở menu:
+
+- **1. Khởi động lại**: kiểm tra cấu hình, đóng kết nối rồi tự chạy lại toàn bộ
+  tiến trình Telegram, Discord và các dịch vụ đã bật, không pull hoặc build.
+- **2. Cập nhật**: yêu cầu VPS chạy đúng `bash run.sh update`: pull fast-forward,
+  build bot và Mini App, kiểm tra cấu hình, sao lưu rồi triển khai; giữ cơ chế
+  rollback của script. Source có thay đổi local sẽ bị từ chối cập nhật.
+
+Kết quả sửa ngay tin nhắn menu cũ, gồm commit trước, commit thực sự đang chạy,
+tiêu đề/ngày commit và thời gian xử lý. Khi cập nhật lỗi, thông báo không nhận
+commit vừa pull là bản đang chạy. Log chi tiết ở `logs/maintenance-update.log`.
+Nếu Telegram tạm lỗi khi sửa tin nhắn, bot giữ trạng thái và thử lại, không gửi
+thêm tin nhắn mới.
+
+Chức năng cập nhật cần Python 3 trên VPS. `run.sh deploy/start/restart` tự bật
+tiến trình host `scripts/deploy_worker.py`; tiến trình này tồn tại độc lập khi
+container bot bị thay, không cần mount Docker socket hoặc source host vào bot.
+Sau khi nâng cấp lần đầu hoặc reboot VPS, chạy `bash run.sh start` để bật cầu nối.
+Nếu cầu nối chưa chạy, nút Cập nhật báo rõ và không dừng bot. Khởi động lại vẫn
+dùng được khi chạy Python trực tiếp; cập nhật qua menu dành cho VPS dùng `run.sh`.
 
 Compose giữ `network_mode: host` cho VPS Linux, hỗ trợ database/proxy ở localhost.
 HTTP mặc định chỉ nghe `127.0.0.1:8180`; Nginx trên VPS cung cấp HTTPS. Cổng, địa chỉ

@@ -3,3 +3,17 @@ bot:
     denied: Bạn không có quyền khởi động lại bot.
     invalid_config: Cấu hình hiện tại không hợp lệ. Hãy kiểm tra settings.toml trước khi khởi động lại bot.
     restarting: Bot đang khởi động lại và sẽ tự kết nối lại Telegram, Discord cùng các dịch vụ đã bật.
+    menu: "<b>🔄 Khởi động lại Waku</b>\n\nChọn khởi động lại bot, hoặc cập nhật source từ Git rồi build và triển khai cả bot cùng Mini App."
+    restart_button: '1. Khởi động lại'
+    update_button: '2. Cập nhật'
+    close: Đóng
+    expired: Menu đã hết hạn hoặc không thuộc về bạn. Mở lại /restart.
+    worker_unavailable: 'Cầu nối cập nhật trên VPS chưa chạy. Chạy bash run.sh restart trên VPS để bật lại; VPS cần Python 3.'
+    updating: Đang cập nhật từ Git, build và triển khai bot cùng Mini App. Kết quả sẽ hiện ngay tại tin nhắn này khi hoàn tất.
+    busy: Đang có một yêu cầu khởi động lại hoặc cập nhật được xử lý. Vui lòng chờ kết quả ở tin nhắn trước.
+    storage_error: Không lưu được thông tin khởi động lại. Bot vẫn tiếp tục chạy; kiểm tra quyền ghi thư mục data/maintenance.
+    restart_success: '✅ Bot đã khởi động lại thành công.'
+    update_success: '✅ Đã cập nhật và triển khai thành công bot cùng Mini App.'
+    update_failed: '❌ Cập nhật chưa thành công. Bot hiện đang hoạt động với bản commit bên dưới.'
+    result_details: "Commit trước: <code>{before}</code>\nCommit đang chạy: <code>{commit}</code>\n{subject}\nNgày commit: {date}\nThời gian xử lý: {seconds} giây"
+    update_log: 'Chi tiết trên VPS: logs/maintenance-update.log'

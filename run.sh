@@ -251,7 +251,18 @@ start_waku() {
     fi
     die "Bot chưa sẵn sàng. Xem 'bash run.sh logs'; cấu hình và dữ liệu vẫn được giữ."
   fi
+  start_update_worker
   log "Bot đã sẵn sàng. HTTP: http://127.0.0.1:${WAKU_PORT}; xem log: bash run.sh logs"
+}
+
+start_update_worker() {
+  if command -v python3 >/dev/null 2>&1 && [[ -f "$ROOT_DIR/scripts/deploy_worker.py" ]]; then
+    if ! python3 "$ROOT_DIR/scripts/deploy_worker.py" ensure "$ROOT_DIR"; then
+      log "Bot đã chạy nhưng cầu nối cập nhật Telegram chưa sẵn sàng; xem logs/maintenance-worker.log." >&2
+    fi
+  else
+    log "Cập nhật qua /restart cần Python 3 trên VPS. Khởi động lại bot bằng lệnh Telegram vẫn hoạt động." >&2
+  fi
 }
 
 deploy() {
