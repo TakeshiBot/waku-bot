@@ -7,6 +7,29 @@ from waku import database, gift
 from waku.i18n import t
 
 
+def _gift_buttons(available_gifts, user_id: int, lang: str):
+    return [
+        [
+            types.InlineKeyboardButton(
+                gift.get_display_name(item.id, lang),
+                callback_data=f"buygift:{user_id}:{item.id}:req",
+            )
+            for item in available_gifts
+        ],
+        [
+            types.InlineKeyboardButton(
+                t("bot.hardcoded.gift.leave", locale=lang),
+                callback_data="delete_callback_query_message",
+                style=enums.ButtonStyle.DANGER,
+            )
+        ],
+    ]
+
+
+def _price_percent(price: int, coins: int) -> int:
+    return min(100, price * 100 // coins) if coins > 0 else 100
+
+
 @Client.on_message(filters.command("buygift") & filters.private, group=1)
 async def buy_gift(client: Client, message: types.Message):
     user = message.from_user
@@ -24,33 +47,19 @@ async def buy_gift(client: Client, message: types.Message):
     gift_list_text = t("bot.hardcoded.gift.choose_buy", locale=lang)
     await message.reply_text(
         gift_list_text,
-        reply_markup=types.InlineKeyboardMarkup(
-            [
-                [
-                    types.InlineKeyboardButton(
-                        gift.get_display_name(g.id, lang),
-                        callback_data=f"buygift:{user.id}:{g.id}:req",
-                    )
-                    for g in affordable_gifts  # [TODO] Add pagination when more gift types are introduced.
-                ],
-                [
-                    types.InlineKeyboardButton(
-                        t("bot.hardcoded.gift.leave", locale=lang),
-                        callback_data="delete_callback_query_message",
-                    )
-                ],
-            ]
-        ),
+        reply_markup=types.InlineKeyboardMarkup(_gift_buttons(affordable_gifts, user.id, lang)),
     )
 
 
 @Client.on_callback_query(filters.regex(r"^buygift:(\d+):(.+):(.+)$"), group=0)
 async def handle_buy_gift_callback(client: Client, callback_query: types.CallbackQuery):
+    if callback_query.from_user is None or callback_query.message is None:
+        return
     lang = (await database.get_user_config(callback_query.from_user.id)).lang
     data = callback_query.data
     if data is None:
         return
-    data = str(data)
+    data = data.decode() if isinstance(data, bytes) else str(data)
     parts = data.split(":")
     if len(parts) != 4:
         return
@@ -64,7 +73,13 @@ async def handle_buy_gift_callback(client: Client, callback_query: types.Callbac
             t("bot.hardcoded.gift.not_your_purchase", locale=lang), show_alert=True
         )
         return
-    gift_id = gift.GiftID(gift_id_str)
+    try:
+        gift_id = gift.GiftID(gift_id_str)
+    except ValueError:
+        await callback_query.answer(
+            t("bot.hardcoded.gift.unknown_gift", locale=lang), show_alert=True
+        )
+        return
     gift_item = gift.get_gift_by_id(gift_id)
     user_data = await database.get_user_by_id(user_id)
     if not user_data:
@@ -81,7 +96,15 @@ async def handle_buy_gift_callback(client: Client, callback_query: types.Callbac
                 )
                 return
             rarity = random.randint(1, 5)
-            await database.buy_gift_for_user(user_id, gift_id, rarity=rarity)
+            try:
+                await database.buy_gift_for_user(user_id, gift_id, rarity=rarity)
+            except ValueError:
+                # Recheck in the purchase transaction: an older menu can outlive
+                # another purchase that spent the remaining coins.
+                await callback_query.answer(
+                    t("bot.hardcoded.gift.insufficient", locale=lang), show_alert=True
+                )
+                return
             await callback_query.answer(
                 t("bot.hardcoded.gift.bought", locale=lang).format(
                     rarity=gift.get_rarity_display_name(rarity, lang),
@@ -90,9 +113,7 @@ async def handle_buy_gift_callback(client: Client, callback_query: types.Callbac
                 show_alert=True,
             )
             user_coins_after = (await database.get_user_config(user_id)).coins
-            percent_now = gift_item.price * 100 // user_coins_after
-            if percent_now > 100 or user_coins <= 0:
-                percent_now = 100
+            percent_now = _price_percent(gift_item.price, user_coins_after)
             await callback_query.edit_message_text(
                 t("bot.hardcoded.gift.repeat", locale=lang).format(
                     name=gift.get_display_name(gift_item.id, lang), percent=percent_now
@@ -103,16 +124,19 @@ async def handle_buy_gift_callback(client: Client, callback_query: types.Callbac
                             types.InlineKeyboardButton(
                                 t("bot.hardcoded.gift.buy_again", locale=lang),
                                 callback_data=f"buygift:{user_id}:{gift_id_str}:yes",
+                                style=enums.ButtonStyle.SUCCESS,
                             ),
                             types.InlineKeyboardButton(
                                 t("bot.hardcoded.gift.leave", locale=lang),
                                 callback_data="delete_callback_query_message",
+                                style=enums.ButtonStyle.DANGER,
                             ),
                         ]
                     ]
                 ),
             )
         case "no":
+            await callback_query.answer()
             affordable_gifts = gift.list_affordable_gifts(user_coins)
             if not affordable_gifts:
                 await callback_query.edit_message_text(
@@ -123,30 +147,16 @@ async def handle_buy_gift_callback(client: Client, callback_query: types.Callbac
             gift_list_text = t("bot.hardcoded.gift.cancelled_choose", locale=lang)
             await callback_query.edit_message_text(
                 gift_list_text,
-                reply_markup=types.InlineKeyboardMarkup(
-                    [
-                        [
-                            types.InlineKeyboardButton(
-                                gift.get_display_name(g.id, lang),
-                                callback_data=f"buygift:{user_data.id}:{g.id}:req",
-                            )
-                            for g in affordable_gifts
-                        ],
-                        [
-                            types.InlineKeyboardButton(
-                                t("bot.hardcoded.gift.leave", locale=lang),
-                                callback_data="delete_callback_query_message",
-                            )
-                        ],
-                    ]
-                ),
+                reply_markup=types.InlineKeyboardMarkup(_gift_buttons(affordable_gifts, user_id, lang)),
             )
         case "req":
-            price_percent = (
-                int((gift_item.price / user_coins) * 100) if user_coins > 0 else 0
-            )
-            if price_percent > 100:
-                price_percent = 100
+            if user_coins < gift_item.price:
+                await callback_query.answer(
+                    t("bot.hardcoded.gift.insufficient", locale=lang), show_alert=True
+                )
+                return
+            await callback_query.answer()
+            price_percent = _price_percent(gift_item.price, user_coins)
             display_name = gift.get_display_name(gift_item.id, lang)
             text = t("bot.hardcoded.gift.confirm_purchase", locale=lang).format(
                 name=display_name,
@@ -166,6 +176,7 @@ async def handle_buy_gift_callback(client: Client, callback_query: types.Callbac
                             types.InlineKeyboardButton(
                                 t("bot.hardcoded.gift.confirm", locale=lang),
                                 callback_data=f"buygift:{user_id}:{gift_id_str}:yes",
+                                style=enums.ButtonStyle.SUCCESS,
                             ),
                             types.InlineKeyboardButton(
                                 t("bot.hardcoded.gift.cancel", locale=lang),
