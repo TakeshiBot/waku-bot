@@ -6,5 +6,5 @@
   "arrowParens": "always",
   "vueIndentScriptAndStyle": false,
   "htmlWhitespaceSensitivity": "css",
-  "endOfLine": "auto"
+  "endOfLine": "lf"
 }
