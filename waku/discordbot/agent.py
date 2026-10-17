@@ -15,6 +15,7 @@ from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.agent import provider
 from waku.plugins.agent.safety import build_usage_limits
+from waku.services.deferred_delivery import DeferredDelivery
 
 from . import state
 from .constants import _DISCORD_TEMPORARY_ERROR_REPLIES
@@ -101,6 +102,7 @@ async def _run_discord_agent_once(
             "agent_run_timeout must be greater than zero; using the safe 180s fallback"
         )
     deps = DiscordContextDeps(message=message)
+    deps.deferred_images = DeferredDelivery()
     options = dict(app_config.agent_model_options)
     if any(not isinstance(item, str) for item in prompt):
         options.update(app_config.agent_model_multimodal_options)
@@ -217,6 +219,7 @@ async def _run_discord_agent_once(
                 timeout=timeout,
             )
     except BaseException as error:
+        await deps.deferred_images.discard()
         if stream is not None:
             await stream.abort(
                 _discord_fallback_reply(error)
@@ -243,6 +246,7 @@ async def _run_discord_agent_once(
             )
         if result.output and not streamed:
             await _send_reply(message, str(result.output))
+        await deps.deferred_images.flush()
     except BaseException as error:
         if stream is not None:
             await stream.abort(
@@ -253,6 +257,8 @@ async def _run_discord_agent_once(
         if not isinstance(error, Exception):
             raise
         raise DiscordPostRunError("Discord reply delivery failed") from error
+    finally:
+        await deps.deferred_images.discard()
     try:
         await common.memttlcache.set(
             history_key,

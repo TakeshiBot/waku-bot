@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 import discord
 
@@ -22,6 +23,7 @@ class DiscordContextDeps:
     message: discord.Message
     side_effects_started: bool = False
     image_delivered: bool = False
+    deferred_images: Any | None = None
     publish_image_progress: Callable[[str], Awaitable[None]] | None = None
 
 @dataclass
@@ -59,6 +61,10 @@ class DiscordAnimePhotoResult:
     requested_count: int = 1
     capped_count: int | None = None
     wait_seconds: int | None = None
+    # Internal source capability, not a sentence to display to the user.
+    random_only: bool = False
+    delivery_pending: bool = False
+    prepared_count: int = 0
 
 @dataclass
 class DiscordChannelInfo:

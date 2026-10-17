@@ -69,52 +69,21 @@ def resolve_image_search(keyword, mode, *, request_text=""):
     return query, effective_mode
 
 
-def image_request_keyword(keyword, request_text):
-    """Extract a subject only to explain that images are random; never search by it."""
-    keyword = (keyword or "").strip()
-    if keyword.casefold() not in {"", "random", "ngẫu nhiên", "ngau nhien", "anything"}:
-        return keyword
-    random_pattern = r"\b(?:random|ngẫu nhiên|ngau nhien|bất kỳ|bat ky)\b"
-    named = re.search(
-        r"\b(?:ảnh|anh|hình|hinh|pictures?|photos?|images?|pics?)\s+(?:(?:của|cua|nhân vật|nhan vat|of)\s+)*(.+)",
-        request_text,
-        re.I,
-    )
-    if named:
-        target = re.split(r"[.!?\n]", named[1], maxsplit=1)[0].strip(" ,:;\"'")
-        target = _SAFE_NEGATION.sub(" ", target)
-        target = _SAFE_MARKER.sub(" ", target)
-        target = _RATING_MARKER.sub(" ", target)
-        target = re.sub(r"\s+", " ", target).strip()
-        target = re.sub(random_pattern, "", target, flags=re.I).strip()
-        target = re.sub(r"^(?:của|cua|of)\s+", "", target, flags=re.I)
-        target = re.sub(
-            r"\s+(?:cho (?:t|tui|tôi|toi|mình|minh)|đi|di|nhé|nhe|với|please).*$",
-            "",
-            target,
-            flags=re.I,
-        ).strip()
-        if target and target.casefold() not in {
-            "cho t",
-            "cho tôi",
-            "cho mình",
-            "đi",
-            "di",
-            "please",
-            "khác",
-            "khac",
-            "nữa",
-            "nua",
-            "tiếp",
-            "tiep",
-        }:
-            return target
-    return ""
-
-
 async def manyacg_candidates(client, keyword, mode):
-    """Fetch random artworks only; keywords never filter the image pool."""
-    response = await client.get("/artwork/random", params={"r18": mode, "limit": 10})
+    """Search by tag/theme like the legacy base; use random only without a query."""
+    keyword = keyword.strip()
+    if keyword:
+        response = await client.get(
+            "/artwork/list",
+            params={
+                "r18": mode,
+                "hybrid": app_config.manyacg_hybrid_search,
+                "keyword": keyword,
+                "page_size": 30,
+            },
+        )
+    else:
+        response = await client.get("/artwork/random", params={"r18": mode, "limit": 10})
     if response.status_code != 200:
         return []
     payload = response.json()
@@ -126,24 +95,6 @@ async def manyacg_candidates(client, keyword, mode):
         and image_allowed(item.get("r18"), mode)
         and item.get("pictures")
     ]
-
-
-def image_subject_requested(keyword="", *, request_text=""):
-    """Identify a subject request so tools can ask the model for its own explanation."""
-    request = resolve_image_search(keyword, 2)
-    subject = image_request_keyword(request[0] if request else "", request_text)
-    if not subject or subject.casefold() in {
-        "neko",
-        "waifu",
-        "husbando",
-        "kitsune",
-        "nekos:neko",
-        "nekos:waifu",
-        "nekos:husbando",
-        "nekos:kitsune",
-    }:
-        return False
-    return True
 
 
 def _client() -> httpx.AsyncClient:
@@ -462,9 +413,9 @@ async def fetch_anime_artwork(
             keyword = ""
         providers = ["nekos"]
     else:
-        # Subject requests use the same random pool as an empty request.
-        keyword = ""
-        providers = ["manyacg"] if mode == 1 else ["manyacg", "nekos"]
+        # nekos.best cannot search arbitrary tags. Do not silently replace a
+        # failed tag search with an unrelated random image from another source.
+        providers = ["manyacg"] if keyword or mode == 1 else ["manyacg", "nekos"]
     repeated = False
     attempts = [
         provider

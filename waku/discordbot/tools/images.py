@@ -11,9 +11,10 @@ from pydantic_ai import RunContext
 from waku.logger import logger
 from waku.services.anime_images import (
     NoFreshImageError,
-    image_subject_requested,
+    release_anime_image,
     resolve_image_search,
 )
+from waku.services.telegram_images import image_allowed
 
 from .. import state
 from ..constants import (
@@ -48,7 +49,6 @@ from ..settings import (
     _discord_guild_settings,
 )
 from ..state import _discord_image_lock
-from ..utilities import _channel_name, _guild_name
 
 
 async def send_discord_web_image(
@@ -146,22 +146,25 @@ async def send_discord_anime_photo(
     sent instead of claiming that an image was sent.
 
     Args:
-        keyword: Optional originally requested subject; never used for searching.
-            Images are ALWAYS random; character/subject search is unavailable.
-            For a named character request, still call this tool to send a random
-            image with an explanation YOU write in caption, in the user's language
-            and your conversational style. Never claim it matches the character.
-            The backend never supplies user-facing explanatory text.
+        keyword: Optional tag/theme to search in ManyACG, e.g. "nekomimi" or
+            "cat ears" for tai mèo, "maid" for hầu gái. Empty means random.
+            Use a concise tag rather than the entire user's sentence.
+            Results are randomly selected within the API search results.
+            Exact character identity is not supported: for a named character,
+            use an empty keyword and explain this limitation in your normal chat
+            reply, in the user's language and your own style. Never claim an exact
+            character match. Captions contain artwork metadata only.
+            A delivery_pending result means photos are prepared and will be sent
+            AFTER your final chat reply. Write that reply now; do not call this
+            tool again or claim the upload has already completed.
             Preserve explicit r18/sfw instructions in this argument.
         target_channel_id: Optional target channel ID for immediate cross-channel sends.
             Bot-admin-only when different from the current channel.
         target_user_ids: Discord user IDs to mention in the sent image message.
             Use when the user asks to gift/call/tag someone for the image.
-        caption: Optional agent-written text to include with the image. For gift
-            requests, write a direct sentence addressed to the recipient.
-            Required for a named character/subject request: explain briefly in your
-            own words that this source only supplies random images. Your caption
-            is the reply; do not send a completion sentence after the image.
+        caption: Optional text for a gift or cross-channel recipient, sent as a
+            SEPARATE chat message, never inside the image caption/embed. Leave empty
+            for ordinary current-chat requests and write your normal final reply.
         allow_everyone: Bot-admin-only permission to allow @everyone/@here mentions.
         count: Number of images requested for this turn. The backend caps this to
             a safe batch size and spaces each send to avoid Discord limits.
@@ -216,10 +219,10 @@ async def send_discord_anime_photo(
             success=False,
             message="Image caption including mentions exceeds Discord's 2000-character limit.",
         )
-    if len(embed_caption) > 4096:
+    if len(embed_caption) > 2000:
         return DiscordAnimePhotoResult(
             success=False,
-            message="Image caption exceeds Discord's 4096-character embed limit.",
+            message="The separate image-related chat message exceeds Discord's 2000-character limit.",
         )
 
     r18_mode = settings.r18_mode if message.guild is not None else 0
@@ -232,15 +235,6 @@ async def send_discord_anime_photo(
             message="The requested Safe/R18 rating is not permitted by this conversation's image mode.",
         )
     keyword, r18_mode = request
-    if image_subject_requested(keyword, request_text=getattr(message, "content", "") or "") and not caption_text:
-        return DiscordAnimePhotoResult(success=False, message=(
-            "random_only=true; character_search_supported=false; nothing_sent=true. "
-            "Call this tool again with caption containing a brief explanation in your "
-            "own words and the user's language that the photo will be random, not "
-            "selected by character. Do not copy this internal tool status to the user."
-        ))
-    if not keyword.lower().startswith(("nekos:", "nekos.best:")):
-        keyword = ""
 
     requested_count = max(1, int(count or 1))
     capped_count = min(requested_count, _DISCORD_IMAGE_BATCH_MAX)
@@ -265,113 +259,125 @@ async def send_discord_anime_photo(
             wait_seconds=_DISCORD_IMAGE_BUSY_WAIT_SECONDS,
         )
 
-    sent_count = 0
-    last_info: DiscordAnimePhotoInfo | None = None
-    async with image_lock:
-        for index in range(capped_count):
-            logger.info(
-                "discord_image_request_start "
-                f"guild={_guild_name(message)!r} channel={_channel_name(message)!r} "
-                f"target_channel={target_channel_actual_id} user={message.author.id} "
-                f"keyword={keyword!r} index={index + 1}/{capped_count}"
-            )
+    prepared = []
+    deferred = False
+    scope = f"discord:{target_channel_actual_id}"
+
+    async def cleanup():
+        for artwork, picture in prepared:
+            await release_anime_image(scope, artwork, picture)
+
+    async def deliver():
+        current = await _discord_guild_settings(message.guild) if message.guild is not None else await _discord_dm_settings(message.author)
+        mode = current.r18_mode if message.guild is not None else 0
+        if not current.setu_enabled or any(not image_allowed(artwork.r18, mode) for artwork, _ in prepared):
+            return DiscordAnimePhotoResult(success=False, message="Image settings changed before delivery; the prepared images are no longer permitted.")
+        sent_count = 0
+        last_info = None
+        async with image_lock:
+            for index, (artwork, picture) in enumerate(prepared):
+                try:
+                    if message_content or embed_caption:
+                        ctx.deps.side_effects_started = True
+                    sent = await _send_discord_anime_photo_card(
+                        message,
+                        artwork,
+                        picture,
+                        channel=target_channel,
+                        content=message_content,
+                        caption=embed_caption,
+                        allowed_mentions=_discord_allowed_mentions(allow_everyone),
+                        reference=message if target_channel_actual_id == message.channel.id and index == 0 else None,
+                    )
+                except discord.HTTPException as e:
+                    logger.warning(f"Discord anime image upload failed: {e}")
+                    sent = False
+                if not sent:
+                    logger.warning(
+                        "discord_image_send_failed "
+                        f"user={message.author.id} channel={target_channel_actual_id} "
+                        f"title={artwork.title!r} index={index + 1}/{capped_count}"
+                    )
+                    if sent_count == 0:
+                        return DiscordAnimePhotoResult(
+                            success=False,
+                            message="Failed to upload the anime artwork to Discord.",
+                            sent_count=sent_count,
+                            requested_count=requested_count,
+                            capped_count=capped_count,
+                        )
+                    break
+                ctx.deps.side_effects_started = True
+                sent_count += 1
+                last_info = _anime_photo_info(artwork)
+                if index < len(prepared) - 1:
+                    await asyncio.sleep(_DISCORD_IMAGE_SEND_DELAY_SECONDS)
+        return DiscordAnimePhotoResult(
+            success=sent_count > 0,
+            data=last_info,
+            sent_count=sent_count,
+            requested_count=requested_count,
+            capped_count=capped_count,
+        )
+
+    try:
+        for _ in range(capped_count):
             try:
                 fetched = await _fetch_discord_anime_artwork(
-                    keyword.strip(), r18_mode=r18_mode, scope=f"discord:{target_channel_actual_id}"
+                    keyword.strip(), r18_mode=r18_mode, scope=scope
                 )
             except NoFreshImageError:
-                if sent_count:
+                if prepared:
                     break
                 return DiscordAnimePhotoResult(success=False, message=(
                     "The available images duplicate the last image or images currently being sent. "
-                    "Try again later; character search is not supported."
+                    "Try a different tag or try again later."
                 ))
             if fetched is None:
-                logger.warning(
-                    "discord_image_fetch_failed "
-                    f"user={message.author.id} channel={target_channel_actual_id} keyword={keyword!r} "
-                    f"index={index + 1}/{capped_count}"
-                )
-                if sent_count == 0:
-                    return DiscordAnimePhotoResult(
-                        success=False,
-                        message="Failed to fetch a random anime image from the available sources.",
-                        sent_count=sent_count,
-                        requested_count=requested_count,
-                        capped_count=capped_count,
-                    )
                 break
-            artwork, picture = fetched
-            logger.info(
-                "discord_image_fetch_success "
-                f"user={message.author.id} channel={target_channel_actual_id} "
-                f"title={artwork.title!r} index={index + 1}/{capped_count}"
+            prepared.append(fetched)
+        if not prepared:
+            return DiscordAnimePhotoResult(
+                success=False,
+                message="No anime image was found for this query, or the image source is unavailable. Do not claim an image was sent.",
+                requested_count=requested_count,
+                capped_count=capped_count,
             )
-            try:
-                sent = await _send_discord_anime_photo_card(
-                    message,
-                    artwork,
-                    picture,
-                    channel=target_channel,
-                    content=message_content,
-                    caption=embed_caption,
-                    allowed_mentions=_discord_allowed_mentions(allow_everyone),
-                    reference=message if target_channel_actual_id == message.channel.id and index == 0 else None,
-                )
-            except discord.HTTPException as e:
-                logger.warning(f"Discord anime image upload failed: {e}")
-                sent = False
-            if not sent:
-                logger.warning(
-                    "discord_image_send_failed "
-                    f"user={message.author.id} channel={target_channel_actual_id} "
-                    f"title={artwork.title!r} index={index + 1}/{capped_count}"
-                )
-                if sent_count == 0:
-                    return DiscordAnimePhotoResult(
-                        success=False,
-                        message="Failed to upload the anime artwork to Discord.",
-                        sent_count=sent_count,
-                        requested_count=requested_count,
-                        capped_count=capped_count,
-                    )
-                break
-            ctx.deps.side_effects_started = True
-            ctx.deps.image_delivered = True
-            sent_count += 1
-            artist = None
-            if artwork.artist is not None:
-                artist = DiscordArtistInfo(
-                    name=artwork.artist.name,
-                    type=artwork.artist.type,
-                    username=artwork.artist.username,
-                    uid=artwork.artist.uid,
-                )
-            last_info = DiscordAnimePhotoInfo(
-                title=artwork.title,
-                source_url=artwork.source_url,
-                r18=artwork.r18,
-                description=artwork.description[:512],
-                artist=artist,
-                tags=artwork.tags[:10],
+        logger.info(
+            "discord_image_batch_prepared user={} channel={} count={} requested={}",
+            message.author.id, target_channel_actual_id, len(prepared), requested_count,
+        )
+        queue = getattr(ctx.deps, "deferred_images", None)
+        if queue is not None:
+            queue.add(deliver, cleanup)
+            deferred = True
+            return DiscordAnimePhotoResult(
+                delivery_pending=True,
+                prepared_count=len(prepared),
+                data=_anime_photo_info(prepared[0][0]),
+                requested_count=requested_count,
+                capped_count=capped_count,
             )
-            if index < capped_count - 1:
-                await asyncio.sleep(_DISCORD_IMAGE_SEND_DELAY_SECONDS)
-    logger.info(
-        "discord_image_batch_done "
-        f"user={message.author.id} channel={target_channel_actual_id} "
-        f"sent={sent_count} requested={requested_count} capped={capped_count}"
-    )
-    result_message = None
-    if requested_count > capped_count:
-        result_message = f"Sent {sent_count}/{requested_count} requested images. For Discord safety, Waku can only send up to {capped_count} images per batch; ask again if you want more."
-    elif sent_count > 1:
-        result_message = f"Sent {sent_count} images safely with a short delay between each one."
-    return DiscordAnimePhotoResult(
-        success=sent_count > 0,
-        message=result_message,
-        data=last_info,
-        sent_count=sent_count,
-        requested_count=requested_count,
-        capped_count=capped_count,
+        return await deliver()
+    finally:
+        if not deferred:
+            await cleanup()
+
+
+def _anime_photo_info(artwork):
+    artist = None
+    if artwork.artist is not None:
+        artist = DiscordArtistInfo(
+            name=artwork.artist.name,
+            type=artwork.artist.type,
+            username=artwork.artist.username,
+            uid=artwork.artist.uid,
+        )
+    return DiscordAnimePhotoInfo(
+        title=artwork.title,
+        source_url=artwork.source_url,
+        r18=artwork.r18,
+        description=artwork.description[:512],
+        artist=artist,
+        tags=artwork.tags[:10],
     )

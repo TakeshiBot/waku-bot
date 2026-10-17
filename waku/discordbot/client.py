@@ -96,8 +96,8 @@ def _create_client() -> discord.Client:
     register_discord_commands(command_tree)
     slash_commands_synced = False
 
-    @command_tree.command(name="seg", description="Gửi ảnh anime/Pixiv ngẫu nhiên")
-    @app_commands.describe(keyword="Tuỳ chọn r18/sfw; chỉ lấy ảnh ngẫu nhiên, không tìm nhân vật")
+    @command_tree.command(name="seg", description="Gửi ảnh anime/Pixiv theo tag hoặc ngẫu nhiên")
+    @app_commands.describe(keyword="Tag/chủ đề, ví dụ tai mèo, maid; bỏ trống để random. Có thể thêm r18/sfw")
     async def seg(interaction: discord.Interaction, keyword: str | None = None) -> None:
         await _send_discord_seg_interaction(interaction, keyword)
 

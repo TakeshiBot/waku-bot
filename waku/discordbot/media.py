@@ -272,9 +272,18 @@ async def _send_discord_anime_photo_card(
         source_type=artwork.source_type,
     )
     caption_text = (caption or "").strip()
-    if caption_text:
-        embed.description = caption_text[:4096]
     try:
+        # Agent prose belongs to a normal message; only artwork metadata is in the card.
+        text = "\n\n".join(part for part in (content, caption_text) if part)
+        if text:
+            from .messages import _split_reply
+
+            destination = channel if channel is not None else message.channel
+            for index, part in enumerate(_split_reply(text)):
+                await destination.send(
+                    part, allowed_mentions=allowed_mentions or discord.AllowedMentions.none(),
+                    reference=reference if index == 0 else None, mention_author=False,
+                )
         success = await _send_discord_image_embed(
             message,
             embed,
@@ -282,7 +291,7 @@ async def _send_discord_anime_photo_card(
             _discord_artwork_view(artwork.source_url, original_url),
             spoiler=artwork.r18,
             channel=channel,
-            content=content,
+            content=None,
             allowed_mentions=allowed_mentions,
             reference=reference,
         )

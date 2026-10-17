@@ -549,10 +549,13 @@ async def schedule_discord_image_action(
         schedule_time: ISO 8601 first send time.
         image_kind: "anime" for the default anime/API image, or "web" only when
             the user explicitly asks for web/internet image search.
-        query: Optional original image subject. Anime images are random only;
-            character search is unavailable. For a named subject, write the short
-            random-only explanation yourself in caption; never claim a match.
-        caption: Optional text/caption to include in the scheduled image embed.
+        query: Optional anime tag/theme, e.g. "nekomimi" or "maid"; empty means
+            random. Exact character identity is not supported: for a named
+            character use an empty query and explain the limitation in your own
+            words in caption, without claiming a match. For web images, use the
+            user's search query.
+        caption: Optional message sent separately from the anime image; artwork
+            captions contain only source metadata.
         repeat_every_seconds: Bot-admin-only repeat interval in seconds.
         repeat_until: Bot-admin-only ISO 8601 end time for recurring schedules.
         target_channel_id: Bot-admin-only target channel ID for cross-channel sends.

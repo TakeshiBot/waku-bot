@@ -22,13 +22,22 @@ Với ảnh ngẫu nhiên ở chế độ **An Toàn** hoặc **Cả Hai**, bot 
 như base cũ; khi nguồn này lỗi có thể thử nekos.best. **Chỉ R18** dùng ManyACG,
 không lấy ảnh SFW từ nekos.best để thay thế yêu cầu R18.
 
-Bot chỉ lấy ảnh **ngẫu nhiên**, không tìm theo nhân vật/tag và không tra AniList.
-Khi chat AI có yêu cầu nhân vật cụ thể, AI tự viết caption giải thích giới hạn
-rồi gửi ảnh random. Hệ thống chỉ cung cấp trạng thái nội bộ cho AI, không chèn
-câu giải thích mẫu vào tin nhắn hoặc caption. Nếu AI chưa viết caption, công cụ
-yêu cầu AI bổ sung trước khi gửi ảnh. Áp dụng cho Telegram và Discord; caption
-ảnh Discord lên lịch cũng do AI viết khi tạo lịch. Lệnh `/seg` trực tiếp chỉ gửi
-ảnh random và thông tin nguồn. Chế độ An toàn/R18 vẫn được giữ.
+Bot tìm theo **tag/chủ đề** qua `/artwork/list` với chế độ hybrid như base cũ,
+rồi chọn ngẫu nhiên trong tập kết quả; bỏ trống từ khóa mới lấy ảnh random hoàn toàn.
+Ví dụ `tai mèo`, `nekomimi`, `cat ears` hoặc `maid`. Nếu tìm tag không ra ảnh,
+bot không tự thay bằng ảnh random không liên quan từ nekos.best.
+Không xác minh danh tính nhân vật và không tra AniList. Khi chat AI yêu cầu một
+nhân vật cụ thể, AI dùng ảnh random và tự giải thích giới hạn trong chat bình thường,
+tách riêng khỏi ảnh. Caption ảnh chỉ có thông tin tác phẩm và nguồn; hệ thống
+không chèn lời giải thích mẫu. Telegram và Discord đều dùng luồng này.
+
+Trong chat AI, bot tìm và giữ ảnh trước, gửi xong lời chat AI rồi mới gửi ảnh.
+Nếu lượt AI bị lỗi hoặc bị hủy trước khi gửi chat, ảnh chờ gửi sẽ được bỏ và giải
+phóng để lần sau có thể lấy lại. Lệnh `/seg` trực tiếp vẫn gửi ảnh ngay.
+
+Lời nhắn tặng ảnh/các ảnh Discord lên lịch cũng gửi thành chat riêng. Lệnh `/seg`
+trực tiếp cũng hỗ trợ từ khóa/tag và chỉ gửi ảnh cùng thông tin nguồn. Tìm theo tên
+không đảm bảo đúng danh tính nhân vật. Chế độ An toàn/R18 vẫn được giữ.
 Có thể chọn nguồn nekos.best trực tiếp:
 
 ```text
@@ -36,6 +45,9 @@ Có thể chọn nguồn nekos.best trực tiếp:
 /seg nekos:waifu
 /seg nekos:husbando
 /seg nekos:kitsune
+/seg tai mèo
+/seg nekomimi sfw
+/seg maid
 /seg
 /seg r18
 /seg sfw
@@ -64,8 +76,7 @@ Redis và được giữ qua lần khởi động lại khi có Redis.
 
 Nếu chỉ có ảnh vừa gửi hoặc ảnh đang chờ gửi, bot báo chưa có ảnh khác thay vì gửi
 trùng ngay. Mỗi lần tìm đều hỏi API lại, không khóa tập kết quả trong cache 5 phút.
-Tên nhân vật trong yêu cầu chỉ giúp AI biết cần giải thích; không được gửi
-tới API để lọc ảnh. Bot không khẳng định ảnh random là đúng nhân vật yêu cầu.
+Bot không khẳng định ảnh random hoặc kết quả tìm từ khóa là đúng nhân vật yêu cầu.
 
 ## Xin ảnh và tạo ảnh AI
 

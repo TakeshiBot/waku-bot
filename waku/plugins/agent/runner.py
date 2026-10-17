@@ -42,6 +42,7 @@ from waku.plugins.agent.prompt import (
 )
 from waku.plugins.agent.recovery import reply_agent_status
 from waku.plugins.agent.whitelist import is_chat_allowed
+from waku.services.deferred_delivery import DeferredDelivery
 
 
 async def get_chat_model_override(chat_id: int, role: str = "main") -> str | None:
@@ -358,6 +359,9 @@ async def _run_agent_impl(
             ctx, "streaming_output", None
         )
         previous_image_progress = getattr(deps, "publish_image_progress", None)
+        previous_deferred_images = getattr(deps, "deferred_images", None)
+        deferred_images = DeferredDelivery()
+        deps.deferred_images = deferred_images
 
         async def publish_image_progress(text: str) -> bool:
             nonlocal streaming_output
@@ -501,6 +505,7 @@ async def _run_agent_impl(
                                         record_sent_text(deps, output, markdown=True)
                         # Settle before fallible cleanup so a sent answer is still billed if cleanup fails.
                         await quota.settle(subject, agent_run.usage)
+                        await deferred_images.flush()
                         trace.mark_trace(
                             session,
                             usage=agent_run.usage,
@@ -619,6 +624,7 @@ async def _run_agent_impl(
                             full_output_parts.append(output)
                     # Settle before cleanup; cleanup failure must not make the call free.
                     await quota.settle(subject, agent_run.usage)
+                    await deferred_images.flush()
                     trace.mark_trace(
                         session,
                         usage=agent_run.usage,
@@ -656,6 +662,8 @@ async def _run_agent_impl(
                         await advance_prompt_coverage(chat_id, user_id, coverage_meta)
                     log_run_cache_stats(use_model.model_name, agent_run.usage)
         finally:
+            await deferred_images.discard()
+            deps.deferred_images = previous_deferred_images
             deps.publish_image_progress = previous_image_progress
             if ctx is not None and ctx_owned:
                 await ctx.__aexit__(None, None, None)
