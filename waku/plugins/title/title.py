@@ -123,16 +123,15 @@ def _markup(session):
         ).build()
     if session.page == "language":
         names = {"vi": "Tiếng Việt", "en": "English", "zh-CN": "Chinese (Simplified)"}
-        rows = [
-            [
-                button(
-                    ("✅ " if locale == session.lang else "")
-                    + names.get(locale, locale),
-                    f"lang_{locale}",
-                )
-            ]
+        buttons = [
+            button(
+                ("✅ " if locale == session.lang else "")
+                + names.get(locale, locale),
+                f"lang_{locale}",
+            )
             for locale in i18n.i18n.get_available_locales()
         ]
+        rows = [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
     else:
         rows = [
             [
