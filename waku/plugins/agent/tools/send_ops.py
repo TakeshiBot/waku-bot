@@ -1,6 +1,5 @@
 import datetime
 import html
-import random
 from dataclasses import dataclass
 from hashlib import md5
 from typing import Literal
@@ -18,11 +17,15 @@ from waku.logger import logger
 from waku.plugins.agent.localization import tr
 from waku.plugins.agent.output import record_tool_reply, text_already_sent
 from waku.plugins.manyacg import manyacg
+from waku.services.anime_characters import AmbiguousCharacterError
 from waku.services.anime_images import (
+    NoFreshImageError,
+    conversation_image_keyword,
     fetch_anime_artwork,
+    manyacg_candidates,
     original_image_url,
+    remember_anime_image,
     resolve_image_search,
-    search_manyacg_artworks,
 )
 from waku.services.telegram_images import image_allowed, telegram_image_settings
 from waku.timezone import BOT_TIMEZONE
@@ -453,40 +456,13 @@ class AnimePhotoResult:
 
 async def _fetch_manyacg_anime_artwork(
     keyword: str = "", r18_mode: int = 0
-) -> tuple[dict, dict] | None:
-    try:
-        if keyword:
-            artworks = await search_manyacg_artworks(
-                manyacg.httpx_client, keyword, r18_mode
-            )
-        else:
-            resp = await manyacg.httpx_client.get(
-                url="/artwork/random",
-                params={"r18": r18_mode},
-            )
-            if resp.status_code != 200:
-                logger.error(f"Anime API returned {resp.status_code}")
-                return None
-            artworks = [
-                artwork
-                for artwork in resp.json()["data"]
-                if image_allowed(artwork.get("r18"), r18_mode) and artwork.get("pictures")
-            ]
-        if not artworks:
-            return None
-        artwork: dict = random.choice(artworks)
-        picture: dict = artwork["pictures"][
-            random.randint(0, len(artwork["pictures"]) - 1)
-        ]
-        return artwork, picture
-    except Exception as e:
-        logger.error(f"Fetch anime artwork error: {e.__class__.__name__}:{e}")
-        return None
+):
+    return await manyacg_candidates(manyacg.httpx_client, keyword, r18_mode)
 
 
-async def _fetch_anime_artwork(keyword: str = "", r18_mode: int = 0):
+async def _fetch_anime_artwork(keyword: str = "", r18_mode: int = 0, *, scope=None):
     return await fetch_anime_artwork(
-        keyword, r18_mode, _fetch_manyacg_anime_artwork, as_dict=True
+        keyword, r18_mode, _fetch_manyacg_anime_artwork, as_dict=True, scope=scope
     )
 
 
@@ -514,6 +490,10 @@ async def send_anime_photo(
     enabled, image_mode = await telegram_image_settings(ctx.deps.chat_id)
     if not enabled:
         return AnimePhotoResult(success=False, message=tr("anime_chat_disabled"))
+    keyword = await conversation_image_keyword(
+        keyword, f"telegram:{ctx.deps.chat_id}:{ctx.deps.user_id}",
+        message_plain_text(ctx.deps.message),
+    )
     request = resolve_image_search(
         keyword, image_mode,
         request_text=message_plain_text(ctx.deps.message),
@@ -534,7 +514,25 @@ async def send_anime_photo(
         count = max(1, min(10, count))
         fetched = []
         for _ in range(count):
-            item = await _fetch_anime_artwork(keyword, r18_mode=image_mode)
+            try:
+                item = await _fetch_anime_artwork(
+                    keyword, r18_mode=image_mode, scope=f"telegram:{ctx.deps.chat_id}"
+                )
+            except AmbiguousCharacterError as error:
+                if fetched:
+                    break
+                return AnimePhotoResult(success=False, message=(
+                    f"The name is ambiguous: {error}. Ask the user for the full character name. "
+                    "Do not choose a different character or retry with empty/random keywords."
+                ))
+            except NoFreshImageError:
+                if fetched:
+                    break
+                return AnimePhotoResult(success=False, message=(
+                    "All verified matching artworks were already sent recently in this chat. "
+                    "Ask for a more specific character/series or another character. "
+                    "Do not retry with an empty keyword or random images."
+                ))
             if item is None:
                 break
             if not image_allowed(item[0].get("r18"), image_mode):
@@ -545,7 +543,12 @@ async def send_anime_photo(
 
         if len(fetched) == 1:
             artwork, picture = fetched[0]
-            return await _send_anime_photo_single(ctx, artwork, picture)
+            result = await _send_anime_photo_single(ctx, artwork, picture)
+            if result.success:
+                ctx.deps.image_delivered = True
+                ctx.deps.side_effects_started = True
+                await remember_anime_image(f"telegram:{ctx.deps.chat_id}", artwork, picture)
+            return result
 
         media: list[
             pyrogram.types.InputMediaPhoto
@@ -572,6 +575,10 @@ async def send_anime_photo(
                 message_id=ctx.deps.message.id,
             ),
         )
+        ctx.deps.image_delivered = True
+        ctx.deps.side_effects_started = True
+        for artwork, picture in fetched:
+            await remember_anime_image(f"telegram:{ctx.deps.chat_id}", artwork, picture)
         first_artwork, _ = fetched[0]
         return AnimePhotoResult(
             success=True,

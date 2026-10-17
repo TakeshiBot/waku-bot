@@ -22,8 +22,11 @@ Với ảnh ngẫu nhiên ở chế độ **An Toàn** hoặc **Cả Hai**, bot 
 hai nguồn. Khi một nguồn lỗi, thử nguồn còn lại. **Chỉ R18** dùng ManyACG,
 không lấy ảnh SFW từ nekos.best để thay thế yêu cầu R18.
 
-Tìm tên nhân vật/tag dùng ManyACG: ưu tiên tìm từ khóa, chỉ lấy kết quả có tên/tag
-khớp yêu cầu. Tìm ngữ nghĩa chỉ là bước bổ sung và vẫn phải qua bộ lọc này.
+Tìm tên nhân vật/tag dùng ManyACG. Bot tra tên đầy đủ và tên bản địa qua AniList
+(không cần key), rồi tìm riêng từng tên và đọc thêm các trang kết quả. Khi xác định
+được nhân vật, tên ngắn trùng với nhân vật khác không đủ để chấp nhận ảnh. Tag tên
+bản địa rút gọn chỉ được dùng thêm khi xuất hiện trên tác phẩm đã đối chiếu đúng tên.
+Tìm ngữ nghĩa chỉ là bước bổ sung và vẫn phải qua bộ lọc tên/tag.
 Không đổi sang ảnh ngẫu nhiên hoặc nhân vật khác khi không tìm thấy. nekos.best
 không có chỉ mục tag nhân vật, nên chỉ dùng cho ảnh ngẫu nhiên/category hoặc
 khi chọn nguồn này trực tiếp:
@@ -49,8 +52,23 @@ Telegram/Discord vẫn áp dụng cho cả hai nguồn.
 `sfw`/`an toàn` chọn ảnh an toàn. Các dấu này không được gửi như tên nhân vật.
 Yêu cầu R18 bị từ chối khi đang ở **An Toàn**, và yêu cầu SFW bị từ chối khi
 đang ở **Chỉ R18**. Không nới chế độ của nhóm để đáp ứng một yêu cầu riêng.
-Tên ngắn có thể trùng nhiều nhân vật; thêm họ hoặc tên bộ anime để thu hẹp.
+Tên ngắn có thể trùng nhiều nhân vật. Khi kết quả tra tên không có nhân vật nổi trội,
+bot yêu cầu tên đầy đủ thay vì trộn ảnh của các nhân vật cùng tên.
 Việc đối chiếu dựa trên metadata của API, không phải nhận diện nhân vật bằng ảnh.
+
+## Tránh gửi lại ảnh
+
+Lệnh và AI dùng chung lịch sử theo từng chat/kênh, kiểm tra ID tác phẩm, link nguồn,
+ID ảnh, URL và hash ảnh. Một tác phẩm nhiều trang cũng chỉ được chọn một lần; album
+và các yêu cầu đồng thời không chọn trùng tác phẩm. Bot giữ tối đa 512 dấu nhận diện
+gần nhất, hết hạn sau 7 ngày không cập nhật. Lịch sử nằm trong bộ nhớ khi không dùng
+Redis và được giữ qua lần khởi động lại khi có Redis.
+
+Nếu đã gửi hết kết quả khớp đang tìm được, bot báo hết ảnh mới thay vì gửi lặp hoặc
+đổi nhân vật. Kết quả tìm được lưu tạm 5 phút để tránh gọi API lại cho từng ảnh.
+AI nhớ yêu cầu ảnh gần nhất của từng người trong chat trong 30 phút: câu tiếp nối
+như “lấy nhanh”, “thử lại” giữ tên nhân vật, kể cả lượt tìm trước thất bại. Yêu cầu
+ngẫu nhiên rõ ràng hoặc dùng `/seg` không kèm tên sẽ bỏ tên đã nhớ.
 
 ## Xin ảnh và tạo ảnh AI
 

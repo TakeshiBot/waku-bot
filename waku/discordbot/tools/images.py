@@ -9,7 +9,12 @@ import discord
 from pydantic_ai import RunContext
 
 from waku.logger import logger
-from waku.services.anime_images import resolve_image_search
+from waku.services.anime_characters import AmbiguousCharacterError
+from waku.services.anime_images import (
+    NoFreshImageError,
+    conversation_image_keyword,
+    resolve_image_search,
+)
 
 from .. import state
 from ..constants import (
@@ -213,6 +218,10 @@ async def send_discord_anime_photo(
         )
 
     r18_mode = settings.r18_mode if message.guild is not None else 0
+    keyword = await conversation_image_keyword(
+        keyword, f"discord:{target_channel_actual_id}:{message.author.id}",
+        getattr(message, "content", "") or "",
+    )
     request = resolve_image_search(
         keyword, r18_mode, request_text=getattr(message, "content", "") or ""
     )
@@ -256,7 +265,25 @@ async def send_discord_anime_photo(
                 f"target_channel={target_channel_actual_id} user={message.author.id} "
                 f"keyword={keyword!r} index={index + 1}/{capped_count}"
             )
-            fetched = await _fetch_discord_anime_artwork(keyword.strip(), r18_mode=r18_mode)
+            try:
+                fetched = await _fetch_discord_anime_artwork(
+                    keyword.strip(), r18_mode=r18_mode, scope=f"discord:{target_channel_actual_id}"
+                )
+            except AmbiguousCharacterError as error:
+                if sent_count:
+                    break
+                return DiscordAnimePhotoResult(success=False, message=(
+                    f"The name is ambiguous: {error}. Ask the user for the full character name. "
+                    "Do not choose a different character or retry with empty/random keywords."
+                ))
+            except NoFreshImageError:
+                if sent_count:
+                    break
+                return DiscordAnimePhotoResult(success=False, message=(
+                    "All verified matching artworks were already sent recently in this chat. "
+                    "Ask for a more specific character/series or another character. "
+                    "Do not retry with an empty keyword or random images."
+                ))
             if fetched is None:
                 logger.warning(
                     "discord_image_fetch_failed "

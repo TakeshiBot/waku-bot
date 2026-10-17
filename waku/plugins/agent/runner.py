@@ -440,7 +440,7 @@ async def _run_agent_impl(
                                 )
                                 has_image_call = any(
                                     part.part_kind == "tool-call"
-                                    and getattr(part, "tool_name", None) == "image_ops"
+                                    and getattr(part, "tool_name", None) in {"image_ops", "send_anime_photo"}
                                     for part in node.model_response.parts
                                 )
                                 if has_image_call and streaming_output is not None:
@@ -571,7 +571,7 @@ async def _run_agent_impl(
                             for part in node.model_response.parts:
                                 if any(
                                     item.part_kind == "tool-call"
-                                    and getattr(item, "tool_name", None) == "image_ops"
+                                    and getattr(item, "tool_name", None) in {"image_ops", "send_anime_photo"}
                                     for item in node.model_response.parts
                                 ):
                                     # image_ops publishes its own AI-authored

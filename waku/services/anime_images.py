@@ -14,8 +14,14 @@ from urllib.parse import urlsplit
 import httpx
 
 from waku.common.http import _clients
+from waku.common.memory_store import memttlcache
 from waku.config import app_config
 from waku.logger import logger
+from waku.services.anime_characters import (
+    AmbiguousCharacterError,
+    matches_name,
+    resolve_character,
+)
 from waku.services.image_requests import contains_r18_request
 from waku.services.manyacg import Artist, Artwork, Picture
 from waku.services.telegram_images import image_allowed, normalize_image_mode
@@ -28,6 +34,67 @@ _catalog_lock = asyncio.Lock()
 _search_lock = asyncio.Lock()
 _next_search = 0.0
 _blocked_until = 0.0
+_pools: dict[tuple[str, int], tuple[float, list[dict]]] = {}
+_selection_lock = asyncio.Lock()
+_HISTORY_TTL = 7 * 24 * 3600
+
+
+class NoFreshImageError(Exception):
+    """Matching results exist, but their artwork/content has already been selected here."""
+
+
+async def conversation_image_keyword(keyword, scope, request_text=""):
+    """Keep a failed named request for follow-ups instead of silently switching to random."""
+    key = "anime-query:" + scope
+    keyword = (keyword or "").strip()
+    random_request = re.search(
+        r"\b(?:random|ngẫu nhiên|ngau nhien|bất kỳ|bat ky|anything)\b",
+        request_text,
+        re.I,
+    )
+    if random_request and keyword.casefold() in {
+        "random",
+        "ngẫu nhiên",
+        "ngau nhien",
+        "bất kỳ",
+        "bat ky",
+    }:
+        keyword = ""
+    if random_request and not keyword:
+        await memttlcache.delete(key)
+        return ""
+    previous = await memttlcache.get(key, "")
+    if not isinstance(previous, str):
+        previous = ""
+    normalized = resolve_image_search(keyword, 2)
+    if previous and keyword and normalized and not normalized[0] and not random_request:
+        # "R18 instead" refers to the same character, not random R18 art.
+        keyword = previous + " " + keyword
+    follow_up = re.search(
+        r"\b(?:lấy nhanh|lay nhanh|gửi tiếp|gui tiep|lấy tiếp|lay tiep|thử lại|thu lai|ảnh khác|anh khac|retry|again)\b",
+        request_text,
+        re.I,
+    )
+    if (
+        previous
+        and not random_request
+        and (
+            not keyword
+            or (
+                follow_up
+                and not artwork_matches_keyword({"title": request_text}, keyword)
+            )
+        )
+    ):
+        keyword = previous
+    if keyword:
+        normalized = resolve_image_search(keyword, 2)
+        if normalized and normalized[0]:
+            # Rating is selected anew for each request; only remember the character/tag.
+            await memttlcache.set(key, normalized[0], ttl=1800)
+    return keyword
+
+
 _RATING_MARKER = re.compile(r"\b(?:r[ -]?18|nsfw|sfw)\b|18\+|🔞", re.IGNORECASE)
 _SAFE_MARKER = re.compile(r"\bsfw\b|\ban toàn\b|\ban toan\b", re.IGNORECASE)
 _SAFE_NEGATION = re.compile(
@@ -41,7 +108,9 @@ def resolve_image_search(keyword, mode, *, request_text=""):
     mode = normalize_image_mode(mode)
     keyword = unicodedata.normalize("NFC", keyword or "").strip()
     keyword = re.sub(r"\br[ -]18\b", "r18", keyword, flags=re.IGNORECASE)
-    rating_text = re.sub(r"\br[ -]18\b", "r18", request_text or keyword, flags=re.IGNORECASE)
+    rating_text = re.sub(
+        r"\br[ -]18\b", "r18", request_text or keyword, flags=re.IGNORECASE
+    )
     adult = contains_r18_request(rating_text) or contains_r18_request(keyword)
     safe = any(
         _SAFE_MARKER.search(text) or _SAFE_NEGATION.search(text)
@@ -81,35 +150,125 @@ def artwork_matches_keyword(artwork, keyword):
 
 
 async def search_manyacg_artworks(client, keyword, mode):
-    """Prefer literal matches, then validate candidates from semantic search."""
+    """Resolve full/native names, collect pages, then validate every result's metadata."""
     keyword = keyword.replace("_", " ").strip()
-    # The API limits keywords to 50 characters. Never silently drop constraints.
-    if not keyword or len(keyword) > 50:
+    if not keyword or len(keyword) > 100:
         return []
-    variants = [False, True] if app_config.manyacg_hybrid_search else [False]
-    for hybrid in variants:
-        response = await client.get(
-            "/artwork/list",
-            params={"keyword": keyword, "r18": mode, "hybrid": hybrid, "page_size": 30},
+    cache_key = (keyword.casefold(), mode)
+    cached = _pools.get(cache_key)
+    if cached and cached[0] > time.monotonic():
+        return cached[1]
+    character = await resolve_character(keyword)
+    aliases = list(character.aliases) if character else []
+    queries = [keyword]
+    if character:
+        queries.extend(
+            filter(
+                None,
+                (
+                    character.native,
+                    character.full.replace(" ", "_"),
+                    "_".join(reversed(character.full.split())),
+                ),
+            )
         )
-        if response.status_code != 200:
-            continue
-        payload = response.json()
-        if not isinstance(payload, dict) or payload.get("status", 200) != 200:
-            continue
-        items = payload.get("data")
-        if not isinstance(items, list):
-            continue
-        candidates = [
-            item for item in items
-            if isinstance(item, dict)
-            and image_allowed(item.get("r18"), mode)
-            and item.get("pictures")
-            and artwork_matches_keyword(item, keyword)
-        ]
-        if candidates:
-            return candidates
-    return []
+    candidates, identities = [], set()
+
+    def matches(item):
+        if character:
+            fields = [item.get("title", ""), *(item.get("tags") or [])]
+            return any(
+                matches_name(str(field), alias) for field in fields for alias in aliases
+            )
+        return artwork_matches_keyword(item, keyword)
+
+    async def collect(query, hybrid=False):
+        page_ids = set()
+        for page in range(1, 5):
+            params = {"keyword": query, "r18": mode, "hybrid": hybrid, "page_size": 50}
+            if page > 1:
+                params["page"] = page
+            try:
+                response = await client.get("/artwork/list", params=params)
+                payload = response.json() if response.status_code == 200 else None
+            except (httpx.HTTPError, ValueError) as error:
+                logger.debug("Anime search alias failed: {}", type(error).__name__)
+                break
+            if response.status_code != 200:
+                break
+            if not isinstance(payload, dict) or payload.get("status", 200) != 200:
+                break
+            items = payload.get("data")
+            if not isinstance(items, list):
+                break
+            new = 0
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                identity = item.get("id") or item.get("source_url") or repr(item)
+                if identity in page_ids:
+                    continue
+                page_ids.add(identity)
+                new += 1
+                if (
+                    identity not in identities
+                    and image_allowed(item.get("r18"), mode)
+                    and item.get("pictures")
+                    and matches(item)
+                ):
+                    identities.add(identity)
+                    candidates.append(item)
+            if len(items) < 50 or not new or len(candidates) >= 200:
+                break
+
+    # Public API deployments differ in operator support. Query aliases separately.
+    for query in dict.fromkeys(queries):
+        await collect(query)
+        if len(candidates) >= 200:
+            break
+    if character:
+        related = list(
+            dict.fromkeys(
+                tag
+                for item in candidates
+                for tag in character.related_tags(item)
+                if tag not in aliases
+            )
+        )[:4]
+        if related:
+            aliases.extend(related)
+            for tag in related:
+                await collect(tag)
+    if not candidates and app_config.manyacg_hybrid_search:
+        await collect(keyword, hybrid=True)
+    logger.debug(
+        "Anime search: query={!r}, character={!r}, matching_artworks={}",
+        keyword,
+        character.full if character else None,
+        len(candidates),
+    )
+    if len(_pools) >= 128:
+        _pools.pop(next(iter(_pools)))
+    _pools[cache_key] = time.monotonic() + (300 if candidates else 15), candidates
+    return candidates
+
+
+async def manyacg_candidates(client, keyword, mode):
+    """All valid candidates; choose once in the shared selector, never in each adapter."""
+    if keyword:
+        return await search_manyacg_artworks(client, keyword, mode)
+    response = await client.get("/artwork/random", params={"r18": mode, "limit": 10})
+    if response.status_code != 200:
+        return []
+    payload = response.json()
+    items = payload.get("data") if isinstance(payload, dict) else None
+    return [
+        item
+        for item in items or []
+        if isinstance(item, dict)
+        and image_allowed(item.get("r18"), mode)
+        and item.get("pictures")
+    ]
 
 
 def _client() -> httpx.AsyncClient:
@@ -285,7 +444,92 @@ def original_image_url(artwork, picture) -> str:
     )
 
 
-async def fetch_anime_artwork(keyword, r18_mode, manyacg_fetch, *, as_dict=False):
+def _identity_keys(artwork, picture):
+    values = [
+        ("art", _value(artwork, "id")),
+        ("source", _value(artwork, "source_url")),
+        ("picture", _value(picture, "id")),
+        ("url", _value(picture, "regular")),
+    ]
+    fingerprint = _value(picture, "hash", "")
+    if fingerprint and fingerprint.strip("p:0"):
+        values.append(("hash", fingerprint))
+    return [
+        kind + ":" + hashlib.sha256(str(value).encode()).hexdigest()[:32]
+        for kind, value in values
+        if value
+    ]
+
+
+async def _select_fresh(items, mode, scope, as_dict):
+    cache_key = "anime-recent:" + (scope or "")
+    async with _selection_lock:
+        history = await memttlcache.get(cache_key, []) if scope else []
+        if not isinstance(history, list):
+            history = []
+        reserved = await memttlcache.get("anime-reserved:" + scope, []) if scope else []
+        if not isinstance(reserved, list):
+            reserved = []
+        seen = set(history + reserved)
+        candidates = list(items)
+        random.shuffle(candidates)
+        for artwork, fallback in candidates:
+            if not image_allowed(_value(artwork, "r18"), mode):
+                continue
+            pictures = list(
+                _value(artwork, "pictures", []) or ([fallback] if fallback else [])
+            )
+            random.shuffle(pictures)
+            for picture in pictures:
+                keys = _identity_keys(artwork, picture)
+                if scope and seen.intersection(keys):
+                    continue
+                if as_dict:
+                    selected = (
+                        artwork.model_dump()
+                        if isinstance(artwork, Artwork)
+                        else artwork,
+                        picture.model_dump()
+                        if isinstance(picture, Picture)
+                        else picture,
+                    )
+                elif isinstance(artwork, dict):
+                    selected = (
+                        Artwork.model_validate(artwork),
+                        Picture.model_validate(picture),
+                    )
+                else:
+                    selected = artwork, picture
+                if scope:
+                    # Reserve before returning so concurrent calls and albums cannot select it twice.
+                    await memttlcache.set(
+                        "anime-reserved:" + scope, (reserved + keys)[-512:], ttl=300
+                    )
+                return selected
+    return None
+
+
+async def remember_anime_image(scope, artwork, picture):
+    """Only successful deliveries enter the long-lived history; failures just reserve briefly."""
+    try:
+        async with _selection_lock:
+            key = "anime-recent:" + scope
+            history = await memttlcache.get(key, [])
+            if not isinstance(history, list):
+                history = []
+            await memttlcache.set(
+                key,
+                (history + _identity_keys(artwork, picture))[-512:],
+                ttl=_HISTORY_TTL,
+            )
+    except Exception as error:
+        # Delivery already succeeded. Never tell the caller to retry a delivered image.
+        logger.warning("Anime delivery history update failed: {}", type(error).__name__)
+
+
+async def fetch_anime_artwork(
+    keyword, r18_mode, manyacg_fetch, *, as_dict=False, scope=None
+):
     request = resolve_image_search(keyword, r18_mode)
     if request is None:
         return None
@@ -304,24 +548,55 @@ async def fetch_anime_artwork(keyword, r18_mode, manyacg_fetch, *, as_dict=False
         # nekos.best has artist/source metadata, not a character-tag index.
         # Do not use it as a substitute for a named-character search.
         providers = ["manyacg"]
-        if not keyword or keyword.casefold() in {"neko", "waifu", "husbando", "kitsune"}:
+        if not keyword or keyword.casefold() in {
+            "neko",
+            "waifu",
+            "husbando",
+            "kitsune",
+        }:
             providers.append("nekos")
         if not keyword:
             random.shuffle(providers)
-    for provider in providers:
+    repeated = False
+    attempts = [
+        provider
+        for provider in providers
+        for _ in range(3 if provider == "nekos" and scope else 1)
+    ]
+    for provider in attempts:
         try:
             item = (
                 await _fetch_nekos_artwork(keyword)
                 if provider == "nekos"
                 else await manyacg_fetch(keyword, mode)
             )
-            if item is None or not image_allowed(_value(item[0], "r18"), mode):
+            if not item:
                 continue
-            if provider == "manyacg" and not artwork_matches_keyword(item[0], keyword):
+            if isinstance(item, list):
+                choices = [(artwork, None) for artwork in item]
+            elif image_allowed(_value(item[0], "r18"), mode):
+                if provider == "manyacg" and not artwork_matches_keyword(
+                    item[0], keyword
+                ):
+                    continue
+                choices = [item]
+            else:
                 continue
-            if provider == "nekos" and as_dict:
-                return item[0].model_dump(), item[1].model_dump()
-            return item
+            selected = await _select_fresh(choices, mode, scope, as_dict)
+            if selected is not None:
+                # Keep the legacy tuple identity for callers not asking for dict conversion.
+                return (
+                    item
+                    if isinstance(item, tuple) and not as_dict and selected == item
+                    else selected
+                )
+            repeated = repeated or bool(choices)
+        except AmbiguousCharacterError:
+            raise
         except Exception as error:
             logger.warning("{} image fetch failed: {}", provider, type(error).__name__)
+    if repeated and scope:
+        raise NoFreshImageError(
+            "No unseen matching artwork remains in this conversation"
+        )
     return None

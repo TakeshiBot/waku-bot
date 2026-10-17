@@ -13,10 +13,14 @@ from waku.config import app_config
 from waku.logger import logger
 from waku.services import aniobjcut
 from waku.services import manyacg as manyacg_service
+from waku.services.anime_characters import AmbiguousCharacterError
 from waku.services.anime_images import (
+    NoFreshImageError,
+    conversation_image_keyword,
     fetch_anime_artwork,
+    manyacg_candidates,
     original_image_url,
-    search_manyacg_artworks,
+    remember_anime_image,
 )
 from waku.services.manyacg import (
     FetchedPicture,
@@ -160,28 +164,7 @@ async def parse_artwork(client: PyrogramClient, message: pyrogram.types.Message)
 async def _fetch_seg_manyacg_artwork(keyword, image_mode):
     if manyacg_client is None:
         return None
-    if keyword:
-        items = await search_manyacg_artworks(
-            manyacg_client.client, keyword, image_mode
-        )
-        if not items:
-            return None
-        result = manyacg_service.RandomArtworkResponse.model_validate(
-            {"status": 200, "message": "", "data": items}
-        )
-    else:
-        result = await manyacg_client.random_artwork(limit=1, r18=image_mode)
-    if result.status != 200 or not result.data:
-        return None
-    candidates = [
-        artwork
-        for artwork in result.data
-        if image_allowed(artwork.r18, image_mode) and artwork.pictures
-    ]
-    if not candidates:
-        return None
-    artwork = random.choice(candidates)
-    return artwork, random.choice(artwork.pictures)
+    return await manyacg_candidates(manyacg_client.client, keyword, image_mode)
 
 
 @PyrogramClient.on_message(pyrogram.filters.command("seg"), group=0)
@@ -220,8 +203,9 @@ async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
     try:
         command = getattr(message, "command", None) or []
         keyword = " ".join(command[1:])
+        await conversation_image_keyword(keyword, f"telegram:{chat.id}:{user.id}", "" if keyword else "random")
         item = await fetch_anime_artwork(
-            keyword, image_mode, _fetch_seg_manyacg_artwork
+            keyword, image_mode, _fetch_seg_manyacg_artwork, scope=f"telegram:{chat.id}"
         )
         if item is None:
             await message.reply(
@@ -253,6 +237,11 @@ async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
             ),
             has_spoiler=artwork.r18,
         )
+        await remember_anime_image(f"telegram:{chat.id}", artwork, picture)
+    except AmbiguousCharacterError as error:
+        await message.reply(i18n.t("bot.msg.manyacg.ambiguous_character", locale=lang).format(names=str(error)))
+    except NoFreshImageError:
+        await message.reply(i18n.t("bot.msg.manyacg.no_fresh", locale=lang))
     except Exception as e:
         logger.error(f"setu_command error: {e.__class__.__name__}:{e}")
         await message.reply(

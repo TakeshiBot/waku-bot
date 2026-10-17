@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import io
-import random
 from types import SimpleNamespace
 from urllib.parse import urljoin
 
@@ -18,13 +17,16 @@ from waku.config import app_config
 from waku.i18n import i18n
 from waku.logger import logger
 from waku.services import manyacg as manyacg_service
+from waku.services.anime_characters import AmbiguousCharacterError
 from waku.services.anime_images import (
+    NoFreshImageError,
+    conversation_image_keyword,
     fetch_anime_artwork,
+    manyacg_candidates,
     original_image_url,
-    search_manyacg_artworks,
+    remember_anime_image,
 )
 from waku.services.manyacg import manyacg_client
-from waku.services.telegram_images import image_allowed
 
 from .embeds import discord_command_embed
 from .permissions import _channel_allowed
@@ -32,7 +34,6 @@ from .settings import (
     _discord_dm_settings,
     _discord_guild_settings,
     _discord_r18_mode,
-    _r18_mode_label,
 )
 from .state import _discord_image_lock
 from .utilities import _channel_name, _guild_name
@@ -200,56 +201,13 @@ def _discord_artwork_embed(
 async def _fetch_manyacg_discord_artwork(
     keyword: str = "",
     r18_mode: int = 0,
-) -> tuple[manyacg_service.Artwork, manyacg_service.Picture] | None:
+):
     if manyacg_client is None:
         return None
-    r18_mode = max(0, min(2, int(r18_mode)))
-    try:
-        if keyword:
-            logger.debug(
-                "Discord anime fetch: "
-                f"keyword={keyword!r} r18_mode={r18_mode}({_r18_mode_label(r18_mode)})"
-            )
-            items = await search_manyacg_artworks(
-                manyacg_client.client, keyword, r18_mode
-            )
-            if not items:
-                return None
-            resp_model = manyacg_service.RandomArtworkResponse.model_validate(
-                {"status": 200, "message": "", "data": items}
-            )
-        else:
-            logger.debug(
-                "Discord anime fetch random: "
-                f"r18_mode={r18_mode}({_r18_mode_label(r18_mode)})"
-            )
-            resp_model = await manyacg_client.random_artwork(limit=1, r18=r18_mode)
-        if resp_model.status != 200 or not resp_model.data:
-            logger.error(
-                "Discord anime photo API failed: "
-                f"status={resp_model.status} message={resp_model.message!r} "
-                f"r18_mode={r18_mode}({_r18_mode_label(r18_mode)})"
-            )
-            return None
-        candidates = [
-            artwork for artwork in resp_model.data
-            if artwork.pictures and image_allowed(artwork.r18, r18_mode)
-        ]
-        if not candidates:
-            return None
-        artwork = random.choice(candidates)
-        logger.debug(
-            "Discord anime fetch success: "
-            f"title={artwork.title!r} r18={artwork.r18} "
-            f"pictures={len(artwork.pictures)} r18_mode={r18_mode}"
-        )
-        return artwork, random.choice(artwork.pictures)
-    except Exception as e:
-        logger.error(f"Discord anime photo fetch error: {e.__class__.__name__}: {e}")
-        return None
+    return await manyacg_candidates(manyacg_client.client, keyword, r18_mode)
 
-async def _fetch_discord_anime_artwork(keyword: str = "", r18_mode: int = 0):
-    return await fetch_anime_artwork(keyword, r18_mode, _fetch_manyacg_discord_artwork)
+async def _fetch_discord_anime_artwork(keyword: str = "", r18_mode: int = 0, *, scope=None):
+    return await fetch_anime_artwork(keyword, r18_mode, _fetch_manyacg_discord_artwork, scope=scope)
 
 
 async def _send_discord_image_embed(
@@ -329,6 +287,8 @@ async def _send_discord_anime_photo_card(
         reference=reference,
     )
     if success:
+        destination = channel if channel is not None else message.channel
+        await remember_anime_image(f"discord:{destination.id}", artwork, picture)
         logger.info(
             "Discord anime send success: "
             f"guild={_guild_name(message)!r} channel={_channel_name(message)!r} "
@@ -389,15 +349,22 @@ async def _send_discord_seg(message: discord.Message, keyword: str = "") -> bool
 
     try:
         r18_mode = await _discord_r18_mode(message.guild)
+        await conversation_image_keyword(keyword, f"discord:{message.channel.id}:{message.author.id}", "" if keyword else "random")
         async with message.channel.typing():
             async with image_lock:
-                fetched = await _fetch_discord_anime_artwork(keyword=keyword, r18_mode=r18_mode)
+                fetched = await _fetch_discord_anime_artwork(keyword=keyword, r18_mode=r18_mode, scope=f"discord:{message.channel.id}")
                 if fetched is None:
                     await _send_discord_media_notice(message, "Could not fetch an image from the available image sources.")
                     return True
                 artwork, picture = fetched
                 await _send_discord_anime_photo_card(message, artwork, picture)
             return True
+    except AmbiguousCharacterError as error:
+        await _send_discord_media_notice(message, i18n.t("bot.msg.manyacg.ambiguous_character", locale=settings.lang).format(names=str(error)))
+        return True
+    except NoFreshImageError:
+        await _send_discord_media_notice(message, i18n.t("bot.msg.manyacg.no_fresh", locale=settings.lang))
+        return True
     except Exception as e:
         logger.error(f"Discord seg error: {e.__class__.__name__}: {e}")
         await _send_discord_media_notice(message, "Image sending failed. Please try again later.")
@@ -474,10 +441,12 @@ async def _send_discord_seg_interaction(
 
     try:
         r18_mode = await _discord_r18_mode(guild)
+        await conversation_image_keyword((keyword or "").strip(), f"discord:{channel.id}:{interaction.user.id}", "" if keyword else "random")
         async with image_lock:
             fetched = await _fetch_discord_anime_artwork(
                 keyword=(keyword or "").strip(),
                 r18_mode=r18_mode,
+                scope=f"discord:{channel.id}",
             )
             if fetched is None:
                 await _respond_to_discord_seg_interaction(
@@ -497,6 +466,10 @@ async def _send_discord_seg_interaction(
             await interaction.delete_original_response()
         except discord.HTTPException as e:
             logger.debug(f"Discord seg slash placeholder cleanup failed: {e}")
+    except AmbiguousCharacterError as error:
+        await _respond_to_discord_seg_interaction(interaction, i18n.t("bot.msg.manyacg.ambiguous_character", locale=settings.lang).format(names=str(error)))
+    except NoFreshImageError:
+        await _respond_to_discord_seg_interaction(interaction, i18n.t("bot.msg.manyacg.no_fresh", locale=settings.lang))
     except Exception as e:
         logger.error(f"Discord seg slash error: {e.__class__.__name__}: {e}")
         await _respond_to_discord_seg_interaction(

@@ -162,6 +162,12 @@ async def _run_discord_agent_once(
                 # A tool request is real progress. Preserve the full run budget
                 # for tool execution instead of timing out a legitimate action.
                 response_started.set()
+                if getattr(event.part, "tool_name", None) in {
+                    "send_discord_anime_photo", "send_discord_web_image",
+                } and stream is not None:
+                    # Remove pre-tool narration before sending media, including premature failure claims.
+                    await stream.finalize("")
+                    stream = None
 
     async def run_with_history():
         history = await _prepare_discord_history(

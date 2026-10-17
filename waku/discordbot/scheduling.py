@@ -311,7 +311,7 @@ async def _scheduled_discord_image_job(
         async with image_lock:
             if image_kind == "anime":
                 r18_mode = await _discord_r18_mode(guild)
-                fetched = await _fetch_discord_anime_artwork((query or "").strip(), r18_mode=r18_mode)
+                fetched = await _fetch_discord_anime_artwork((query or "").strip(), r18_mode=r18_mode, scope=f"discord:{channel_id}")
                 if fetched is None:
                     await channel.send("Could not fetch a scheduled anime image.")
                     return
