@@ -21,12 +21,12 @@ from waku.services.anime_images import (
     NoFreshImageError,
     fetch_anime_artwork,
     manyacg_candidates,
-    original_image_url,
     release_anime_image,
     remember_anime_image,
 )
 from waku.services.manyacg import manyacg_client
 
+from .constants import _DISCORD_IMAGE_BATCH_MAX
 from .embeds import discord_command_embed
 from .permissions import _channel_allowed
 from .settings import (
@@ -167,11 +167,9 @@ async def _discord_sticker_contents(
         contents.append(BinaryContent(data=data, media_type=content_type))
     return summaries, contents
 
-def _discord_artwork_view(source_url: str, original_url: str | None = None) -> discord.ui.View:
+def _discord_artwork_view(source_url: str) -> discord.ui.View:
     view = discord.ui.View()
     view.add_item(discord.ui.Button(label="Chi tiết", url=source_url))
-    if original_url:
-        view.add_item(discord.ui.Button(label="Ảnh gốc", url=original_url))
     return view
 
 def _discord_artwork_embed(
@@ -263,7 +261,6 @@ async def _send_discord_anime_photo_card(
     allowed_mentions: discord.AllowedMentions | None = None,
     reference: discord.Message | None = None,
 ) -> bool:
-    original_url = original_image_url(artwork, picture)
     embed = _discord_artwork_embed(
         title=artwork.title,
         source_url=artwork.source_url,
@@ -288,7 +285,7 @@ async def _send_discord_anime_photo_card(
             message,
             embed,
             picture.regular,
-            _discord_artwork_view(artwork.source_url, original_url),
+            _discord_artwork_view(artwork.source_url),
             spoiler=artwork.r18,
             channel=channel,
             content=None,
@@ -315,6 +312,106 @@ async def _send_discord_anime_photo_card(
         )
     return success
 
+
+async def _send_discord_anime_photos(
+    message, items, *, channel=None, content=None, caption=None,
+    allowed_mentions=None, reference=None,
+) -> int:
+    """Keep single-photo cards; upload multiple photos as native attachments."""
+    destination = channel if channel is not None else message.channel
+    scope = f"discord:{destination.id}"
+    files = []
+    batch = []
+    size = 0
+    sent_count = 0
+    # Discord permits a 25 MiB request. Leave space for multipart and metadata.
+    max_request_bytes = 24 * 1024 * 1024
+
+    async def send_batch():
+        nonlocal sent_count
+        view = discord.ui.View()
+        titles = []
+        for index, (artwork, _) in enumerate(batch):
+            number = sent_count + index + 1
+            title = discord.utils.escape_markdown(artwork.title[:70]).replace("\n", " ")
+            titles.append(f"{number}. {title}")
+            view.add_item(discord.ui.Button(
+                label=f"{number}. Chi tiết", url=artwork.source_url, row=index // 5,
+            ))
+        try:
+            await destination.send(
+                content="\n".join(titles), files=files, view=view,
+                reference=reference if sent_count == 0 else None,
+                allowed_mentions=discord.AllowedMentions.none(), mention_author=False,
+            )
+            sent_count += len(batch)
+            for artwork, picture in batch:
+                await remember_anime_image(scope, artwork, picture)
+        finally:
+            for file in files:
+                file.close()
+                file.fp.close()
+
+    try:
+        if len(items) == 1:
+            return int(await _send_discord_anime_photo_card(
+                message, *items[0], channel=channel, content=content,
+                caption=caption, allowed_mentions=allowed_mentions, reference=reference,
+            ))
+        prose = "\n\n".join(part for part in (content, caption) if part)
+        if prose:
+            from .messages import _split_reply
+
+            for index, part in enumerate(_split_reply(prose)):
+                await destination.send(
+                    part, allowed_mentions=allowed_mentions or discord.AllowedMentions.none(),
+                    reference=reference if index == 0 else None, mention_author=False,
+                )
+        for index, (artwork, picture) in enumerate(items):
+            downloaded = await _download_image_bytes(picture.regular)
+            if downloaded is None:
+                raise RuntimeError("Could not download an image for the Discord album")
+            data, content_type = downloaded
+            if files and (size + len(data) > max_request_bytes or len(files) == _DISCORD_IMAGE_BATCH_MAX):
+                await send_batch()
+                files, batch, size = [], [], 0
+            filename = f"waku_{index + 1}_" + _image_filename(content_type)
+            files.append(discord.File(
+                io.BytesIO(data), filename=filename, spoiler=artwork.r18,
+                description=f"{artwork.title}\n{artwork.source_url}"[:1024],
+            ))
+            batch.append((artwork, picture))
+            size += len(data)
+        if files:
+            await send_batch()
+        return sent_count
+    finally:
+        for file in files:
+            file.close()
+            file.fp.close()
+        for artwork, picture in items:
+            await release_anime_image(scope, artwork, picture)
+
+
+async def _fetch_discord_anime_batch(keyword, r18_mode, count, *, scope):
+    items = []
+    try:
+        for _ in range(max(1, min(_DISCORD_IMAGE_BATCH_MAX, count))):
+            try:
+                item = await _fetch_discord_anime_artwork(keyword=keyword, r18_mode=r18_mode, scope=scope)
+            except NoFreshImageError:
+                if items:
+                    break
+                raise
+            if item is None:
+                break
+            items.append(item)
+        return items
+    except BaseException:
+        for artwork, picture in items:
+            await release_anime_image(scope, artwork, picture)
+        raise
+
 async def _search_web_images(query: str, max_results: int = 8) -> list[dict]:
     def _search() -> list[dict]:
         with DDGS(proxy=app_config.agent_proxy or None, timeout=12) as ddgs:
@@ -334,7 +431,12 @@ def _image_filename(content_type: str) -> str:
     }.get(content_type, "jpg")
     return f"waku_image.{extension}"
 
-async def _send_discord_seg(message: discord.Message, keyword: str = "") -> bool:
+async def _send_discord_seg(message: discord.Message, keyword: str = "", count: int = 1) -> bool:
+    # Text commands accept `!seg 5 tai mèo`; slash commands have a count option.
+    parts = keyword.split(maxsplit=1)
+    if parts and parts[0].isascii() and parts[0].isdigit():
+        count = min(_DISCORD_IMAGE_BATCH_MAX, max(1, int(parts[0])))
+        keyword = parts[1] if len(parts) > 1 else ""
     settings = (
         await _discord_guild_settings(message.guild)
         if message.guild is not None
@@ -364,12 +466,11 @@ async def _send_discord_seg(message: discord.Message, keyword: str = "") -> bool
         r18_mode = await _discord_r18_mode(message.guild)
         async with message.channel.typing():
             async with image_lock:
-                fetched = await _fetch_discord_anime_artwork(keyword=keyword, r18_mode=r18_mode, scope=f"discord:{message.channel.id}")
-                if fetched is None:
+                fetched = await _fetch_discord_anime_batch(keyword, r18_mode, count, scope=f"discord:{message.channel.id}")
+                if not fetched:
                     await _send_discord_media_notice(message, "Could not fetch an image from the available image sources.")
                     return True
-                artwork, picture = fetched
-                await _send_discord_anime_photo_card(message, artwork, picture)
+                await _send_discord_anime_photos(message, fetched)
             return True
     except NoFreshImageError:
         await _send_discord_media_notice(message, i18n.t("bot.msg.manyacg.no_fresh", locale=settings.lang))
@@ -397,6 +498,7 @@ async def _respond_to_discord_seg_interaction(
 async def _send_discord_seg_interaction(
     interaction: discord.Interaction,
     keyword: str | None = None,
+    count: int = 1,
 ) -> None:
     """Run `/seg`, mirroring the text command without requiring a fake message."""
     channel = interaction.channel
@@ -451,19 +553,16 @@ async def _send_discord_seg_interaction(
     try:
         r18_mode = await _discord_r18_mode(guild)
         async with image_lock:
-            fetched = await _fetch_discord_anime_artwork(
-                keyword=(keyword or "").strip(),
-                r18_mode=r18_mode,
-                scope=f"discord:{channel.id}",
+            fetched = await _fetch_discord_anime_batch(
+                (keyword or "").strip(), r18_mode, count, scope=f"discord:{channel.id}",
             )
-            if fetched is None:
+            if not fetched:
                 await _respond_to_discord_seg_interaction(
                     interaction,
                     notice("Không lấy được ảnh. Thử lại sau nhé.", "Could not fetch an image. Please try again later."),
                 )
                 return
-            artwork, picture = fetched
-            sent = await _send_discord_anime_photo_card(request_context, artwork, picture)
+            sent = await _send_discord_anime_photos(request_context, fetched)
         if not sent:
             await _respond_to_discord_seg_interaction(
                 interaction,

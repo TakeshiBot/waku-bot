@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import io
 import re
 from types import SimpleNamespace
@@ -20,14 +19,13 @@ from .. import state
 from ..constants import (
     _DISCORD_IMAGE_BATCH_MAX,
     _DISCORD_IMAGE_BUSY_WAIT_SECONDS,
-    _DISCORD_IMAGE_SEND_DELAY_SECONDS,
 )
 from ..media import (
     _download_image_bytes,
     _fetch_discord_anime_artwork,
     _image_filename,
     _search_web_images,
-    _send_discord_anime_photo_card,
+    _send_discord_anime_photos,
 )
 from ..messages import _resolve_discord_channel
 from ..models import (
@@ -167,7 +165,8 @@ async def send_discord_anime_photo(
             for ordinary current-chat requests and write your normal final reply.
         allow_everyone: Bot-admin-only permission to allow @everyone/@here mentions.
         count: Number of images requested for this turn. The backend caps this to
-            a safe batch size and spaces each send to avoid Discord limits.
+            10 images per album. One image keeps its embed; multiple images use
+            native attachments in the same message, split only for upload size limits.
     """
     message = ctx.deps.message
     settings = await _discord_guild_settings(message.guild) if message.guild is not None else await _discord_dm_settings(message.author)
@@ -272,49 +271,18 @@ async def send_discord_anime_photo(
         mode = current.r18_mode if message.guild is not None else 0
         if not current.setu_enabled or any(not image_allowed(artwork.r18, mode) for artwork, _ in prepared):
             return DiscordAnimePhotoResult(success=False, message="Image settings changed before delivery; the prepared images are no longer permitted.")
-        sent_count = 0
-        last_info = None
         async with image_lock:
-            for index, (artwork, picture) in enumerate(prepared):
-                try:
-                    if message_content or embed_caption:
-                        ctx.deps.side_effects_started = True
-                    sent = await _send_discord_anime_photo_card(
-                        message,
-                        artwork,
-                        picture,
-                        channel=target_channel,
-                        content=message_content,
-                        caption=embed_caption,
-                        allowed_mentions=_discord_allowed_mentions(allow_everyone),
-                        reference=message if target_channel_actual_id == message.channel.id and index == 0 else None,
-                    )
-                except discord.HTTPException as e:
-                    logger.warning(f"Discord anime image upload failed: {e}")
-                    sent = False
-                if not sent:
-                    logger.warning(
-                        "discord_image_send_failed "
-                        f"user={message.author.id} channel={target_channel_actual_id} "
-                        f"title={artwork.title!r} index={index + 1}/{capped_count}"
-                    )
-                    if sent_count == 0:
-                        return DiscordAnimePhotoResult(
-                            success=False,
-                            message="Failed to upload the anime artwork to Discord.",
-                            sent_count=sent_count,
-                            requested_count=requested_count,
-                            capped_count=capped_count,
-                        )
-                    break
-                ctx.deps.side_effects_started = True
-                sent_count += 1
-                last_info = _anime_photo_info(artwork)
-                if index < len(prepared) - 1:
-                    await asyncio.sleep(_DISCORD_IMAGE_SEND_DELAY_SECONDS)
+            # A single upload contains the whole album, with per-file spoilers.
+            ctx.deps.side_effects_started = True
+            sent_count = await _send_discord_anime_photos(
+                message, prepared, channel=target_channel,
+                content=message_content, caption=embed_caption,
+                allowed_mentions=_discord_allowed_mentions(allow_everyone),
+                reference=message if target_channel_actual_id == message.channel.id else None,
+            )
         return DiscordAnimePhotoResult(
             success=sent_count > 0,
-            data=last_info,
+            data=_anime_photo_info(prepared[-1][0]) if sent_count else None,
             sent_count=sent_count,
             requested_count=requested_count,
             capped_count=capped_count,

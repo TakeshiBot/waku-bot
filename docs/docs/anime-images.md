@@ -35,6 +35,12 @@ Trong chat AI, bot tìm và giữ ảnh trước, gửi xong lời chat AI rồi
 Nếu lượt AI bị lỗi hoặc bị hủy trước khi gửi chat, ảnh chờ gửi sẽ được bỏ và giải
 phóng để lần sau có thể lấy lại. Lệnh `/seg` trực tiếp vẫn gửi ảnh ngay.
 
+Discord hỗ trợ tối đa 10 ảnh mỗi lượt. Một ảnh giữ embed và nút nguồn như trước;
+từ 2 ảnh dùng album file đính kèm trong cùng tin nhắn, không dùng embed. Album có
+tên và nút nguồn cho từng ảnh; từng file R18 được đánh dấu spoiler riêng. Nếu tổng
+dung lượng quá lớn, bot chia album theo giới hạn tải lên. Có thể chọn `count` trong
+`/seg`, dùng `!seg 5 tai mèo`, hoặc chat “waku gửi 5 ảnh tai mèo”.
+
 Lời nhắn tặng ảnh/các ảnh Discord lên lịch cũng gửi thành chat riêng. Lệnh `/seg`
 trực tiếp cũng hỗ trợ từ khóa/tag và chỉ gửi ảnh cùng thông tin nguồn. Tìm theo tên
 không đảm bảo đúng danh tính nhân vật. Chế độ An toàn/R18 vẫn được giữ.
