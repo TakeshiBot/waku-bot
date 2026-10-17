@@ -7,6 +7,7 @@ from waku import common
 from waku.config import app_config
 
 from . import datatype, state
+from .expression_policy import expression_settings
 from .localization import tr
 from .tools.prepare import prepare_sticker_tools
 
@@ -34,12 +35,14 @@ async def periodic_expression_instructions(
     ):
         return ""
     hints = []
+    _, reactions_enabled = await expression_settings(deps.message, deps.chat_id)
     if (
         app_config.agent_periodic_sticker_interval > 0
         and "send_sticker" not in deps.tools_called_this_turn
         and await prepare_sticker_tools(ctx, ToolDefinition(name="send_sticker"))
         is not None
     ):
+        hints.append(tr("natural_sticker_hint", locale=deps.locale or None))
         turns = await common.memstore.get(
             state.periodic_sticker_counter_key(deps.chat_id, deps.user_id), 0
         )
@@ -47,8 +50,10 @@ async def periodic_expression_instructions(
             hints.append(tr("periodic_sticker_hint", locale=deps.locale or None))
     if (
         app_config.agent_periodic_reaction_interval > 0
+        and reactions_enabled
         and "tg.sendReaction" not in deps.tools_called_this_turn
     ):
+        hints.append(tr("natural_reaction_hint", locale=deps.locale or None))
         turns = await common.memstore.get(
             state.periodic_reaction_counter_key(deps.chat_id, deps.user_id), 0
         )

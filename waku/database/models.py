@@ -134,6 +134,7 @@ class ChatConfig:
     pick_bottle_enabled: bool = True
     group_memory_enabled: bool = True
     sticker_memory_enabled: bool = True
+    reactions_enabled: bool = True
     parse_wechat_enabled: bool = True
     discord_enabled: bool = False
     discord_muted: bool = False
@@ -187,6 +188,7 @@ class ChatConfig:
             is True,
             group_memory_enabled=data.get("group_memory_enabled", True),
             sticker_memory_enabled=data.get("sticker_memory_enabled", True),
+            reactions_enabled=data.get("reactions_enabled", True),
             parse_wechat_enabled=data.get("parse_wechat_enabled", True),
             discord_enabled=data.get("discord_enabled", False),
             discord_muted=data.get("discord_muted", False),

@@ -18,6 +18,7 @@ from pydantic_ai import RunContext
 from waku.common.safe_http import DEFAULT_MAX_BYTES, UnsafeUrlError, safe_download_bytes
 from waku.common.telegram_runtime import prepare_telegram_output
 from waku.logger import logger
+from waku.plugins.agent.expression_policy import expression_settings
 from waku.plugins.agent.localization import tr
 from waku.plugins.agent.output import record_tool_reply, text_already_sent
 
@@ -376,6 +377,13 @@ async def tg(
     if method not in _METHODS:
         return tr("method_unknown_supported", p0=method, p1=_method_list())
 
+    if method == "sendReaction":
+        _, enabled = await expression_settings(ctx.deps.message, ctx.deps.chat_id)
+        if not enabled:
+            return tr("reactions_chat_disabled")
+        if "tg.sendReaction" in getattr(ctx.deps, "tools_called_this_turn", set()):
+            return tr("method_ok", p0=method)
+
     kwargs, error = await _convert_params(ctx, method, params)
     if error:
         return error
@@ -407,6 +415,7 @@ async def tg(
         await record_tool_reply(ctx.deps, result, str(kwargs["text"]))
     if method == "sendReaction":
         getattr(ctx.deps, "tools_called_this_turn", set()).add("tg.sendReaction")
+        ctx.deps.side_effects_started = True
     message_id = getattr(result, "id", None) or getattr(result, "message_id", None)
     if message_id is not None:
         return tr("tool_p0_sent_message_id_p1", p0=method, p1=message_id)

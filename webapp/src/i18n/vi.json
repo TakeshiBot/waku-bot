@@ -214,6 +214,8 @@
     "pick_bottle_enabledHint": "Cho phép thành viên nhặt chai trong nhóm",
     "group_memory_enabled": "Bộ Nhớ Nhóm",
     "group_memory_enabledHint": "Cho phép waku ghi nhớ nội dung trò chuyện của nhóm",
+    "reactions_enabled": "Thả Cảm Xúc",
+    "reactions_enabledHint": "Cho phép bot tự thả cảm xúc lên tin nhắn khi trò chuyện",
     "sticker_memory_enabled": "Học Và Gửi Sticker",
     "sticker_memory_enabledHint": "Cho phép waku ghi nhớ nhãn dán trong nhóm và gửi lại khi trò chuyện",
     "parseSites": "Trang web được phân tích",

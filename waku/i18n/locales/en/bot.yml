@@ -513,6 +513,7 @@ bot:
       pick_bottle_enabled: Pick Bottle
       group_memory_enabled: Group Memory
       sticker_memory_enabled: Learn and send stickers
+      reactions_enabled: Message reactions
       bot_reply: Default Bot Replies
       verify: Member Verification
       save: Save

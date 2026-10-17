@@ -1,5 +1,8 @@
 bot:
   agent_i18n:
+    natural_sticker_hint: 'You may proactively use send_sticker to express a fitting emotion without waiting for the user to request it. Choose from the current conversation (joy, teasing, agreement, comfort) and actually call the tool rather than describing a sticker in text. Do not send every turn or repeat within the same turn; skip serious contexts and unavailable matches.'
+    natural_reaction_hint: 'Proactively react to clear emotions, jokes, good news, thanks or agreement; favor using reactions often in casual conversation without waiting to be asked. Use tg("sendReaction", {"emoji": "❤"}) or another appropriate standard Telegram emoji such as 👍 😂 😢 🎉. Match the content and actually call the tool; you need not react every turn, do not repeat within one turn, and skip unsuitable contexts. Message reactions are different from emoji written in chat.'
+    reactions_chat_disabled: 'Message reactions are disabled in this conversation; do not retry or bypass the switch.'
     image_save_button: Save
     image_save_saved_button: Saved
     image_save_saved: The image is in your private chat with the bot.
@@ -9,7 +12,7 @@ bot:
     image_save_uncertain: Delivery could not be confirmed. Please check your DM; the bot will not resend to avoid duplicate images.
     image_save_flood_wait: 'Telegram requires a {seconds}-second wait. Please try saving again later.'
     periodic_sticker_hint: 'Sticker hint for this turn: when appropriate, call send_sticker once with a description of the desired emotion. Do not send another sticker if one was already sent this turn. Skip it for serious or unsuitable content.'
-    periodic_reaction_hint: 'Reaction hint for this turn: when appropriate, call tg("sendReaction", {"emoji": "…"}) once to react to the message being answered. Use a standard Telegram-supported reaction emoji. Skip it when unsuitable.'
+    periodic_reaction_hint: 'Prioritize a reaction this turn: call tg("sendReaction", {"emoji": "…"}) once with a standard Telegram emoji that fits the message being answered. Skip only if the content is sensitive, serious or has no fitting reaction. Do not react again if already done this turn.'
     busy: I have too many messages to answer; please wait a moment...
     channel_task: 'Task type: channel comment'
     channel_name: 'Channel name: {p0}'

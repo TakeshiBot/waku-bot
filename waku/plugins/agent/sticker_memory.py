@@ -14,6 +14,7 @@ from waku import common, database
 from waku.common.telegram_authority import is_bot_admin
 from waku.config import app_config
 from waku.logger import logger
+from waku.plugins.agent.expression_policy import expression_settings
 from waku.plugins.agent.localization import configured_prompt, localized_message, tr
 
 from . import provider, quota, sticker_vec, trace
@@ -105,7 +106,7 @@ def search_ready() -> bool:
 async def select_sticker(
     query: str, chat_id: int, subject: quota.Subject
 ) -> tuple[str, str] | None:
-    """Choose only files actually stored in the current group."""
+    """Choose only files actually stored in the current group or private chat."""
     if app_config.agent_sticker_search_mode != "chat":
         embedding = await get_embedding(query)
         if embedding is None:
@@ -271,33 +272,33 @@ async def _process_sticker(
         await sticker_vec.touch(file_unique_id, chat_id)
         return
 
-    if sticker.is_animated:
-        return
-
-    if sticker.is_video and common.FFMPEG is None:
-        return
-
-    try:
-        # Enforce a download timeout so large files cannot stall the event loop.
-        timeout = app_config.agent_download_timeout
-        if timeout > 0:
-            raw = await asyncio.wait_for(
-                client.download_media(file_id, in_memory=True), timeout=timeout
-            )
-        else:
-            raw = await client.download_media(file_id, in_memory=True)
-        if not isinstance(raw, BytesIO):
+    if sticker.is_animated or (sticker.is_video and common.FFMPEG is None):
+        # TGS cannot be passed as an image to vision models. Retain the factual
+        # associated emoji instead of silently ignoring all animated stickers.
+        emoji = getattr(sticker, "emoji", None)
+        description = f"Telegram sticker with associated emoji: {emoji}" if emoji else None
+    else:
+        try:
+            # Enforce a download timeout so large files cannot stall the event loop.
+            timeout = app_config.agent_download_timeout
+            if timeout > 0:
+                raw = await asyncio.wait_for(
+                    client.download_media(file_id, in_memory=True), timeout=timeout
+                )
+            else:
+                raw = await client.download_media(file_id, in_memory=True)
+            if not isinstance(raw, BytesIO):
+                return
+            image_bytes = raw.getvalue()
+        except TimeoutError:
+            logger.warning(f"sticker download timed out for {file_unique_id}")
             return
-        image_bytes = raw.getvalue()
-    except TimeoutError:
-        logger.warning(f"sticker download timed out for {file_unique_id}")
-        return
-    except Exception as e:
-        logger.error(f"sticker download error: {e.__class__.__name__}: {e}")
-        return
+        except Exception as e:
+            logger.error(f"sticker download error: {e.__class__.__name__}: {e}")
+            return
 
-    mime_type = "video/webm" if sticker.is_video else "image/webp"
-    description = await _get_description(image_bytes, mime_type, subject)
+        mime_type = "video/webm" if sticker.is_video else "image/webp"
+        description = await _get_description(image_bytes, mime_type, subject)
     if not description:
         logger.warning(f"sticker {file_unique_id}: no description generated, skipping")
         return
@@ -314,7 +315,7 @@ async def _process_sticker(
     await sticker_vec.upsert(file_unique_id, file_id, chat_id, description, embedding)
 
 
-_sticker_filter = filters.sticker & (filters.group) & ~filters.bot
+_sticker_filter = filters.sticker & (filters.group | filters.private) & ~filters.bot
 
 
 async def _is_admin_actor(
@@ -460,10 +461,13 @@ async def on_sticker(client: PyrogramClient, message: pyrogram.types.Message) ->
     sticker = message.sticker
     if sticker is None:
         return
-    chat_config = await database.get_chat_config(chat.id)
-    if not chat_config.ai_reply:
+    enabled, _ = await expression_settings(message, chat.id)
+    if not enabled:
         return
-    if not chat_config.sticker_memory_enabled:
+    if chat.id > 0:
+        if not (await database.get_user_config(chat.id)).dm_ai_enabled:
+            return
+    elif not (await database.get_chat_config(chat.id)).ai_reply:
         return
     subject = quota.subject_of(message)
     if not await quota.can_start(subject):

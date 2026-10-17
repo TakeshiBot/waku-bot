@@ -1,11 +1,11 @@
 from pydantic_ai import RunContext
 from pydantic_ai.tools import ToolDefinition
 
-from waku import database
 from waku.common.rich_message import message_plain_text
 from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.agent import datatype
+from waku.plugins.agent.expression_policy import expression_settings
 from waku.services import image_gen
 from waku.services.image_requests import explicit_image_operation
 from waku.services.telegram_images import telegram_image_settings
@@ -24,21 +24,17 @@ async def prepare_manyacg_tools(
 async def prepare_sticker_tools(
     ctx: RunContext[datatype.ContextDeps], tool_def: ToolDefinition
 ) -> ToolDefinition | None:
-    """Show the sticker tool only in group chats with a usable sticker memory."""
-    if ctx.deps.chat_id is None or ctx.deps.chat_id >= -100:
+    """Use only this chat's inventory, with DM enabled and Business excluded."""
+    enabled, _ = await expression_settings(ctx.deps.message, ctx.deps.chat_id)
+    if not enabled:
         return None
     try:
         from .. import sticker_memory, sticker_vec
 
         if not sticker_memory.search_ready():
             return None
-        target = app_config.agent_sticker_warmup_count
         count = await sticker_vec.count(ctx.deps.chat_id)
-        if count < max(1, target or 0):
-            return None
-        if not (
-            await database.get_chat_config(ctx.deps.chat_id)
-        ).sticker_memory_enabled:
+        if count < 1:
             return None
     except Exception as e:
         logger.warning(f"Sticker availability check failed: {e}")

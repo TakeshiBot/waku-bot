@@ -1,5 +1,8 @@
 bot:
   agent_i18n:
+    natural_sticker_hint: 'Bạn có thể tự dùng send_sticker để đáp lại cảm xúc phù hợp trong cuộc trò chuyện, không cần đợi người dùng xin sticker. Chọn cảm xúc từ nội dung hiện tại (vui, trêu đùa, đồng tình, an ủi...) và dùng công cụ thật, không chỉ viết tên sticker trong lời chat. Không gửi mỗi lượt, không lặp trong cùng lượt; bỏ qua khi nội dung nghiêm túc hoặc không có sticker phù hợp.'
+    natural_reaction_hint: 'Hãy chủ động thả cảm xúc khi tin nhắn có cảm xúc rõ, lời đùa, tin vui, lời cảm ơn hoặc sự đồng tình; ưu tiên dùng thường xuyên trong hội thoại thân mật mà không chờ người dùng yêu cầu. Dùng tg("sendReaction", {"emoji": "❤"}) hoặc emoji Telegram thông thường phù hợp như 👍 😂 😢 🎉. Chọn theo nội dung và dùng công cụ thật; không cần thả mọi lượt, không lặp trong cùng lượt, bỏ qua khi không phù hợp. Đây là reaction lên tin nhắn, khác emoji viết trong chat.'
+    reactions_chat_disabled: 'Thả cảm xúc bị tắt trong cuộc trò chuyện này; không gọi lại hoặc tìm cách khác để thả cảm xúc.'
     image_save_button: Lưu
     image_save_saved_button: Đã Lưu
     image_save_saved: Ảnh đã có trong DM của bạn với bot.
@@ -9,7 +12,7 @@ bot:
     image_save_uncertain: Chưa xác nhận được ảnh đã gửi. Hãy kiểm tra DM; bot không gửi lại để tránh trùng ảnh.
     image_save_flood_wait: 'Telegram yêu cầu chờ {seconds} giây. Hãy thử Lưu lại sau.'
     periodic_sticker_hint: 'Đến lượt gợi ý sticker: nếu phù hợp với nội dung, gọi send_sticker một lần với mô tả cảm xúc cần dùng. Không gửi thêm nếu đã gửi sticker trong lượt này; có thể bỏ qua khi nội dung nghiêm túc hoặc không phù hợp.'
-    periodic_reaction_hint: 'Đến lượt gợi ý cảm xúc: nếu phù hợp, gọi tg("sendReaction", {"emoji": "…"}) một lần để thả cảm xúc vào tin nhắn đang trả lời. Dùng emoji reaction thông thường được Telegram hỗ trợ. Có thể bỏ qua khi không phù hợp.'
+    periodic_reaction_hint: 'Đến lượt ưu tiên thả cảm xúc: hãy gọi tg("sendReaction", {"emoji": "…"}) một lần với emoji Telegram phù hợp với tin nhắn đang trả lời. Chỉ bỏ qua nếu nội dung nhạy cảm, nghiêm trọng hoặc không có cảm xúc phù hợp. Không thả thêm nếu đã thực hiện trong lượt này.'
     busy: Mình đang trả lời nhiều tin nhắn, vui lòng chờ một chút...
     channel_task: 'Loại nhiệm vụ: bình luận kênh'
     channel_name: 'Tên kênh: {p0}'

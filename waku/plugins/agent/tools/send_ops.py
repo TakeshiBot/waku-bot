@@ -30,6 +30,7 @@ from waku.services.telegram_images import image_allowed, telegram_image_settings
 from waku.timezone import BOT_TIMEZONE
 
 from .. import datatype, quota, sticker_memory, sticker_vec
+from ..expression_policy import expression_settings
 
 
 @dataclass
@@ -396,6 +397,12 @@ async def send_sticker(
     if ctx.deps.chat_id is None or ctx.deps.message is None:
         return SendResult(success=False, message=tr("context_unavailable")).text()
 
+    enabled, _ = await expression_settings(ctx.deps.message, ctx.deps.chat_id)
+    if not enabled:
+        return SendResult(success=False, message=tr("stickers_chat_disabled")).text()
+    if "send_sticker" in ctx.deps.tools_called_this_turn:
+        return SendResult(success=True).text()
+
     if not sticker_memory.search_ready():
         return SendResult(
             success=False, message=tr("sticker_memory_unconfigured")
@@ -425,6 +432,7 @@ async def send_sticker(
         raise ModelRetry(tr("sticker_send_failed", p0=e.__class__.__name__, p1=e))
     # Suppress periodic hints on later model requests within this same run.
     ctx.deps.tools_called_this_turn.add("send_sticker")
+    ctx.deps.side_effects_started = True
     return SendResult(success=True).text()
 
 
@@ -688,20 +696,17 @@ async def _send_sticker_checked(
     """Send a sticker after the availability checks."""
     if not sticker_memory.search_ready():
         return tr("sticker_memory_disabled")
-    if ctx.deps.chat_id is None or ctx.deps.chat_id >= -100:
-        return tr("stickers_group_only")
+    enabled, _ = await expression_settings(ctx.deps.message, ctx.deps.chat_id)
+    if not enabled:
+        return tr("stickers_chat_disabled")
     try:
         sticker_count = await sticker_vec.count(ctx.deps.chat_id)
-        if not (
-            await database.get_chat_config(ctx.deps.chat_id)
-        ).sticker_memory_enabled:
-            return tr("stickers_chat_disabled")
     except Exception as e:
         logger.warning(
             f"Failed to check sticker count for chat {ctx.deps.chat_id}: {e}"
         )
         return tr("sticker_availability_failed", p0=e)
-    if sticker_count < max(1, app_config.agent_sticker_warmup_count or 0):
+    if sticker_count < 1:
         return tr("stickers_insufficient")
     return await send_sticker(ctx, query)
 

@@ -148,10 +148,12 @@ async def _handle_discord_message_turn(message: discord.Message, user_prompt: st
     if reaction_interval > 0:
         reaction_ctr: int = await common.memstore.get(_reaction_counter_key(message), 0)
         await common.memstore.set(_reaction_counter_key(message), reaction_ctr + 1)
-        if reaction_ctr > 0 and reaction_ctr % reaction_interval == 0:
+        if (reaction_ctr + 1) % reaction_interval == 0:
             periodic_reaction_nudge = (
-                "\n\nDiscord reaction nudge: if appropriate, call send_discord_reaction "
-                "exactly once this turn with an emoji that matches the user's message."
+                "\n\nPrioritize a Discord reaction this turn: call send_discord_reaction "
+                "once with an emoji matching the user's message. Skip only when the "
+                "content is sensitive, serious or has no fitting reaction. This means "
+                "an actual message reaction, not merely an emoji in the text reply."
             )
 
     prompt, needs_multimodal = await _build_prompt(message, user_prompt + periodic_reaction_nudge)

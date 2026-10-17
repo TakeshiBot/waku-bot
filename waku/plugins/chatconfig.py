@@ -40,6 +40,7 @@ _FIELDS = (
     ("moderation", "agent_moderation_enabled"),
     ("sticker_memory_enabled", "sticker_memory_enabled"),
     ("bot_reply", "bot_reply"),
+    ("reactions_enabled", "reactions_enabled"),
 )
 # Read each column top to bottom; keep callback indices stable for open menus.
 _BUTTON_ORDER = (
@@ -50,6 +51,7 @@ _BUTTON_ORDER = (
     "ai_reply_other_bots_enabled",
     "bot_reply",
     "sticker_memory_enabled",
+    "reactions_enabled",
     "verify_enabled",
     "delete_events_enabled",
     "unpin_channel_pin_enabled",

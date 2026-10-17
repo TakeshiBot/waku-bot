@@ -277,6 +277,7 @@ class ChatConfigOut(ApiModel):
     pick_bottle_enabled: bool
     group_memory_enabled: bool
     sticker_memory_enabled: bool
+    reactions_enabled: bool = True
     parse_wechat_enabled: bool
     rss_agent_summary: bool
     rss_agent_broadcast: bool
@@ -310,6 +311,7 @@ class ChatConfigIn(ApiModel):
     pick_bottle_enabled: bool
     group_memory_enabled: bool
     sticker_memory_enabled: bool
+    reactions_enabled: bool = True
     parse_wechat_enabled: bool
     rss_agent_summary: bool
     rss_agent_broadcast: bool

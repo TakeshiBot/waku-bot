@@ -214,6 +214,8 @@
     "pick_bottle_enabledHint": "允许成员在群里捡漂流瓶",
     "group_memory_enabled": "群组记忆",
     "group_memory_enabledHint": "让 waku 记住这个群的对话内容",
+    "reactions_enabled": "Message reactions",
+    "reactions_enabledHint": "Let the bot react naturally to messages during conversation",
     "sticker_memory_enabled": "Learn and send stickers",
     "sticker_memory_enabledHint": "让 waku 记住这个群发送的贴纸, 并能在对话中发送贴纸",
     "parseSites": "解析站点",

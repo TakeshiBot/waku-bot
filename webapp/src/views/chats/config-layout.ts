@@ -38,6 +38,7 @@ export const TOGGLE_GROUPS: ToggleGroup[] = [
       "ai_reply_other_bots_enabled",
       "bot_reply",
       "sticker_memory_enabled",
+      "reactions_enabled",
       "rss_agent_summary",
       "rss_agent_broadcast",
     ],

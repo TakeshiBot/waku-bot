@@ -214,6 +214,8 @@
     "pick_bottle_enabledHint": "Allow members to pick drift bottles in this group",
     "group_memory_enabled": "Group Memory",
     "group_memory_enabledHint": "Let waku remember this group's conversations",
+    "reactions_enabled": "Message reactions",
+    "reactions_enabledHint": "Let the bot react naturally to messages during conversation",
     "sticker_memory_enabled": "Learn and send stickers",
     "sticker_memory_enabledHint": "Let waku remember stickers sent here and send them in conversation",
     "parseSites": "Parse sites",

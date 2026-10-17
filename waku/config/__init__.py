@@ -382,7 +382,7 @@ class _AppConfig(pydantic.BaseModel):
     # Periodic sticker / reaction: force-inject the tool hint every N conversations.
     # 0 = disabled.
     agent_periodic_sticker_interval: int = pydantic.Field(default=10, ge=0)
-    agent_periodic_reaction_interval: int = pydantic.Field(default=5, ge=0)
+    agent_periodic_reaction_interval: int = pydantic.Field(default=3, ge=0)
     # Code self-awareness: allow agent to read its own codebase to understand other features
     agent_code_awareness: bool = True
     # Custom file patterns to exclude from code repository (in addition to default security exclusions)
