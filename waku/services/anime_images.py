@@ -17,7 +17,6 @@ from waku.common.http import _clients
 from waku.common.memory_store import memttlcache
 from waku.config import app_config
 from waku.logger import logger
-from waku.services.anime_names import image_character, name_matches
 from waku.services.image_requests import contains_r18_request
 from waku.services.manyacg import Artist, Artwork, Picture
 from waku.services.telegram_images import image_allowed, normalize_image_mode
@@ -27,8 +26,6 @@ _USER_AGENT = "WakuBot (https://github.com/TakeshiBot/waku-bot)"
 _categories: dict[str, str] = {}
 _catalog_expires = 0.0
 _catalog_lock = asyncio.Lock()
-_search_lock = asyncio.Lock()
-_next_search = 0.0
 _blocked_until = 0.0
 _selection_lock = asyncio.Lock()
 _HISTORY_TTL = 24 * 3600
@@ -48,7 +45,7 @@ _SAFE_NEGATION = re.compile(
 
 
 def resolve_image_search(keyword, mode, *, request_text=""):
-    """Separate rating instructions from character names without relaxing policy."""
+    """Extract rating instructions without relaxing the conversation's policy."""
     mode = normalize_image_mode(mode)
     keyword = unicodedata.normalize("NFC", keyword or "").strip()
     keyword = re.sub(r"\br[ -]18\b", "r18", keyword, flags=re.IGNORECASE)
@@ -73,7 +70,7 @@ def resolve_image_search(keyword, mode, *, request_text=""):
 
 
 def image_request_keyword(keyword, request_text):
-    """Recover an explicitly named target if the model accidentally asks for random."""
+    """Extract a subject only to explain that images are random; never search by it."""
     keyword = (keyword or "").strip()
     if keyword.casefold() not in {"", "random", "ngẫu nhiên", "ngau nhien", "anything"}:
         return keyword
@@ -112,108 +109,11 @@ def image_request_keyword(keyword, request_text):
             "tiep",
         }:
             return target
-    if re.search(random_pattern, request_text, re.I):
-        return ""
-    if re.search(
-        r"\b(?:gửi tiếp|gui tiep|lấy tiếp|lay tiep|lấy nhanh|lay nhanh|thử lại|thu lai|ảnh khác|anh khac|another|again)\b",
-        request_text,
-        re.I,
-    ):
-        return None
     return ""
 
 
-async def search_manyacg_artworks(client, keyword, mode):
-    """Keep the old API path, but select only results with evidence of the requested identity."""
-    keyword = keyword.strip()
-    if not keyword or len(keyword) > 200:
-        return []
-    character = await image_character(keyword)
-    if character is False:
-        logger.debug(
-            "Anime name is ambiguous; a full character name is needed: {!r}", keyword
-        )
-        return []
-    aliases = list(character.aliases) if character else [keyword]
-    fragments = set()
-    candidates, seen, queried = [], set(), set()
-
-    def matches(item):
-        fields = [item.get("title") or "", *(item.get("tags") or [])]
-        return any(
-            name_matches(field, alias) for field in fields for alias in aliases
-        ) or any(
-            re.fullmatch(r"[\u3400-\u9fff]{3,}", str(field))
-            and str(field).endswith(fragment)
-            for field in fields
-            for fragment in fragments
-        )
-
-    async def collect(query, hybrid):
-        if (query, hybrid) in queried:
-            return
-        queried.add((query, hybrid))
-        try:
-            response = await client.get(
-                "/artwork/list",
-                params={"r18": mode, "hybrid": hybrid, "keyword": query},
-            )
-            payload = response.json() if response.status_code == 200 else None
-        except (httpx.HTTPError, ValueError) as error:
-            logger.debug("Anime search failed: {}", type(error).__name__)
-            return
-        if (
-            not isinstance(payload, dict)
-            or payload.get("status", 200) != 200
-            or not isinstance(payload.get("data"), list)
-        ):
-            return
-        for item in payload["data"]:
-            if (
-                not isinstance(item, dict)
-                or not image_allowed(item.get("r18"), mode)
-                or not item.get("pictures")
-                or not matches(item)
-            ):
-                continue
-            identity = item.get("id") or item.get("source_url") or repr(item)
-            if identity not in seen:
-                seen.add(identity)
-                candidates.append(item)
-
-    await collect(keyword, app_config.manyacg_hybrid_search)
-    if len(candidates) < 6:
-        await collect(keyword, False)
-    if character and character.native:
-        await collect(character.native, False)
-    if len(candidates) < 6:
-        # Native name fragments must occur on an already verified artwork.
-        # This finds Chinese Kurumi tags without accepting the unrelated VTuber named Kurumi.
-        if character and re.fullmatch(r"[\u3400-\u9fff]{3,}", character.native):
-            for item in candidates:
-                for tag in item.get("tags", []):
-                    if (
-                        isinstance(tag, str)
-                        and re.fullmatch(r"[\u3400-\u9fff]{2,}", tag)
-                        and tag != character.native
-                        and tag in character.native
-                    ):
-                        fragments.add(tag)
-            for tag in sorted(fragments)[:2]:
-                await collect(tag, False)
-    logger.debug(
-        "Anime identity search: query={!r}, character={!r}, matching_artworks={}",
-        keyword,
-        character.full if character else None,
-        len(candidates),
-    )
-    return candidates
-
-
 async def manyacg_candidates(client, keyword, mode):
-    """All valid candidates; choose once in the shared selector, never in each adapter."""
-    if keyword:
-        return await search_manyacg_artworks(client, keyword, mode)
+    """Fetch random artworks only; keywords never filter the image pool."""
     response = await client.get("/artwork/random", params={"r18": mode, "limit": 10})
     if response.status_code != 200:
         return []
@@ -226,6 +126,24 @@ async def manyacg_candidates(client, keyword, mode):
         and image_allowed(item.get("r18"), mode)
         and item.get("pictures")
     ]
+
+
+def image_subject_requested(keyword="", *, request_text=""):
+    """Identify a subject request so tools can ask the model for its own explanation."""
+    request = resolve_image_search(keyword, 2)
+    subject = image_request_keyword(request[0] if request else "", request_text)
+    if not subject or subject.casefold() in {
+        "neko",
+        "waifu",
+        "husbando",
+        "kitsune",
+        "nekos:neko",
+        "nekos:waifu",
+        "nekos:husbando",
+        "nekos:kitsune",
+    }:
+        return False
+    return True
 
 
 def _client() -> httpx.AsyncClient:
@@ -306,21 +224,13 @@ def _web_url(value) -> str | None:
 
 
 async def _fetch_nekos_artwork(keyword="") -> tuple[Artwork, Picture] | None:
-    global _next_search
     catalog = await _image_categories()
     if not catalog:
         return None
     keyword = keyword.strip()[:200]
     category = keyword.casefold()
-    if not keyword or category in catalog:
-        category = category if category in catalog else random.choice(list(catalog))
-        data = await _request("/" + category, {"amount": 1})
-    else:
-        # /search allows 7 requests / 5 seconds. Share this pacing across chats.
-        async with _search_lock:
-            await asyncio.sleep(max(0, _next_search - time.monotonic()))
-            _next_search = time.monotonic() + 0.75
-            data = await _request("/search", {"query": keyword, "type": 1, "amount": 1})
+    category = category if category in catalog else random.choice(list(catalog))
+    data = await _request("/" + category, {"amount": 1})
     results = data.get("results") if data else None
     if not isinstance(results, list):
         return None
@@ -543,27 +453,18 @@ async def fetch_anime_artwork(
     if request is None:
         return None
     keyword, mode = request
-    if len(keyword) > 200:
-        return None
     forced_nekos = keyword.lower().startswith(("nekos:", "nekos.best:"))
     if forced_nekos:
         if mode == 1:
             return None
         keyword = keyword.partition(":")[2].strip()
+        if keyword.casefold() not in {"neko", "waifu", "husbando", "kitsune"}:
+            keyword = ""
         providers = ["nekos"]
-    elif mode == 1:
-        providers = ["manyacg"]
     else:
-        # nekos.best has artist/source metadata, not a character-tag index.
-        # Do not use it as a substitute for a named-character search.
-        providers = ["manyacg"]
-        if not keyword or keyword.casefold() in {
-            "neko",
-            "waifu",
-            "husbando",
-            "kitsune",
-        }:
-            providers.append("nekos")
+        # Subject requests use the same random pool as an empty request.
+        keyword = ""
+        providers = ["manyacg"] if mode == 1 else ["manyacg", "nekos"]
     repeated = False
     attempts = [
         provider

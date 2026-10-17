@@ -101,7 +101,7 @@ async def help_command(interaction: discord.Interaction) -> None:
         "`/help` — hướng dẫn sử dụng.\n"
         "`/forget` — xoá ngữ cảnh của bạn ở kênh hiện tại.\n"
         "`/invite` — link mời Waku vào server.\n"
-        "`/seg [keyword]` — gửi ảnh anime/Pixiv; vẫn dùng được `!seg`.\n"
+        "`/seg [r18/sfw]` — gửi ảnh anime/Pixiv ngẫu nhiên; vẫn dùng được `!seg`.\n"
         "`/clean [amount]` — dọn tối đa 50 tin của Waku (người có quyền)."
     )
     if _is_discord_user_bot_admin(interaction.user):

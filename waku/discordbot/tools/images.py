@@ -11,7 +11,7 @@ from pydantic_ai import RunContext
 from waku.logger import logger
 from waku.services.anime_images import (
     NoFreshImageError,
-    image_request_keyword,
+    image_subject_requested,
     resolve_image_search,
 )
 
@@ -146,17 +146,22 @@ async def send_discord_anime_photo(
     sent instead of claiming that an image was sent.
 
     Args:
-        keyword: Optional anime/Pixiv search keywords, without chat filler.
-            Use the full character name and series when a short name is ambiguous.
-            For follow-up requests, keep the intended character from the conversation.
-            Append r18 or sfw if explicitly requested. An empty keyword is only
-            for random requests. No match means no image, not a random substitute.
+        keyword: Optional originally requested subject; never used for searching.
+            Images are ALWAYS random; character/subject search is unavailable.
+            For a named character request, still call this tool to send a random
+            image with an explanation YOU write in caption, in the user's language
+            and your conversational style. Never claim it matches the character.
+            The backend never supplies user-facing explanatory text.
+            Preserve explicit r18/sfw instructions in this argument.
         target_channel_id: Optional target channel ID for immediate cross-channel sends.
             Bot-admin-only when different from the current channel.
         target_user_ids: Discord user IDs to mention in the sent image message.
             Use when the user asks to gift/call/tag someone for the image.
         caption: Optional agent-written text to include with the image. For gift
             requests, write a direct sentence addressed to the recipient.
+            Required for a named character/subject request: explain briefly in your
+            own words that this source only supplies random images. Your caption
+            is the reply; do not send a completion sentence after the image.
         allow_everyone: Bot-admin-only permission to allow @everyone/@here mentions.
         count: Number of images requested for this turn. The backend caps this to
             a safe batch size and spaces each send to avoid Discord limits.
@@ -227,9 +232,15 @@ async def send_discord_anime_photo(
             message="The requested Safe/R18 rating is not permitted by this conversation's image mode.",
         )
     keyword, r18_mode = request
-    keyword = image_request_keyword(keyword, getattr(message, "content", "") or "")
-    if keyword is None:
-        return DiscordAnimePhotoResult(success=False, message="This is a follow-up image request. Supply the intended character name from the conversation; do not use an empty keyword or send random images.")
+    if image_subject_requested(keyword, request_text=getattr(message, "content", "") or "") and not caption_text:
+        return DiscordAnimePhotoResult(success=False, message=(
+            "random_only=true; character_search_supported=false; nothing_sent=true. "
+            "Call this tool again with caption containing a brief explanation in your "
+            "own words and the user's language that the photo will be random, not "
+            "selected by character. Do not copy this internal tool status to the user."
+        ))
+    if not keyword.lower().startswith(("nekos:", "nekos.best:")):
+        keyword = ""
 
     requested_count = max(1, int(count or 1))
     capped_count = min(requested_count, _DISCORD_IMAGE_BATCH_MAX)
@@ -273,8 +284,7 @@ async def send_discord_anime_photo(
                     break
                 return DiscordAnimePhotoResult(success=False, message=(
                     "The available images duplicate the last image or images currently being sent. "
-                    "Ask for a more specific character/series or another character. "
-                    "Do not retry with an empty keyword or random images."
+                    "Try again later; character search is not supported."
                 ))
             if fetched is None:
                 logger.warning(
@@ -285,7 +295,7 @@ async def send_discord_anime_photo(
                 if sent_count == 0:
                     return DiscordAnimePhotoResult(
                         success=False,
-                        message=(f"Could not verify any matching image for {keyword!r}. Keep the requested character; do not retry with an empty keyword or random images. Ask for the full character name/series if ambiguous." if keyword else "Failed to fetch anime artwork from the available image sources."),
+                        message="Failed to fetch a random anime image from the available sources.",
                         sent_count=sent_count,
                         requested_count=requested_count,
                         capped_count=capped_count,

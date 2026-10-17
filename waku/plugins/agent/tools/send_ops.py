@@ -20,7 +20,7 @@ from waku.plugins.manyacg import manyacg
 from waku.services.anime_images import (
     NoFreshImageError,
     fetch_anime_artwork,
-    image_request_keyword,
+    image_subject_requested,
     manyacg_candidates,
     original_image_url,
     release_anime_image,
@@ -467,18 +467,25 @@ async def _fetch_anime_artwork(keyword: str = "", r18_mode: int = 0, *, scope=No
 
 
 async def send_anime_photo(
-    ctx: RunContext[datatype.ContextDeps], keyword: str = "", count: int = 1
+    ctx: RunContext[datatype.ContextDeps], keyword: str = "", count: int = 1,
+    caption: str = "",
 ) -> AnimePhotoResult:
     """Get and send anime photos (also called setu).
 
     Args:
-        keyword: Optional anime/Pixiv search keywords, without chat filler.
-            Use the full character name and series when a short name is ambiguous.
-            For follow-up requests, keep the intended character from the conversation.
-            Append r18 or sfw if explicitly requested. No matching result means
-            no image, not a request for a random substitute. Use nekos:neko,
-            nekos:waifu, nekos:husbando or nekos:kitsune for the SFW nekos.best source.
+        keyword: Optional originally requested subject; never used for searching.
+            Images are ALWAYS random; character/subject search is unavailable.
+            For a named character request, still call this tool to send a random
+            image with an explanation YOU write in caption, in the user's language
+            and your conversational style. Never claim it matches the character.
+            The backend never supplies user-facing explanatory text.
+            Preserve explicit r18/sfw instructions. Use nekos:neko, nekos:waifu,
+            nekos:husbando or nekos:kitsune to select that SFW random source.
         count: How many photos to send, 1-10.
+        caption: Optional plain text YOU write, up to 512 UTF-16 units. Required
+            when a specific character/subject was requested: briefly explain in
+            your own words that this source only supplies random images. Do not
+            send another message after the image; your caption is the reply.
     """
     if ctx.deps.message is None or ctx.deps.message.id is None:
         return AnimePhotoResult(
@@ -498,9 +505,18 @@ async def send_anime_photo(
     if request is None:
         return AnimePhotoResult(success=False, message="The requested Safe/R18 rating is not permitted by this conversation's image mode.")
     keyword, image_mode = request
-    keyword = image_request_keyword(keyword, message_plain_text(ctx.deps.message))
-    if keyword is None:
-        return AnimePhotoResult(success=False, message="This is a follow-up image request. Supply the intended character name from the conversation; do not use an empty keyword or send random images.")
+    caption = (caption or "").strip()
+    if image_subject_requested(keyword, request_text=message_plain_text(ctx.deps.message)) and not caption:
+        return AnimePhotoResult(success=False, message=(
+            "random_only=true; character_search_supported=false; nothing_sent=true. "
+            "Call this tool again with caption containing a brief explanation in your "
+            "own words and the user's language that the photo will be random, not "
+            "selected by character. Do not copy this internal tool status to the user."
+        ))
+    if len(caption.encode("utf-16-le")) // 2 > 512:
+        return AnimePhotoResult(success=False, message="Caption exceeds 512 UTF-16 units. Shorten your caption and retry; nothing has been sent.")
+    if not keyword.lower().startswith(("nekos:", "nekos.best:")):
+        keyword = ""
     fetched = []
     try:
         ratekey = f"anime_photo_rate_limit:{ctx.deps.chat_id}:{ctx.deps.user_id}"
@@ -523,8 +539,7 @@ async def send_anime_photo(
                     break
                 return AnimePhotoResult(success=False, message=(
                     "The available images duplicate the last image or images currently being sent. "
-                    "Ask for a more specific character/series or another character. "
-                    "Do not retry with an empty keyword or random images."
+                    "Try again later; character search is not supported."
                 ))
             if item is None:
                 break
@@ -532,13 +547,11 @@ async def send_anime_photo(
                 break
             fetched.append(item)
         if not fetched:
-            if keyword:
-                return AnimePhotoResult(success=False, message=f"Could not verify any matching image for {keyword!r}. Keep the requested character; do not retry with an empty keyword or random images. Ask for the full character name/series if ambiguous.")
             return AnimePhotoResult(success=False, message=tr("anime_fetch_failed"))
 
         if len(fetched) == 1:
             artwork, picture = fetched[0]
-            result = await _send_anime_photo_single(ctx, artwork, picture)
+            result = await _send_anime_photo_single(ctx, artwork, picture, caption=caption)
             if result.success:
                 ctx.deps.image_delivered = True
                 ctx.deps.side_effects_started = True
@@ -554,7 +567,8 @@ async def send_anime_photo(
             pyrogram.types.InputMediaPhoto(
                 media=picture["regular"],
                 caption=(
-                    f"<a href='{html.escape(artwork['source_url'], quote=True)}'>{html.escape(artwork['title'])}</a>"
+                    (html.escape(caption) + "\n\n" if caption else "")
+                    + f"<a href='{html.escape(artwork['source_url'], quote=True)}'>{html.escape(artwork['title'][:200])}</a>"
                     if i == 0
                     else ""
                 ),
@@ -606,6 +620,8 @@ async def _send_anime_photo_single(
     ctx: RunContext[datatype.ContextDeps],
     artwork: dict,
     picture: dict,
+    *,
+    caption: str = "",
 ) -> AnimePhotoResult:
     user_config = await database.get_user_config(ctx.deps.user_id)
     lang = user_config.lang
@@ -617,7 +633,8 @@ async def _send_anime_photo_single(
     await ctx.deps.client.send_photo(
         chat_id=ctx.deps.chat_id,
         photo=picture["regular"],
-        caption=f"<a href='{html.escape(artwork['source_url'], quote=True)}'>{html.escape(artwork['title'])}</a>",
+        caption=(html.escape(caption) + "\n\n" if caption else "")
+        + f"<a href='{html.escape(artwork['source_url'], quote=True)}'>{html.escape(artwork['title'][:200])}</a>",
         parse_mode=pyrogram.enums.ParseMode.HTML,
         reply_markup=pyrogram.types.InlineKeyboardMarkup(
             [

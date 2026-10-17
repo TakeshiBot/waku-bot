@@ -22,41 +22,37 @@ Với ảnh ngẫu nhiên ở chế độ **An Toàn** hoặc **Cả Hai**, bot 
 như base cũ; khi nguồn này lỗi có thể thử nekos.best. **Chỉ R18** dùng ManyACG,
 không lấy ảnh SFW từ nekos.best để thay thế yêu cầu R18.
 
-Tìm tên nhân vật/tag vẫn gọi `/artwork/list` với `hybrid = manyacg_hybrid_search`
-như base cũ, nhưng chỉ chọn những ảnh có tên/tag khớp nhân vật yêu cầu. Bot tra tên
-đầy đủ và tên bản địa qua AniList (không cần key, lưu tên tối đa 1 giờ), để tên ngắn
-như Kurumi không lẫn với nhân vật khác cùng tên. Nếu cần, bot tìm thêm bằng từ khóa
-chính xác và tên bản địa. Tag bản địa rút gọn chỉ được dùng khi đã có trên ảnh xác
-định đúng nhân vật. Kết quả tìm gần nghĩa không có bằng chứng tên sẽ bị loại.
-Không đổi sang ảnh ngẫu nhiên hoặc nhân vật khác khi không tìm thấy. nekos.best
-không có chỉ mục tag nhân vật, nên chỉ dùng cho ảnh ngẫu nhiên/category hoặc
-khi chọn nguồn này trực tiếp:
+Bot chỉ lấy ảnh **ngẫu nhiên**, không tìm theo nhân vật/tag và không tra AniList.
+Khi chat AI có yêu cầu nhân vật cụ thể, AI tự viết caption giải thích giới hạn
+rồi gửi ảnh random. Hệ thống chỉ cung cấp trạng thái nội bộ cho AI, không chèn
+câu giải thích mẫu vào tin nhắn hoặc caption. Nếu AI chưa viết caption, công cụ
+yêu cầu AI bổ sung trước khi gửi ảnh. Áp dụng cho Telegram và Discord; caption
+ảnh Discord lên lịch cũng do AI viết khi tạo lịch. Lệnh `/seg` trực tiếp chỉ gửi
+ảnh random và thông tin nguồn. Chế độ An toàn/R18 vẫn được giữ.
+Có thể chọn nguồn nekos.best trực tiếp:
 
 ```text
 /seg nekos:neko
 /seg nekos:waifu
 /seg nekos:husbando
 /seg nekos:kitsune
-/seg Hatsune Miku
-/seg Rem r18
+/seg
+/seg r18
+/seg sfw
 ```
 
 Trên Discord, nhập cùng từ khóa vào lệnh `/seg`. AI cũng dùng được các từ khóa
 này khi gọi công cụ gửi ảnh. Nút nguồn dẫn tới tác phẩm gốc, nút ảnh gốc của
 nekos.best dẫn tới file ảnh tương ứng; ảnh ManyACG giữ đường dẫn cũ.
 
-Các request nekos.best có User-Agent nhận diện dự án, có giới hạn nhịp tìm kiếm
-chung và tạm ngừng khi API báo 429. Việc bật/tắt ảnh và chọn chế độ trong config
+Các request nekos.best có User-Agent nhận diện dự án và tạm ngừng khi API báo 429.
+Việc bật/tắt ảnh và chọn chế độ trong config
 Telegram/Discord vẫn áp dụng cho cả hai nguồn.
 
 `r18`/`nsfw` trong từ khóa chọn ảnh R18, kể cả khi menu đang để **Cả Hai**;
 `sfw`/`an toàn` chọn ảnh an toàn. Các dấu này không được gửi như tên nhân vật.
 Yêu cầu R18 bị từ chối khi đang ở **An Toàn**, và yêu cầu SFW bị từ chối khi
 đang ở **Chỉ R18**. Không nới chế độ của nhóm để đáp ứng một yêu cầu riêng.
-Tên ngắn có thể trùng nhiều nhân vật; thêm tên đầy đủ hoặc tên bộ anime để thu hẹp.
-Bot đối chiếu metadata của ManyACG, chưa nhận diện nhân vật bằng nội dung ảnh.
-Nếu tên ngắn còn mơ hồ hoặc không xác minh được, bot không gửi ảnh nhân vật khác để thay thế.
-
 ## Tránh gửi lại ảnh
 
 Lệnh và AI dùng chung lịch sử theo từng chat/kênh, kiểm tra ID ảnh, URL và hash ảnh.
@@ -68,10 +64,8 @@ Redis và được giữ qua lần khởi động lại khi có Redis.
 
 Nếu chỉ có ảnh vừa gửi hoặc ảnh đang chờ gửi, bot báo chưa có ảnh khác thay vì gửi
 trùng ngay. Mỗi lần tìm đều hỏi API lại, không khóa tập kết quả trong cache 5 phút.
-AI lấy từ khóa theo ngữ cảnh hội thoại như base cũ. Nếu công cụ nhận từ khóa rỗng
-trong khi tin nhắn hiện tại có tên sau “ảnh/photo/image”, bot dùng tên đó để tìm.
-Với câu tiếp nối như “lấy nhanh”, công cụ yêu cầu AI điền tên từ hội thoại thay vì
-gửi ngẫu nhiên. `/seg` không kèm từ khóa vẫn lấy ảnh ngẫu nhiên.
+Tên nhân vật trong yêu cầu chỉ giúp AI biết cần giải thích; không được gửi
+tới API để lọc ảnh. Bot không khẳng định ảnh random là đúng nhân vật yêu cầu.
 
 ## Xin ảnh và tạo ảnh AI
 
