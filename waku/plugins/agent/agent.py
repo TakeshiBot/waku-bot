@@ -1142,12 +1142,14 @@ async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
         coverage: state.PromptCoverage | None = await common.memttlcache.get(
             state.prompt_coverage_key(chat.id, user.id)
         )
+        moderation_candidates: list[datatype.ModerationCandidate] = []
         user_prompt, _, prompt_media_meta = await get_input_prompt(
             client,
             message,
             include_nearby=nearby_count,
             ctx=ctx_info,
             coverage=coverage,
+            moderation_candidates=moderation_candidates,
         )
         stale_steering = state.drain_steering(chat.id, user.id)
         if stale_steering:
@@ -1186,6 +1188,7 @@ async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
                     powermemory=powermemory,
                     history=history,
                     periodic_expressions_enabled=True,
+                    moderation_candidates=moderation_candidates,
                 ),  # type: ignore
                 multimodal_model=multimodal_model,
                 model=model,

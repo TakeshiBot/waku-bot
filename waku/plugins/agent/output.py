@@ -107,6 +107,10 @@ async def record_tool_reply(
         reply_text=delivered_text if isinstance(delivered_text, str) else text,
         original_user_message=message_plain_text(message),
         moderation_reference=getattr(deps, "moderation_reference", None),
+        moderation_candidates=[
+            *getattr(deps, "moderation_candidates", []),
+            *getattr(deps, "moderation_reply_candidates", []),
+        ],
         timestamp=datetime.now().timestamp(),
     )
     try:
@@ -348,6 +352,10 @@ async def reply_output(
                 reply_text=last_reply_text,
                 original_user_message=message_plain_text(message),
                 moderation_reference=getattr(deps, "moderation_reference", None),
+                moderation_candidates=[
+                    *getattr(deps, "moderation_candidates", []),
+                    *getattr(deps, "moderation_reply_candidates", []),
+                ],
                 timestamp=datetime.now().timestamp(),
             )
             _chat = message.chat
@@ -672,6 +680,10 @@ class StreamingOutput:
                             moderation_reference=getattr(
                                 self.deps, "moderation_reference", None
                             ),
+                            moderation_candidates=[
+                                *getattr(self.deps, "moderation_candidates", []),
+                                *getattr(self.deps, "moderation_reply_candidates", []),
+                            ],
                             timestamp=datetime.now().timestamp(),
                         ),
                         ttl=300,

@@ -236,12 +236,44 @@ async def _fetch_nearby(
     return await common.get_cached_messages_objects(message.chat.id, message_ids)
 
 
+def collect_moderation_candidates(
+    message: pyrogram.types.Message,
+    nearby: list[pyrogram.types.Message],
+    candidates: list[datatype.ModerationCandidate],
+) -> None:
+    """Retain real sender IDs behind the group context that the model sees."""
+    chat_id = message.chat.id
+    observed = {candidate.user_id: candidate for candidate in candidates}
+    reply = message.reply_to_message if is_explicit_reply(message) else None
+    for item in [*nearby, reply, message]:
+        if (
+            item is None
+            or getattr(item, "empty", False)
+            or item.chat is None
+            or item.chat.id != chat_id
+            or item.sender_chat is not None
+            or item.from_user is None
+        ):
+            continue
+        user = item.from_user
+        if not isinstance(user.id, int) or isinstance(user.id, bool) or user.id <= 0:
+            continue
+        observed[user.id] = datatype.ModerationCandidate(
+            user_id=user.id,
+            full_name=user.full_name or "",
+            username=user.username,
+            message_id=item.id,
+        )
+    candidates[:] = list(observed.values())[-100:]
+
+
 async def get_input_prompt(
     client: PyrogramClient,
     message: pyrogram.types.Message,
     include_nearby: int = 0,
     ctx: datatype.ContextInfo | Any | None = None,
     coverage: state.PromptCoverage | None = None,
+    moderation_candidates: list[datatype.ModerationCandidate] | None = None,
 ) -> tuple[list[UserContent], bool, dict[str, int]]:
     """Build the user prompt list; the second element is True only when the
     current message (or its direct reply) contributed media, so nearby context
@@ -257,6 +289,8 @@ async def get_input_prompt(
     is_group = message.chat is not None and message.chat.type in GROUP_CHAT_TYPES
     if is_group:
         nearby = await _fetch_nearby(message, include_nearby)
+        if moderation_candidates is not None:
+            collect_moderation_candidates(message, nearby, moderation_candidates)
         prompt, media_meta = await input_format.build_group_prompt(
             client, message, nearby, ctx, coverage=coverage
         )

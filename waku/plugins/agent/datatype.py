@@ -156,6 +156,16 @@ class ModerationReference:
 
 
 @dataclass
+class ModerationCandidate:
+    """A real sender observed in this chat, never an identity invented by the AI."""
+
+    user_id: int
+    full_name: str = ""
+    username: str | None = None
+    message_id: int | None = None
+
+
+@dataclass
 class ContextDeps:
     client: PyrogramClient
     user_id: int
@@ -182,6 +192,8 @@ class ContextDeps:
     side_effects_started: bool = False
     moderation_results: dict[str, str] = field(default_factory=dict)
     moderation_reference: ModerationReference | None = None
+    moderation_candidates: list[ModerationCandidate] = field(default_factory=list)
+    moderation_reply_candidates: list[ModerationCandidate] = field(default_factory=list)
 
 
 @dataclass
@@ -230,3 +242,4 @@ class BotLastReply:
     original_user_message: str = ""
     full_output: str = ""  # May be split into multiple outgoing messages.
     moderation_reference: ModerationReference | None = None
+    moderation_candidates: list[ModerationCandidate] = field(default_factory=list)
