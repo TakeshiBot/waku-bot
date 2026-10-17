@@ -7,9 +7,10 @@ quota left; settle charges actual usage after success. A run may therefore consu
 the remaining quota. Record excess as debt and reject the next preflight until an operator grants credit.
 Preflight approval cannot guarantee full affordability, but accounting now reflects the actual cost.
 
-Accounts represent the speaker and conversation. Anonymous admins and channel identities have no personal
-account (sender_chat is a channel or the group itself); they must use allocated group quota or be rejected.
-Operators control this in the panel through group allocations, credits or exemption.
+Accounts represent the speaker and conversation. Anonymous admins share a speaker account keyed by their
+own group's ID, matching the sender identity persisted by the message middleware. It receives the normal
+daily free allowance without exposing or guessing the admin's real identity. Channel identities and service
+accounts still need allocated group quota, credits or exemption.
 
 This covers conversational agents (user-triggered wake, ask callbacks and follow-up); bot-initiated helper
 agents have no billable speaker and are outside this quota.
@@ -26,6 +27,7 @@ from pydantic_ai.usage import RunUsage
 
 from waku import database
 from waku.common.memory_store import memttlcache
+from waku.common.utils import GROUP_CHAT_TYPES
 from waku.config import app_config
 from waku.enums import ChatID
 from waku.i18n import i18n
@@ -35,7 +37,7 @@ from waku.plugins.agent import state as agent_state
 SCOPE_USER = database.SCOPE_USER
 SCOPE_CHAT = database.SCOPE_CHAT
 
-# Anonymous admins/service accounts have no personal account (see waku/enums.py::ChatID); charge the group.
+# Never bill the shared Telegram compatibility/service users (see waku/enums.py::ChatID).
 PSEUDO_USER_IDS = frozenset(
     (int(ChatID.ANONYMOUS_ADMIN), int(ChatID.SERVICE_CHAT), int(ChatID.FAKE_CHANNEL))
 )
@@ -48,7 +50,8 @@ _NOTICE_TTL_SECONDS = 60
 class Subject:
     """The payer accounts for one call.
 
-    user_id=None means the speaker has no personal account (anonymous admin, channel or service account).
+    user_id is a real speaker ID or the group's ID for its shared anonymous-admin identity.
+    user_id=None means there is no billable speaker (channel or service account).
     In private chats chat_id is the user, so accounts() does not create a separate conversation account.
     """
 
@@ -132,12 +135,22 @@ def subject_for_chat(user_id: int | None, chat: pyrogram.types.Chat | None) -> S
 def subject_of(message: pyrogram.types.Message) -> Subject:
     """Derive payer accounts from a message.
 
-    Match middlewares/before.py: sender_chat takes priority for anonymous admins and channel
-    messages, which have no personal account and are recorded only against the group.
+    Anonymous admins use their own group's sender_chat ID, as in middlewares/before.py.
+    This is a shared identity per group, never Telegram's global GroupAnonymousBot user.
+    Speaking as an unrelated channel does not qualify for this allowance.
     """
     chat = message.chat
     user_id: int | None = None
-    if message.sender_chat is None and message.from_user is not None:
+    if (
+        chat is not None
+        and chat.type in GROUP_CHAT_TYPES
+        and chat.id is not None
+        and chat.id < 0
+        and message.sender_chat is not None
+        and message.sender_chat.id == chat.id
+    ):
+        user_id = chat.id
+    elif message.sender_chat is None and message.from_user is not None:
         candidate = message.from_user.id
         if candidate not in PSEUDO_USER_IDS:
             user_id = candidate

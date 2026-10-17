@@ -91,6 +91,12 @@ credit cá nhân → credit nhóm. Quota dùng chung giữa DM và các nhóm Te
 chưa áp dụng cho Discord hay Telegram Business. Token được chốt sau khi model
 hoàn thành nên một lượt có thể vượt phần còn lại; phần vượt được ghi thành nợ.
 
+Admin bật ẩn danh trong nhóm dùng chung một tài khoản hạn mức theo ID của nhóm,
+nhận mức free mỗi ngày như user thông thường và làm mới lúc 06:00 UTC+7. Bot không
+biết hay suy đoán tài khoản thật của admin. Token vẫn được trừ và thống kê vào
+nhóm; khi hết free, quỹ nhóm nếu được cấp vẫn dùng được. Mỗi nhóm có tài khoản
+ẩn danh riêng; gửi bằng danh tính một kênh khác không được dùng tài khoản này.
+
 ## Các tùy chọn cấu hình
 
 | Tùy chọn | Giá trị mặc định | Ý nghĩa |
