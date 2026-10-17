@@ -9,10 +9,8 @@ import discord
 from pydantic_ai import RunContext
 
 from waku.logger import logger
-from waku.services.anime_characters import AmbiguousCharacterError
 from waku.services.anime_images import (
     NoFreshImageError,
-    conversation_image_keyword,
     resolve_image_search,
 )
 
@@ -147,8 +145,9 @@ async def send_discord_anime_photo(
     sent instead of claiming that an image was sent.
 
     Args:
-        keyword: Character name and series, or search tags, without chat filler.
-            Preserve the requested name, never substitute another character.
+        keyword: Optional anime/Pixiv search keywords, without chat filler.
+            Use the full character name and series when a short name is ambiguous.
+            For follow-up requests, keep the intended character from the conversation.
             Append r18 or sfw if explicitly requested. An empty keyword is only
             for random requests. No match means no image, not a random substitute.
         target_channel_id: Optional target channel ID for immediate cross-channel sends.
@@ -218,10 +217,6 @@ async def send_discord_anime_photo(
         )
 
     r18_mode = settings.r18_mode if message.guild is not None else 0
-    keyword = await conversation_image_keyword(
-        keyword, f"discord:{target_channel_actual_id}:{message.author.id}",
-        getattr(message, "content", "") or "",
-    )
     request = resolve_image_search(
         keyword, r18_mode, request_text=getattr(message, "content", "") or ""
     )
@@ -269,18 +264,11 @@ async def send_discord_anime_photo(
                 fetched = await _fetch_discord_anime_artwork(
                     keyword.strip(), r18_mode=r18_mode, scope=f"discord:{target_channel_actual_id}"
                 )
-            except AmbiguousCharacterError as error:
-                if sent_count:
-                    break
-                return DiscordAnimePhotoResult(success=False, message=(
-                    f"The name is ambiguous: {error}. Ask the user for the full character name. "
-                    "Do not choose a different character or retry with empty/random keywords."
-                ))
             except NoFreshImageError:
                 if sent_count:
                     break
                 return DiscordAnimePhotoResult(success=False, message=(
-                    "All verified matching artworks were already sent recently in this chat. "
+                    "The available images duplicate the last image or images currently being sent. "
                     "Ask for a more specific character/series or another character. "
                     "Do not retry with an empty keyword or random images."
                 ))

@@ -13,13 +13,12 @@ from waku.config import app_config
 from waku.logger import logger
 from waku.services import aniobjcut
 from waku.services import manyacg as manyacg_service
-from waku.services.anime_characters import AmbiguousCharacterError
 from waku.services.anime_images import (
     NoFreshImageError,
-    conversation_image_keyword,
     fetch_anime_artwork,
     manyacg_candidates,
     original_image_url,
+    release_anime_image,
     remember_anime_image,
 )
 from waku.services.manyacg import (
@@ -200,10 +199,10 @@ async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
         True,
         ttl=app_config.manyacg_setu_cd,
     )
+    item = None
     try:
         command = getattr(message, "command", None) or []
         keyword = " ".join(command[1:])
-        await conversation_image_keyword(keyword, f"telegram:{chat.id}:{user.id}", "" if keyword else "random")
         item = await fetch_anime_artwork(
             keyword, image_mode, _fetch_seg_manyacg_artwork, scope=f"telegram:{chat.id}"
         )
@@ -238,8 +237,6 @@ async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
             has_spoiler=artwork.r18,
         )
         await remember_anime_image(f"telegram:{chat.id}", artwork, picture)
-    except AmbiguousCharacterError as error:
-        await message.reply(i18n.t("bot.msg.manyacg.ambiguous_character", locale=lang).format(names=str(error)))
     except NoFreshImageError:
         await message.reply(i18n.t("bot.msg.manyacg.no_fresh", locale=lang))
     except Exception as e:
@@ -248,6 +245,9 @@ async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
             i18n.t("bot.msg.manyacg.setu_error", locale=lang),
         )
         return
+    finally:
+        if item is not None:
+            await release_anime_image(f"telegram:{chat.id}", *item)
 
 
 @PyrogramClient.on_message(pyrogram.filters.command("randavatar"), group=0)

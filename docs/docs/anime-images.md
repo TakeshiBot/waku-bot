@@ -18,15 +18,14 @@ và [chỉ cung cấp nội dung SFW](https://docs.nekos.best/getting-started/in
 Bot đọc danh sách category từ `/endpoints`, chỉ chọn ảnh tĩnh được API công bố;
 hiện có `neko`, `waifu`, `husbando`, `kitsune`. GIF không được trộn vào luồng gửi ảnh.
 
-Với ảnh ngẫu nhiên ở chế độ **An Toàn** hoặc **Cả Hai**, bot chọn ngẫu nhiên giữa
-hai nguồn. Khi một nguồn lỗi, thử nguồn còn lại. **Chỉ R18** dùng ManyACG,
+Với ảnh ngẫu nhiên ở chế độ **An Toàn** hoặc **Cả Hai**, bot ưu tiên ManyACG
+như base cũ; khi nguồn này lỗi có thể thử nekos.best. **Chỉ R18** dùng ManyACG,
 không lấy ảnh SFW từ nekos.best để thay thế yêu cầu R18.
 
-Tìm tên nhân vật/tag dùng ManyACG. Bot tra tên đầy đủ và tên bản địa qua AniList
-(không cần key), rồi tìm riêng từng tên và đọc thêm các trang kết quả. Khi xác định
-được nhân vật, tên ngắn trùng với nhân vật khác không đủ để chấp nhận ảnh. Tag tên
-bản địa rút gọn chỉ được dùng thêm khi xuất hiện trên tác phẩm đã đối chiếu đúng tên.
-Tìm ngữ nghĩa chỉ là bước bổ sung và vẫn phải qua bộ lọc tên/tag.
+Tìm tên nhân vật/tag dùng luồng của base cũ: gửi nguyên từ khóa vào `/artwork/list`
+với `hybrid = manyacg_hybrid_search` ngay từ lần tìm đầu tiên. Bot chọn trong tập
+kết quả API trả về như base cũ, không kéo thêm các trang kém liên quan. Không tra AniList,
+không tự đổi tên nhân vật hoặc loại kết quả vì tag không chứa nguyên tên người dùng nhập.
 Không đổi sang ảnh ngẫu nhiên hoặc nhân vật khác khi không tìm thấy. nekos.best
 không có chỉ mục tag nhân vật, nên chỉ dùng cho ảnh ngẫu nhiên/category hoặc
 khi chọn nguồn này trực tiếp:
@@ -52,23 +51,22 @@ Telegram/Discord vẫn áp dụng cho cả hai nguồn.
 `sfw`/`an toàn` chọn ảnh an toàn. Các dấu này không được gửi như tên nhân vật.
 Yêu cầu R18 bị từ chối khi đang ở **An Toàn**, và yêu cầu SFW bị từ chối khi
 đang ở **Chỉ R18**. Không nới chế độ của nhóm để đáp ứng một yêu cầu riêng.
-Tên ngắn có thể trùng nhiều nhân vật. Khi kết quả tra tên không có nhân vật nổi trội,
-bot yêu cầu tên đầy đủ thay vì trộn ảnh của các nhân vật cùng tên.
-Việc đối chiếu dựa trên metadata của API, không phải nhận diện nhân vật bằng ảnh.
+Tên ngắn có thể trùng nhiều nhân vật; thêm tên đầy đủ hoặc tên bộ anime để thu hẹp.
+Độ khớp của kết quả phụ thuộc vào tìm kiếm của ManyACG, bot không nhận diện nhân vật bằng ảnh.
 
 ## Tránh gửi lại ảnh
 
-Lệnh và AI dùng chung lịch sử theo từng chat/kênh, kiểm tra ID tác phẩm, link nguồn,
-ID ảnh, URL và hash ảnh. Một tác phẩm nhiều trang cũng chỉ được chọn một lần; album
-và các yêu cầu đồng thời không chọn trùng tác phẩm. Bot giữ tối đa 512 dấu nhận diện
-gần nhất, hết hạn sau 7 ngày không cập nhật. Lịch sử nằm trong bộ nhớ khi không dùng
+Lệnh và AI dùng chung lịch sử theo từng chat/kênh, kiểm tra ID ảnh, URL và hash ảnh.
+Ưu tiên ảnh chưa gửi, sau đó đến ảnh lâu nhất đã gửi; không gửi lại ngay ảnh cuối cùng.
+Các trang khác nhau trong cùng tác phẩm vẫn được chọn nếu nội dung không trùng.
+Ảnh đang được gửi được giữ chỗ để album và các yêu cầu đồng thời không chọn trùng.
+Bot nhớ tối đa 50 ảnh gần nhất, hết hạn sau 24 giờ không cập nhật. Lịch sử nằm trong bộ nhớ khi không dùng
 Redis và được giữ qua lần khởi động lại khi có Redis.
 
-Nếu đã gửi hết kết quả khớp đang tìm được, bot báo hết ảnh mới thay vì gửi lặp hoặc
-đổi nhân vật. Kết quả tìm được lưu tạm 5 phút để tránh gọi API lại cho từng ảnh.
-AI nhớ yêu cầu ảnh gần nhất của từng người trong chat trong 30 phút: câu tiếp nối
-như “lấy nhanh”, “thử lại” giữ tên nhân vật, kể cả lượt tìm trước thất bại. Yêu cầu
-ngẫu nhiên rõ ràng hoặc dùng `/seg` không kèm tên sẽ bỏ tên đã nhớ.
+Nếu chỉ có ảnh vừa gửi hoặc ảnh đang chờ gửi, bot báo chưa có ảnh khác thay vì gửi
+trùng ngay. Mỗi lần tìm đều hỏi API lại, không khóa tập kết quả trong cache 5 phút.
+AI lấy từ khóa theo ngữ cảnh hội thoại như base cũ; không có lớp nhớ tên riêng tự
+ghi đè từ khóa của công cụ. `/seg` không kèm từ khóa lấy ảnh ngẫu nhiên.
 
 ## Xin ảnh và tạo ảnh AI
 

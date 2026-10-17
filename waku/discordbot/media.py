@@ -17,13 +17,12 @@ from waku.config import app_config
 from waku.i18n import i18n
 from waku.logger import logger
 from waku.services import manyacg as manyacg_service
-from waku.services.anime_characters import AmbiguousCharacterError
 from waku.services.anime_images import (
     NoFreshImageError,
-    conversation_image_keyword,
     fetch_anime_artwork,
     manyacg_candidates,
     original_image_url,
+    release_anime_image,
     remember_anime_image,
 )
 from waku.services.manyacg import manyacg_client
@@ -275,17 +274,21 @@ async def _send_discord_anime_photo_card(
     caption_text = (caption or "").strip()
     if caption_text:
         embed.description = caption_text[:4096]
-    success = await _send_discord_image_embed(
-        message,
-        embed,
-        picture.regular,
-        _discord_artwork_view(artwork.source_url, original_url),
-        spoiler=artwork.r18,
-        channel=channel,
-        content=content,
-        allowed_mentions=allowed_mentions,
-        reference=reference,
-    )
+    try:
+        success = await _send_discord_image_embed(
+            message,
+            embed,
+            picture.regular,
+            _discord_artwork_view(artwork.source_url, original_url),
+            spoiler=artwork.r18,
+            channel=channel,
+            content=content,
+            allowed_mentions=allowed_mentions,
+            reference=reference,
+        )
+    except BaseException:
+        await release_anime_image(f"discord:{(channel if channel is not None else message.channel).id}", artwork, picture)
+        raise
     if success:
         destination = channel if channel is not None else message.channel
         await remember_anime_image(f"discord:{destination.id}", artwork, picture)
@@ -295,6 +298,7 @@ async def _send_discord_anime_photo_card(
             f"title={artwork.title!r} r18={artwork.r18} spoiler={artwork.r18}"
         )
     else:
+        await release_anime_image(f"discord:{(channel if channel is not None else message.channel).id}", artwork, picture)
         logger.error(
             "Discord anime send failed: "
             f"guild={_guild_name(message)!r} channel={_channel_name(message)!r} "
@@ -349,7 +353,6 @@ async def _send_discord_seg(message: discord.Message, keyword: str = "") -> bool
 
     try:
         r18_mode = await _discord_r18_mode(message.guild)
-        await conversation_image_keyword(keyword, f"discord:{message.channel.id}:{message.author.id}", "" if keyword else "random")
         async with message.channel.typing():
             async with image_lock:
                 fetched = await _fetch_discord_anime_artwork(keyword=keyword, r18_mode=r18_mode, scope=f"discord:{message.channel.id}")
@@ -359,9 +362,6 @@ async def _send_discord_seg(message: discord.Message, keyword: str = "") -> bool
                 artwork, picture = fetched
                 await _send_discord_anime_photo_card(message, artwork, picture)
             return True
-    except AmbiguousCharacterError as error:
-        await _send_discord_media_notice(message, i18n.t("bot.msg.manyacg.ambiguous_character", locale=settings.lang).format(names=str(error)))
-        return True
     except NoFreshImageError:
         await _send_discord_media_notice(message, i18n.t("bot.msg.manyacg.no_fresh", locale=settings.lang))
         return True
@@ -441,7 +441,6 @@ async def _send_discord_seg_interaction(
 
     try:
         r18_mode = await _discord_r18_mode(guild)
-        await conversation_image_keyword((keyword or "").strip(), f"discord:{channel.id}:{interaction.user.id}", "" if keyword else "random")
         async with image_lock:
             fetched = await _fetch_discord_anime_artwork(
                 keyword=(keyword or "").strip(),
@@ -466,8 +465,6 @@ async def _send_discord_seg_interaction(
             await interaction.delete_original_response()
         except discord.HTTPException as e:
             logger.debug(f"Discord seg slash placeholder cleanup failed: {e}")
-    except AmbiguousCharacterError as error:
-        await _respond_to_discord_seg_interaction(interaction, i18n.t("bot.msg.manyacg.ambiguous_character", locale=settings.lang).format(names=str(error)))
     except NoFreshImageError:
         await _respond_to_discord_seg_interaction(interaction, i18n.t("bot.msg.manyacg.no_fresh", locale=settings.lang))
     except Exception as e:

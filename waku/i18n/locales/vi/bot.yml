@@ -401,8 +401,7 @@ bot:
       chat_setu_disabled: Nhóm này không cho phép ảnh gợi cảm.
       setu_cd: Nhanh quá! Hãy đợi một chút.
       setu_error: Không thành công, hãy thử lại sau nhé.
-      no_fresh: Các ảnh khớp yêu cầu đã được gửi gần đây trong chat này rồi. Nguồn hiện chưa có ảnh mới phù hợp; thử tên nhân vật đầy đủ hoặc nhân vật khác nhé.
-      ambiguous_character: 'Tên này trùng nhiều nhân vật: {names}. Bạn gửi tên đầy đủ của nhân vật muốn lấy ảnh nhé.'
+      no_fresh: Nguồn hiện chỉ trả về ảnh vừa gửi hoặc ảnh đang chờ gửi. Thử lại sau hoặc đổi từ khóa để lấy ảnh khác nhé.
     greeting:
       usage: |
         Cách dùng: /greet &lt;thao tác&gt; [tham số]

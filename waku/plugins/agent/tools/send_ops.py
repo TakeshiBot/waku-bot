@@ -17,13 +17,12 @@ from waku.logger import logger
 from waku.plugins.agent.localization import tr
 from waku.plugins.agent.output import record_tool_reply, text_already_sent
 from waku.plugins.manyacg import manyacg
-from waku.services.anime_characters import AmbiguousCharacterError
 from waku.services.anime_images import (
     NoFreshImageError,
-    conversation_image_keyword,
     fetch_anime_artwork,
     manyacg_candidates,
     original_image_url,
+    release_anime_image,
     remember_anime_image,
     resolve_image_search,
 )
@@ -472,8 +471,9 @@ async def send_anime_photo(
     """Get and send anime photos (also called setu).
 
     Args:
-        keyword: Character name and series, or search tags, without chat filler.
-            Preserve the requested name; never replace it with another character.
+        keyword: Optional anime/Pixiv search keywords, without chat filler.
+            Use the full character name and series when a short name is ambiguous.
+            For follow-up requests, keep the intended character from the conversation.
             Append r18 or sfw if explicitly requested. No matching result means
             no image, not a request for a random substitute. Use nekos:neko,
             nekos:waifu, nekos:husbando or nekos:kitsune for the SFW nekos.best source.
@@ -490,10 +490,6 @@ async def send_anime_photo(
     enabled, image_mode = await telegram_image_settings(ctx.deps.chat_id)
     if not enabled:
         return AnimePhotoResult(success=False, message=tr("anime_chat_disabled"))
-    keyword = await conversation_image_keyword(
-        keyword, f"telegram:{ctx.deps.chat_id}:{ctx.deps.user_id}",
-        message_plain_text(ctx.deps.message),
-    )
     request = resolve_image_search(
         keyword, image_mode,
         request_text=message_plain_text(ctx.deps.message),
@@ -501,6 +497,7 @@ async def send_anime_photo(
     if request is None:
         return AnimePhotoResult(success=False, message="The requested Safe/R18 rating is not permitted by this conversation's image mode.")
     keyword, image_mode = request
+    fetched = []
     try:
         ratekey = f"anime_photo_rate_limit:{ctx.deps.chat_id}:{ctx.deps.user_id}"
         if await common.memttlcache.get(ratekey, 0) > 3:
@@ -512,24 +509,16 @@ async def send_anime_photo(
         await common.memttlcache.set(ratekey, current_count + 1, ttl=10)
 
         count = max(1, min(10, count))
-        fetched = []
         for _ in range(count):
             try:
                 item = await _fetch_anime_artwork(
                     keyword, r18_mode=image_mode, scope=f"telegram:{ctx.deps.chat_id}"
                 )
-            except AmbiguousCharacterError as error:
-                if fetched:
-                    break
-                return AnimePhotoResult(success=False, message=(
-                    f"The name is ambiguous: {error}. Ask the user for the full character name. "
-                    "Do not choose a different character or retry with empty/random keywords."
-                ))
             except NoFreshImageError:
                 if fetched:
                     break
                 return AnimePhotoResult(success=False, message=(
-                    "All verified matching artworks were already sent recently in this chat. "
+                    "The available images duplicate the last image or images currently being sent. "
                     "Ask for a more specific character/series or another character. "
                     "Do not retry with an empty keyword or random images."
                 ))
@@ -602,6 +591,9 @@ async def send_anime_photo(
             success=False,
             message=tr("operation_error", p0=e.__class__.__name__),
         )
+    finally:
+        for artwork, picture in fetched:
+            await release_anime_image(f"telegram:{ctx.deps.chat_id}", artwork, picture)
 
 
 async def _send_anime_photo_single(

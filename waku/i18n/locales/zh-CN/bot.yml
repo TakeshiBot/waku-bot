@@ -102,8 +102,7 @@ bot:
       chat_setu_disabled: 这里不允许涩图哦
       setu_cd: 太快了! 不行!
       setu_error: 失败了喵, 请稍后再试
-      no_fresh: All matching artworks were sent recently in this chat. No new matching image is available; try a full character name or another character.
-      ambiguous_character: 'This name matches multiple characters: {names}. Please specify the full character name.'
+      no_fresh: The source only returned the last image or images currently being sent. Try again later or use another keyword for a different image.
     greeting:
       usage: |
         使用方法: /greet <动作> [参数]

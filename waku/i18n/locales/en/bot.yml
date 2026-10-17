@@ -191,8 +191,7 @@ bot:
       chat_setu_disabled: Lewd pics are not allowed here!
       setu_cd: Too fast! Not yet!
       setu_error: Failed, meow~ Please try again later.
-      no_fresh: All matching artworks were sent recently in this chat. No new matching image is available; try a full character name or another character.
-      ambiguous_character: 'This name matches multiple characters: {names}. Please specify the full character name.'
+      no_fresh: The source only returned the last image or images currently being sent. Try again later or use another keyword for a different image.
     bottle:
       no_content: Put something in the bottle~
       text_too_long: Too long! It won't fit!
