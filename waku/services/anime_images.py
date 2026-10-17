@@ -17,6 +17,7 @@ from waku.common.http import _clients
 from waku.common.memory_store import memttlcache
 from waku.config import app_config
 from waku.logger import logger
+from waku.services.anime_names import image_character, name_matches
 from waku.services.image_requests import contains_r18_request
 from waku.services.manyacg import Artist, Artwork, Picture
 from waku.services.telegram_images import image_allowed, normalize_image_mode
@@ -71,36 +72,142 @@ def resolve_image_search(keyword, mode, *, request_text=""):
     return query, effective_mode
 
 
+def image_request_keyword(keyword, request_text):
+    """Recover an explicitly named target if the model accidentally asks for random."""
+    keyword = (keyword or "").strip()
+    if keyword.casefold() not in {"", "random", "ngẫu nhiên", "ngau nhien", "anything"}:
+        return keyword
+    random_pattern = r"\b(?:random|ngẫu nhiên|ngau nhien|bất kỳ|bat ky)\b"
+    named = re.search(
+        r"\b(?:ảnh|anh|hình|hinh|pictures?|photos?|images?|pics?)\s+(?:(?:của|cua|nhân vật|nhan vat|of)\s+)*(.+)",
+        request_text,
+        re.I,
+    )
+    if named:
+        target = re.split(r"[.!?\n]", named[1], maxsplit=1)[0].strip(" ,:;\"'")
+        target = _SAFE_NEGATION.sub(" ", target)
+        target = _SAFE_MARKER.sub(" ", target)
+        target = _RATING_MARKER.sub(" ", target)
+        target = re.sub(r"\s+", " ", target).strip()
+        target = re.sub(random_pattern, "", target, flags=re.I).strip()
+        target = re.sub(r"^(?:của|cua|of)\s+", "", target, flags=re.I)
+        target = re.sub(
+            r"\s+(?:cho (?:t|tui|tôi|toi|mình|minh)|đi|di|nhé|nhe|với|please).*$",
+            "",
+            target,
+            flags=re.I,
+        ).strip()
+        if target and target.casefold() not in {
+            "cho t",
+            "cho tôi",
+            "cho mình",
+            "đi",
+            "di",
+            "please",
+            "khác",
+            "khac",
+            "nữa",
+            "nua",
+            "tiếp",
+            "tiep",
+        }:
+            return target
+    if re.search(random_pattern, request_text, re.I):
+        return ""
+    if re.search(
+        r"\b(?:gửi tiếp|gui tiep|lấy tiếp|lay tiep|lấy nhanh|lay nhanh|thử lại|thu lai|ảnh khác|anh khac|another|again)\b",
+        request_text,
+        re.I,
+    ):
+        return None
+    return ""
+
+
 async def search_manyacg_artworks(client, keyword, mode):
-    """Keep the original base's query, hybrid setting and API-ranked result set."""
+    """Keep the old API path, but select only results with evidence of the requested identity."""
     keyword = keyword.strip()
     if not keyword or len(keyword) > 200:
         return []
-    response = await client.get(
-        "/artwork/list",
-        params={
-            "r18": mode,
-            "hybrid": app_config.manyacg_hybrid_search,
-            "keyword": keyword,
-        },
+    character = await image_character(keyword)
+    if character is False:
+        logger.debug(
+            "Anime name is ambiguous; a full character name is needed: {!r}", keyword
+        )
+        return []
+    aliases = list(character.aliases) if character else [keyword]
+    fragments = set()
+    candidates, seen, queried = [], set(), set()
+
+    def matches(item):
+        fields = [item.get("title") or "", *(item.get("tags") or [])]
+        return any(
+            name_matches(field, alias) for field in fields for alias in aliases
+        ) or any(
+            re.fullmatch(r"[\u3400-\u9fff]{3,}", str(field))
+            and str(field).endswith(fragment)
+            for field in fields
+            for fragment in fragments
+        )
+
+    async def collect(query, hybrid):
+        if (query, hybrid) in queried:
+            return
+        queried.add((query, hybrid))
+        try:
+            response = await client.get(
+                "/artwork/list",
+                params={"r18": mode, "hybrid": hybrid, "keyword": query},
+            )
+            payload = response.json() if response.status_code == 200 else None
+        except (httpx.HTTPError, ValueError) as error:
+            logger.debug("Anime search failed: {}", type(error).__name__)
+            return
+        if (
+            not isinstance(payload, dict)
+            or payload.get("status", 200) != 200
+            or not isinstance(payload.get("data"), list)
+        ):
+            return
+        for item in payload["data"]:
+            if (
+                not isinstance(item, dict)
+                or not image_allowed(item.get("r18"), mode)
+                or not item.get("pictures")
+                or not matches(item)
+            ):
+                continue
+            identity = item.get("id") or item.get("source_url") or repr(item)
+            if identity not in seen:
+                seen.add(identity)
+                candidates.append(item)
+
+    await collect(keyword, app_config.manyacg_hybrid_search)
+    if len(candidates) < 6:
+        await collect(keyword, False)
+    if character and character.native:
+        await collect(character.native, False)
+    if len(candidates) < 6:
+        # Native name fragments must occur on an already verified artwork.
+        # This finds Chinese Kurumi tags without accepting the unrelated VTuber named Kurumi.
+        if character and re.fullmatch(r"[\u3400-\u9fff]{3,}", character.native):
+            for item in candidates:
+                for tag in item.get("tags", []):
+                    if (
+                        isinstance(tag, str)
+                        and re.fullmatch(r"[\u3400-\u9fff]{2,}", tag)
+                        and tag != character.native
+                        and tag in character.native
+                    ):
+                        fragments.add(tag)
+            for tag in sorted(fragments)[:2]:
+                await collect(tag, False)
+    logger.debug(
+        "Anime identity search: query={!r}, character={!r}, matching_artworks={}",
+        keyword,
+        character.full if character else None,
+        len(candidates),
     )
-    if response.status_code != 200:
-        return []
-    payload = response.json()
-    if not isinstance(payload, dict) or payload.get("status", 200) != 200:
-        return []
-    items = payload.get("data")
-    if not isinstance(items, list):
-        return []
-    # The API understands multilingual/semantic queries. Do not discard its results
-    # just because their tags omit the user's spelling or romanized name.
-    return [
-        item
-        for item in items
-        if isinstance(item, dict)
-        and image_allowed(item.get("r18"), mode)
-        and item.get("pictures")
-    ]
+    return candidates
 
 
 async def manyacg_candidates(client, keyword, mode):

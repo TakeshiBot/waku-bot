@@ -20,6 +20,7 @@ from waku.plugins.manyacg import manyacg
 from waku.services.anime_images import (
     NoFreshImageError,
     fetch_anime_artwork,
+    image_request_keyword,
     manyacg_candidates,
     original_image_url,
     release_anime_image,
@@ -497,6 +498,9 @@ async def send_anime_photo(
     if request is None:
         return AnimePhotoResult(success=False, message="The requested Safe/R18 rating is not permitted by this conversation's image mode.")
     keyword, image_mode = request
+    keyword = image_request_keyword(keyword, message_plain_text(ctx.deps.message))
+    if keyword is None:
+        return AnimePhotoResult(success=False, message="This is a follow-up image request. Supply the intended character name from the conversation; do not use an empty keyword or send random images.")
     fetched = []
     try:
         ratekey = f"anime_photo_rate_limit:{ctx.deps.chat_id}:{ctx.deps.user_id}"
@@ -528,6 +532,8 @@ async def send_anime_photo(
                 break
             fetched.append(item)
         if not fetched:
+            if keyword:
+                return AnimePhotoResult(success=False, message=f"Could not verify any matching image for {keyword!r}. Keep the requested character; do not retry with an empty keyword or random images. Ask for the full character name/series if ambiguous.")
             return AnimePhotoResult(success=False, message=tr("anime_fetch_failed"))
 
         if len(fetched) == 1:

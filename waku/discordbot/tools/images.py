@@ -11,6 +11,7 @@ from pydantic_ai import RunContext
 from waku.logger import logger
 from waku.services.anime_images import (
     NoFreshImageError,
+    image_request_keyword,
     resolve_image_search,
 )
 
@@ -226,6 +227,9 @@ async def send_discord_anime_photo(
             message="The requested Safe/R18 rating is not permitted by this conversation's image mode.",
         )
     keyword, r18_mode = request
+    keyword = image_request_keyword(keyword, getattr(message, "content", "") or "")
+    if keyword is None:
+        return DiscordAnimePhotoResult(success=False, message="This is a follow-up image request. Supply the intended character name from the conversation; do not use an empty keyword or send random images.")
 
     requested_count = max(1, int(count or 1))
     capped_count = min(requested_count, _DISCORD_IMAGE_BATCH_MAX)
@@ -281,7 +285,7 @@ async def send_discord_anime_photo(
                 if sent_count == 0:
                     return DiscordAnimePhotoResult(
                         success=False,
-                        message="Failed to fetch anime artwork from the available image sources.",
+                        message=(f"Could not verify any matching image for {keyword!r}. Keep the requested character; do not retry with an empty keyword or random images. Ask for the full character name/series if ambiguous." if keyword else "Failed to fetch anime artwork from the available image sources."),
                         sent_count=sent_count,
                         requested_count=requested_count,
                         capped_count=capped_count,
