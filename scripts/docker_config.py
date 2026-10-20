@@ -30,26 +30,6 @@ def config_error_message(error: Exception) -> str:
     )
 
 
-def image_config_error(config) -> str | None:
-    """Image SDKs require a key at construction, before any bot connection."""
-    if not config.agent:
-        return None
-    for field in ("agent_image_gen_model", "agent_image_edit_model"):
-        spec = getattr(config, field)
-        if not spec:
-            continue
-        name, separator, _ = spec.partition("/")
-        name = name.strip() if separator else "default"
-        provider = config.agent_providers.get(name)
-        if provider is None:
-            return (
-                f"{field} dùng provider chưa được khai báo trong [agent_providers.*]."
-            )
-        if not provider.key.strip():
-            return f"Provider của {field} thiếu key. Điền key hoặc để model trống nếu không sử dụng."
-    return None
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--miniapp-url")
@@ -62,7 +42,9 @@ def main() -> int:
             _AppConfig,
             _resolve_settings_files,
             app_config,
+            startup_config_warnings,
         )
+        from waku.config.startup import telegram_config_errors
         from waku.services.settings_editor import SettingsEditor
 
         paths = [Path(path) for path in _resolve_settings_files()]
@@ -71,24 +53,16 @@ def main() -> int:
         editor = SettingsEditor(
             paths, _AppConfig, ProviderConfig, app_config.model_dump
         )
-        editor.validate_for_restart()
-        image_error = image_config_error(app_config)
-        if image_error:
-            print(image_error, file=sys.stderr)
+        missing = telegram_config_errors(app_config)
+        if missing:
+            print("Cần điền đúng cấu hình Telegram: " + ", ".join(missing), file=sys.stderr)
             return 1
-        if not app_config.token.strip() or ":" not in app_config.token:
+        if startup_config_warnings:
             print(
-                "Cần điền token Telegram hợp lệ trong settings.toml.", file=sys.stderr
+                "Tạm bỏ qua cấu hình AI chưa sẵn sàng: "
+                + ", ".join(startup_config_warnings)
+                + ". Có thể chỉnh trong /config sau khi bot chạy."
             )
-            return 1
-        if not app_config.owners or any(owner <= 0 for owner in app_config.owners):
-            print("Cần điền owners bằng ID Telegram của admin bot.", file=sys.stderr)
-            return 1
-        if app_config.discord_enabled and not app_config.discord_token.strip():
-            print(
-                "discord_enabled đang bật nhưng thiếu discord_token.", file=sys.stderr
-            )
-            return 1
         if args.miniapp_url:
             url = urlsplit(args.miniapp_url)
             if (

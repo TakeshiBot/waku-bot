@@ -33,7 +33,10 @@ Tạo cấu hình riêng từ [settings.ex.toml](settings.ex.toml):
 bash run.sh init
 ```
 
-Điền `token` và `owners` trong `settings.toml`, rồi chạy từ thư mục dự án.
+Chỉ cần điền `token`, `owners`, `api_id` và `api_hash` trong `settings.toml`, rồi
+chạy từ thư mục dự án. Những phần còn lại có thể chỉnh trong `/config` ở DM
+của admin bot. AI chưa cấu hình đủ sẽ tạm ngừng; model vision/ảnh sai provider
+không chặn Telegram khởi động. Lưu cấu hình và khởi động lại khi menu yêu cầu.
 File cấu hình riêng và các file env được Git bỏ qua; chỉ đưa các bản mẫu đã loại
 bỏ thông tin riêng lên repository.
 

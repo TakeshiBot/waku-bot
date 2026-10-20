@@ -242,6 +242,8 @@ class SettingsEditor:
 
     def _validate(self, document) -> None:
         values = self._defaults()
+        existing, _ = self.snapshot()
+        existing_providers = existing.get("agent_providers", {})
         try:
             for path in self.paths[:-1]:
                 values.update(
@@ -279,7 +281,9 @@ class SettingsEditor:
                             name = name.strip()
                         else:
                             name = "default"
-                        if name not in providers:
+                        # Incomplete optional models may be repaired a field at
+                        # a time. Still reject deleting a provider in use.
+                        if name not in providers and name in existing_providers:
                             raise SettingsEditError("provider_in_use")
         except (pydantic.ValidationError, TypeError, ValueError) as exc:
             if isinstance(exc, SettingsEditError):
@@ -658,20 +662,9 @@ class SettingsEditor:
                     resolved[canonical] = getattr(settings, legacy)
                     applied_aliases.add(canonical)
             candidate = self.schema.model_validate(self._runtime_values(resolved))
-            memory_path = getattr(candidate, "agent_powermem_config_path", None)
-            if getattr(candidate, "agent", False) and memory_path:
-                with open(memory_path, encoding="utf-8") as stream:
-                    memory = json.load(stream)
-                if not isinstance(memory, dict):
-                    raise SettingsEditError("invalid_value")
-                prompt = getattr(
-                    candidate, "agent_powermem_custom_fact_extraction_prompt", None
-                )
-                if prompt is not None:
-                    memory["custom_fact_extraction_prompt"] = prompt
-                candidate.agent_powermem_config = memory
-            elif hasattr(candidate, "agent_powermem_config") and not candidate.agent:
-                candidate.agent_powermem_config = None
+            from waku.config.startup import prepare_optional_config
+
+            prepare_optional_config(candidate)
             return candidate
         except Exception:
             # Never include Dynaconf/Pydantic diagnostics with secret values.

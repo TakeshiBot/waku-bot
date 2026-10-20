@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 from pathlib import Path
 from typing import Any, Literal, TypeVar
@@ -8,6 +7,8 @@ import pydantic
 from dynaconf import Dynaconf
 
 from waku.i18n import i18n
+
+from .startup import prepare_optional_config
 
 
 class ProviderConfig(pydantic.BaseModel):
@@ -698,22 +699,7 @@ def _apply_legacy_health_aliases(
 app_config = _get_typed_config(_AppConfig)
 _legacy_health_keys_used = _apply_legacy_health_aliases(app_config)
 
-if app_config.agent and app_config.agent_powermem_config_path:
-    try:
-        with open(app_config.agent_powermem_config_path, encoding="utf-8") as f:
-            app_config.agent_powermem_config = json.load(f)
-        if app_config.agent_powermem_config is None:
-            raise ValueError(
-                i18n.t("bot.config.reload_empty_memory", locale=app_config.lang)
-            )
-        if app_config.agent_powermem_custom_fact_extraction_prompt is not None:
-            app_config.agent_powermem_config["custom_fact_extraction_prompt"] = (
-                app_config.agent_powermem_custom_fact_extraction_prompt
-            )
-    except Exception as e:
-        raise RuntimeError(
-            f"Failed to load powermem config from {app_config.agent_powermem_config_path}: {e}"
-        ) from e
+startup_config_warnings = prepare_optional_config(app_config)
 
 
 def _get_runtime_config() -> _InternalConfig:
@@ -744,17 +730,7 @@ def _read_config_candidate() -> _AppConfig:
 
     for name in RUNTIME_FIELDS:
         setattr(candidate, name, getattr(app_config, name))
-    if candidate.agent and candidate.agent_powermem_config_path:
-        with open(candidate.agent_powermem_config_path, encoding="utf-8") as stream:
-            candidate.agent_powermem_config = json.load(stream)
-        if not isinstance(candidate.agent_powermem_config, dict):
-            raise ValueError("invalid_memory_config")
-        if candidate.agent_powermem_custom_fact_extraction_prompt is not None:
-            candidate.agent_powermem_config["custom_fact_extraction_prompt"] = (
-                candidate.agent_powermem_custom_fact_extraction_prompt
-            )
-    elif not candidate.agent:
-        candidate.agent_powermem_config = None
+    prepare_optional_config(candidate)
     return candidate
 
 

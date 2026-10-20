@@ -14,7 +14,7 @@ from pyrogram.types import BotCommand
 from waku import common, database, i18n
 from waku.bot import jobs
 from waku.bot.client import client
-from waku.config import app_config
+from waku.config import app_config, startup_config_warnings
 from waku.database import db
 from waku.discordbot import start_discord_bot, stop_discord_bot
 from waku.logger import logger
@@ -22,6 +22,12 @@ from waku.loop_monitor import LoopLagMonitor
 from waku.plugins.verify import verify as verify_plugin
 from waku.session_health import SessionHealthMonitor
 from waku.webapp.server import server as webapp_server
+
+if startup_config_warnings:
+    logger.warning(
+        "Optional AI configuration unavailable: {}. Configure through /config.",
+        ", ".join(startup_config_warnings),
+    )
 
 
 def _get_commands_hash(commands_dict: dict[str, list[BotCommand]]) -> str:
