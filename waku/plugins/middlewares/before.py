@@ -12,8 +12,19 @@ from waku.config import app_config
 from waku.logger import logger
 
 
+def _guest_message(message):
+    return any(
+        getattr(message, field, None)
+        for field in (
+            "guest_query_id", "guest_bot_caller_user", "guest_bot_caller_chat",
+        )
+    )
+
+
 @Client.on_message(group=-100)
 async def on_m(client: Client, message: Message):
+    if _guest_message(message):
+        return
     if app_config.debug:
         logger.debug(message)
     user = message.sender_chat or message.from_user
@@ -83,16 +94,23 @@ async def on_chat_member(client: Client, update: pyrogram.types.ChatMemberUpdate
     is_blocked flag is checked and the bot leaves right away.
     """
     member = update.new_chat_member or update.old_chat_member
-    if member is None or not member.user or not member.user.is_self:
+    if member is None or not member.user or not (
+        member.user.is_self
+        or member.user.id == getattr(getattr(client, "me", None), "id", None)
+    ):
         return
     if update.chat.type in GROUP_CHAT_TYPES:
-        status = update.new_chat_member.status if update.new_chat_member else pyrogram.enums.ChatMemberStatus.LEFT
-        present = status not in (
-            pyrogram.enums.ChatMemberStatus.LEFT,
-            pyrogram.enums.ChatMemberStatus.BANNED,
-        ) and not (
+        status = (
+            update.new_chat_member.status
+            if update.new_chat_member else pyrogram.enums.ChatMemberStatus.LEFT
+        )
+        present = status in (
+            pyrogram.enums.ChatMemberStatus.OWNER,
+            pyrogram.enums.ChatMemberStatus.ADMINISTRATOR,
+            pyrogram.enums.ChatMemberStatus.MEMBER,
+        ) or (
             status == pyrogram.enums.ChatMemberStatus.RESTRICTED
-            and getattr(member, "is_member", None) is False
+            and getattr(member, "is_member", None) is True
         )
         await database.record_telegram_presence(update.chat, is_member=present)
     member = update.new_chat_member
@@ -126,6 +144,8 @@ async def on_cb(client: Client, callback_query: CallbackQuery):
     user = callback_query.from_user
     if not callback_query.message:
         return
+    if _guest_message(callback_query.message):
+        return
     chat = callback_query.message.chat
     if user is None or chat is None:
         return
@@ -142,7 +162,9 @@ async def on_cb(client: Client, callback_query: CallbackQuery):
         return
     if chat.type in GROUP_CHAT_TYPES:
         chat_db = await database.upsert_chat(chat)
-        await database.record_telegram_presence(chat)
+        # A callback on an old message can arrive after the bot has left.
+        # It proves neither membership nor a transition out of Guest mode.
+        await database.record_telegram_presence(chat, is_member=None)
         await database.add_association_in_chat(chat_db, user_db, None)
 
 

@@ -85,7 +85,19 @@ async def _access_status(client, chat_id, refresh=False):
             member.status == ChatMemberStatus.RESTRICTED
             and getattr(member, "is_member", None) is False
         )
-        status = "unavailable" if inaccessible else "accessible"
+        if inaccessible:
+            status = "unavailable"
+        elif member.status in {
+            ChatMemberStatus.OWNER,
+            ChatMemberStatus.ADMINISTRATOR,
+            ChatMemberStatus.MEMBER,
+        } or (
+            member.status == ChatMemberStatus.RESTRICTED
+            and getattr(member, "is_member", None) is True
+        ):
+            status = "accessible"
+        else:
+            status = "unknown"
     except RPCError as exc:
         status = (
             "unavailable"
@@ -161,7 +173,7 @@ def _format_group_line(index, chat, status, locale):
 
 
 async def _reconcile_groups(client, refresh=False):
-    """Verify legacy records once; never assume inaccessible IDs are Guest IDs."""
+    """Backfill ordinary legacy records without promoting Guest deliveries."""
     async with _sync_lock:
         after_id = None
         while True:
