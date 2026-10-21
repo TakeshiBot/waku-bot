@@ -1,5 +1,9 @@
 bot:
   info:
+    tab_groups: "Groups"
+    tab_guests: "Guests"
+    header_guests: "👤 <b>Guest Groups</b>\n<b>Total:</b> <code>{total}</code>   <b>Page:</b> <code>{page}/{pages}</code>"
+    empty_guests: "No groups have called the bot through Guest yet."
     header: "📚 <b>Telegram Groups</b>\n<b>Total:</b> <code>{total}</code>   <b>Page:</b> <code>{page}/{pages}</code>"
     group_line: "<blockquote><b>{index}. {title}</b></blockquote>\n   <b>ID:</b> <code>{id}</code>\n   <b>Link:</b> {handle} | {status}"
     empty: "No groups are stored yet. Send a message or command in a group so the bot can record it."

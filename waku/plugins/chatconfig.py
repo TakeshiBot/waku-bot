@@ -19,7 +19,7 @@ from waku.common.telegram_authority import (
 from waku.common.utils import GROUP_CHAT_TYPES
 from waku.database.models import ChatConfig
 from waku.i18n import i18n
-from waku.plugins.menu_cleanup import schedule_saved_menu_cleanup
+from waku.plugins.menu_cleanup import schedule_saved_menu_cleanup, watch_menu
 from waku.plugins.panel import chat_panel_button, refresh_panel_registration
 from waku.services.telegram_images import normalize_image_mode
 
@@ -180,6 +180,7 @@ async def config_chat_cmd(client, message):
             _tr("draft", config.lang), reply_markup=_markup(token, session)
         )
         session.message_id = reply.id
+        watch_menu(client, reply, session=session)
     except Exception:
         _SESSIONS.pop(token, None)
         raise

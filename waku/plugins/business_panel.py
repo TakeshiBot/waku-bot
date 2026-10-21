@@ -371,6 +371,9 @@ async def open_business_panel(client, message, owner_id, locale=None, *, replace
                 text, reply_markup=markup, parse_mode=enums.ParseMode.HTML
             )
             session.message_id = reply.id
+        from waku.plugins.menu_cleanup import watch_menu_id
+
+        watch_menu_id(client, session.chat_id, session.message_id, session=session)
         from waku.services.business_notes import drain_notes
 
         common.spawn(

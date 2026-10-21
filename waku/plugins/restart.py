@@ -13,6 +13,7 @@ from waku import common, database
 from waku.config import ProviderConfig, _AppConfig, _resolve_settings_files, app_config
 from waku.i18n import t
 from waku.logger import logger
+from waku.plugins.menu_cleanup import watch_menu
 from waku.services import maintenance
 from waku.services.process_restart import request_restart
 from waku.services.settings_editor import SettingsEditError, SettingsEditor
@@ -103,6 +104,7 @@ async def restart_command(client: Client, message: pyrogram.types.Message):
     _MENUS[token] = RestartMenu(
         user.id, reply.chat.id, reply.id, lang, time.monotonic() + 600
     )
+    watch_menu(client, reply, session=_MENUS[token])
 
 
 @Client.on_callback_query(

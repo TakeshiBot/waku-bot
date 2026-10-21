@@ -37,6 +37,7 @@ async def on_m(client: Client, message: Message):
         return
     if chat.type in GROUP_CHAT_TYPES:
         chat_db = await database.upsert_chat(chat)
+        await database.record_telegram_presence(chat)
         await database.add_association_in_chat(chat_db, user_db, None)
         if random.uniform(0, 1) < app_config.coin_add_chance_on_message:
             coins = 16 * random.randint(1, 9)
@@ -74,15 +75,28 @@ async def on_deleted_messages(client: Client, messages: list[Message]):
     await common.invalidate_cached_message_objects(messages)
 
 
-@Client.on_chat_member_updated()
+@Client.on_chat_member_updated(group=-100)
 async def on_chat_member(client: Client, update: pyrogram.types.ChatMemberUpdated):
     """Leave a blocked chat whenever the bot is added to it again.
 
     Covers invites, join links and any other way of being added: the chat's
     is_blocked flag is checked and the bot leaves right away.
     """
-    member = update.new_chat_member
+    member = update.new_chat_member or update.old_chat_member
     if member is None or not member.user or not member.user.is_self:
+        return
+    if update.chat.type in GROUP_CHAT_TYPES:
+        status = update.new_chat_member.status if update.new_chat_member else pyrogram.enums.ChatMemberStatus.LEFT
+        present = status not in (
+            pyrogram.enums.ChatMemberStatus.LEFT,
+            pyrogram.enums.ChatMemberStatus.BANNED,
+        ) and not (
+            status == pyrogram.enums.ChatMemberStatus.RESTRICTED
+            and getattr(member, "is_member", None) is False
+        )
+        await database.record_telegram_presence(update.chat, is_member=present)
+    member = update.new_chat_member
+    if member is None:
         return
     if member.status not in (
         pyrogram.enums.ChatMemberStatus.MEMBER,
@@ -128,6 +142,7 @@ async def on_cb(client: Client, callback_query: CallbackQuery):
         return
     if chat.type in GROUP_CHAT_TYPES:
         chat_db = await database.upsert_chat(chat)
+        await database.record_telegram_presence(chat)
         await database.add_association_in_chat(chat_db, user_db, None)
 
 

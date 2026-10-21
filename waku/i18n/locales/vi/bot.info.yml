@@ -1,5 +1,9 @@
 bot:
   info:
+    tab_groups: "Nhóm"
+    tab_guests: "Khách"
+    header_guests: "👤 <b>Nhóm Guest</b>\n<b>Tổng:</b> <code>{total}</code>   <b>Trang:</b> <code>{page}/{pages}</code>"
+    empty_guests: "Chưa ghi nhận nhóm nào gọi bot qua Guest."
     header: "📚 <b>Nhóm Telegram</b>\n<b>Tổng:</b> <code>{total}</code>   <b>Trang:</b> <code>{page}/{pages}</code>"
     group_line: "<blockquote><b>{index}. {title}</b></blockquote>\n   <b>ID:</b> <code>{id}</code>\n   <b>Liên kết:</b> {handle} | {status}"
     empty: "Chưa có nhóm nào trong cơ sở dữ liệu. Gửi một tin nhắn hoặc lệnh trong nhóm để bot ghi nhận."

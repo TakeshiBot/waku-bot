@@ -14,7 +14,11 @@ from waku.common.telegram_authority import (
     can_manage_group_settings,
 )
 from waku.logger import logger
-from waku.plugins.menu_cleanup import schedule_saved_menu_cleanup
+from waku.plugins.menu_cleanup import (
+    schedule_saved_menu_cleanup,
+    watch_menu,
+    watch_menu_id,
+)
 
 _TTL = 15 * 60
 
@@ -107,8 +111,11 @@ def save_markup(token: str, lang: str) -> types.InlineKeyboardMarkup:
     )
 
 
-def bind_draft(token: str, message_id: int) -> None:
+def bind_draft(token: str, message_id: int, *, client=None) -> None:
     _drafts[token].message_id = message_id
+    if client is not None:
+        draft = _drafts[token]
+        watch_menu_id(client, draft.chat_id, message_id, session=draft)
 
 
 def bound_draft(
@@ -160,6 +167,7 @@ async def preview_preference(
             reply_markup=save_markup(token, lang),
         )
         draft.message_id = sent.id
+        watch_menu(getattr(message, "_client", None), sent, session=draft)
     except BaseException:
         _drafts.pop(token, None)
         raise

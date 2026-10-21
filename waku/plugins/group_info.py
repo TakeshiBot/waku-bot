@@ -5,6 +5,7 @@ import html
 import re
 import time
 from collections import OrderedDict
+from dataclasses import dataclass
 
 from pyrogram import Client, filters
 from pyrogram.enums import ButtonStyle, ChatMemberStatus, ChatType, ParseMode
@@ -19,6 +20,7 @@ from waku import database
 from waku.config import app_config
 from waku.i18n import t
 from waku.logger import logger
+from waku.plugins.menu_cleanup import watch_menu
 
 _PAGE_SIZE = 15
 _ACCESS_TTL = 60
@@ -27,8 +29,16 @@ _PANEL_TTL = 15 * 60
 _PANEL_LIMIT = 128
 _ACCESS_TIMEOUT = 4
 _access_cache: OrderedDict[tuple[int, int], tuple[float, str]] = OrderedDict()
-_panels: OrderedDict[tuple[int, int], tuple[int, float]] = OrderedDict()
+_panels: OrderedDict = OrderedDict()
 _access_slots = asyncio.Semaphore(3)
+_sync_lock = asyncio.Lock()
+
+
+@dataclass
+class InfoPanel:
+    user_id: int
+    expires: float
+    scope: str = "groups"
 
 
 async def _actor(user):
@@ -44,9 +54,11 @@ async def _actor(user):
     return allowed, locale
 
 
-def _remember_panel(message, user_id):
+def _remember_panel(message, user_id, scope="groups", client=None):
     key = (message.chat.id, message.id)
-    _panels[key] = (user_id, time.monotonic() + _PANEL_TTL)
+    _panels[key] = InfoPanel(user_id, time.monotonic() + _PANEL_TTL, scope)
+    if client is not None:
+        watch_menu(client, message, session=_panels[key])
     _panels.move_to_end(key)
     while len(_panels) > _PANEL_LIMIT:
         _panels.popitem(last=False)
@@ -97,25 +109,25 @@ async def _access_status(client, chat_id, refresh=False):
     return status
 
 
-def _keyboard(page, pages, user_id, locale):
+def _keyboard(page, pages, user_id, locale, scope="groups"):
     navigation = []
     if page > 1:
         navigation.append(
             InlineKeyboardButton(
                 t("bot.info.previous", locale=locale),
-                callback_data=f"group_info:{user_id}:p:{page - 1}",
+                callback_data=f"group_info:{user_id}:{scope}:p:{page - 1}",
             )
         )
     navigation.append(
         InlineKeyboardButton(
             t("bot.info.refresh", locale=locale),
-            callback_data=f"group_info:{user_id}:r:{page}",
+            callback_data=f"group_info:{user_id}:{scope}:r:{page}",
         )
     )
     navigation.append(
         InlineKeyboardButton(
             t("bot.info.close", locale=locale),
-            callback_data=f"group_info:{user_id}:x:{page}",
+            callback_data=f"group_info:{user_id}:{scope}:x:{page}",
             style=ButtonStyle.DANGER,
         )
     )
@@ -123,10 +135,18 @@ def _keyboard(page, pages, user_id, locale):
         navigation.append(
             InlineKeyboardButton(
                 t("bot.info.next", locale=locale),
-                callback_data=f"group_info:{user_id}:p:{page + 1}",
+                callback_data=f"group_info:{user_id}:{scope}:p:{page + 1}",
             )
         )
-    return InlineKeyboardMarkup([navigation])
+    tabs = [
+        InlineKeyboardButton(
+            ("✅ " if scope == selected else "")
+            + t("bot.info.tab_" + selected, locale=locale),
+            callback_data=f"group_info:{user_id}:{selected}:s:1",
+        )
+        for selected in ("groups", "guests")
+    ]
+    return InlineKeyboardMarkup([tabs, navigation])
 
 
 def _format_group_line(index, chat, status, locale):
@@ -140,26 +160,55 @@ def _format_group_line(index, chat, status, locale):
     )
 
 
-async def _page(client, user_id, locale, page=1, refresh=False):
-    result = await database.get_known_groups_page(page=page, size=_PAGE_SIZE)
-    pages = max(1, (result.total + result.size - 1) // result.size)
-    statuses = await asyncio.gather(
-        *(_access_status(client, chat.id, refresh) for chat in result.items)
+async def _reconcile_groups(client, refresh=False):
+    """Verify legacy records once; never assume inaccessible IDs are Guest IDs."""
+    async with _sync_lock:
+        after_id = None
+        while True:
+            chats = await database.get_unclassified_telegram_groups(
+                after_id=after_id, refresh=refresh
+            )
+            if not chats:
+                break
+            statuses = await asyncio.gather(
+                *(_access_status(client, chat.id, refresh) for chat in chats)
+            )
+            for chat, status in zip(chats, statuses, strict=True):
+                await database.record_telegram_presence(
+                    chat,
+                    is_member=None if status == "unknown" else status == "accessible",
+                )
+            after_id = chats[-1].id
+
+
+async def _page(client, user_id, locale, page=1, refresh=False, scope="groups"):
+    if scope == "groups":
+        await _reconcile_groups(client, refresh)
+    result = await database.get_telegram_presence_page(
+        scope=scope, page=page, size=_PAGE_SIZE
     )
+    pages = max(1, (result.total + result.size - 1) // result.size)
+    statuses = ["accessible" if scope == "groups" else "unknown"] * len(result.items)
     lines = [
-        t("bot.info.header", locale=locale).format(
-            total=result.total, page=result.page, pages=pages
-        ),
+        t(
+            "bot.info.header" if scope == "groups" else "bot.info.header_guests",
+            locale=locale,
+        ).format(total=result.total, page=result.page, pages=pages),
         "",
     ]
     if not result.items:
-        lines.append(t("bot.info.empty", locale=locale))
+        lines.append(
+            t(
+                "bot.info.empty" if scope == "groups" else "bot.info.empty_guests",
+                locale=locale,
+            )
+        )
     for index, (chat, status) in enumerate(
         zip(result.items, statuses, strict=True),
         start=(result.page - 1) * result.size + 1,
     ):
         lines.append(_format_group_line(index, chat, status, locale))
-    return "\n".join(lines), _keyboard(result.page, pages, user_id, locale)
+    return "\n".join(lines), _keyboard(result.page, pages, user_id, locale, scope)
 
 
 @Client.on_message(filters.command("info") & (filters.private | filters.group), group=0)
@@ -177,6 +226,7 @@ async def info_command(client, message):
     panel = await client.send_message(
         message.chat.id, t("bot.info.loading", locale=locale)
     )
+    _remember_panel(panel, message.from_user.id, client=client)
     try:
         body, keyboard = await _page(client, message.from_user.id, locale)
         await panel.edit_text(
@@ -185,7 +235,7 @@ async def info_command(client, message):
             link_preview_options=LinkPreviewOptions(is_disabled=True),
             reply_markup=keyboard,
         )
-        _remember_panel(panel, message.from_user.id)
+        _remember_panel(panel, message.from_user.id, client=client)
     except Exception as exc:
         logger.warning("Group overview failed: {}", type(exc).__name__)
         await panel.edit_text(t("bot.info.error", locale=locale))
@@ -198,11 +248,15 @@ async def info_callback(client, query):
     if not allowed or message is None or message.chat is None:
         await query.answer(t("bot.info.denied", locale=locale), show_alert=True)
         return
-    match = re.fullmatch(r"group_info:(\d+):([prx]):([1-9]\d{0,8})", query.data or "")
+    match = re.fullmatch(
+        r"group_info:(\d+):(?:(groups|guests):)?([prxs]):([1-9]\d{0,8})",
+        query.data or "",
+    )
     if not match:
         await query.answer(t("bot.info.invalid", locale=locale), show_alert=True)
         return
-    user_id, action, page = match.groups()
+    user_id, scope, action, page = match.groups()
+    scope = scope or "groups"
     if int(user_id) != query.from_user.id or (
         message.chat.type == ChatType.PRIVATE and message.chat.id != query.from_user.id
     ):
@@ -210,7 +264,11 @@ async def info_callback(client, query):
         return
     key = (message.chat.id, message.id)
     panel = _panels.get(key)
-    if panel is None or panel[0] != query.from_user.id or panel[1] <= time.monotonic():
+    if (
+        panel is None
+        or panel.user_id != query.from_user.id
+        or panel.expires <= time.monotonic()
+    ):
         _panels.pop(key, None)
         await query.answer(t("bot.info.expired", locale=locale), show_alert=True)
         return
@@ -221,7 +279,12 @@ async def info_callback(client, query):
         return
     try:
         body, keyboard = await _page(
-            client, query.from_user.id, locale, int(page), refresh=action == "r"
+            client,
+            query.from_user.id,
+            locale,
+            int(page),
+            refresh=action == "r",
+            scope=scope,
         )
         try:
             await message.edit_text(
@@ -232,7 +295,7 @@ async def info_callback(client, query):
             )
         except MessageNotModified:
             pass
-        _remember_panel(message, query.from_user.id)
+        _remember_panel(message, query.from_user.id, scope, client=client)
     except Exception as exc:
         logger.warning("Group overview refresh failed: {}", type(exc).__name__)
         await message.edit_text(t("bot.info.error", locale=locale))

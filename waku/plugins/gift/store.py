@@ -5,6 +5,7 @@ from pyrogram.client import Client
 
 from waku import database, gift
 from waku.i18n import t
+from waku.plugins.menu_cleanup import watch_menu
 
 
 def _gift_buttons(available_gifts, user_id: int, lang: str):
@@ -45,10 +46,11 @@ async def buy_gift(client: Client, message: types.Message):
         await message.reply_text(t("bot.hardcoded.gift.cannot_buy", locale=lang))
         return
     gift_list_text = t("bot.hardcoded.gift.choose_buy", locale=lang)
-    await message.reply_text(
+    menu = await message.reply_text(
         gift_list_text,
         reply_markup=types.InlineKeyboardMarkup(_gift_buttons(affordable_gifts, user.id, lang)),
     )
+    watch_menu(client, menu)
 
 
 @Client.on_callback_query(filters.regex(r"^buygift:(\d+):(.+):(.+)$"), group=0)
@@ -237,10 +239,11 @@ async def send_gift(client: Client, message: types.Message):
                 ),
             ]
         )
-    await message.reply_text(
+    menu = await message.reply_text(
         text,
         reply_markup=types.InlineKeyboardMarkup(buttons),
     )
+    watch_menu(client, menu)
 
 
 @Client.on_callback_query(filters.regex(r"^sendgift_page:.+$"), group=0)

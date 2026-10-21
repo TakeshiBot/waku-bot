@@ -16,6 +16,7 @@ from waku import common, consts, database, i18n
 from waku.common.memory_store import memttlcache
 from waku.config import app_config
 from waku.logger import logger
+from waku.plugins.menu_cleanup import watch_menu
 from waku.plugins.panel import chat_panel_button, private_chat_panel_button
 from waku.timezone import as_bot_time
 from waku.webapp.auth import parse_start_param_chat_id
@@ -101,12 +102,13 @@ async def start(client: Client, message: Message):
     if message.command is None:
         message.command = []
     if len(message.command) <= 1:
-        await message.reply(
+        menu = await message.reply(
             text=i18n.t("bot.msg.private_start", locale=lang),
             reply_markup=PrivateStartBotMarkup(
                 lang, user_config.dm_ai_enabled, user_id
             ).build(),
         )
+        watch_menu(client, menu)
         return
     cmd = message.command[1]
     if cmd.startswith("panel_"):
@@ -124,7 +126,7 @@ async def start(client: Client, message: Message):
         if not await can_manage_bot_settings(client, user_id, chat_id):
             await message.reply(text=i18n.t("bot.msg.no_permission_group", locale=lang))
             return
-        await message.reply(
+        menu = await message.reply(
             text=i18n.t("bot.msg.chat_panel", locale=lang),
             reply_markup=InlineKeyboardMarkup(
                 [
@@ -139,6 +141,7 @@ async def start(client: Client, message: Message):
                 ]
             ),
         )
+        watch_menu(client, menu)
     elif cmd.startswith("inline_query"):
         if not client.me or not client.me.username:
             return
@@ -149,22 +152,24 @@ async def start(client: Client, message: Message):
         )
     elif cmd.startswith("seek_bottle"):
         if len(cmd.split("_")) != 3:
-            await message.reply(
+            menu = await message.reply(
                 text=i18n.t("bot.msg.private_start", locale=lang),
                 reply_markup=PrivateStartBotMarkup(
                     lang, user_config.dm_ai_enabled, user_id
                 ).build(),
             )
+            watch_menu(client, menu)
             return
         bottle_id = int(cmd.split("_")[2])
         bottle = await database.get_bottle_by_id(bottle_id)
         if bottle is None:
-            await message.reply(
+            menu = await message.reply(
                 text=i18n.t("bot.msg.bottle.not_found", locale=lang),
                 reply_markup=PrivateStartBotMarkup(
                     lang, user_config.dm_ai_enabled, user_id
                 ).build(),
             )
+            watch_menu(client, menu)
             return
         sender_user = await database.get_user_by_id(bottle.sender_id)
         if sender_user is None:
@@ -202,22 +207,24 @@ async def start(client: Client, message: Message):
             logger.exception(e)
     elif cmd.startswith("view_bottle"):
         if len(cmd.split("_")) != 3:
-            await message.reply(
+            menu = await message.reply(
                 text=i18n.t("bot.msg.private_start", locale=lang),
                 reply_markup=PrivateStartBotMarkup(
                     lang, user_config.dm_ai_enabled, user_id
                 ).build(),
             )
+            watch_menu(client, menu)
             return
         bottle_id = int(cmd.split("_")[2])
         bottle = await database.get_bottle_by_id(bottle_id)
         if bottle is None:
-            await message.reply(
+            menu = await message.reply(
                 text=i18n.t("bot.msg.bottle.not_found", locale=lang),
                 reply_markup=PrivateStartBotMarkup(
                     lang, user_config.dm_ai_enabled, user_id
                 ).build(),
             )
+            watch_menu(client, menu)
             return
         bot_username = client.me.username if client.me else None
         buttons = [
@@ -311,12 +318,13 @@ async def start(client: Client, message: Message):
         except Exception as e:
             logger.exception(e)
     else:
-        await message.reply(
+        menu = await message.reply(
             text=i18n.t("bot.msg.private_start", locale=lang),
             reply_markup=PrivateStartBotMarkup(
                 lang, user_config.dm_ai_enabled, user_id
             ).build(),
         )
+        watch_menu(client, menu)
 
 
 @Client.on_message(filters.command("start") & filters.group, group=0)
@@ -371,6 +379,7 @@ async def back_home(client: Client, callback_query: CallbackQuery):
                 lang, user_config.dm_ai_enabled, user_id
             ).build(),
         )
+        watch_menu(client, callback_query.message)
     except Exception as e:
         logger.error(e)
 

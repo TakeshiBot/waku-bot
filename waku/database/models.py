@@ -117,14 +117,14 @@ class ChatConfig:
     delete_events_enabled: bool = False
     unpin_channel_pin_enabled: bool = False
     quote_probability: float = 0.001
-    quote_pin_message: bool = True
+    quote_pin_message: bool = False
     title_permissions: dict | None = None
     greeting: str | None = None
     ai_reply: bool = True
     bot_reply: bool = False
     ai_reply_other_bots_enabled: bool = False
     ai_comment: bool = False
-    agent_moderation_enabled: bool = False
+    agent_moderation_enabled: bool = True
     setu_enabled: bool = True
     telegram_r18_mode: int = 0
     convert_b23_enabled: bool = True
@@ -415,6 +415,23 @@ class ChatData(Base):
 
     def __repr__(self) -> str:
         return f"<ChatData(id={self.id}, title='{self.title}', username='{self.username}')>"
+
+
+class TelegramChatPresence(Base):
+    """Separate native membership from Guest's independent chat namespace."""
+
+    __tablename__ = "telegram_chat_presence"
+    scope: Mapped[str] = mapped_column(String(16), primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    is_member: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    @property
+    def id(self):
+        return self.chat_id
 
 
 class DiscordChatData(Base):

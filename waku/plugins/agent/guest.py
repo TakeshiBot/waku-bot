@@ -175,6 +175,11 @@ async def guest_chat(client, message):
         if user.is_blocked:
             logger.info("Telegram Guest query ignored: blocked caller")
             return
+        if message.chat is not None and message.chat.type in (
+            enums.ChatType.GROUP, enums.ChatType.SUPERGROUP,
+            enums.ChatType.FORUM,
+        ):
+            await database.record_telegram_presence(message.chat, "guests", is_member=None)
         lang = user.user_config.lang
         with locale_scope(lang):
             if not app_config.agent or not app_config.agent_chat_model:

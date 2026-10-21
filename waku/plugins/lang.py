@@ -68,7 +68,7 @@ async def change_lang_command(client: Client, message: types.Message):
         text + "\n\n" + i18n.t("bot.preference_save.notice", locale=config.lang),
         reply_markup=_markup(token, config.lang),
     )
-    bind_draft(token, sent.id)
+    bind_draft(token, sent.id, client=client)
 
 
 @Client.on_callback_query(filters.regex(r"^lprefs:"), group=0)

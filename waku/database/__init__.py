@@ -12,3 +12,4 @@ from .verify import *  # noqa
 from .agent_quota import *  # noqa
 from .agent_trace import *  # noqa
 from .bot_runtime import *  # noqa
+from .telegram_presence import *  # noqa

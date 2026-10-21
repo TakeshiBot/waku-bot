@@ -15,6 +15,7 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from waku import common
 from waku.i18n import t
 from waku.logger import logger
+from waku.plugins.menu_cleanup import watch_menu
 from waku.services import admin_dm_instructions as store
 
 _SESSIONS = {}
@@ -159,6 +160,7 @@ async def open_panel(client, message, user_id, locale):
     _prune()
     try:
         await _render(client, token, session)
+        watch_menu(client, message, session=session)
     except BaseException:
         _SESSIONS.pop(token, None)
         raise
