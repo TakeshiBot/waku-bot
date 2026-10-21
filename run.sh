@@ -37,7 +37,7 @@ Waku — triển khai trên Linux VPS bằng Docker Compose
   bash run.sh                   Menu khi chạy trong terminal; deploy nếu không có TTY
   bash run.sh init              Chuẩn bị cấu hình và thư mục dữ liệu
   bash run.sh deploy            Build source hiện tại, kiểm tra rồi triển khai
-  bash run.sh update            git pull --ff-only rồi deploy
+  bash run.sh update            git pull --ff-only; chỉ deploy khi commit thay đổi
   bash run.sh start             Chạy image đã build, không build lại
   bash run.sh restart           Kiểm tra cấu hình rồi tạo lại container
   bash run.sh rollback          Quay về image trước nếu cấu trúc database không đổi
@@ -303,12 +303,19 @@ deploy() {
 }
 
 update_source() {
+  local previous_commit current_commit
   require git
   git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "update cần checkout Git. Nếu tải source ZIP, dùng deploy."
   [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || die "Source có thay đổi local. Commit/stash chúng trước; script không reset hay xóa thay đổi."
   git rev-parse --verify '@{upstream}' >/dev/null 2>&1 || die "Nhánh hiện tại chưa có upstream để git pull."
+  previous_commit="$(git rev-parse HEAD)"
   log "Cập nhật source bằng git pull --ff-only."
   git pull --ff-only
+  current_commit="$(git rev-parse HEAD)"
+  if [[ "$previous_commit" == "$current_commit" ]]; then
+    log "Source đã ở bản mới nhất (${current_commit:0:8}). Không build lại hay khởi động lại bot."
+    return 0
+  fi
   deploy
 }
 
