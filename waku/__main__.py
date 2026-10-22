@@ -431,11 +431,17 @@ async def main():
     from waku.services.maintenance import monitor
 
     maintenance_monitor = common.spawn(monitor(client), name="maintenance-status")
+    from waku.services.mirror_notifications import monitor as mirror_monitor
+
+    mirror_status_monitor = common.spawn(mirror_monitor(client), name="mirror-status")
     try:
         await idle()
     finally:
         maintenance_monitor.cancel()
-        await asyncio.gather(maintenance_monitor, return_exceptions=True)
+        mirror_status_monitor.cancel()
+        await asyncio.gather(
+            maintenance_monitor, mirror_status_monitor, return_exceptions=True
+        )
     await client.stop()  # type: ignore
 
     await webapp_server.stop()

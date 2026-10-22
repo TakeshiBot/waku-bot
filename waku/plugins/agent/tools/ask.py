@@ -10,6 +10,7 @@ from waku.common import memstore
 from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.agent.localization import localized_message, tr
+from waku.services.mirror_policy import is_raw_mirror_command
 
 from .. import datatype
 from ..whitelist import is_chat_allowed
@@ -51,6 +52,10 @@ async def ask_user(
         question: The question to present to the user.
         options: 2-5 short option labels for the user to choose from.
     """
+    if getattr(ctx.deps, "mirror_dispatched", False):
+        return datatype.AskUserOutput(question="")
+    if is_raw_mirror_command(question, ctx.deps.chat_id):
+        raise ModelRetry("Use the admin-only mirror tool; raw Mirror commands are disabled.")
     if not options or len(options) < 2:
         raise ModelRetry(tr("tool_provide_at_least_2_options"))
     if len(options) > 5:

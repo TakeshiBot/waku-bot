@@ -10,6 +10,7 @@ from .code_repo import (
 from .db import *  # noqa: F403
 from .image import *  # noqa: F403
 from .io import *  # noqa: F403
+from .mirror import *  # noqa: F403
 from .prepare import *  # noqa: F403
 from .send_ops import *  # noqa: F403
 from .shell_tool import *  # noqa: F403

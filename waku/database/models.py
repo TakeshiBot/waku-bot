@@ -35,6 +35,35 @@ class BotRuntimeSetting(Base):
     value: Mapped[object] = mapped_column(JSON, nullable=False)
 
 
+class MirrorTask(Base):
+    """A reserved mirror submission and its durable notification outbox."""
+
+    __tablename__ = "mirror_task"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    origin_chat_id: Mapped[int] = mapped_column(BigInteger)
+    origin_message_id: Mapped[int] = mapped_column(BigInteger)
+    requester_id: Mapped[int] = mapped_column(BigInteger)
+    mirror_chat_id: Mapped[int] = mapped_column(BigInteger)
+    mirror_bot_id: Mapped[int] = mapped_column(BigInteger)
+    command_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    url: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(24), default="sending")
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    accepted_notification: Mapped[str] = mapped_column(String(24), default="pending")
+    terminal_notification: Mapped[str] = mapped_column(String(24), default="pending")
+    accepted_claimed_at: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    terminal_claimed_at: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    accepted_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    terminal_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    last_status_query_at: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class BusinessState(Base):
     """peer_id=0 stores the owned account; positive IDs store isolated dialogs."""
 

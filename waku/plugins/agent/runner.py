@@ -4,6 +4,7 @@ from typing import Any
 
 import pydantic_ai
 import pyrogram
+from openai import APIError as OpenAIAPIError
 from pydantic_ai import (
     Agent,
     UserContent,
@@ -365,6 +366,8 @@ async def _run_agent_impl(
 
         async def publish_image_progress(text: str) -> bool:
             nonlocal streaming_output
+            if getattr(deps, "mirror_dispatched", False):
+                return False
             if streaming_output is None and app_config.agent_streaming:
                 streaming_output = StreamingOutput(client, message, deps=deps)
             if streaming_output is not None:
@@ -405,7 +408,11 @@ async def _run_agent_impl(
                         node = agent_run.next_node
                         while not Agent.is_end_node(node):
                             if Agent.is_model_request_node(node):
-                                if streaming_output is None and not deps.sent_texts:
+                                if (
+                                    streaming_output is None
+                                    and not deps.sent_texts
+                                    and not getattr(deps, "mirror_dispatched", False)
+                                ):
                                     streaming_output = StreamingOutput(
                                         client, message, deps=deps
                                     )
@@ -417,7 +424,9 @@ async def _run_agent_impl(
                                                 # Once a tool has sent text, wait for
                                                 # the complete result before deciding
                                                 # whether this is an echo or new text.
-                                                if deps.sent_texts:
+                                                if deps.sent_texts or getattr(
+                                                    deps, "mirror_dispatched", False
+                                                ):
                                                     continue
                                                 if streaming_output is None:
                                                     streaming_output = StreamingOutput(
@@ -428,7 +437,9 @@ async def _run_agent_impl(
                                                 )
                                         elif isinstance(event, PartDeltaEvent):
                                             if isinstance(event.delta, TextPartDelta):
-                                                if deps.sent_texts:
+                                                if deps.sent_texts or getattr(
+                                                    deps, "mirror_dispatched", False
+                                                ):
                                                     continue
                                                 if streaming_output is None:
                                                     streaming_output = StreamingOutput(
@@ -442,18 +453,19 @@ async def _run_agent_impl(
                                     part.part_kind == "tool-call"
                                     for part in node.model_response.parts
                                 )
-                                has_image_call = any(
+                                has_managed_reply = any(
                                     part.part_kind == "tool-call"
-                                    and getattr(part, "tool_name", None) in {"image_ops", "send_anime_photo"}
+                                    and getattr(part, "tool_name", None)
+                                    in {"image_ops", "send_anime_photo", "mirror"}
                                     for part in node.model_response.parts
                                 )
-                                if has_image_call and streaming_output is not None:
-                                    # A denied/invalid image request must not keep
-                                    # an optimistic preamble before its error reply.
+                                if has_managed_reply and streaming_output is not None:
+                                    # These tools publish their own AI-authored
+                                    # acknowledgement after input validation.
                                     await streaming_output.replace_text("")
                                 if (
                                     has_tool_calls
-                                    and not has_image_call
+                                    and not has_managed_reply
                                     and streaming_output is not None
                                     and streaming_output.current_text
                                 ):
@@ -477,8 +489,10 @@ async def _run_agent_impl(
                             f"Agent run end with result: {agent_run.result.output}"
                         )
                         output = agent_run.result.output
-                        if getattr(deps, "image_delivered", False) or isinstance(
-                            output, (EndTurn, AskUserOutput)
+                        if (
+                            getattr(deps, "image_delivered", False)
+                            or getattr(deps, "mirror_dispatched", False)
+                            or isinstance(output, (EndTurn, AskUserOutput))
                         ):
                             if streaming_output is not None:
                                 await streaming_output.abort()
@@ -519,7 +533,9 @@ async def _run_agent_impl(
                         )
                         # Save full output for follow-up detection
                         full_output = ""
-                        if streaming_output is not None:
+                        if getattr(deps, "mirror_dispatched", False):
+                            full_output = ""
+                        elif streaming_output is not None:
                             full_output = streaming_output.current_text
                         elif isinstance(output, str):
                             full_output = output
@@ -576,10 +592,11 @@ async def _run_agent_impl(
                             for part in node.model_response.parts:
                                 if any(
                                     item.part_kind == "tool-call"
-                                    and getattr(item, "tool_name", None) in {"image_ops", "send_anime_photo"}
+                                    and getattr(item, "tool_name", None)
+                                    in {"image_ops", "send_anime_photo", "mirror"}
                                     for item in node.model_response.parts
                                 ):
-                                    # image_ops publishes its own AI-authored
+                                    # These tools publish their own AI-authored
                                     # acknowledgment, including non-streaming runs.
                                     break
                                 if part.part_kind == "text" and part.content:
@@ -612,8 +629,10 @@ async def _run_agent_impl(
                         logger.warning(
                             f"The stupid agent returned 'final_result' as text🤡 for user {user_id}"
                         )
-                    elif getattr(deps, "image_delivered", False) or isinstance(
-                        output, (EndTurn, AskUserOutput)
+                    elif (
+                        getattr(deps, "image_delivered", False)
+                        or getattr(deps, "mirror_dispatched", False)
+                        or isinstance(output, (EndTurn, AskUserOutput))
                     ):
                         logger.debug(
                             f"Agent returned {type(output).__name__} for user {user_id}"
@@ -702,6 +721,7 @@ async def _run_agent_impl(
             subject=subject,
         )
     except (
+        OpenAIAPIError,
         pydantic_ai.exceptions.ModelHTTPError,
         pydantic_ai.exceptions.ModelAPIError,
     ) as e:

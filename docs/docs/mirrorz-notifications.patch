@@ -1,0 +1,540 @@
+diff --git a/.gitignore b/.gitignore
+index 94eb2a4..ce8dc09 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -29,3 +29,4 @@ AGENTS.md
+ __pycache__/
+ DESIGN.md
+ .claude
++bridge_data/
+diff --git a/bot/core/handlers.py b/bot/core/handlers.py
+index 4c00a8c..cfd997c 100644
+--- a/bot/core/handlers.py
++++ b/bot/core/handlers.py
+@@ -8,11 +8,15 @@ from ..core.config_manager import Config
+ from ..helper.ext_utils.help_messages import BOT_COMMANDS
+ from ..helper.telegram_helper.bot_commands import BotCommands
+ from ..helper.telegram_helper.filters import CustomFilters
++from ..helper.telegram_helper.mirror_bridge import status_request
+ from ..modules import *
+ from .tg_client import TgClient
+ 
+ 
+ async def add_handlers():
++    TgClient.bot.add_handler(
++        MessageHandler(status_request, filters=command("wakustatus", case_sensitive=True))
++    )
+     TgClient.bot.add_handler(
+         MessageHandler(
+             authorize,
+diff --git a/bot/helper/listeners/task_listener.py b/bot/helper/listeners/task_listener.py
+index f974ecf..5a665db 100644
+--- a/bot/helper/listeners/task_listener.py
++++ b/bot/helper/listeners/task_listener.py
+@@ -58,6 +58,7 @@ from ..mirror_leech_utils.status_utils.yt_status import YtStatus
+ from ..mirror_leech_utils.upload_utils.telegram_uploader import TelegramUploader
+ from ..mirror_leech_utils.youtube_utils.youtube_upload import YouTubeUpload
+ from ..telegram_helper.button_build import ButtonMaker
++from ..telegram_helper.mirror_bridge import notify, request_id_for, result_links, upload_outcome
+ from ..telegram_helper.message_utils import (
+     delete_links,
+     delete_message,
+@@ -97,6 +98,8 @@ class TaskListener(TaskConfig):
+                 self.same_dir[self.folder_name]["total"] -= 1
+ 
+     async def on_download_start(self):
++        if request_id_for(self.message):
++            await notify(self, "accepted")
+         mode_name = "Leech" if self.is_leech else "Mirror"
+         if self.bot_pm and self.is_super_chat:
+             self.pm_msg = await send_message(
+@@ -426,6 +429,10 @@ class TaskListener(TaskConfig):
+     async def on_upload_complete(
+         self, link, files, folders, mime_type, rclone_path="", dir_id=""
+     ):
++        if request_id_for(self.message):
++            links = result_links(self, link, files, mime_type, rclone_path, dir_id)
++            outcome, error = upload_outcome(link, links)
++            await notify(self, outcome, links=links, error=error)
+         if (
+             self.is_super_chat
+             and (Config.INC_TASK_NOTIFY or Config.INC_TASK_RESUME)
+@@ -670,6 +677,8 @@ class TaskListener(TaskConfig):
+         await start_from_queued()
+ 
+     async def on_download_error(self, error, button=None, is_limit=False):
++        if request_id_for(self.message):
++            await notify(self, "cancelled" if self.is_cancelled else "failed", error=error)
+         async with task_dict_lock:
+             if self.mid in task_dict:
+                 del task_dict[self.mid]
+@@ -735,6 +744,8 @@ class TaskListener(TaskConfig):
+             await remove(self.thumb)
+ 
+     async def on_upload_error(self, error):
++        if request_id_for(self.message):
++            await notify(self, "cancelled" if self.is_cancelled else "failed", error=error)
+         async with task_dict_lock:
+             if self.mid in task_dict:
+                 del task_dict[self.mid]
+diff --git a/docker-compose.yml b/docker-compose.yml
+index 449843c..8d62df2 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -31,6 +31,7 @@ services:
+       - ./config.py:/usr/src/app/config.py:ro
+       - ./accounts:/usr/src/app/accounts
+       - ./downloads:/usr/src/app/downloads
++      - mirror_bridge_data:/usr/src/app/bridge_data
+       - tunnel_data:/data:ro
+ 
+     expose:
+@@ -115,3 +116,4 @@ services:
+ 
+ volumes:
+   tunnel_data:
++  mirror_bridge_data:
+diff --git a/.dockerignore b/.dockerignore
+new file mode 100644
+--- /dev/null
++++ b/.dockerignore
+@@ -0,0 +1 @@
++bridge_data/
+diff --git a/bot/helper/telegram_helper/mirror_bridge.py b/bot/helper/telegram_helper/mirror_bridge.py
+new file mode 100644
+--- /dev/null
++++ b/bot/helper/telegram_helper/mirror_bridge.py
+@@ -0,0 +1,366 @@
++"""Observe authorized bot mirror tasks and persist their Telegram notifications."""
++
++import asyncio
++import json
++import re
++import sqlite3
++from contextlib import contextmanager
++from html import unescape
++from pathlib import Path
++from secrets import token_hex
++from time import time
++from urllib.parse import quote, urlsplit
++
++_SESSION = token_hex(16)
++_DB = Path("bridge_data/waku.sqlite3")
++_LOCK = asyncio.Lock()
++_REQUEST = re.compile(r"Waku-Request: ([0-9a-f]{32})")
++_TERMINAL = {"completed", "failed", "cancelled"}
++
++
++def _bot_group_message(message):
++    user = getattr(message, "from_user", None)
++    chat = getattr(message, "chat", None)
++    kind = getattr(getattr(chat, "type", None), "value", "")
++    return bool(user and user.is_bot and kind in {"group", "supergroup", "forum"})
++
++
++def request_id_for(message):
++    if not _bot_group_message(message):
++        return None
++    lines = (getattr(message, "text", None) or "").splitlines()
++    if len(lines) == 2 and (match := _REQUEST.fullmatch(lines[1].strip())):
++        return match[1]
++    return None
++
++
++@contextmanager
++def _connect():
++    _DB.parent.mkdir(parents=True, exist_ok=True)
++    conn = sqlite3.connect(_DB, timeout=10)
++    try:
++        conn.execute(
++            "CREATE TABLE IF NOT EXISTS requests ("
++            "request_id TEXT PRIMARY KEY, chat_id INTEGER NOT NULL, "
++            "bot_id INTEGER NOT NULL, message_id INTEGER NOT NULL, "
++            "username TEXT NOT NULL, session TEXT NOT NULL, "
++            "updated REAL NOT NULL, event TEXT NOT NULL)"
++        )
++        with conn:
++            yield conn
++    finally:
++        conn.close()
++
++
++def _read(request_id):
++    with _connect() as conn:
++        row = conn.execute(
++            "SELECT chat_id, bot_id, message_id, username, session, event "
++            "FROM requests WHERE request_id = ?",
++            (request_id,),
++        ).fetchone()
++    if row is None:
++        return None
++    chat_id, bot_id, message_id, username, session, event = row
++    return {
++        "chat_id": chat_id,
++        "bot_id": bot_id,
++        "message_id": message_id,
++        "username": username,
++        "session": session,
++        "event": json.loads(event),
++    }
++
++
++def _claim(message, request_id):
++    event = {
++        "v": 1,
++        "request_id": request_id,
++        "event": "received",
++        "command_message_id": message.id,
++    }
++    with _connect() as conn:
++        inserted = conn.execute(
++            "INSERT OR IGNORE INTO requests VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
++            (
++                request_id,
++                message.chat.id,
++                message.from_user.id,
++                message.id,
++                message.from_user.username or "",
++                _SESSION,
++                time(),
++                json.dumps(event),
++            ),
++        ).rowcount
++    return bool(inserted)
++
++
++def _fit_event(event):
++    """Keep JSON valid and leave room for the mention/marker in Telegram UTF-16 units."""
++    payload = dict(event)
++    if "links" in payload:
++        payload["links"] = list(payload["links"])
++
++    def length():
++        text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
++        return len(text.encode("utf-16-le")) // 2
++
++    while length() > 3750 and len(payload.get("links", [])) > 1:
++        payload["links"].pop()
++    for key in ("error", "name"):
++        while length() > 3750 and payload.get(key):
++            payload[key] = payload[key][: len(payload[key]) // 2]
++    while length() > 3750 and payload.get("links"):
++        payload["links"].pop()
++    for key in ("cancel_command", "gid"):
++        if length() > 3750:
++            payload.pop(key, None)
++    if length() > 3750:
++        raise ValueError("Mirror bridge event metadata exceeds Telegram's limit")
++    return payload
++
++
++def _store(request_id, event):
++    with _connect() as conn:
++        conn.execute(
++            "UPDATE requests SET event = ?, updated = ? WHERE request_id = ?",
++            (json.dumps(_fit_event(event), ensure_ascii=False), time(), request_id),
++        )
++
++
++async def _deliver(record, event):
++    from ... import LOGGER
++    from ...core.tg_client import TgClient
++    from pyrogram.enums import ParseMode
++    from pyrogram.types import LinkPreviewOptions, ReplyParameters
++
++    username = record["username"]
++    mention = f"@{username}" if re.fullmatch(r"[A-Za-z0-9_]{5,32}", username) else ""
++    text = (
++        mention
++        + "\nWAKU_MIRROR_EVENT "
++        + json.dumps(_fit_event(event), ensure_ascii=False, separators=(",", ":"))
++    )
++    for attempt in range(3):
++        try:
++            await TgClient.bot.send_message(
++                chat_id=record["chat_id"],
++                text=text,
++                parse_mode=ParseMode.DISABLED,
++                reply_parameters=ReplyParameters(
++                    message_id=record["message_id"],
++                    allow_sending_without_reply=True,
++                ),
++                link_preview_options=LinkPreviewOptions(is_disabled=True),
++                disable_notification=True,
++            )
++            return
++        except Exception:
++            if attempt < 2:
++                await asyncio.sleep(attempt + 1)
++    LOGGER.warning("Waku mirror event delivery deferred; use /wakustatus to recover")
++
++
++class BridgeRequest:
++    def __init__(self, message, request_id):
++        self.message = message
++        self.request_id = request_id
++        self.started = False
++        self.terminal = False
++        self.gid = ""
++        self.lock = asyncio.Lock()
++
++    async def emit(self, event, *, listener=None, links=None, error=""):
++        async with self.lock:
++            if self.terminal or (event == "accepted" and self.started):
++                return
++            from ...core.tg_client import TgClient
++            from .bot_commands import BotCommands
++
++            payload = {
++                "v": 1,
++                "request_id": self.request_id,
++                "event": event,
++                "command_message_id": self.message.id,
++            }
++            if listener is not None:
++                payload["name"] = str(getattr(listener, "name", "") or "")[:240]
++                payload["size"] = int(getattr(listener, "size", 0) or 0)
++                from ... import task_dict, task_dict_lock
++
++                async with task_dict_lock:
++                    task = task_dict.get(listener.mid)
++                    if task is not None:
++                        self.gid = str(task.gid())
++                        if not payload["name"]:
++                            payload["name"] = str(task.name())[:240]
++            if self.gid:
++                payload["gid"] = self.gid
++                payload["cancel_command"] = (
++                    f"/{BotCommands.CancelTaskCommand[1]}_{self.gid}@{TgClient.BNAME}"
++                )
++            if links:
++                payload["links"] = links[:20]
++            if error:
++                payload["error"] = unescape(re.sub(r"<[^>]*>", "", str(error)))[:1500]
++            payload = _fit_event(payload)
++            async with _LOCK:
++                await asyncio.to_thread(_store, self.request_id, payload)
++                record = await asyncio.to_thread(_read, self.request_id)
++            self.started |= event == "accepted"
++            self.terminal = event in _TERMINAL
++            await _deliver(record, payload)
++
++
++async def _context(listener):
++    """Attach bookkeeping only after Mirrorz's existing authorization allowed the task."""
++    message = listener.message
++    request_id = request_id_for(message)
++    if request_id is None:
++        return None
++    async with _LOCK:
++        if bridge := getattr(listener, "waku_bridge", None):
++            return bridge
++        await asyncio.to_thread(_claim, message, request_id)
++        record = await asyncio.to_thread(_read, request_id)
++        if (
++            record["bot_id"] != message.from_user.id
++            or record["chat_id"] != message.chat.id
++            or record["message_id"] != message.id
++        ):
++            return None
++        bridge = BridgeRequest(message, request_id)
++        bridge.started = record["event"]["event"] == "accepted"
++        bridge.terminal = record["event"]["event"] in _TERMINAL
++        bridge.gid = record["event"].get("gid", "")
++        listener.waku_bridge = bridge
++        return bridge
++
++
++async def status_request(_, message):
++    if not _bot_group_message(message):
++        return
++    parts = (message.text or "").split()
++    if len(parts) != 2 or not re.fullmatch(r"[0-9a-f]{32}", parts[1]):
++        return
++    async with _LOCK:
++        record = await asyncio.to_thread(_read, parts[1])
++    if (
++        not record
++        or record["chat_id"] != message.chat.id
++        or record["bot_id"] != message.from_user.id
++    ):
++        return
++    event = record["event"]
++    if event["event"] not in _TERMINAL:
++        from ... import task_dict, task_dict_lock
++
++        async with task_dict_lock:
++            task = task_dict.get(record["message_id"])
++            active = (
++                task is not None
++                and request_id_for(task.listener.message) == parts[1]
++                and task.listener.message.from_user.id == record["bot_id"]
++                and task.listener.message.chat.id == record["chat_id"]
++            )
++        updates = None
++        if not active and record["session"] != _SESSION:
++            updates = {
++                "event": "failed",
++                "error": "Mirror restarted; the previous task is no longer active.",
++            }
++        elif active:
++            from ...core.tg_client import TgClient
++            from .bot_commands import BotCommands
++
++            gid = str(task.gid())
++            await _context(task.listener)
++            updates = {
++                "event": "accepted",
++                "gid": gid,
++                "cancel_command": f"/{BotCommands.CancelTaskCommand[1]}_{gid}@{TgClient.BNAME}",
++                "name": str(getattr(task.listener, "name", "") or "")[:240],
++                "size": int(getattr(task.listener, "size", 0) or 0),
++            }
++        if updates:
++            async with _LOCK:
++                # A terminal callback may have committed while we inspected the task.
++                latest = await asyncio.to_thread(_read, parts[1])
++                event = latest["event"]
++                if event["event"] not in _TERMINAL:
++                    event = _fit_event({**event, **updates})
++                    await asyncio.to_thread(_store, parts[1], event)
++            if active and event["event"] == "accepted":
++                task.listener.waku_bridge.started = True
++                task.listener.waku_bridge.gid = event.get("gid", "")
++    await _deliver(record, event)
++
++
++async def notify(listener, event, **kwargs):
++    from ... import LOGGER
++
++    try:
++        bridge = await _context(listener)
++        if bridge:
++            await bridge.emit(event, listener=listener, **kwargs)
++    except Exception as error:
++        # Notification failure must never break download/upload cleanup.
++        LOGGER.warning("Waku mirror notification deferred: %s", type(error).__name__)
++
++
++def upload_outcome(link, links):
++    """Multi-upload's completion callback may contain only failed providers."""
++    if not isinstance(link, dict) or not link:
++        return "completed", ""
++    failures = [
++        (provider, result["error"])
++        for provider, result in link.items()
++        if isinstance(result, dict) and result.get("error")
++    ]
++    error = "; ".join(f"{provider}: {reason}" for provider, reason in failures)[:1500]
++    event = "failed" if len(failures) == len(link) and not links else "completed"
++    return event, error
++
++
++def result_links(listener, link, files, mime_type="", rclone_path="", dir_id=""):
++    from ...core.config_manager import Config
++
++    links = []
++
++    def add(label, url):
++        if not isinstance(url, str) or len(url) > 2500 or any(c.isspace() for c in url):
++            return
++        try:
++            parsed = urlsplit(url)
++        except ValueError:
++            return
++        if parsed.scheme in {"http", "https"} and parsed.netloc:
++            links.append({"label": str(label)[:80], "url": url})
++
++    if isinstance(link, dict):
++        for service, result in link.items():
++            if isinstance(result, dict) and not result.get("error"):
++                add(service, result.get("link"))
++    else:
++        add("Download", link)
++    if getattr(listener, "is_leech", False) and isinstance(files, dict):
++        for url, name in files.items():
++            add(name, url)
++    if (
++        rclone_path
++        and ":" in rclone_path
++        and Config.RCLONE_SERVE_URL
++        and not listener.private_link
++    ):
++        remote, path = rclone_path.split(":", 1)
++        add(
++            "Rclone",
++            f"{Config.RCLONE_SERVE_URL}/{remote}/{quote(path)}"
++            + ("/" if mime_type == "Folder" else ""),
++        )
++    if dir_id and not rclone_path:
++        index = listener.user_dict.get("INDEX_URL") or Config.INDEX_URL
++        if index and listener.name:
++            add("Index", f"{index.rstrip('/')}/{quote(listener.name.strip('/'))}")
++    return links
+diff --git a/docs/WAKU_BRIDGE.md b/docs/WAKU_BRIDGE.md
+new file mode 100644
+--- /dev/null
++++ b/docs/WAKU_BRIDGE.md
+@@ -0,0 +1,62 @@
++# Waku mirror notifications
++
++This optional adapter observes bot-submitted jobs after Mirrorz's existing authorization
++and task checks allow them. It reports lifecycle events; it does not replace the
++mirror command, downloader, uploader, permission filters or task ownership.
++
++Waku also works with unmodified Mirrorz by observing its native replies and status
++messages. Install this adapter only for exact structured receipts, more reliable
++result correlation and persisted event replay. Until a structured receipt arrives,
++Waku uses Mirrorz's normal status command; afterward it can use `/wakustatus`.
++
++## Setup
++
++1. Add Waku and Mirrorz to the mirror group and enable Telegram bot communication
++   so they can receive one another's messages.
++2. Give Waku permission to submit tasks using Mirrorz's existing authorization
++   settings. There is no new bridge ID setting and no automatic privilege grant.
++3. Configure the mirror group ID and Mirrorz username on Waku, which limits mirror
++   requests to its bot administrators.
++4. If installing this optional adapter, rebuild/recreate Mirrorz with these changes.
++   Deploy the updated Waku source independently.
++
++Normal Mirrorz checks remain active, including token verification, subscription,
++BOT_PM, rate/task/size limits and queue rules. If a check prevents a job, Mirrorz
++sends its usual response and Waku observes that reply. Configure these existing
++checks appropriately for the bot account; the adapter does not bypass them.
++
++The supplied Compose file mounts the named volume `mirror_bridge_data` at
++`/usr/src/app/bridge_data`. Keep this volume across container recreation. Other
++Docker setups should mount persistent storage at the same path. Do not put this
++database in `downloads`, which Mirrorz cleans at startup.
++
++## Protocol
++
++Waku sends a normal mirror command with a correlation marker on the second line:
++
++```text
++/mirror@MirrorBot https://example.org/file.zip
++Waku-Request: 0123456789abcdef0123456789abcdef
++```
++
++Only an actual bot sender in a group with a valid two-line marker receives lifecycle
++notifications. This marker grants no permissions. Bookkeeping starts lazily when a
++normal task reaches a lifecycle callback. Mirrorz replies to the original command,
++mentions the requesting bot and emits JSON after `WAKU_MIRROR_EVENT `.
++
++Required fields are `v: 1`, `request_id`, `event` and `command_message_id`. Events
++are `accepted` (download or queue task exists), `completed`, `failed` and `cancelled`.
++Optional fields include `gid`, `name`, `size`, `cancel_command`, `links` (label/url)
++and `error`. An internal `received` record may exist while the first event is being
++persisted. Partial upload success retains actual provider errors; all providers
++failing is reported as a failure.
++
++The most recent event is persisted before delivery. The requesting bot can recover
++it using `/wakustatus@MirrorBot <request_id>` from the same group; the stored sender
++ID and group ID must match. Other callers receive no data. An interrupted old task
++missing after a restart is reported as failed. Use the returned `cancel_command`,
++normally `/c_<gid>@MirrorBot`, with Mirrorz's normal authorization and task-owner rules.
++
++Waku prevents duplicate outbound requests. This adapter does not intercept command
++execution or deduplicate downloads inside Mirrorz. Human-facing responses are
++composed by Waku's AI. Native replies cover failures before lifecycle bookkeeping.

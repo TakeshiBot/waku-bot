@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import replace
 from typing import Any
 
 import httpx
+from openai import APIError as OpenAIAPIError
 from pydantic_ai.embeddings import (
     EmbeddingModel,
     EmbeddingResult,
@@ -14,7 +16,14 @@ from pydantic_ai.embeddings import (
 from pydantic_ai.embeddings.openai import OpenAIEmbeddingModel
 from pydantic_ai.embeddings.result import EmbedInputType
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
-from pydantic_ai.messages import ModelMessage, ModelResponse
+from pydantic_ai.messages import (
+    MULTI_MODAL_CONTENT_TYPES,
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.models import (
     Model,
     ModelRequestParameters,
@@ -37,9 +46,45 @@ _EMBED_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
 def is_recoverable_model_error(error: Exception) -> bool:
     """Whether one model failure is safe to retry on the fallback model."""
-    if isinstance(error, TimeoutError | httpx.TimeoutException):
+    if isinstance(error, TimeoutError | httpx.TransportError | OpenAIAPIError):
         return True
     return isinstance(error, ModelAPIError)
+
+
+def _unavailable_media(value: Any) -> Any:
+    if isinstance(value, MULTI_MODAL_CONTENT_TYPES):
+        return (
+            "[Media unavailable because the vision request failed. Do not claim "
+            "to see its content. Telegram message IDs and attachment metadata "
+            "remain usable for file operations such as mirror.]"
+        )
+    if isinstance(value, list):
+        return [_unavailable_media(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_unavailable_media(item) for item in value)
+    if isinstance(value, dict):
+        return {key: _unavailable_media(item) for key, item in value.items()}
+    return value
+
+
+class _TextFallbackModel(WrapperModel):
+    """Keep the textual context usable even when the backup has no vision API."""
+
+    def prepare_messages(self, messages: list[ModelMessage]) -> list[ModelMessage]:
+        prepared = []
+        for message in messages:
+            if not isinstance(message, ModelRequest):
+                prepared.append(message)
+                continue
+            parts = []
+            for part in message.parts:
+                if isinstance(part, UserPromptPart) or (
+                    isinstance(part, ToolReturnPart) and part.has_content()
+                ):
+                    part = replace(part, content=_unavailable_media(part.content))
+                parts.append(part)
+            prepared.append(replace(message, parts=parts))
+        return self.wrapped.prepare_messages(prepared)
 
 
 class _RequestTimeoutModel(WrapperModel):
@@ -68,9 +113,9 @@ class _RequestTimeoutModel(WrapperModel):
         model_request_parameters: ModelRequestParameters,
         run_context: Any | None = None,
     ) -> AsyncGenerator[StreamedResponse]:
-        # OpenAI-style models consume the first response chunk while entering
-        # this context. A timeout here is therefore safe to fall back from:
-        # no text or tool call has reached the agent yet.
+        # An SSE heartbeat/role-only chunk can arrive long before any model
+        # content. Hold the deadline until a model event is actually available,
+        # while none of it has been exposed to the agent or executed as a tool.
         async with AsyncExitStack() as stack:
             async with asyncio.timeout(self.timeout):
                 response = await stack.enter_async_context(
@@ -81,6 +126,18 @@ class _RequestTimeoutModel(WrapperModel):
                         run_context,
                     )
                 )
+                events = response.__aiter__()
+                first = await anext(events, None)
+
+            async def replay():
+                if first is not None:
+                    yield first
+                async for event in events:
+                    yield event
+
+            # StreamedResponse owns a single cached event iterator. Replaying
+            # our one-event lookahead preserves its parts/usage/cancel state.
+            response._event_iterator = replay()
             yield response
 
 
@@ -102,7 +159,7 @@ def with_model_fallback(
         primary_timeout = min(30.0, max(1.0, total_timeout / 3))
     return FallbackModel(
         _RequestTimeoutModel(primary, primary_timeout),
-        fallback,
+        _TextFallbackModel(fallback),
         fallback_on=is_recoverable_model_error,
     )
 

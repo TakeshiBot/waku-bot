@@ -26,6 +26,7 @@ from waku.services.anime_images import (
     remember_anime_image,
     resolve_image_search,
 )
+from waku.services.mirror_policy import is_raw_mirror_command
 from waku.services.telegram_images import image_allowed, telegram_image_settings
 from waku.timezone import BOT_TIMEZONE
 
@@ -54,6 +55,8 @@ class SendResult:
 
 
 async def _scheduled_text_job(chat_id: int, text: str) -> None:
+    if is_raw_mirror_command(text, chat_id):
+        return
     if not await telegram_chat_allowed(chat_id):
         return
     try:
@@ -69,6 +72,8 @@ async def _scheduled_media_job(
     media_url: str,
     caption: str,
 ) -> None:
+    if is_raw_mirror_command(caption, chat_id):
+        return
     if not await telegram_chat_allowed(chat_id):
         return
     try:
@@ -193,6 +198,18 @@ async def schedule_message(
         raise ModelRetry(tr("tool_media_url_is_required_when_providing_media_type"))
 
     chat_id = ctx.deps.chat_id
+
+    if is_raw_mirror_command(text, chat_id) or is_raw_mirror_command(caption, chat_id):
+        return SendResult(
+            success=False,
+            message="Use the admin-only mirror tool for Mirror requests; raw forwarding is disabled.",
+        ).text()
+
+    if has_text and getattr(ctx.deps, "mirror_dispatched", False):
+        return SendResult(
+            success=False,
+            message="The mirror request was dispatched. EndTurn without more text; task updates are sent asynchronously.",
+        ).text()
 
     if send_immediately:
         if has_text and getattr(ctx.deps, "image_delivered", False):

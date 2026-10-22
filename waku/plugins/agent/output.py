@@ -32,6 +32,7 @@ from waku.plugins.agent.styling import (
     convert_rich_md,
     split_plain_text,
 )
+from waku.services.mirror_policy import is_raw_mirror_command
 
 
 class DeliveryUncertain(RuntimeError):
@@ -169,6 +170,11 @@ async def _send_rich_payloads(
     connection_id = getattr(message, "business_connection_id", None)
     business_kwargs = {"business_connection_id": connection_id} if connection_id else {}
     for index, payload in enumerate(payloads):
+        if is_raw_mirror_command(
+            rich_html_plain_text(payload.html or "") or payload.markdown or "", chat_id
+        ):
+            logger.warning("Blocked untracked Mirror command in rich output")
+            return index, last_id
         if should_send is not None and not should_send():
             return index, last_id
         try:
@@ -215,6 +221,8 @@ async def _send_rich_tail_plain(
     if not text:
         return True
     for chunk in split_plain_text(text):
+        if is_raw_mirror_command(chunk, message.chat.id):
+            return False
         if should_send is not None and not should_send():
             return False
         try:
@@ -245,6 +253,8 @@ async def _send_plain_reply(
     """
     last_msg: pyrogram.types.Message | None = None
     for plain, entities in convert_md_chunks(markdown):
+        if is_raw_mirror_command(plain, message.chat.id):
+            return last_msg
         if should_send is not None and not should_send():
             return last_msg
         try:
@@ -290,7 +300,12 @@ async def reply_output(
     *,
     deps: datatype.ContextDeps | None = None,
 ) -> bool:
-    if getattr(deps, "image_delivered", False):
+    if message.chat and is_raw_mirror_command(text, message.chat.id):
+        logger.warning("Blocked untracked Mirror command in AI reply")
+        return False
+    if getattr(deps, "image_delivered", False) or getattr(
+        deps, "mirror_dispatched", False
+    ):
         return False
     if not await prepare_telegram_output(message):
         return False
@@ -299,6 +314,7 @@ async def reply_output(
     def should_send():
         return (
             not getattr(deps, "image_delivered", False)
+            and not getattr(deps, "mirror_dispatched", False)
             and telegram_output_allowed(message)
             and (caller_should_send is None or caller_should_send())
         )
@@ -523,8 +539,10 @@ class StreamingOutput:
     def _may_send(self):
         return (
             telegram_output_allowed(self.message)
+            and not is_raw_mirror_command(self.current_text, self.message.chat.id)
             and not self._cancelled
             and not getattr(self.deps, "image_delivered", False)
+            and not getattr(self.deps, "mirror_dispatched", False)
             and (self.should_send is None or self.should_send())
         )
 
@@ -606,6 +624,13 @@ class StreamingOutput:
             for index, (plain_chunk, payload) in enumerate(chunks):
                 if not self._may_send():
                     return False
+                chunk_text = (
+                    rich_html_plain_text(payload.html or "") or payload.markdown or ""
+                    if payload is not None
+                    else plain_chunk[0]
+                )
+                if is_raw_mirror_command(chunk_text, self.message.chat.id):
+                    return False
                 chunk_id = self.random_id if index == 0 else (secrets.randbits(63) or 1)
                 try:
                     sent_id = await send_generation_message(
@@ -642,6 +667,8 @@ class StreamingOutput:
                         plain = [(plain_chunk[0], [])]
                     sent_id = None
                     for tail_index, (text, entities) in enumerate(plain):
+                        if is_raw_mirror_command(text, self.message.chat.id):
+                            return False
                         sent_id = await send_generation_message(
                             self.client,
                             self.message,

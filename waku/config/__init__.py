@@ -68,6 +68,11 @@ class _AppConfig(pydantic.BaseModel):
     fans_channel: str | int | None = None  # username or chat_id
     nickname: str = "waku"
 
+    # Admin-only delegation to the trusted Mirror bot in an ordinary group.
+    # Zero/empty disables the integration; both settings apply without restart.
+    mirror_group_id: int = pydantic.Field(default=0, le=0)
+    mirror_bot_username: str = ""
+
     # Reply on behalf of connected Telegram Business accounts when permitted.
     business_chat_enabled: bool = False
     # Empty/disabled custom prompt falls back to the ordinary DM persona.

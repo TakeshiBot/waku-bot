@@ -87,6 +87,8 @@ _CORE_FIELDS = (
     "discord_admin_users",
     "manyacg_api_url",
     "manyacg_api_key",
+    "mirror_group_id",
+    "mirror_bot_username",
     "agent_providers",
 )
 _PROVIDER_FIELDS = ("url", "key", "type")
@@ -287,7 +289,7 @@ def _group(key: str) -> str:
         return "cache"
     if key.startswith(("coin", "cost")):
         return "economy"
-    if key.startswith(("redis", "btts", "manyacg", "aniobjcut", "infographic")):
+    if key.startswith(("redis", "btts", "manyacg", "aniobjcut", "infographic", "mirror_")):
         return "services"
     return "base"
 

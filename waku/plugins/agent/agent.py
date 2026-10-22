@@ -261,6 +261,16 @@ if app_config.agent and app_config.agent_chat_model:
                 sequential=True,
             ),
             Tool(
+                tools.mirror,
+                prepare=tools.prepare_mirror,
+                sequential=True,
+            ),
+            Tool(
+                tools.cancel_mirror,
+                prepare=tools.prepare_mirror,
+                sequential=True,
+            ),
+            Tool(
                 tools.send_anime_photo,
                 prepare=tools.prepare_manyacg_tools,
                 sequential=True,
@@ -323,6 +333,8 @@ if app_config.agent and app_config.agent_chat_model:
             + await moderation.group_moderation_context(ctx)
             + "\n\n"
             + await periodic_expression_instructions(ctx)
+            + "\n\n"
+            + tools.mirror_instructions()
         )
 
     memory_agent = Agent(

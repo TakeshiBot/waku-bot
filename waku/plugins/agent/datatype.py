@@ -183,6 +183,9 @@ class ContextDeps:
     sent_texts: set[str] = field(default_factory=set)
     # A confirmed generated/edited photo is the final Telegram output this turn.
     image_delivered: bool = False
+    # Mirror has its own async acceptance/result replies after the initial
+    # acknowledgement. Suppress further main-turn prose once dispatched.
+    mirror_dispatched: bool = False
     # Set by the runner; free/API photos wait until the AI text is delivered.
     deferred_images: Any | None = field(default=None, repr=False)
     publish_image_progress: Callable[[str], Awaitable[bool]] | None = field(

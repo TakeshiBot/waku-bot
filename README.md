@@ -19,6 +19,7 @@ hãy đọc lịch sử commit và sao lưu cấu hình, cơ sở dữ liệu, d
 - [Triển khai](docs/docs/self-host.md)
 - [Bảng quản trị Mini App](docs/docs/webapp.md)
 - [Telegram Business](docs/docs/telegram-business.md)
+- [Kết nối bot Mirror](docs/docs/telegram-mirror.md)
 - [Sticker và emoji trên Telegram](docs/docs/telegram-stickers.md)
 - [File và tài liệu trên Telegram](docs/docs/telegram-files.md)
 - [Nguồn ảnh anime](docs/docs/anime-images.md)

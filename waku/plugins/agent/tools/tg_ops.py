@@ -21,6 +21,7 @@ from waku.logger import logger
 from waku.plugins.agent.expression_policy import expression_settings
 from waku.plugins.agent.localization import tr
 from waku.plugins.agent.output import record_tool_reply, text_already_sent
+from waku.services.mirror_policy import is_raw_mirror_command
 
 from .. import datatype
 from . import block, io, send_ops, workspace
@@ -365,6 +366,19 @@ async def tg(
     """
     if ctx.deps.message is None or ctx.deps.message.id is None:
         return tr("error_context_unavailable")
+    if method in {"sendMessage", "scheduleMessage"} and getattr(
+        ctx.deps, "mirror_dispatched", False
+    ):
+        return "The mirror request was dispatched. EndTurn without more text; task updates are sent asynchronously."
+
+    if method in {"sendMessage", "scheduleMessage"} and is_raw_mirror_command(
+        params.get("text"), ctx.deps.chat_id
+    ):
+        return "Use the admin-only mirror tool for Mirror requests; raw forwarding is disabled."
+    if method in {"sendPhoto", "sendDocument", "sendVideo", "sendAudio", "sendAnimation", "sendVoice"} and is_raw_mirror_command(
+        params.get("caption"), ctx.deps.chat_id
+    ):
+        return "Use the admin-only mirror tool for Mirror requests; raw forwarding is disabled."
 
     if method == "sendMessage" and getattr(ctx.deps, "image_delivered", False):
         return "The generated image was delivered. End the turn without additional text."
