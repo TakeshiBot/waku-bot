@@ -90,8 +90,9 @@ async def _follow_up_filter_func(
     if not text or len(text.strip()) == 0:
         return False
     if (
-        message.entities is not None
+        message.entities
         and message.entities[0].type == pyrogram.enums.MessageEntityType.BOT_COMMAND
+        and message.entities[0].offset == 0
     ):
         return False
     if text.startswith("/") or text.startswith("\\"):

@@ -18,6 +18,7 @@ async def base_filter_func(_, __, message: pyrogram.types.Message) -> bool:
     if (
         message.entities
         and message.entities[0].type == pyrogram.enums.MessageEntityType.BOT_COMMAND
+        and message.entities[0].offset == 0
     ):
         return False
     if text.startswith("/") or text.startswith("\\"):

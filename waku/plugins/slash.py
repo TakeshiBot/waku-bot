@@ -23,8 +23,9 @@ async def slash_fliter_func(_, __, message: Message) -> bool:
     if len(message.text) <= 1:
         return False
     if (
-        message.entities is not None
+        message.entities
         and message.entities[0].type == MessageEntityType.BOT_COMMAND
+        and message.entities[0].offset == 0
     ):
         return False
     if message.text.startswith("/") or message.text.startswith("\\"):
