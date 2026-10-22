@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import re
-from urllib.parse import urlsplit
 
 from pydantic_ai import RunContext
 from pydantic_ai.tools import ToolDefinition
@@ -14,6 +13,15 @@ from waku.common.telegram_authority import is_bot_admin
 from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.agent import datatype
+from waku.services.mirror_commands import (
+    MAX_BATCH,
+    build_command,
+    expand_sources,
+    normalize_mode,
+    normalize_options,
+    render_options,
+    validate_source,
+)
 from waku.services.mirror_policy import is_raw_mirror_command  # noqa: F401
 
 __all__ = ["cancel_mirror", "mirror", "mirror_instructions", "prepare_mirror"]
@@ -72,7 +80,24 @@ async def prepare_mirror(
 def mirror_instructions() -> str:
     return (
         "Mirror/download delegation: when the current user explicitly asks you to "
-        "mirror a link or a Telegram attachment, use the mirror tool if it is available. The user's wording "
+        "mirror, leech, clone or download links or Telegram attachments, use the mirror tool if it is available. "
+        "Choose mode to match the user's intent: mirror/m, leech/l, qbmirror/qm, qbleech/ql, "
+        "jdmirror/jm, jdleech/jl, nzbmirror/nm, nzbleech/nl, ytdl/y, ytdlleech/yl, clone/cl, uphoster/up. "
+        "For multiple explicit links, submit all of them together in urls (up to 20), not url. "
+        "Waku creates and tracks a separate task per source, applying mode/options to each; do not use native -i/-b. "
+        "Use the options mapping for explicit processing choices: extract/unpack -> {'-e': true}, "
+        "zip/compress -> {'-z': true}; passwords are string values for these flags. "
+        "Other documented options include -n rename, -up upload destination, -ud leech destination, "
+        "-sp split size, -doc/-med document/media, -d seed ratio:time, -j join, -seedr, -ad, "
+        "-yt YouTube upload, -sv sample video, -ss screenshots, -ca/-cv conversion, -t thumbnail, "
+        "-meta metadata, -ns rename rules, -tl thumbnails, -rcf rclone flags, -h headers, -au/-ap authentication, "
+        "-ff configured FFmpeg operation/list, -opt yt-dlp options, and clone filters -ct/-ex/-mn/-xn/-mc/-xc, -sync/-fwd. "
+        "For a requested yt-dlp quality use -opt with a Python dict string, e.g. "
+        "{'format': 'bv*[height<=720]+ba/b[height<=720]'} for 720p. Otherwise the backend uses best quality automatically. "
+        "Use only options appropriate to the chosen mode and explicitly requested or unambiguously implied. "
+        "Never invent passwords, destinations, credentials or flags. Ask a brief clarification only when needed. "
+        "Do not add interactive -s selection unless explicitly asked; bot-owned menus may require interaction in the Mirror group. "
+        "The user's wording "
         "is natural language, not a fixed command. Never emulate mirror requests "
         "with tg.sendMessage, shell, or another sending tool. For a replied photo "
         "or file, omit url and source_message_id to use the actual replied/current "
@@ -97,7 +122,8 @@ def mirror_instructions() -> str:
         "workarounds. When the user asks to stop/cancel a mirror task, use "
         "cancel_mirror, not a raw Telegram command. Omit request_id when replying "
         "to a task update or cancelling the user's active task in this chat. If "
-        "several tasks match, ask which named file they mean. A cancellation "
+        "several tasks match, ask which named file they mean, unless they explicitly asked to cancel all their tasks; "
+        "then cancel each returned owned request_id through cancel_mirror. A cancellation "
         "request is not confirmation: report only the tool's factual state and "
         "wait for the asynchronous terminal result before saying it is cancelled. "
         "Never expose internal IDs or raw cancellation commands in normal "
@@ -107,23 +133,8 @@ def mirror_instructions() -> str:
     )
 
 
-def _validate_url(value: str) -> str | None:
-    if not value or len(value) > 3500 or any(c.isspace() or ord(c) < 32 for c in value):
-        return None
-    try:
-        parsed = urlsplit(value)
-        if (
-            parsed.scheme.lower() not in {"http", "https"}
-            or not parsed.hostname
-            or parsed.username is not None
-            or parsed.password is not None
-        ):
-            return None
-        # Accessing the port rejects malformed ports before a command is sent.
-        parsed.port
-    except ValueError:
-        return None
-    return value
+def _validate_url(value: str, mode="mirror") -> str | None:
+    return validate_source(value, mode)
 
 
 async def _resolve_source(deps, source_message_id):
@@ -155,21 +166,36 @@ async def mirror(
     *,
     acknowledgement: str,
     source_message_id: int | None = None,
+    mode: str = "mirror",
+    options: dict[str, str | bool] | None = None,
+    urls: list[str] | None = None,
 ) -> dict:
-    """Send one explicit mirror request to the configured Mirror bot group.
+    """Delegate explicit Mirrorz transfers, optionally batching multiple sources.
 
     Only bot owners/global admins may use this tool. It acknowledges in the
     original chat before dispatch; external task receipts and results follow
     asynchronously in that chat. Never use a generic Telegram send instead.
 
     Args:
-        url: Exact HTTP(S) URL supplied by the user. Omit this argument for a
+        url: Exact source supplied by the user: HTTP(S), magnet, Telegram link,
+            configured rclone remote or Drive ID. NZB/uphoster require direct
+            HTTP(S)/FTP links or a staged Telegram attachment.
+            Omit this argument for a
             replied/current Telegram attachment. No command, flags or extra text.
         acknowledgement: Your brief natural-language reply acknowledging that
             you are about to submit this request, in the conversation's language.
             Do not claim the Mirror bot has accepted or completed the task yet.
         source_message_id: Actual attachment message ID in this conversation.
             Omit URL when using this. Omitted means the replied/current attachment.
+        mode: Transfer command: mirror/m, leech/l, qbmirror/qm, qbleech/ql,
+            jdmirror/jm, jdleech/jl, nzbmirror/nm, nzbleech/nl, ytdl/y,
+            ytdlleech/yl, clone/cl, uphoster/up. Defaults to mirror.
+        options: Supported Mirrorz flags mapped to true/false or exact string
+            values. E.g. {"-e": true, "-z": true, "-n": "archive.zip"}.
+            No shell quoting. Apply only requested options. -i/-b are replaced
+            by urls so each task is tracked. Do not invent destinations/passwords.
+        urls: Up to 20 exact sources in one request, all using mode/options.
+            Omit url/source_message_id when using this batch argument.
     """
     deps = ctx.deps
     if not await _authorized(deps):
@@ -189,13 +215,41 @@ async def mirror(
     attachment_requested = url is None or (
         isinstance(url, str) and url.strip().lower() in {"", "null", "none"}
     )
-    validated_url = _validate_url(url) if not attachment_requested else None
-    if not attachment_requested and (
-        validated_url is None or source_message_id is not None
+    try:
+        mode = normalize_mode(mode)
+        options = normalize_options(mode, options)
+        render_options(mode, options)
+    except ValueError as error:
+        return {"status": "invalid_options", "error": str(error)}
+    if urls is not None:
+        if (
+            not attachment_requested
+            or source_message_id is not None
+            or not isinstance(urls, list)
+            or not 1 <= len(urls) <= MAX_BATCH
+            or any(_validate_url(item, mode) is None for item in urls)
+        ):
+            return {
+                "status": "invalid_sources",
+                "error": "Provide 1–20 valid sources in urls without url or source_message_id.",
+            }
+        sources = list(urls)
+        attachment_requested = False
+    else:
+        sources = None
+    validated_url = (
+        _validate_url(url, mode)
+        if sources is None and not attachment_requested
+        else None
+    )
+    if (
+        sources is None
+        and not attachment_requested
+        and (validated_url is None or source_message_id is not None)
     ):
         return {
             "status": "invalid_url",
-            "error": "Provide one valid HTTP(S) URL, or omit URL to use a Telegram attachment; do not mix both sources.",
+            "error": "Provide one valid transfer source, a urls batch, or omit both to use a Telegram attachment; do not mix source types.",
         }
     if attachment_requested:
         try:
@@ -229,6 +283,13 @@ async def mirror(
             "error": "Provide a brief acknowledgement.",
         }
     mirror_group_id, mirror_username = target
+    try:
+        if source is None:
+            sources = expand_sources(sources or [validated_url], mode)
+        for item in sources or [validated_url or "https://t.me/c/1/1"]:
+            build_command(mode, mirror_username, item, options, "0" * 32)
+    except ValueError as error:
+        return {"status": "invalid_options", "error": str(error)}
     try:
         target_bot = await deps.client.get_users(mirror_username)
         if (
@@ -280,28 +341,43 @@ async def mirror(
     from waku.services import mirror_bridge
 
     deps.side_effects_started = True
-    try:
-        source_args = {"source_message": source} if source is not None else {}
-        result = await mirror_bridge.submit(
-            deps.client,
-            origin_chat_id=deps.chat_id,
-            origin_message_id=deps.message.id,
-            requester_id=deps.user_id,
-            mirror_chat_id=mirror_group_id,
-            mirror_bot_id=target_bot.id,
-            mirror_bot_username=mirror_username,
-            url=validated_url,
-            **source_args,
-        )
-    except Exception as error:
-        logger.error("Mirror dispatch could not be recorded: {}", type(error).__name__)
-        return {
-            "status": "dispatch_error",
-            "error": "The mirror request could not be confirmed. Do not retry automatically; it may already have been submitted.",
-        }
+    results = []
+    items = sources or [validated_url]
+    for index, item in enumerate(items):
+        try:
+            source_args = {"source_message": source} if source is not None else {}
+            result = await mirror_bridge.submit(
+                deps.client,
+                origin_chat_id=deps.chat_id,
+                origin_message_id=deps.message.id,
+                requester_id=deps.user_id,
+                mirror_chat_id=mirror_group_id,
+                mirror_bot_id=target_bot.id,
+                mirror_bot_username=mirror_username,
+                url=item,
+                mode=mode,
+                options=options,
+                item_index=index,
+                batch_size=len(items),
+                **source_args,
+            )
+            results.append(result)
+        except Exception as error:
+            logger.error(
+                "Mirror dispatch could not be recorded: {}", type(error).__name__
+            )
+            return {
+                "status": "dispatch_error",
+                "tasks": results,
+                "error": "The current transfer could not be confirmed. Earlier returned tasks remain tracked; remaining items were not sent. Do not retry automatically; the current item may already have been submitted.",
+            }
     deps.mirror_dispatched = True
     return {
-        **result,
+        **(
+            results[0]
+            if len(results) == 1
+            else {"status": "batch_dispatched", "tasks": results}
+        ),
         "instruction": "The initial acknowledgement was delivered. EndTurn without more text; task updates will be reported asynchronously.",
     }
 

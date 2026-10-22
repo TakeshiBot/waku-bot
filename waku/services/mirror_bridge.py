@@ -11,6 +11,15 @@ from pyrogram import enums, types
 from pyrogram.errors import BadRequest, Forbidden, Unauthorized
 
 from waku.database import mirror_tasks as repository
+from waku.services.mirror_commands import (
+    MAX_BATCH,
+    build_command,
+    expand_sources,
+    normalize_mode,
+    normalize_options,
+    render_options,
+    validate_source,
+)
 
 TERMINAL = repository.TERMINAL
 claim_notification = repository.claim_notification
@@ -92,7 +101,21 @@ async def submit(
     mirror_bot_username,
     url,
     source_message=None,
+    mode="mirror",
+    options=None,
+    item_index=0,
+    batch_size=1,
 ):
+    mode = normalize_mode(mode)
+    options = normalize_options(mode, options)
+    render_options(mode, options)
+    if (
+        type(item_index) is not int
+        or type(batch_size) is not int
+        or not 1 <= batch_size <= MAX_BATCH
+        or not 0 <= item_index < batch_size
+    ):
+        raise ValueError("Invalid transfer batch index")
     has_source = source_message is not None
     if has_source:
         if (
@@ -107,8 +130,12 @@ async def submit(
         ):
             raise ValueError("Invalid Telegram attachment source or Mirror group")
         url = _source_link(source_message)
-    elif not _http_url(url):
-        raise ValueError("Mirror requires an HTTP(S) URL")
+    elif not validate_source(url, mode):
+        raise ValueError("Mirror requires a valid transfer source")
+    elif len(expand_sources([url], mode)) != 1:
+        raise ValueError(
+            "Telegram ranges must be expanded into individually tracked batch sources"
+        )
     if (
         not isinstance(mirror_bot_username, str)
         or re.fullmatch(r"[A-Za-z0-9_]{5,32}", mirror_bot_username.lstrip("@")) is None
@@ -132,10 +159,25 @@ async def submit(
     ):
         raise ValueError("Invalid mirror routing identity")
     bot_id = client.me.id
+    identity = f"{bot_id}:{origin_chat_id}:{origin_message_id}"
     token = hashlib.sha256(
-        f"{bot_id}:{origin_chat_id}:{origin_message_id}".encode()
+        (identity + (f":{item_index}" if item_index else "")).encode()
     ).hexdigest()[:32]
-    details = {"mirror_bot_username": mirror_bot_username.lstrip("@")}
+    # Validate the complete wire command before reserving or copying anything.
+    build_command(
+        mode,
+        mirror_bot_username.lstrip("@"),
+        url or "https://t.me/c/1/1",
+        options,
+        token,
+    )
+    details = {
+        "mirror_bot_username": mirror_bot_username.lstrip("@"),
+        "mirror_mode": mode,
+        "mirror_options": options or {},
+        "batch_index": item_index,
+        "batch_size": batch_size,
+    }
     if has_source:
         details.update(
             source_chat_id=origin_chat_id,
@@ -199,7 +241,7 @@ async def submit(
                 status="send_failed",
                 error=f"Source attachment preparation failed ({type(error).__name__}); no Mirror command was sent",
             )
-    command = f"/mirror@{mirror_bot_username.lstrip('@')} {url}\nWaku-Request: {token}"
+    command = build_command(mode, mirror_bot_username.lstrip("@"), url, options, token)
     try:
         sent = await asyncio.wait_for(
             client.send_message(

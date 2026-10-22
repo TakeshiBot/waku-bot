@@ -14,6 +14,40 @@ chép thêm. Bot Mirror không cần tham gia chat nguồn. Nhóm Mirror cần l
 nội dung được bảo vệ không
 được sao chép. Mỗi yêu cầu hiện xử lý một attachment.
 
+## Loại chuyển và tuỳ chọn
+
+AI có thể chọn các lệnh chuyển file sẵn có của Mirrorz theo yêu cầu:
+
+- Mirror/leech thường: `mirror` (`m`), `leech` (`l`).
+- qBittorrent: `qbmirror` (`qm`), `qbleech` (`ql`).
+- JDownloader: `jdmirror` (`jm`), `jdleech` (`jl`).
+- NZB: `nzbmirror` (`nm`), `nzbleech` (`nl`).
+- yt-dlp: `ytdl` (`y`), `ytdlleech` (`yl`).
+- Sao chép và upload host: `clone` (`cl`), `uphoster` (`up`).
+
+Ví dụ: “waku leech link này rồi giải nén”, “qm hai link này và nén zip”,
+“tải video này bằng yt-dlp, chất lượng 720p”. Có thể yêu cầu các cờ xử lý như
+`-e`, `-z` (kèm mật khẩu nếu có), đổi tên `-n`, đích upload `-up`, đích leech
+`-ud`, chia file `-sp`, dạng tài liệu/media, seed, chuyển đổi, sample, thumbnail,
+metadata, bộ lọc clone và các tuỳ chọn riêng của engine. Backend kiểm tra cờ
+theo đúng loại lệnh, không gửi tuỳ chọn không được hỗ trợ. yt-dlp mặc định chọn
+chất lượng tốt nhất để không mắc ở menu chọn chất lượng; lựa chọn cụ thể của
+người yêu cầu được giữ nguyên.
+
+Một lượt nhận tối đa 20 nguồn (link tải, magnet, link Telegram, remote rclone
+đã cấu hình hoặc Drive ID). AI nhận yêu cầu một lần, Waku tạo từng lệnh riêng,
+giữ liên kết với chat gốc và theo dõi kết quả/huỷ riêng cho từng file. Cùng một
+tin yêu cầu không tạo lại task khi gọi lại. Link Telegram dạng khoảng tin nhắn
+được tách thành từng nguồn; `clone` giữ nguyên khoảng để dùng cơ chế sao chép
+của Mirrorz. Waku thay cơ chế `-b`/`-i` bằng danh sách nguồn được theo dõi này,
+không để các task con do Mirrorz sinh ra bị mất dấu. Cờ xử lý áp dụng riêng
+cho từng nguồn, không tự gộp nhiều link thành một archive.
+
+Kết quả leech đọc các link file Telegram thực tế trong danh sách của Mirrorz,
+không phụ thuộc việc bot đó có dùng nút tải hay không. Mọi lời nhận yêu cầu,
+báo đang chạy và báo kết quả vẫn do AI viết. Quyền sử dụng, engine, dịch vụ,
+đích upload và các giới hạn phía Mirrorz vẫn theo cấu hình của bot Mirror.
+
 ## Cấu hình hai bot
 
 1. Cập nhật source và build lại **Waku**. Có thể giữ Mirrorz nguyên bản:

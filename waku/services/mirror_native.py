@@ -13,6 +13,7 @@ import re
 from urllib.parse import urlsplit
 
 from waku.database import mirror_tasks as repository
+from waku.services.mirror_commands import LEECH_MODES, build_command
 
 _MISSING = object()
 
@@ -39,6 +40,9 @@ _DISABLED = {
     "No BuzzHeavier Token Found!",
     "No PixelDrain Key Found!",
     "Start the bot and try again!",
+    "JDownloader is currently disabled by the Bot Owner.",
+    "SABnzbd is currently disabled by the Bot Owner.",
+    "Seedr is currently disabled by the Bot Owner.",
 }
 _RESULT_LABEL = re.compile(
     r"(?:(?:cloud|mega|rclone|index|view|download|gofile|buzzheavier|pixeldrain|doodstream|streamtape|mixdrop|litterbox|catbox|1fichier|uploadhaven|uploadnow|fileditch|filebin|gdrive|drive|filemoon|send|filepress|filelions|gdtot|krakenfiles)\s*(?:link)?|[A-Za-z][A-Za-z0-9 _-]{0,50} Link)\Z",
@@ -128,7 +132,13 @@ def _result_links(message, task):
         for button in row:
             url = getattr(button, "url", None)
             label = _label(getattr(button, "text", ""))
-            if not _safe_url(url) or not _RESULT_LABEL.fullmatch(label):
+            extended = (
+                task.get("mirror_mode") == "clone"
+                and label.lower() == "view copy"
+                or task.get("mirror_options", {}).get("-yt")
+                and label.lower() in {"view video", "view playlist"}
+            )
+            if not _safe_url(url) or not (_RESULT_LABEL.fullmatch(label) or extended):
                 continue
             if re.search(
                 r"\b(?:source|original|help|support|donate|profile|task)\b", label, re.I
@@ -139,12 +149,52 @@ def _result_links(message, task):
             if (
                 parsed.hostname.lower()
                 in {"t.me", "telegram.me", "www.t.me", "www.telegram.me"}
+                and not (extended and _telegram_file_url(url))
                 or url.rstrip("/") in seen
             ):
                 continue
             seen.add(url.rstrip("/"))
             result.append({"label": label[:100], "url": url})
+    if task.get("mirror_mode") in LEECH_MODES:
+        text = str(
+            getattr(message, "text", None) or getattr(message, "caption", None) or ""
+        )
+        start = text.find("Files List :")
+        if start >= 0:
+            for position, url in _entity_links(
+                message, text, command_labels_only=False
+            ):
+                if (
+                    position <= start
+                    or not _telegram_file_url(url)
+                    or url.rstrip("/") in seen
+                ):
+                    continue
+                # Only the numbered uploaded-file entries; not Task By,
+                # source/profile links, sharing links or stream adverts.
+                prefix = text[text.rfind("\n", 0, position) + 1 : position]
+                numbered = re.fullmatch(r"\s*(\d+)\.\s*", prefix)
+                if numbered is None:
+                    continue
+                seen.add(url.rstrip("/"))
+                result.append({"label": f"File {numbered[1]}", "url": url})
     return result[:20]
+
+
+def _telegram_file_url(url):
+    if not _safe_url(url):
+        return False
+    parsed = urlsplit(url)
+    return (
+        parsed.hostname.lower()
+        in {"t.me", "telegram.me", "www.t.me", "www.telegram.me"}
+        and not parsed.query
+        and not parsed.fragment
+        and re.fullmatch(
+            r"/(?:c/\d+|[A-Za-z0-9_]{5,32})/(?:\d+/)?[1-9]\d*", parsed.path
+        )
+        is not None
+    )
 
 
 def parse_reply(message, task):
@@ -190,6 +240,11 @@ def parse_reply(message, task):
             return dict(payload, event="cancelled", error=reason)
     upload_error = _untag(message, text)
     if upload_error:
+        if task.get("mirror_options", {}).get("-yt") and re.fullmatch(
+            r"Your (?:video|playlist \(\d+ videos\)) has been uploaded to YouTube successfully!",
+            upload_error,
+        ):
+            return dict(payload, event="completed", links=_result_links(message, task))
         if _cancelled(upload_error):
             return dict(payload, event="cancelled", error=upload_error[:2048])
         if upload_error.startswith(
@@ -216,6 +271,22 @@ def parse_reply(message, task):
     ):
         return None
     links = _result_links(message, task)
+    if task.get("mirror_mode") in LEECH_MODES:
+        total = re.search(r"Total Files:\s*(\d+)", text)
+        corrupted = re.search(r"Corrupted Files\W+(\d+)", text)
+        if total and int(total[1]) > 0:
+            corrupt_count = int(corrupted[1]) if corrupted else 0
+            result = dict(
+                payload,
+                event="completed",
+                links=links,
+                name=text.splitlines()[0][:1024],
+            )
+            if corrupt_count:
+                result["error"] = f"{corrupt_count} of {total[1]} files were corrupted."
+                if corrupt_count >= int(total[1]) and not links:
+                    result["event"] = "failed"
+            return result
     provider_errors = re.findall(r"(?m)^\s*[A-Za-z][A-Za-z0-9 ]*: Error - .+", text)
     # Stock multiupload reports a completion-shaped message even if every
     # provider failed. A visible provider error without any output is failure.
@@ -231,7 +302,7 @@ def parse_reply(message, task):
     return result
 
 
-def _entity_links(message, text):
+def _entity_links(message, text, *, command_labels_only=True):
     encoded = text.encode("utf-16-le")
     entities = (
         getattr(message, "entities", None)
@@ -254,7 +325,7 @@ def _entity_links(message, text):
             label = encoded[offset * 2 : (offset + length) * 2].decode("utf-16-le")
         except UnicodeError:
             continue
-        if label == "Link":
+        if not command_labels_only or label == "Link":
             yield len(before), url
 
 
@@ -406,7 +477,11 @@ async def _cancellation_reply(message, actor, chat, reply_id):
     if type(original_id) is not int or original_id <= 0:
         return False
     task = await repository.find_mirror_command(chat.id, actor.id, original_id)
-    if task is None or task.get("cancel_status") not in {"sending", "sent", "uncertain"}:
+    if task is None or task.get("cancel_status") not in {
+        "sending",
+        "sent",
+        "uncertain",
+    }:
         return False
     command = getattr(reply, "text", None)
     return command == "/cancel" or (
@@ -436,8 +511,17 @@ async def _fast_reply(message, actor, chat, reply_id):
     )
     if task is None:
         return None
-    expected = f"/mirror@{task.get('mirror_bot_username')} {task['url']}"
-    if lines[0] != expected:
+    try:
+        expected = build_command(
+            task.get("mirror_mode", "mirror"),
+            task.get("mirror_bot_username"),
+            task["url"],
+            task.get("mirror_options"),
+            task["id"],
+        )
+    except (ValueError, TypeError):
+        return None
+    if "\n".join(lines) != expected:
         return None
     task["command_message_id"] = reply_id
     return task
