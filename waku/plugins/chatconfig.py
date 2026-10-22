@@ -19,7 +19,11 @@ from waku.common.telegram_authority import (
 from waku.common.utils import GROUP_CHAT_TYPES
 from waku.database.models import ChatConfig
 from waku.i18n import i18n
-from waku.plugins.menu_cleanup import schedule_saved_menu_cleanup, watch_menu
+from waku.plugins.menu_cleanup import (
+    delete_menu,
+    schedule_saved_menu_cleanup,
+    watch_menu,
+)
 from waku.plugins.panel import chat_panel_button, refresh_panel_registration
 from waku.services.telegram_images import normalize_image_mode
 
@@ -237,7 +241,7 @@ async def config_chat(client, query):
         if action == "cancel":
             _SESSIONS.pop(token, None)
             await query.answer()
-            await query.edit_message_text(_tr("cancelled", locale), reply_markup=None)
+            await delete_menu(client, message, session.command_message_id)
             return
         if action == "reload":
             config = await database.get_chat_config(message.chat)

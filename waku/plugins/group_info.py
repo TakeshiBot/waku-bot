@@ -20,7 +20,7 @@ from waku import database
 from waku.config import app_config
 from waku.i18n import t
 from waku.logger import logger
-from waku.plugins.menu_cleanup import watch_menu
+from waku.plugins.menu_cleanup import delete_menu, watch_menu
 
 _PAGE_SIZE = 15
 _ACCESS_TTL = 60
@@ -39,6 +39,7 @@ class InfoPanel:
     user_id: int
     expires: float
     scope: str = "groups"
+    command_message_id: int | None = None
 
 
 async def _actor(user):
@@ -54,9 +55,16 @@ async def _actor(user):
     return allowed, locale
 
 
-def _remember_panel(message, user_id, scope="groups", client=None):
+def _remember_panel(
+    message, user_id, scope="groups", client=None, command_message_id=None
+):
     key = (message.chat.id, message.id)
-    _panels[key] = InfoPanel(user_id, time.monotonic() + _PANEL_TTL, scope)
+    previous = _panels.get(key)
+    if command_message_id is None and previous is not None:
+        command_message_id = previous.command_message_id
+    _panels[key] = InfoPanel(
+        user_id, time.monotonic() + _PANEL_TTL, scope, command_message_id
+    )
     if client is not None:
         watch_menu(client, message, session=_panels[key])
     _panels.move_to_end(key)
@@ -238,7 +246,9 @@ async def info_command(client, message):
     panel = await client.send_message(
         message.chat.id, t("bot.info.loading", locale=locale)
     )
-    _remember_panel(panel, message.from_user.id, client=client)
+    _remember_panel(
+        panel, message.from_user.id, client=client, command_message_id=message.id
+    )
     try:
         body, keyboard = await _page(client, message.from_user.id, locale)
         await panel.edit_text(
@@ -287,7 +297,7 @@ async def info_callback(client, query):
     await query.answer()
     if action == "x":
         _panels.pop(key, None)
-        await message.delete()
+        await delete_menu(client, message, panel.command_message_id)
         return
     try:
         body, keyboard = await _page(

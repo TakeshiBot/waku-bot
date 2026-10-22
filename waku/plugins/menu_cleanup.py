@@ -1,9 +1,10 @@
-"""Expire bot-owned menus without deleting the user's command."""
+"""Expire menus; also remove group commands when menus are saved or closed."""
 
 import asyncio
 import time
 
 from waku import common
+from waku.common.utils import GROUP_CHAT_TYPES
 from waku.logger import logger
 
 SAVE_AUTO_DELETE_SECONDS = 5
@@ -55,15 +56,58 @@ def watch_menu_id(
     _timers[key] = common.spawn(expire(), name=f"menu-expiry:{chat_id}:{message_id}")
 
 
-async def delete_saved_menu(client, chat_id, menu_id, command_id=None):
-    await asyncio.sleep(SAVE_AUTO_DELETE_SECONDS)
-    for message_id in (menu_id,):
-        if type(message_id) is not int or message_id <= 0:
+async def _delete_menu_messages(client, chat_id, menu_id, command_id=None):
+    timer = _timers.pop((id(client), chat_id, menu_id), None)
+    if timer is not None:
+        timer.cancel()
+    message_ids = []
+    for message_id in (menu_id, command_id):
+        if type(message_id) is not int or message_id <= 0 or message_id in message_ids:
             continue
+        message_ids.append(message_id)
+    for message_id in message_ids:
         try:
             await client.delete_messages(chat_id, message_id)
         except Exception as error:
-            logger.debug("Saved-menu cleanup failed: {}", type(error).__name__)
+            logger.debug("Menu cleanup failed: {}", type(error).__name__)
+
+
+def _group_command_id(message, command_id):
+    chat = getattr(message, "chat", None)
+    if getattr(chat, "type", None) not in GROUP_CHAT_TYPES:
+        return None
+    if command_id is None:
+        command_id = getattr(message, "reply_to_message_id", None)
+    return command_id
+
+
+async def delete_menu(client, message, command_id=None):
+    """Close a menu immediately, removing its originating command only in groups."""
+    chat = getattr(message, "chat", None)
+    menu_id = getattr(message, "id", None)
+    if chat is None or type(chat.id) is not int or type(menu_id) is not int:
+        return
+    timer = _timers.pop((id(client), chat.id, menu_id), None)
+    if timer is not None:
+        timer.cancel()
+    try:
+        await message.delete()
+    except Exception as error:
+        logger.debug("Menu cleanup failed: {}", type(error).__name__)
+
+    command_id = _group_command_id(message, command_id)
+    if type(command_id) is not int or command_id <= 0 or command_id == menu_id:
+        return
+    try:
+        await client.delete_messages(chat.id, command_id)
+    except Exception as error:
+        logger.debug("Group command cleanup failed: {}", type(error).__name__)
+
+
+async def delete_saved_menu(client, chat_id, menu_id, command_id=None):
+    """Delete messages already scoped by schedule_saved_menu_cleanup."""
+    await asyncio.sleep(SAVE_AUTO_DELETE_SECONDS)
+    await _delete_menu_messages(client, chat_id, menu_id, command_id)
 
 
 def schedule_saved_menu_cleanup(client, message, command_id=None):
@@ -72,6 +116,8 @@ def schedule_saved_menu_cleanup(client, message, command_id=None):
     if chat is None or type(chat.id) is not int or type(menu_id) is not int:
         return
     common.spawn(
-        delete_saved_menu(client, chat.id, menu_id, command_id),
+        delete_saved_menu(
+            client, chat.id, menu_id, _group_command_id(message, command_id)
+        ),
         name=f"saved-menu:{chat.id}:{menu_id}",
     )

@@ -14,7 +14,11 @@ from waku import database, i18n
 from waku.common.telegram_authority import can_manage_group_settings
 from waku.common.utils import get_reply_target
 from waku.logger import logger
-from waku.plugins.menu_cleanup import schedule_saved_menu_cleanup, watch_menu
+from waku.plugins.menu_cleanup import (
+    delete_menu,
+    schedule_saved_menu_cleanup,
+    watch_menu,
+)
 
 from .authority import TitleDenied, can_set_preset, change_title
 from .permissions import ADMIN_RIGHTS, CHANNEL_ONLY, group_preset, supported
@@ -125,8 +129,7 @@ def _markup(session):
         names = {"vi": "Tiếng Việt", "en": "English", "zh-CN": "Chinese (Simplified)"}
         buttons = [
             button(
-                ("✅ " if locale == session.lang else "")
-                + names.get(locale, locale),
+                ("✅ " if locale == session.lang else "") + names.get(locale, locale),
                 f"lang_{locale}",
             )
             for locale in i18n.i18n.get_available_locales()
@@ -264,10 +267,7 @@ async def set_title_permissions_callback(client, query):
         session.revision += 1
         if action == "close":
             _sessions.pop(token, None)
-            try:
-                await message.delete()
-            except Exception:
-                await message.edit_reply_markup(None)
+            await delete_menu(client, message, session.command_message_id)
             return
         if action in ("reload", "cancel"):
             try:

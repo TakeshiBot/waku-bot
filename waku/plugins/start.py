@@ -16,7 +16,7 @@ from waku import common, consts, database, i18n
 from waku.common.memory_store import memttlcache
 from waku.config import app_config
 from waku.logger import logger
-from waku.plugins.menu_cleanup import watch_menu
+from waku.plugins.menu_cleanup import delete_menu, watch_menu
 from waku.plugins.panel import chat_panel_button, private_chat_panel_button
 from waku.timezone import as_bot_time
 from waku.webapp.auth import parse_start_param_chat_id
@@ -441,7 +441,7 @@ async def close_start_menu(client: Client, query: CallbackQuery):
         await query.answer(i18n.t("bot.start_menu.not_yours"), show_alert=True)
         return
     await query.answer()
-    await message.delete()
+    await delete_menu(client, message)
 
 
 @Client.on_callback_query(filters.regex(r"^delete_callback_query_message$"))
@@ -449,7 +449,7 @@ async def delete_callback_query_message(client: Client, callback_query: Callback
     if not callback_query.message:
         return
     try:
-        await callback_query.message.delete()
+        await delete_menu(client, callback_query.message)
     except Exception as e:
         logger.error(f"Failed to delete message: {e.__class__.__name__} - {e}")
 
