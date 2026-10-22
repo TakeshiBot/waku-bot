@@ -51,7 +51,6 @@ _BUTTON_ORDER = (
     "ai_reply_other_bots_enabled",
     "bot_reply",
     "sticker_memory_enabled",
-    "reactions_enabled",
     "verify_enabled",
     "delete_events_enabled",
     "unpin_channel_pin_enabled",
@@ -62,6 +61,7 @@ _BUTTON_ORDER = (
     "waifu_enabled",
     "pick_bottle_enabled",
 )
+_EXPRESSION_FIELDS = ("sticker_memory_enabled", "reactions_enabled")
 _TTL = 15 * 60
 _SESSIONS = {}
 
@@ -133,6 +133,12 @@ class ChatConfigMarkup:
                 else i18n.t("bot.button.chat_config." + label, locale=self.lang)
             )
             status = "✔️" if getattr(self.chat_config, name) else "❌"
+            if name in _EXPRESSION_FIELDS:
+                title = i18n.t(
+                    "bot.button.chat_config.stickers_and_reactions", locale=self.lang
+                )
+                states = [getattr(self.chat_config, key) for key in _EXPRESSION_FIELDS]
+                status = "✔️" if all(states) else "➖" if any(states) else "❌"
             buttons.append(self._button(f"{status} {title}", f"toggle:{index}"))
         height = (len(buttons) + 1) // 2
         rows = [
@@ -294,6 +300,12 @@ async def config_chat(client, query):
                 index = (index + 1) % 4
                 session.draft.setu_enabled = index != 0
                 session.draft.telegram_r18_mode = max(0, index - 1)
+            elif name in _EXPRESSION_FIELDS:
+                enabled = not all(
+                    getattr(session.draft, key) for key in _EXPRESSION_FIELDS
+                )
+                for key in _EXPRESSION_FIELDS:
+                    setattr(session.draft, key, enabled)
             else:
                 setattr(session.draft, name, not getattr(session.draft, name))
         else:

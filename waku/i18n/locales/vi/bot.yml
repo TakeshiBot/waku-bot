@@ -622,6 +622,7 @@ bot:
       group_memory_enabled: Bộ Nhớ Nhóm
       sticker_memory_enabled: Học Và Gửi Sticker
       reactions_enabled: Thả Cảm Xúc
+      stickers_and_reactions: Sticker Và Cảm Xúc
       bot_reply: Bot Trả Lời
       verify: Xác Minh Thành Viên
       save: Lưu

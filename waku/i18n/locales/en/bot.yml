@@ -514,6 +514,7 @@ bot:
       group_memory_enabled: Group Memory
       sticker_memory_enabled: Learn and send stickers
       reactions_enabled: Message reactions
+      stickers_and_reactions: Stickers and reactions
       bot_reply: Default Bot Replies
       verify: Member Verification
       save: Save
