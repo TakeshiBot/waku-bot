@@ -12,6 +12,17 @@ MENU_TIMEOUT_SECONDS = 15 * 60
 _timers = {}
 
 
+def stop_watching_menu(client, message):
+    """Keep a menu that has become a durable restart/update receipt."""
+    chat = getattr(message, "chat", None)
+    message_id = getattr(message, "id", None)
+    if chat is None or type(message_id) is not int:
+        return
+    timer = _timers.pop((id(client), chat.id, message_id), None)
+    if timer is not None:
+        timer.cancel()
+
+
 def watch_menu(client, message, *, session=None, ttl=MENU_TIMEOUT_SECONDS):
     """Watch only the outgoing bot menu; never its replied-to command."""
     chat = getattr(message, "chat", None)

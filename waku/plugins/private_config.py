@@ -24,7 +24,7 @@ from waku import common, database
 from waku.config import ProviderConfig, _AppConfig, _resolve_settings_files, app_config
 from waku.i18n import t
 from waku.logger import logger
-from waku.plugins.menu_cleanup import watch_menu
+from waku.plugins.menu_cleanup import stop_watching_menu, watch_menu
 from waku.runtime_fields import APP_ONLY_FIELDS, FEATURE_FIELDS, RUNTIME_FIELDS
 from waku.services.settings_editor import (
     SettingsEditError,
@@ -1211,7 +1211,27 @@ async def private_config_callback(client: Client, query: CallbackQuery):
                 session.editor.validate_for_restart()
                 await query.answer()
                 answered = True
-                await _edit(message, _tr("restarting", session))
+                from waku.services import maintenance
+
+                async with maintenance.LOCK:
+                    try:
+                        await _edit(message, _tr("restarting", session))
+                        await asyncio.to_thread(
+                            maintenance.save_request,
+                            "restart",
+                            message,
+                            session.user_id,
+                            session.locale,
+                        )
+                    except (OSError, ValueError) as error:
+                        key = "busy" if str(error) == "busy" else "storage_error"
+                        await _edit(
+                            message,
+                            t("bot.restart." + key, locale=session.locale),
+                            InlineKeyboardMarkup([_footer(token, session)]),
+                        )
+                        return
+                    stop_watching_menu(client, message)
                 _SESSIONS.pop(token, None)
                 common.spawn(_restart(), name="private-config-restart")
                 return

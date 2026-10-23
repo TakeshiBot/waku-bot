@@ -13,7 +13,7 @@ from waku import common, database
 from waku.config import ProviderConfig, _AppConfig, _resolve_settings_files, app_config
 from waku.i18n import t
 from waku.logger import logger
-from waku.plugins.menu_cleanup import watch_menu
+from waku.plugins.menu_cleanup import stop_watching_menu, watch_menu
 from waku.services import maintenance
 from waku.services.process_restart import request_restart
 from waku.services.settings_editor import SettingsEditError, SettingsEditor
@@ -171,6 +171,7 @@ async def restart_callback(client: Client, query: pyrogram.types.CallbackQuery):
             await query.message.edit_text(_text(key, lang), reply_markup=None)
             _MENUS.pop(token, None)
             return
+        stop_watching_menu(client, query.message)
         _MENUS.pop(token, None)
         logger.info("Bot maintenance {} requested by {}", action, menu.user_id)
         if action == "restart":
