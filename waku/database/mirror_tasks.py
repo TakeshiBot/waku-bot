@@ -79,9 +79,12 @@ async def cancellation_candidates(
     request_id=None,
     reply_message_id=None,
     origin_platform="telegram",
+    admin_scope=False,
     session=None,
 ):
-    statement = select(MirrorTask).where(MirrorTask.requester_id == requester_id)
+    statement = select(MirrorTask)
+    if not admin_scope:
+        statement = statement.where(MirrorTask.requester_id == requester_id)
     platform = MirrorTask.details["origin_platform"].as_string()
     statement = statement.where(
         or_(platform.is_(None), platform == "telegram")
@@ -89,16 +92,21 @@ async def cancellation_candidates(
         else platform == origin_platform
     )
     if request_id is not None:
-        statement = statement.where(MirrorTask.id == request_id)
+        statement = statement.where(
+            or_(
+                MirrorTask.id == request_id,
+                MirrorTask.details["gid"].as_string() == request_id,
+            )
+        )
     else:
-        statement = statement.where(MirrorTask.origin_chat_id == origin_chat_id)
         if reply_message_id is not None:
             statement = statement.where(
+                MirrorTask.origin_chat_id == origin_chat_id,
                 or_(
                     MirrorTask.origin_message_id == reply_message_id,
                     MirrorTask.accepted_message_id == reply_message_id,
                     MirrorTask.terminal_message_id == reply_message_id,
-                )
+                ),
             )
         else:
             statement = statement.where(MirrorTask.status.not_in(TERMINAL))
@@ -115,11 +123,16 @@ async def cancellation_candidates(
 
 
 @with_tx
-async def claim_cancellation(request_id, requester_id, session=None):
+async def claim_cancellation(
+    request_id, requester_id, *, admin_scope=False, session=None
+):
+    conditions = [MirrorTask.id == request_id]
+    if not admin_scope:
+        conditions.append(MirrorTask.requester_id == requester_id)
     row = (
         await session.execute(
             select(MirrorTask)
-            .where(MirrorTask.id == request_id, MirrorTask.requester_id == requester_id)
+            .where(*conditions)
             .with_for_update()
             .execution_options(populate_existing=True)
         )
@@ -170,7 +183,19 @@ async def finish_cancellation(
     row = (
         await session.execute(
             select(MirrorTask)
-            .where(MirrorTask.id == request_id, MirrorTask.requester_id == requester_id)
+            .where(
+                MirrorTask.id == request_id,
+                or_(
+                    MirrorTask.details["cancel_requested_by"].as_integer()
+                    == requester_id,
+                    and_(
+                        MirrorTask.details["cancel_requested_by"]
+                        .as_integer()
+                        .is_(None),
+                        MirrorTask.requester_id == requester_id,
+                    ),
+                ),
+            )
             .with_for_update()
             .execution_options(populate_existing=True)
         )
@@ -465,12 +490,21 @@ async def expire_acknowledgements(session=None):
 
 @with_tx
 async def claim_status_queries(session=None):
+    """Bootstrap stock Mirrorz's self-updating status once per task.
+
+    Only the optional receipt protocol needs periodic replay for missed events.
+    Cancellation and terminal receipts stop queries immediately.
+    """
     now = time.time()
     conditions = (
         MirrorTask.status.not_in(TERMINAL),
+        MirrorTask.details["cancel_status"].as_string().is_(None),
         or_(
             MirrorTask.last_status_query_at.is_(None),
-            MirrorTask.last_status_query_at < now - 60,
+            and_(
+                MirrorTask.details["bridge_protocol"].as_boolean().is_(True),
+                MirrorTask.last_status_query_at < now - 300,
+            ),
         ),
         MirrorTask.created_at < datetime.now(UTC) - timedelta(seconds=15),
     )

@@ -180,10 +180,11 @@ async def mirror_discord(
 async def cancel_discord_mirror(
     ctx: RunContext[DiscordContextDeps], request_id: str | None = None
 ) -> dict:
-    """Cancel this Discord admin's owned task, using the real reply or active tasks.
+    """Cancel a tracked Discord task as a bot admin, from any channel or DM.
 
-    Omit request_id normally. If several tasks match, ask which one or cancel
-    each returned owned request_id only when the user requests cancelling all.
+    Omit request_id normally, or use an actual backend ID/Mirror GID. Bot admins
+    may manage other admins' tasks. If several match, ask which one or cancel
+    each returned request_id only when the user requests cancelling all.
     A sent cancellation is not confirmed cancellation; await the terminal update.
     """
     message = ctx.deps.message
@@ -196,6 +197,7 @@ async def cancel_discord_mirror(
         request_id=request_id,
         reply_message_id=getattr(message.reference, "message_id", None),
         origin_platform="discord",
+        admin_scope=True,
     )
     if facts.get("status") in {"cancel_requested", "cancel_uncertain"}:
         ctx.deps.side_effects_started = True

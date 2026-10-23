@@ -54,7 +54,10 @@ _CANCEL_REASONS = {
     "cancelled by user!",
     "task have been removed from queue/download",
     "your upload has been stopped!",
+    "your upload has been stopped and uploaded data has been deleted!",
     "your clone has been stopped!",
+    "your clone has been stopped and cloned data has been deleted!",
+    "download removed manually!",
     "upload has been manually cancelled",
     "upload has been manually cancelled!",
     "telegram clone stopped by user!",
@@ -435,8 +438,8 @@ async def receive_native(message):
     reply_id = getattr(message, "reply_to_message_id", None)
     if type(reply_id) is int and reply_id > 0:
         if await _cancellation_reply(message, actor, chat, reply_id):
-            # A response to the cancellation command is backend data. Only a
-            # lifecycle receipt on the original task can confirm cancellation.
+            # A response to the cancellation command is backend data. Only an
+            # explicit, exactly bound lifecycle receipt confirms cancellation.
             return True
         task = await repository.find_mirror_command(chat.id, actor.id, reply_id)
         if task is None:
@@ -457,7 +460,9 @@ async def receive_native(message):
 
 
 async def _cancellation_reply(message, actor, chat, reply_id):
-    if await repository.find_cancel_command(chat.id, actor.id, reply_id):
+    task = await repository.find_cancel_command(chat.id, actor.id, reply_id)
+    if task:
+        await _confirm_cancellation(message, actor, chat, task)
         return True
     # Telegram can deliver a bot's response before our send await returns and
     # its cancellation message ID is persisted. Verify the real own-bot reply
@@ -484,10 +489,23 @@ async def _cancellation_reply(message, actor, chat, reply_id):
     }:
         return False
     command = getattr(reply, "text", None)
-    return command == "/cancel" or (
+    verified = command == "/cancel" or (
         task.get("gid")
         and command == f"/c_{task['gid']}@{task.get('mirror_bot_username')}"
     )
+    if verified:
+        await _confirm_cancellation(message, actor, chat, task)
+    return bool(verified)
+
+
+async def _confirm_cancellation(message, actor, chat, task):
+    # Only explicit native cancellation receipts can confirm this outcome.
+    # A command acknowledgement, missing GID, or 'not active' is inconclusive.
+    if task["status"] in repository.TERMINAL:
+        return
+    payload = parse_reply(message, task)
+    if payload and payload["event"] == "cancelled":
+        await repository.apply_event(payload, sender_id=actor.id, chat_id=chat.id)
 
 
 async def _fast_reply(message, actor, chat, reply_id):

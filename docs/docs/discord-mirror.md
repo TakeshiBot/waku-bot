@@ -17,7 +17,8 @@ ban đầu, kèm nút tải từ kết quả đã xác minh. Leech vẫn gửi f
 Discord nhận các link Telegram có trong kết quả, không tự upload lại file.
 Lỗi model khi viết cập nhật sẽ được chờ thử lại, không thay bằng câu trả lời cố định.
 
-Chat “huỷ task đó” khi reply một cập nhật để chọn task chính xác. Nếu nhiều task
-đang chạy, AI sẽ hỏi lại; yêu cầu huỷ tất cả có thể huỷ từng task của chính người đó.
+Chat “huỷ task đó” khi reply một cập nhật để chọn task chính xác. Admin bot có thể
+huỷ từ kênh/DM khác, kể cả task do admin bot khác yêu cầu, hoặc chọn bằng ID/GID thật.
+Nếu nhiều task đang chạy, AI sẽ hỏi lại; chỉ huỷ tất cả khi được yêu cầu rõ ràng.
 Quyền admin server riêng lẻ không cấp quyền mirror. Task, quyền huỷ và thông báo
 được tách theo nền tảng; dữ liệu task vẫn giữ trong database khi restart.

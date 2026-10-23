@@ -1,4 +1,4 @@
-"""Submit an owned Mirror cancellation once; lifecycle receipts confirm outcome."""
+"""Submit one tracked cancellation; verified admin tools may manage all tasks."""
 
 from __future__ import annotations
 
@@ -47,8 +47,14 @@ def _outcome(status, task, error=None):
 
 
 async def cancel(
-    client, *, requester_id, origin_chat_id, request_id=None, reply_message_id=None,
+    client,
+    *,
+    requester_id,
+    origin_chat_id,
+    request_id=None,
+    reply_message_id=None,
     origin_platform="telegram",
+    admin_scope=False,
 ):
     if (
         type(requester_id) is not int
@@ -59,7 +65,7 @@ async def cancel(
             request_id is not None
             and (
                 not isinstance(request_id, str)
-                or re.fullmatch(r"[0-9a-f]{32}", request_id) is None
+                or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", request_id) is None
             )
         )
         or (
@@ -73,7 +79,11 @@ async def cancel(
         }
     if origin_platform not in {"telegram", "discord"}:
         return {"status": "invalid_request", "error": "Invalid platform."}
-    platform_args = {"origin_platform": origin_platform} if origin_platform != "telegram" else {}
+    platform_args = (
+        {"origin_platform": origin_platform} if origin_platform != "telegram" else {}
+    )
+    if admin_scope:
+        platform_args["admin_scope"] = True
     candidates = await repository.cancellation_candidates(
         requester_id,
         origin_chat_id,
@@ -81,10 +91,18 @@ async def cancel(
         reply_message_id=reply_message_id,
         **platform_args,
     )
+    if not candidates and request_id is None and reply_message_id is not None:
+        # An unrelated chat reply must not hide tasks started elsewhere. Actual
+        # task replies above always take precedence over the global selection.
+        candidates = await repository.cancellation_candidates(
+            requester_id,
+            origin_chat_id,
+            **platform_args,
+        )
     if not candidates:
         return {
             "status": "not_found",
-            "error": "No owned Mirror task matches the supplied context.",
+            "error": "No tracked Mirror task matches the permitted scope and supplied context.",
         }
     if len(candidates) != 1:
         return {
@@ -99,6 +117,8 @@ async def cancel(
                         "status",
                         "origin_chat_id",
                         "origin_message_id",
+                        "requester_id",
+                        "gid",
                     )
                 }
                 for item in candidates[:20]
@@ -143,7 +163,10 @@ async def cancel(
             "task": task,
             "error": "Mirror bot identity/username no longer matches the stored task route.",
         }
-    claimed = await repository.claim_cancellation(task["id"], requester_id)
+    claim_args = {"admin_scope": True} if admin_scope else {}
+    claimed = await repository.claim_cancellation(
+        task["id"], requester_id, **claim_args
+    )
     if claimed is None:
         return {"status": "not_found"}
     task = claimed["task"]
@@ -161,7 +184,7 @@ async def cancel(
         f"/c_{gid}@{username}"
         if isinstance(gid, str)
         and len(gid) != 6
-        and re.fullmatch(r"[A-Za-z0-9-]{1,128}", gid)
+        and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", gid)
         else "/cancel"
     )
     try:

@@ -121,9 +121,11 @@ def mirror_instructions() -> str:
         "not invent unsupported-format errors or propose downloads/workspace "
         "workarounds. When the user asks to stop/cancel a mirror task, use "
         "cancel_mirror, not a raw Telegram command. Omit request_id when replying "
-        "to a task update or cancelling the user's active task in this chat. If "
+        "to a task update or cancelling an active tracked task from any group or DM. "
+        "Bot admins may manage tracked tasks across chats, including tasks requested by other bot admins. "
+        "An exact backend request ID or actual Mirror GID may select the task directly. If "
         "several tasks match, ask which named file they mean, unless they explicitly asked to cancel all their tasks; "
-        "then cancel each returned owned request_id through cancel_mirror. A cancellation "
+        "then cancel each returned request_id through cancel_mirror. A cancellation "
         "request is not confirmation: report only the tool's factual state and "
         "wait for the asynchronous terminal result before saying it is cancelled. "
         "Never expose internal IDs or raw cancellation commands in normal "
@@ -385,17 +387,19 @@ async def mirror(
 async def cancel_mirror(
     ctx: RunContext[datatype.ContextDeps], request_id: str | None = None
 ) -> dict:
-    """Request cancellation of this admin's tracked Mirror task.
+    """Cancel a tracked Mirror task as a bot admin, from any group or DM.
 
     Use for natural-language requests to cancel/stop a mirror. Omit the internal
     request ID to select by the actual replied task update, or the user's active
-    task in this chat. If ambiguous, ask the user which file they mean. A sent
+    task across chats. Bot admins may manage other bot admins' tracked tasks.
+    If ambiguous, ask which file they mean; cancel each candidate only when
+    explicitly asked to cancel all. A sent
     cancellation request is not a confirmed cancellation; report the returned
     facts in your own words and await the separate terminal result.
 
     Args:
-        request_id: An actual tracked request ID from tool context, if known.
-            Omit to resolve from the real reply or user's active task in this chat.
+        request_id: An actual tracked request ID or Mirror GID, if known.
+            Omit to resolve from the real reply or active tasks across chats.
             Never invent an ID or ask the user to execute a raw command.
     """
     deps = ctx.deps
@@ -403,7 +407,7 @@ async def cancel_mirror(
         return {"status": "denied", "error": "Bot admin permission is required."}
     if request_id is not None and (
         not isinstance(request_id, str)
-        or re.fullmatch(r"[0-9a-f]{32}", request_id) is None
+        or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", request_id) is None
     ):
         return {
             "status": "invalid_request",
@@ -422,6 +426,7 @@ async def cancel_mirror(
             origin_chat_id=deps.chat_id,
             request_id=request_id,
             reply_message_id=reply_id,
+            admin_scope=True,
         )
     except Exception as error:
         logger.error("Mirror cancellation failed: {}", type(error).__name__)

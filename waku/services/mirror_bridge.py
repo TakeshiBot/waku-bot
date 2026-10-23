@@ -347,7 +347,7 @@ async def receive_event(payload, *, sender_id, chat_id):
 
 
 async def recovery_status_requests(client):
-    """Use stock Mirror status; opt into receipt replay only after an addon event."""
+    """Start native auto-updating status once; replay optional addon receipts."""
     native_routes = set()
     for task in await repository.claim_status_queries():
         username = task.get("mirror_bot_username")
@@ -377,5 +377,6 @@ async def recovery_status_requests(client):
         except asyncio.CancelledError:
             raise
         except Exception:
-            # Queries retry on the next scheduled interval, task creation never does.
+            # Never retransmit tasks. Only addon replay queries run periodically;
+            # native status bootstrapping is bounded even after an uncertain send.
             continue
