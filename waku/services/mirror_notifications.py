@@ -164,6 +164,11 @@ def _defer(key, delay=None):
 
 
 async def _deliver(client, entry):
+    if entry["task"].get("origin_platform") == "discord":
+        from waku.discordbot.mirror_notifications import deliver
+
+        await deliver(entry)
+        return
     task, stage = entry["task"], entry["stage"]
     key = (task["id"], stage)
     if _retry_after.get(key, (0, 0))[1] > time.monotonic():

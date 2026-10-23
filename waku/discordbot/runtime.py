@@ -23,6 +23,14 @@ from .scheduling import (
 from .settings import _discord_dm_settings, _discord_guild_settings
 from .tools.generated_images import discord_image_ops, prepare_discord_image_tools
 from .tools.images import send_discord_anime_photo, send_discord_web_image
+from .tools.mirror import (
+    cancel_discord_mirror,
+    mirror_discord,
+    prepare_discord_mirror,
+)
+from .tools.mirror import (
+    instructions as mirror_instructions,
+)
 from .tools.reactions import send_discord_reaction
 from .tools.search import (
     search_discord_group_memory,
@@ -84,6 +92,8 @@ async def _start_discord_bot() -> None:
         output_type=str,
         capabilities=[AdminDMContextLayer()],
         tools=[
+            Tool(mirror_discord, sequential=True, prepare=prepare_discord_mirror),
+            Tool(cancel_discord_mirror, sequential=True, prepare=prepare_discord_mirror),
             Tool(get_discord_server_info, sequential=True),
             Tool(find_discord_channel, sequential=True),
             Tool(find_discord_user, sequential=True),
@@ -224,7 +234,7 @@ async def _start_discord_bot() -> None:
             "👍 ❤️ 😂 😭 🔥 🎉 👏 👀 🤔 🥰 😮 🙏. Do not react every turn. "
             "If send_discord_reaction fails, do not claim a reaction was added. "
             "If a Discord permission is missing, explain that briefly.\n\n"
-            f"{lang_instruction}"
+            f"{lang_instruction}\n\n{mirror_instructions()}"
         )
     state.discord_recovery_agent = Agent(
         model=provider.make_chat_model(app_config.agent_chat_model),

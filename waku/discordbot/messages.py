@@ -298,6 +298,22 @@ async def _build_prompt_impl(message: discord.Message, user_prompt: str) -> tupl
     replied = message.reference.resolved if message.reference else None
     if reply_ctx:
         parts.append(reply_ctx)
+    # Moving a file does not need vision or document extraction. Intent is still
+    # interpreted by the AI; this only avoids sending transfer media to vision.
+    from .permissions import _is_discord_user_bot_admin
+
+    if _is_discord_user_bot_admin(message.author) and re.search(
+        r"\b(?:mirror|leech|qm|ql|qbmirror|qbleech|jdmirror|jdleech|nzbmirror|nzbleech|ytdl|ytdlleech|clone|uphoster)\b",
+        user_prompt, re.IGNORECASE,
+    ):
+        for source in (message, replied):
+            for attachment in getattr(source, "attachments", ()):
+                parts.append(f"Transfer attachment: name={attachment.filename!r}, size={attachment.size}")
+        parts.extend([
+            "Use the mirror tool for transfers; attachment contents need no analysis.",
+            "User message:", user_prompt,
+        ])
+        return ["\n".join(parts)], False
     emoji_hint = await _discord_emoji_hint(message)
     if emoji_hint:
         parts.append(emoji_hint)

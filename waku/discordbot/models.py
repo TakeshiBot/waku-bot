@@ -23,6 +23,8 @@ class DiscordContextDeps:
     message: discord.Message
     side_effects_started: bool = False
     image_delivered: bool = False
+    mirror_dispatched: bool = False
+    mirror_attempted: bool = False
     deferred_images: Any | None = None
     publish_image_progress: Callable[[str], Awaitable[None]] | None = None
 

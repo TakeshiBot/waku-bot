@@ -78,9 +78,16 @@ async def cancellation_candidates(
     *,
     request_id=None,
     reply_message_id=None,
+    origin_platform="telegram",
     session=None,
 ):
     statement = select(MirrorTask).where(MirrorTask.requester_id == requester_id)
+    platform = MirrorTask.details["origin_platform"].as_string()
+    statement = statement.where(
+        or_(platform.is_(None), platform == "telegram")
+        if origin_platform == "telegram"
+        else platform == origin_platform
+    )
     if request_id is not None:
         statement = statement.where(MirrorTask.id == request_id)
     else:

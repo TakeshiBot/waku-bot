@@ -105,7 +105,14 @@ async def submit(
     options=None,
     item_index=0,
     batch_size=1,
+    origin_platform="telegram",
+    origin_guild_id=None,
+    origin_request_text="",
 ):
+    if origin_platform not in {"telegram", "discord"}:
+        raise ValueError("Invalid origin platform")
+    if origin_platform != "telegram" and source_message is not None:
+        raise ValueError("Telegram media requires a Telegram origin")
     mode = normalize_mode(mode)
     options = normalize_options(mode, options)
     render_options(mode, options)
@@ -160,6 +167,8 @@ async def submit(
         raise ValueError("Invalid mirror routing identity")
     bot_id = client.me.id
     identity = f"{bot_id}:{origin_chat_id}:{origin_message_id}"
+    if origin_platform != "telegram":
+        identity = f"{origin_platform}:{identity}"
     token = hashlib.sha256(
         (identity + (f":{item_index}" if item_index else "")).encode()
     ).hexdigest()[:32]
@@ -178,6 +187,12 @@ async def submit(
         "batch_index": item_index,
         "batch_size": batch_size,
     }
+    if origin_platform == "discord":
+        details.update(
+            origin_platform=origin_platform,
+            origin_guild_id=origin_guild_id,
+            origin_request_text=str(origin_request_text)[:2000],
+        )
     if has_source:
         details.update(
             source_chat_id=origin_chat_id,

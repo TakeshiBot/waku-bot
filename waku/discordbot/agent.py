@@ -139,7 +139,7 @@ async def _run_discord_agent_once(
         # intermediate pre-tool narration with the final answer.
         text = ""
         async for event in events:
-            if deps.image_delivered:
+            if deps.image_delivered or deps.mirror_dispatched:
                 continue
             if stream is None:
                 from .streaming import DiscordReplyStream
@@ -166,6 +166,7 @@ async def _run_discord_agent_once(
                 response_started.set()
                 if getattr(event.part, "tool_name", None) in {
                     "send_discord_anime_photo", "send_discord_web_image",
+                    "mirror_discord",
                 } and stream is not None:
                     # Remove pre-tool narration before sending media, including premature failure claims.
                     await stream.finalize("")
@@ -234,7 +235,7 @@ async def _run_discord_agent_once(
             ) from error
         raise
     try:
-        if deps.image_delivered:
+        if deps.image_delivered or deps.mirror_dispatched:
             if stream is not None:
                 await stream.finalize("")
             streamed = True

@@ -47,7 +47,8 @@ def _outcome(status, task, error=None):
 
 
 async def cancel(
-    client, *, requester_id, origin_chat_id, request_id=None, reply_message_id=None
+    client, *, requester_id, origin_chat_id, request_id=None, reply_message_id=None,
+    origin_platform="telegram",
 ):
     if (
         type(requester_id) is not int
@@ -70,11 +71,15 @@ async def cancel(
             "status": "invalid_request",
             "error": "Invalid cancellation routing identity.",
         }
+    if origin_platform not in {"telegram", "discord"}:
+        return {"status": "invalid_request", "error": "Invalid platform."}
+    platform_args = {"origin_platform": origin_platform} if origin_platform != "telegram" else {}
     candidates = await repository.cancellation_candidates(
         requester_id,
         origin_chat_id,
         request_id=request_id,
         reply_message_id=reply_message_id,
+        **platform_args,
     )
     if not candidates:
         return {
