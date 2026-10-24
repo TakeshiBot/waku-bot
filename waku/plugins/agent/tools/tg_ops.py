@@ -121,7 +121,7 @@ async def _call_waku_extension(
         return await send_ops.schedule_message(ctx, str(schedule_time), text=str(text))
     if method == "blockUser":
         try:
-            duration = int(params.get("duration_minutes") or 0)
+            duration = int(params.get("duration_minutes", 1))
         except (TypeError, ValueError):
             return tr("block_duration_integer")
         if duration <= 0:
@@ -356,7 +356,10 @@ async def tg(
 
     Bot extensions:
     - scheduleMessage: text, schedule_time (ISO 8601, must be in the future).
-    - blockUser: duration_minutes (1-10080), reason (optional).
+    - blockUser: group-only personality reaction to the CURRENT sender's own
+      harassment. reason is required; duration_minutes (default 1, max 5) only
+      affects the first ignore. Later incidents escalate through 36s/3m/15m
+      mute then rejoinable kick. Backend protects admins and checks bot rights.
 
     Note: your text output is automatically sent as a reply to the current user --
           you do not need `sendMessage` for normal replies. Use this tool only when you need some extra message sending beyond the default reply (e.g. reply to others, second message).

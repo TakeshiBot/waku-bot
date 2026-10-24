@@ -23,6 +23,7 @@ from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.agent.localization import localized_message, tr
 from waku.services import link_parse, manyacg
+from waku.services.personality import instructions as personality_instructions
 
 from . import (
     datatype,
@@ -335,6 +336,8 @@ if app_config.agent and app_config.agent_chat_model:
             + await periodic_expression_instructions(ctx)
             + "\n\n"
             + tools.mirror_instructions()
+            + "\n\n"
+            + personality_instructions('tg("blockUser", {"reason": "your judgment", "duration_minutes": 1})')
         )
 
     memory_agent = Agent(
@@ -360,7 +363,7 @@ if app_config.agent and app_config.agent_chat_model:
             return
         if not message.chat or message.chat.id != chat_id:
             return
-        if await tools.is_user_blocked(user_id):
+        if await tools.is_user_blocked(user_id, chat_id):
             return
         is_private = (
             message.chat and message.chat.type == pyrogram.enums.ChatType.PRIVATE
@@ -1045,7 +1048,7 @@ async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
     if not user_data:
         return
     is_bot_user = bool(user_data.is_bot)
-    if await tools.is_user_blocked(user.id):
+    if await tools.is_user_blocked(user.id, chat.id):
         return
     if (
         is_bot_user

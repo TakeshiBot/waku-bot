@@ -148,6 +148,11 @@ async def _should_wake(message: discord.Message, bot_user: discord.ClientUser) -
     if message.author.id == bot_user.id:
         return False, ""
     is_dm = message.guild is None
+    if not is_dm:
+        from waku.services.personality import is_ignored
+
+        if await is_ignored("discord", message.guild.id, message.author.id):
+            return False, ""
     if is_dm and (
         message.author.bot
         or not isinstance(message.channel, discord.DMChannel)

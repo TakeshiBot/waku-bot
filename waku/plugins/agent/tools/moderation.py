@@ -74,6 +74,7 @@ MODERATION_RIGHTS = {
 }
 __all__ = [*MODERATION_RIGHTS, "MODERATION_RIGHTS", "prepare_group_moderation"]
 _locks: dict[int, asyncio.Lock] = {}
+_personality_scope = ContextVar("personality_scope", default=None)
 _MAX_DURATION = 366 * 86400
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _GROUPS = (ChatType.GROUP, ChatType.SUPERGROUP)
@@ -349,6 +350,14 @@ async def _authorize(ctx, right: str):
         raise ModerationDenied("actor")
     if not await _moderation_enabled(deps.chat_id):
         raise ModerationDenied("disabled")
+    if _personality_context(ctx):
+        if right != "can_restrict_members":
+            raise ModerationDenied("actor")
+        actor, bot, bot_id = await _current_members(ctx)
+        await _personality_protected(ctx, actor)
+        if not _has_right(bot, right):
+            raise ModerationDenied("bot")
+        return actor, bot, bot_id
     operator = await telegram_authority.is_bot_admin(deps.user_id)
     # Global authority does not depend on a successful caller membership lookup.
     actor, bot, bot_id = await _current_members(ctx, actor_required=not operator)
@@ -366,6 +375,26 @@ async def _authorize(ctx, right: str):
 async def _moderation_enabled(chat_id: int) -> bool:
     row = await get_chat_by_id(chat_id)
     return row is not None and row.chat_config.agent_moderation_enabled is True
+
+
+def _personality_context(ctx):
+    return _personality_scope.get() == (
+        ctx.deps.chat_id, ctx.deps.user_id, ctx.deps.message.id,
+    ) and _active_action.get() in {"personality_mute", "personality_kick"}
+
+
+async def _personality_protected(ctx, member):
+    from waku import database
+
+    if (
+        member.user is None or member.user.id != ctx.deps.user_id
+        or member.user.is_bot or member.status in _ADMINS
+        or await telegram_authority.is_bot_admin(ctx.deps.user_id)
+    ):
+        raise ModerationDenied("protected")
+    association = await database.get_association(ctx.deps.user_id, ctx.deps.chat_id)
+    if association is not None and association.is_bot_admin:
+        raise ModerationDenied("protected")
 
 
 async def group_requester_authority_context(ctx) -> str:
@@ -858,7 +887,7 @@ def _mark(ctx, *, completed=False) -> None:
 async def _verify_target(ctx, user_id: int, *, allow_absent=False, allow_admin=False):
     if user_id == await _identity(ctx):
         raise ModerationDenied("self")
-    if user_id == ctx.deps.user_id and _active_action.get() != "promote_user":
+    if user_id == ctx.deps.user_id and _active_action.get() != "promote_user" and not _personality_context(ctx):
         raise ModerationDenied("protected")
     member = await ctx.deps.client.get_chat_member(ctx.deps.chat_id, user_id)
     if member.user is None or member.user.id != user_id:
@@ -1303,6 +1332,57 @@ async def _mute(ctx, user_id: int, member, seconds: int):
                 ctx.deps.chat_id, user_id, {key: state.get(key) for key in updates}
             )
         raise
+
+
+async def personality_penalty(ctx, action: str, seconds: int) -> dict:
+    """Internal current-sender capability, never exposed as an unrestricted tool.
+
+    Preserve the existing authority checks for all ordinary moderation tools.
+    The caller has already selected a durable, bounded escalation step.
+    """
+    if action not in {"mute", "kick"} or action == "mute" and seconds not in {36, 180, 900}:
+        return {"status": "denied", "reason": "Invalid personality penalty."}
+    async with _locks.setdefault(ctx.deps.chat_id, asyncio.Lock()):
+        scope = _personality_scope.set((ctx.deps.chat_id, ctx.deps.user_id, ctx.deps.message.id))
+        tokens = [
+            (_active_action, _active_action.set("personality_" + action)),
+            (_operation_effect, _operation_effect.set(False)),
+            (_operation_completed, _operation_completed.set(False)),
+            (_operation_dispatched, _operation_dispatched.set(False)),
+            (_operation_uncertain, _operation_uncertain.set(False)),
+        ]
+        try:
+            _supergroup(ctx)
+            member, _, _ = await _authorize(ctx, "can_restrict_members")
+            # Autonomous actions must not replace restrictions set by admins.
+            if member.status != ChatMemberStatus.MEMBER:
+                raise ModerationDenied("protected")
+            if action == "mute":
+                await _mute(ctx, ctx.deps.user_id, member, seconds)
+            else:
+                # Finite removal protects rejoining even if unban loses rights
+                # or its network outcome is unknown; never leave a permanent ban.
+                await _mutate(
+                    ctx, "can_restrict_members", ctx.deps.client.ban_chat_member,
+                    ctx.deps.chat_id, ctx.deps.user_id,
+                    until_date=_until(36), _target_id=ctx.deps.user_id,
+                    _duration_seconds=36,
+                )
+                await _mutate(
+                    ctx, "can_restrict_members", ctx.deps.client.unban_chat_member,
+                    ctx.deps.chat_id, ctx.deps.user_id,
+                    _target_id=ctx.deps.user_id, _allow_absent=True,
+                )
+            return {"status": "applied"}
+        except ModerationDenied as error:
+            return {"status": "partial" if _operation_completed.get() else "denied", "reason": _text(ctx, str(error))}
+        except Exception as error:
+            logger.warning("Personality {} failed: {}", action, type(error).__name__)
+            return {"status": "uncertain" if _operation_uncertain.get() else "partial" if _operation_completed.get() else "denied", "reason": type(error).__name__}
+        finally:
+            for variable, token in reversed(tokens):
+                variable.reset(token)
+            _personality_scope.reset(scope)
 
 
 @_guarded

@@ -158,7 +158,7 @@ async def handle_follow_up_message(
     assert user is not None and user.id is not None, "Invalid user in follow-up"
     if not is_chat_allowed(chat.id):
         return
-    if await tools.is_user_blocked(user.id):
+    if await tools.is_user_blocked(user.id, chat.id):
         return
     if await common.memttlcache.get(
         state.message_follow_up_lock_key(chat.id, message.id)

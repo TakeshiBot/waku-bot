@@ -10,6 +10,7 @@ from waku.i18n import normalize_locale
 from waku.logger import logger
 from waku.plugins.agent import provider
 from waku.plugins.agent.admin_dm_context import AdminDMContextLayer
+from waku.services.personality import instructions as personality_instructions
 
 from . import state
 from .client import _create_client
@@ -31,6 +32,7 @@ from .tools.mirror import (
 from .tools.mirror import (
     instructions as mirror_instructions,
 )
+from .tools.personality import prepare_personality, react_to_disrespect
 from .tools.reactions import send_discord_reaction
 from .tools.search import (
     search_discord_group_memory,
@@ -92,6 +94,7 @@ async def _start_discord_bot() -> None:
         output_type=str,
         capabilities=[AdminDMContextLayer()],
         tools=[
+            Tool(react_to_disrespect, sequential=True, prepare=prepare_personality),
             Tool(mirror_discord, sequential=True, prepare=prepare_discord_mirror),
             Tool(cancel_discord_mirror, sequential=True, prepare=prepare_discord_mirror),
             Tool(get_discord_server_info, sequential=True),
@@ -234,7 +237,10 @@ async def _start_discord_bot() -> None:
             "👍 ❤️ 😂 😭 🔥 🎉 👏 👀 🤔 🥰 😮 🙏. Do not react every turn. "
             "If send_discord_reaction fails, do not claim a reaction was added. "
             "If a Discord permission is missing, explain that briefly.\n\n"
-            f"{lang_instruction}\n\n{mirror_instructions()}"
+            f"{lang_instruction}\n\n{mirror_instructions()}\n\n"
+            + personality_instructions(
+                "react_to_disrespect(reason=your own brief judgment)", platform="discord"
+            )
         )
     state.discord_recovery_agent = Agent(
         model=provider.make_chat_model(app_config.agent_chat_model),
