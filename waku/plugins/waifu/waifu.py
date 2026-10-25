@@ -348,15 +348,7 @@ async def marry_waifu(client: PyrogramClient, query: pyrogram.types.CallbackQuer
             )
             return
         await query.answer()
-        text = i18n.t("bot.msg.waifu.marry_cancel", locale=lang)
-        if query.message.photo is not None:
-            await query.message.edit_caption(
-                caption=text, reply_markup=None, parse_mode=pyrogram.enums.ParseMode.HTML
-            )
-        else:
-            await query.message.edit_text(
-                text=text, reply_markup=None, parse_mode=pyrogram.enums.ParseMode.HTML
-            )
+        await query.message.delete()
         return
 
     if update_user.id == db_waifu.id:
