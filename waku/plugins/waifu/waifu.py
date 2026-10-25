@@ -76,7 +76,6 @@ async def today_waifu(client: PyrogramClient, message: pyrogram.types.Message):
                 text=text,
                 reply_markup=waifu_markup,
                 parse_mode=pyrogram.enums.ParseMode.HTML,
-                quote=True,
             )
             return
         try:
@@ -89,7 +88,6 @@ async def today_waifu(client: PyrogramClient, message: pyrogram.types.Message):
                 caption=text,
                 reply_markup=waifu_markup,  # type: ignore
                 parse_mode=pyrogram.enums.ParseMode.HTML,
-                quote=True,
             )
             if msg is not None and msg.photo is not None:
                 await database.update_user_avatar(
@@ -101,7 +99,6 @@ async def today_waifu(client: PyrogramClient, message: pyrogram.types.Message):
                 text=text,
                 reply_markup=waifu_markup,
                 parse_mode=pyrogram.enums.ParseMode.HTML,
-                quote=True,
             )
     finally:
         await common.memstore.delete(lock_key)
