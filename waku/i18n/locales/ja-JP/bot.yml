@@ -301,6 +301,7 @@ bot:
       agree_marry_waifu: "いいよ"
       refuse_marry_waifu: "やだよ"
       cancel_marry_waifu: "キャンセル(?)"
+      back_marry_waifu: "変更"
       divorce: "離婚"
       divorce_confirm: "離婚"
       divorce_cancel: "やめる"

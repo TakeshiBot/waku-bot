@@ -319,6 +319,26 @@ async def marry_waifu(client: PyrogramClient, query: pyrogram.types.CallbackQuer
                 parse_mode=pyrogram.enums.ParseMode.HTML,
             )
         return
+    if data[0].endswith("back"):
+        if update_user.id != db_user.id:
+            await query.answer(
+                text=i18n.t("bot.msg.waifu.marry_not_user", locale=lang),
+                show_alert=True,
+                cache_time=10,
+            )
+            return
+        await query.answer()
+        text = await utils.waifu_text(db_waifu, False, db_user, lang=lang)
+        markup = utils.waifu_markup(waifu_id, user_id, lang)
+        if query.message.photo is not None:
+            await query.message.edit_caption(
+                caption=text, reply_markup=markup, parse_mode=pyrogram.enums.ParseMode.HTML
+            )
+        else:
+            await query.message.edit_text(
+                text=text, reply_markup=markup, parse_mode=pyrogram.enums.ParseMode.HTML
+            )
+        return
     if data[0].endswith("cancel"):
         if update_user.id not in (db_user.id, db_waifu.id):
             await query.answer(
@@ -327,14 +347,16 @@ async def marry_waifu(client: PyrogramClient, query: pyrogram.types.CallbackQuer
                 cache_time=10,
             )
             return
-        await query.answer(
-            text=i18n.t("bot.msg.waifu.marry_cancel", locale=lang), cache_time=10
-        )
-        text = await utils.waifu_text(db_waifu, False, db_user, lang=lang)
+        await query.answer()
+        text = i18n.t("bot.msg.waifu.marry_cancel", locale=lang)
         if query.message.photo is not None:
-            await query.message.edit_caption(caption=text, reply_markup=None)  # type: ignore
+            await query.message.edit_caption(
+                caption=text, reply_markup=None, parse_mode=pyrogram.enums.ParseMode.HTML
+            )
         else:
-            await query.message.edit_text(text=text, reply_markup=None)  # type: ignore
+            await query.message.edit_text(
+                text=text, reply_markup=None, parse_mode=pyrogram.enums.ParseMode.HTML
+            )
         return
 
     if update_user.id == db_waifu.id:

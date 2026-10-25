@@ -366,7 +366,7 @@ bot:
       marry_ask: "{waifu}, will you marry {user}?"
       marry_success: "Congratulations on {user} and {waifu}'s marriage~"
       marry_refused: "(´。＿。｀) You refused their proposal. Some people, once missed, are gone forever..."
-      marry_cancel: You canceled the marriage proposal.
+      marry_cancel: 'Proposal cancelled, ring packed away! Your wallet can breathe again 😌💍'
       no_participate: No one in this group has claimed a waifu today.
       graph_caption: Group relationship graph, with {count} participants.
       divorce_not_married: But... you're not married yet qwq
@@ -525,12 +525,13 @@ bot:
       selected: "(selected)"
     waifu:
       remove: Remove (Admin)
-      marry: Marry her!
+      marry: Propose
       remove_confirm: Remove
       remove_cancel: Cancel
       agree_marry_waifu: Yay!
       refuse_marry_waifu: Nay...
-      cancel_marry_waifu: Cancel (?)
+      back_marry_waifu: Change
+      cancel_marry_waifu: Cancel
       divorce: Divorce
       divorce_confirm: Divorce
       divorce_cancel: Cancel

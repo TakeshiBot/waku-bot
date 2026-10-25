@@ -116,9 +116,13 @@ def marry_markup(
             ],
             [
                 pyrogram.types.InlineKeyboardButton(
+                    text=i18n.t("bot.button.waifu.back_marry_waifu", locale=lang),
+                    callback_data=f"marry_waifu_back {waifu_id} {user_id}",
+                ),
+                pyrogram.types.InlineKeyboardButton(
                     text=i18n.t("bot.button.waifu.cancel_marry_waifu", locale=lang),
                     callback_data=f"marry_waifu_cancel {waifu_id} {user_id}",
-                )
+                ),
             ],
         ]
     )

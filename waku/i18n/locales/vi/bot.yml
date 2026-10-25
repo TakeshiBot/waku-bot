@@ -285,7 +285,7 @@ bot:
       marry_success: Chúc mừng {user} và {waifu} đã kết hôn~
       marry_refused: (´。＿。｀) Bạn đã từ chối lời cầu hôn. Có những người, một khi bỏ lỡ, sẽ không quay
         lại...
-      marry_cancel: Bạn đã hủy lời cầu hôn.
+      marry_cancel: 'Đã huỷ cầu hôn, cất nhẫn thôi! Ví tiền vừa thở phào 😌💍'
       no_participate: Hôm nay chưa có ai trong nhóm nhận waifu.
       graph_caption: Sơ đồ quan hệ trong nhóm, gồm {count} người tham gia.
       divorce_not_married: Nhưng... bạn chưa kết hôn mà qwq
@@ -627,13 +627,14 @@ bot:
       verify: Xác Minh Thành Viên
       save: Lưu
     waifu:
-      remove: Xóa (quản trị viên)
-      marry: Kết hôn!
+      remove: Xoá (admin)
+      marry: Cầu hôn
       remove_confirm: Xóa
       remove_cancel: Hủy
       agree_marry_waifu: Đồng ý!
       refuse_marry_waifu: Từ chối...
-      cancel_marry_waifu: Hủy (?)
+      back_marry_waifu: Đổi
+      cancel_marry_waifu: Huỷ
       divorce: Ly hôn
       divorce_confirm: Ly hôn
       divorce_cancel: Hủy
