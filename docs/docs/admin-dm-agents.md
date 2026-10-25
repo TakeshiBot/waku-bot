@@ -21,7 +21,7 @@ Không có file đang bật thì không thêm lớp Markdown, ở mọi chế đ
 cấp quyền thực thi công cụ cho người dùng.
 
 **Thêm file** đổi thành **Huỷ thêm** trong lúc chờ tải lên. Gửi file `.md`
-UTF-8 (tối đa 32 KB) trong 3 phút; bot lưu file và xoá tin nhắn upload đã nhận.
+UTF-8 (tối đa 10 MB) trong 3 phút; bot lưu file và xoá tin nhắn upload đã nhận.
 File mới chưa tự bật. Gửi file cùng tên sẽ thay nội dung file đó và giữ trạng
 thái chọn hiện tại. **Xoá file** xoá ngay file đang chọn; chưa chọn file thì bot
 báo bằng popup. **Trở lại** về menu chính, **Đóng** đóng menu. Các thay đổi đã

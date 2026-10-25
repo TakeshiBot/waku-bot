@@ -19,7 +19,7 @@ from waku.logger import logger
 
 # Also serves as the source for automatic migration from the single-file menu.
 INSTRUCTIONS_FILE = Path("data/admin_dm/AGENTS.md")
-MAX_FILE_BYTES = 32 * 1024
+MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_FILES = 100
 _SAVE_LOCK = asyncio.Lock()
 _FILE_ID = re.compile(r"^[a-f0-9]{16}$")
