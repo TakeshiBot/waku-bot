@@ -8,6 +8,7 @@ from waku.common import ops
 from waku.config import app_config
 from waku.i18n import i18n
 from waku.logger import logger
+from waku.plugins.menu_cleanup import schedule_saved_menu_cleanup, watch_menu
 from waku.plugins.verify import verify as verify_plugin
 
 
@@ -86,7 +87,7 @@ async def on_left_chat_member(client: Client, message: Message):
         await verify_plugin.handle_user_left(chat.id, user.id)
 
 
-@Client.on_message(filters.group & filters.command("syncmembers"), group=0)
+@Client.on_message(filters.group & filters.command(["syncmembers", "sync"]), group=0)
 async def sync_chat_members(client: Client, message: Message):
     user = message.sender_chat or message.from_user
     chat = message.chat
@@ -98,22 +99,28 @@ async def sync_chat_members(client: Client, message: Message):
         return
     lang = db_chat.chat_config.lang
     if not await common.can_user_manage_bot_in_chat(user, chat):
-        await message.reply_text(i18n.t("bot.msg.no_permission_group", locale=lang))
+        reply = await message.reply_text(i18n.t("bot.msg.no_permission_group", locale=lang))
+        watch_menu(client, reply, ttl=5)
         return
     if await common.memttlcache.get(f"sync_members:{chat.id}"):
-        await message.reply_text(i18n.t("bot.msg.sync_members_cd", locale=lang))
+        reply = await message.reply_text(i18n.t("bot.msg.sync_members_cd", locale=lang))
+        schedule_saved_menu_cleanup(client, reply, message.id)
         return
     await common.memttlcache.set(
         f"sync_members:{chat.id}", True, app_config.cachettl_sync_members
     )
-    await message.reply_text(i18n.t("bot.msg.sync_members_start", locale=lang))
-    # Remove users who have left the group from the database.
+    reply = await message.reply_text(i18n.t("bot.msg.sync_members_start", locale=lang))
     try:
-        result = await ops.sync_chat_members(chat.id)
-    except Exception as e:
-        logger.error(f"Failed to sync members for chat {chat.id}: {e}")
-        await message.reply_text(i18n.t("bot.msg.sync_members_error", locale=lang))
-        return
-    await message.reply_text(
-        i18n.t("bot.msg.sync_members_done", locale=lang).format(count=result.removed)
-    )
+        try:
+            result = await ops.sync_chat_members(chat.id)
+        except Exception as e:
+            logger.error(f"Failed to sync members for chat {chat.id}: {e}")
+            await common.memttlcache.delete(f"sync_members:{chat.id}")
+            text = i18n.t("bot.msg.sync_members_error", locale=lang)
+        else:
+            text = i18n.t("bot.msg.sync_members_done", locale=lang).format(
+                count=result.removed, added=result.added
+            )
+        await reply.edit_text(text)
+    finally:
+        schedule_saved_menu_cleanup(client, reply, message.id)

@@ -536,8 +536,9 @@ class _AppConfig(pydantic.BaseModel):
     avatar_refresh_retry_after: float = 10 * 60
 
     # coin cost
+    # Fixed cost per successful reroll; repeated changes no longer increase it.
     cost_user_change_waifu_base: int = 16
-    # cost = base * (count ** pow) + count * random.choice([0,16,32,...,144])
+    # Legacy configuration compatibility; no longer used for waifu changes.
     cost_user_change_waifu_pow: int = 2
 
     cost_throw_bottle_base: int = 9

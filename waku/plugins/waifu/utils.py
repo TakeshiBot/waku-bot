@@ -36,7 +36,13 @@ def waifu_markup(
                     text=i18n.t("bot.button.waifu.change", locale=lang),
                     callback_data=f"change_waifu {waifu_id} {user_id}",
                 ),
-            ]
+            ],
+            [
+                pyrogram.types.InlineKeyboardButton(
+                    text=i18n.t("bot.button.waifu.cancel_marry_waifu", locale=lang),
+                    callback_data=f"cancel_waifu {waifu_id} {user_id}",
+                ),
+            ],
         ]
     )
 

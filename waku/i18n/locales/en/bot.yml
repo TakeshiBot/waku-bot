@@ -13,7 +13,7 @@ bot:
     refreshing_avatar: Refreshing your avatar...
     cleanning: waku is tidying up the room...
     sync_members_cd: Don't use this too often! Please try again later.
-    sync_members_done: Sync complete! Cleaned up {count} members.
+    sync_members_done: 'Sync complete! Added {added} and removed {count} members. This message and the command will disappear in 5 seconds.'
     b23_converted: "{real_url}"
     b23_converted_group: |
       {real_url}
@@ -346,6 +346,7 @@ bot:
       view_original: View original
 
     waifu:
+      change_no_candidates: No other eligible member was found. Try /syncmembers to refresh the member list.
       disabled: The waifu feature is not allowed here.
       not_found: You don't have a waifu right now because I can't find any other members in my records.
       retry: You didn't get a waifu, try again~
@@ -525,7 +526,7 @@ bot:
       selected: "(selected)"
     waifu:
       remove: Remove (Admin)
-      marry: Propose
+      marry: Marry her!
       remove_confirm: Remove
       remove_cancel: Cancel
       agree_marry_waifu: Yay!
@@ -537,6 +538,7 @@ bot:
       divorce_cancel: Cancel
       mention_enabled: Don't @ me
       mention_disabled: "@ me when I'm picked"
+      change: Change waifu
     title_permissions:
       can_change_info: Change Info
       can_delete_messages: Delete Messages

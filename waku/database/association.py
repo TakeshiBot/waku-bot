@@ -248,6 +248,9 @@ async def take_waifu_for_user_in_chat(
         enums.ChatID.SERVICE_CHAT,
         enums.ChatID.FAKE_CHANNEL,
     ]
+    association = await get_association(user.id, chat.id, session)
+    if association is not None and association.waifu_id is not None:
+        excluded_user_ids.append(association.waifu_id)
 
     stmt = (
         sqlalchemy.select(UserData)
@@ -260,6 +263,8 @@ async def take_waifu_for_user_in_chat(
             sqlalchemy.and_(
                 sqlalchemy.not_(UserData.is_bot),
                 sqlalchemy.not_(UserData.is_married),
+                UserData.is_real_user.is_(True),
+                UserData.id > 0,
                 sqlalchemy.not_(UserData.id.in_(excluded_user_ids)),
             )
         )
@@ -391,15 +396,14 @@ async def change_user_waifu_in_chat(
     association = await get_association(user.id, chat.id, session)
     if association is None:
         raise ValueError("Association not found")
-    association.waifu_id = None
     config = user.user_config
-    if config.coins < 0:
+    if cost < 0 or config.coins < cost:
         raise ValueError("Not enough coins")
-    config.coins = max(-144 * 16, config.coins - cost)
-    await _patch_user_config_values(user_id, {"coins": config.coins}, session)
     new_waifu = await take_waifu_for_user_in_chat(user, chat, session)
     if new_waifu is None:
         return None
+    config.coins -= cost
+    await _patch_user_config_values(user_id, {"coins": config.coins}, session)
     association.waifu_id = new_waifu.id
     return new_waifu
 

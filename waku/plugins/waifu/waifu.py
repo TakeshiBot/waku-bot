@@ -1,5 +1,4 @@
 import html
-import random
 from io import BytesIO
 
 import pyrogram
@@ -11,6 +10,7 @@ from waku.common import ops
 from waku.config import app_config
 from waku.database.models import ChatData, UserData
 from waku.logger import logger
+from waku.plugins.menu_cleanup import delete_menu
 
 from . import utils
 
@@ -76,6 +76,7 @@ async def today_waifu(client: PyrogramClient, message: pyrogram.types.Message):
                 text=text,
                 reply_markup=waifu_markup,
                 parse_mode=pyrogram.enums.ParseMode.HTML,
+                quote=True,
             )
             return
         try:
@@ -88,6 +89,7 @@ async def today_waifu(client: PyrogramClient, message: pyrogram.types.Message):
                 caption=text,
                 reply_markup=waifu_markup,  # type: ignore
                 parse_mode=pyrogram.enums.ParseMode.HTML,
+                quote=True,
             )
             if msg is not None and msg.photo is not None:
                 await database.update_user_avatar(
@@ -99,6 +101,7 @@ async def today_waifu(client: PyrogramClient, message: pyrogram.types.Message):
                 text=text,
                 reply_markup=waifu_markup,
                 parse_mode=pyrogram.enums.ParseMode.HTML,
+                quote=True,
             )
     finally:
         await common.memstore.delete(lock_key)
@@ -203,6 +206,24 @@ async def remove_waifu(client: PyrogramClient, query: pyrogram.types.CallbackQue
         await query.message.edit_text(
             text=i18n.t("bot.msg.waifu.remove", locale=lang), reply_markup=markup
         )
+
+
+@PyrogramClient.on_callback_query(
+    pyrogram.filters.regex(r"^cancel_waifu -?\d+ -?\d+$"), group=0
+)
+async def cancel_waifu(client: PyrogramClient, query: pyrogram.types.CallbackQuery):
+    if not query.message or not query.message.chat or not query.from_user:
+        return
+    user_id = int(str(query.data).split()[2])
+    if query.from_user.id != user_id:
+        config = await database.get_chat_config(query.message.chat)
+        await query.answer(
+            i18n.t("bot.msg.waifu.marry_not_user", locale=config.lang),
+            show_alert=True,
+        )
+        return
+    await query.answer()
+    await delete_menu(client, query.message)
 
 
 @PyrogramClient.on_callback_query(pyrogram.filters.regex(r"^marry_waifu"), group=0)
@@ -348,7 +369,7 @@ async def marry_waifu(client: PyrogramClient, query: pyrogram.types.CallbackQuer
             )
             return
         await query.answer()
-        await query.message.delete()
+        await delete_menu(client, query.message)
         return
 
     if update_user.id == db_waifu.id:
@@ -434,7 +455,6 @@ async def change_waifu(client: PyrogramClient, query: pyrogram.types.CallbackQue
             cache_time=10,
         )
         return
-    old_waifu_id = int(data.split(" ")[1])
     db_user = await database.get_user_by_id(user.id)
     if not db_user:
         return
@@ -450,64 +470,23 @@ async def change_waifu(client: PyrogramClient, query: pyrogram.types.CallbackQue
         return
     await common.memstore.set(lock_key, True)
     try:
-        count = (
-            await common.memttlcache.get(
-                f"user:{user.id}:chat:{chat.id}:change_waifu_count"
-            )
-            or 0
-        )
+        cost = app_config.cost_user_change_waifu_base
         coins = db_user.user_config.coins
-        if coins < app_config.cost_user_change_waifu_base:
-            text = (
-                i18n.t("bot.msg.waifu.change_not_enough_coins", locale=lang)
-                if count == 0
-                else i18n.t(
-                    "bot.msg.waifu.change_not_enough_coins_scumbag", locale=lang
-                )
-            )
-            if count == 0:
-                await query.answer(
-                    text=text,
-                    show_alert=True,
-                    cache_time=10,
-                )
-                return
-            if query.message.photo is not None:
-                await query.message.edit_caption(
-                    caption=text,
-                    parse_mode=pyrogram.enums.ParseMode.HTML,
-                )
-            else:
-                await query.message.edit_text(
-                    text=text,
-                    parse_mode=pyrogram.enums.ParseMode.HTML,
-                )
-            return
-        cost = (
-            app_config.cost_user_change_waifu_base
-            * (count**app_config.cost_user_change_waifu_pow)
-            + count * random.choice([i * 16 for i in range(10)])
-            + app_config.cost_user_change_waifu_base
-        )
-        new_waifu = await database.change_user_waifu_in_chat(db_user.id, db_chat, cost)
-        if new_waifu is None:
+        if coins < cost:
             await query.answer(
-                text=i18n.t("bot.msg.waifu.change_failed", locale=lang),
+                text=i18n.t("bot.msg.waifu.change_not_enough_coins", locale=lang),
                 show_alert=True,
                 cache_time=10,
             )
             return
-        if new_waifu.id == old_waifu_id:
-            text = i18n.t("bot.msg.waifu.change_same", locale=lang)
+        new_waifu = await database.change_user_waifu_in_chat(db_user.id, db_chat, cost)
+        if new_waifu is None:
             await query.answer(
-                text=text,
+                text=i18n.t("bot.msg.waifu.change_no_candidates", locale=lang),
                 show_alert=True,
-                cache_time=5,
+                cache_time=10,
             )
             return
-        await common.memttlcache.set(
-            f"user:{user.id}:chat:{chat.id}:change_waifu_count", count + 1, ttl=86400
-        )
         text = await utils.waifu_text(new_waifu, False, db_user, lang=lang)
         waifu_markup = utils.waifu_markup(new_waifu.id, db_user.id, lang=lang)
         photo = await common.ChatAvatar(new_waifu.id).get_big_photo()

@@ -298,9 +298,10 @@ bot:
         Đã kết hôn: {married}
         ID waifu đã kết hôn: {married_waifu_id}
       change_married: Bạn đã kết hôn rồi nên không thể đổi waifu.
-      change_not_enough_coins: Tiếc quá, đổi waifu không thành công.
-      change_not_enough_coins_scumbag: Tham quá nhé, hôm nay bạn không còn waifu khác đâu!
+      change_not_enough_coins: Bạn chưa đủ xu để đổi waifu. Tích thêm xu rồi quay lại nhé~
+      change_not_enough_coins_scumbag: Ví hết xu rồi, không phải hết waifu đâu! Tích thêm xu rồi đổi tiếp nhé~
       change_failed: Không thành công, hãy thử lại sau nhé.
+      change_no_candidates: Chưa tìm được người khác phù hợp. Thử /syncmembers để cập nhật thành viên nhé.
       change_same: Waifu hôm nay của bạn vẫn là người ấy~
     private_start: |
       Meo~
@@ -321,7 +322,7 @@ bot:
     refreshing_avatar: Đang làm mới ảnh đại diện của bạn...
     cleanning: waku đang dọn phòng...
     sync_members_cd: Đừng dùng quá thường xuyên, hãy thử lại sau nhé.
-    sync_members_done: Đồng bộ hoàn tất! Đã dọn {count} thành viên.
+    sync_members_done: Đồng bộ xong! Đã thêm {added} và dọn {count} thành viên. Tin này và lệnh sẽ tự xoá sau 5 giây.
     sync_members_error: Đồng bộ thất bại. Hãy cấp quyền quản trị viên cho bot rồi thử lại.
     sync_members_start: Đang duyệt danh sách thành viên nhóm...
     b23_converted: '{real_url}'

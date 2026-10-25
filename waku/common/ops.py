@@ -98,14 +98,15 @@ async def set_bot_admin(
 
 @dataclass(slots=True)
 class SyncMembersResult:
-    """How many stale members a sync removed."""
+    """Members added to and removed from the observed group roster."""
 
     removed: int
     checked: int
+    added: int = 0
 
 
 async def sync_chat_members(chat_id: int) -> SyncMembersResult:
-    """Drop members the bot recorded who are no longer in the chat.
+    """Record missing members and drop those who are no longer in the chat.
 
     Raises on Telegram failures (usually missing admin rights) so callers can
     tell "nothing to do" apart from "could not look".
@@ -114,13 +115,27 @@ async def sync_chat_members(chat_id: int) -> SyncMembersResult:
     if chat_data is None:
         raise ValueError(f"Chat with id {chat_id} not found")
 
-    current_member_ids = {
-        member.user.id async for member in client.get_chat_members(chat_id)
+    # Finish enumeration before changing membership; failed pages are not a
+    # complete roster and must never cause removals.
+    current_members = {
+        member.user.id: member.user
+        async for member in client.get_chat_members(chat_id)
+        if member.user is not None and member.user.id is not None
     }
+    current_member_ids = set(current_members)
 
     associations = await database.get_chat_associations(chat_id)
     known_ids = {association.user_id for association in associations}
     stale_ids = known_ids - current_member_ids
+
+    added = 0
+    for user_id in current_member_ids - known_ids:
+        user = current_members[user_id]
+        if user.is_deleted or not user.full_name:
+            continue
+        stored_user = await database.upsert_user(user)
+        if await database.add_association_in_chat(chat_data, stored_user) is not None:
+            added += 1
 
     removed = 0
     for user_id in stale_ids:
@@ -133,9 +148,9 @@ async def sync_chat_members(chat_id: int) -> SyncMembersResult:
         await database.unset_chat_waifus_by_waifu(chat_data, user_id)
 
     logger.info(
-        f"Synced members for chat {chat_id} ({chat_data.title}), removed {removed}"
+        f"Synced members for chat {chat_id} ({chat_data.title}), added {added}, removed {removed}"
     )
-    return SyncMembersResult(removed=removed, checked=len(known_ids))
+    return SyncMembersResult(removed=removed, checked=len(known_ids | current_member_ids), added=added)
 
 
 @dataclass(slots=True)
