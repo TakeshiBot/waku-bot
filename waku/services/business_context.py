@@ -44,8 +44,8 @@ DEFAULT_SETTINGS = {
     "reply": True,
     "remember": True,
     "read": False,
-    "manage": False,
-    "tag": True,
+    "manage": True,
+    "tag": False,
     "notes": True,
 }
 _connections = OrderedDict()

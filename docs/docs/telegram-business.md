@@ -80,8 +80,8 @@ cho cuộc chat riêng có tin đến trong 24 giờ gần nhất. Xem
   Trạng thái này tách theo từng cuộc chat và được giữ qua lần khởi động lại.
 - Khi chủ tài khoản tự trả lời, hủy lượt AI đang soạn trong chat đó để tránh nói
   chen. Tin đến cũ được giao muộn sau câu trả lời của chủ tài khoản cũng bị bỏ qua.
-- Mặc định câu trả lời có nhãn `Tên bot:`, lấy từ `nickname` trong cấu hình, để
-  người liên hệ biết đây là trợ lý. Tắt **Bot ký tên** trong `/business` sẽ bỏ nhãn;
+- Mặc định **Bot ký tên** tắt, câu trả lời không có nhãn tên bot. Bật công tắc này
+  trong `/business` sẽ thêm nhãn `Tên bot:`, lấy từ `nickname` trong cấu hình;
   AI vẫn tự xưng là trợ lý của chủ tài khoản, không tự xưng là Telegram Business.
 - Khi bật streaming, thử draft gốc với Thinking trước khi AI sinh ra nội dung,
   sau đó cập nhật draft và gửi câu trả lời cuối. Nếu Telegram không hỗ trợ draft
@@ -110,8 +110,8 @@ Các công tắc của **từng tài khoản**, không thêm tham số nâng cao
 | Bot trả lời | Bật | Tự trả lời người dùng trong chat được quản lý |
 | Nhớ Hội Thoại | Bật | Lưu và dùng nội dung hội thoại; tắt thì tin mới chỉ lưu ID, vai trò, thời điểm |
 | Bot đánh dấu đọc | Tắt | Đánh dấu tin người dùng đã đọc nếu Telegram cấp quyền |
-| Quyền quản lý | Tắt | Cho chủ tài khoản dùng các thao tác tin nhắn, hồ sơ, quà/Sao và story |
-| Bot ký tên | Bật | Thêm `nickname:` trước tin do trợ lý gửi |
+| Quyền quản lý | Bật | Cho chủ tài khoản dùng các thao tác tin nhắn, hồ sơ, quà/Sao và story theo quyền Telegram đã cấp |
+| Bot ký tên | Tắt | Thêm `nickname:` trước tin do trợ lý gửi khi bật |
 | Gửi lời nhắn | Bật | Cho phép nhận lời nhắn hoặc hẹn từ người liên hệ và chuyển riêng cho chủ tài khoản |
 
 **Lưu** áp dụng ngay và giữ menu mở để tiếp tục chỉnh; **Đóng** bỏ thay đổi chưa lưu
