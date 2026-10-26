@@ -19,6 +19,7 @@ from waku.services.mirror_commands import (
     normalize_options,
     validate_source,
 )
+from waku.services.transfer_intent import allows_transfer
 
 from ..models import DiscordContextDeps
 from ..permissions import _is_discord_user_bot_admin
@@ -84,6 +85,11 @@ async def mirror_discord(
         return {
             "status": "already_requested",
             "instruction": "Do not resubmit this turn.",
+        }
+    if not await allows_transfer(message.content or ""):
+        return {
+            "status": "intent_not_confirmed",
+            "error": "No explicit transfer request was verified; nothing was sent. Use web search for research or image identification.",
         }
     if not acknowledgement.strip() or len(acknowledgement) > 1500:
         return {"status": "invalid_request", "error": "Supply a short acknowledgement."}

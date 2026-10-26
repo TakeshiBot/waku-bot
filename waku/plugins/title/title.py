@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 import pyrogram
 from pyrogram import Client
+from pyrogram.errors import RPCError
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from waku import database, i18n
@@ -45,8 +46,9 @@ class PresetSession:
 _sessions: dict[str, PresetSession] = {}
 
 
-def _t(key, lang):
-    return i18n.t(f"title_menu.{key}", locale=lang)
+def _t(key, lang, **values):
+    text = i18n.t(f"title_menu.{key}", locale=lang)
+    return text.format(**values) if values else text
 
 
 def _preset(value):
@@ -93,6 +95,9 @@ async def _tag(client, message, *, clear):
         await change_title(client, chat.id, actor.id, target.id, title)
     except TitleDenied as error:
         await message.reply_text(_t(str(error), lang))
+    except RPCError as error:
+        logger.warning("Telegram label operation rejected: {}", type(error).__name__)
+        await message.reply_text(_t("telegram_rejected", lang, reason=type(error).__name__))
     except Exception as error:
         logger.warning("Telegram label operation failed: {}", type(error).__name__)
         await message.reply_text(_t("error", lang))

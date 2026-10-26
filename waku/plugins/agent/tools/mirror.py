@@ -9,7 +9,9 @@ from pydantic_ai import RunContext
 from pydantic_ai.tools import ToolDefinition
 from pyrogram import enums
 
+from waku.common.rich_message import message_plain_text
 from waku.common.telegram_authority import is_bot_admin
+from waku.common.utils import get_reply_target
 from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.agent import datatype
@@ -23,6 +25,7 @@ from waku.services.mirror_commands import (
     validate_source,
 )
 from waku.services.mirror_policy import is_raw_mirror_command  # noqa: F401
+from waku.services.transfer_intent import allows_transfer
 
 __all__ = ["cancel_mirror", "mirror", "mirror_instructions", "prepare_mirror"]
 
@@ -81,6 +84,11 @@ def mirror_instructions() -> str:
     return (
         "Mirror/download delegation: when the current user explicitly asks you to "
         "mirror, leech, clone or download links or Telegram attachments, use the mirror tool if it is available. "
+        "Information lookup, identifying a character/image, finding an image or its source, "
+        "and follow-ups such as 'find it'/'tìm đi' are research, NEVER a mirror/download task. "
+        "For research use the available web search tool (Telegram: search with path='web://'; "
+        "Discord: search_web) and read. Never substitute mirror/ytdl when unsure or when "
+        "reverse image search is unavailable. An attachment in the conversation does not authorize transfer. "
         "Choose mode to match the user's intent: mirror/m, leech/l, qbmirror/qm, qbleech/ql, "
         "jdmirror/jm, jdleech/jl, nzbmirror/nm, nzbleech/nl, ytdl/y, ytdlleech/yl, clone/cl, uphoster/up. "
         "For multiple explicit links, submit all of them together in urls (up to 20), not url. "
@@ -212,6 +220,15 @@ async def mirror(
         return {
             "status": "already_requested",
             "instruction": "This turn already submitted a mirror request. EndTurn without more text.",
+        }
+    reply = get_reply_target(deps.message)
+    if not await allows_transfer(
+        message_plain_text(deps.message), message_plain_text(reply) if reply else ""
+    ):
+        return {
+            "status": "intent_not_confirmed",
+            "error": "No explicit file-transfer request was verified. Nothing was sent or copied. "
+            "For information/image identification use web search, not mirror. If transfer was intended, clarify the request.",
         }
     source = None
     attachment_requested = url is None or (

@@ -11,6 +11,7 @@ from .credits import *  # noqa: F403
 from .db import *  # noqa: F403
 from .image import *  # noqa: F403
 from .io import *  # noqa: F403
+from .message_actions import *  # noqa: F403
 from .mirror import *  # noqa: F403
 from .prepare import *  # noqa: F403
 from .send_ops import *  # noqa: F403

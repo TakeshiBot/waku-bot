@@ -51,33 +51,33 @@ async def _members(client, chat_id, actor_id, target_id):
     if target_id == me.id or target.user is None or target.user.id != target_id:
         raise TitleDenied("denied")
     if target.status == enums.ChatMemberStatus.OWNER:
-        raise TitleDenied("denied")
+        raise TitleDenied("target_owner")
     if target.status == enums.ChatMemberStatus.ADMINISTRATOR:
-        if target.can_be_edited is not True or not has_right(
-            bot, "can_promote_members"
-        ):
-            raise TitleDenied("denied")
+        if not has_right(bot, "can_promote_members"):
+            raise TitleDenied("bot_promote")
+        if target.can_be_edited is not True:
+            raise TitleDenied("target_uneditable")
         if (
             actor_id == target_id
             and actor.status == enums.ChatMemberStatus.ADMINISTRATOR
         ):
             return target
         if not operator and not has_right(actor, "can_promote_members"):
-            raise TitleDenied("denied")
+            raise TitleDenied("actor_promote")
         if not operator and actor.status != enums.ChatMemberStatus.OWNER:
             current, seen = target, set()
             for _ in range(32):
                 promoter = getattr(current, "promoted_by", None)
                 if promoter is None or promoter.id in seen:
-                    raise TitleDenied("denied")
+                    raise TitleDenied("target_hierarchy")
                 if promoter.id == actor_id:
                     break
                 seen.add(promoter.id)
                 current = await client.get_chat_member(chat_id, promoter.id)
                 if current.status != enums.ChatMemberStatus.ADMINISTRATOR:
-                    raise TitleDenied("denied")
+                    raise TitleDenied("target_hierarchy")
             else:
-                raise TitleDenied("denied")
+                raise TitleDenied("target_hierarchy")
     elif target.status in (
         enums.ChatMemberStatus.MEMBER,
         enums.ChatMemberStatus.RESTRICTED,
@@ -86,12 +86,12 @@ async def _members(client, chat_id, actor_id, target_id):
             target.status == enums.ChatMemberStatus.RESTRICTED
             and target.is_member is False
         ):
-            raise TitleDenied("denied")
+            raise TitleDenied("target_not_member")
         if not has_right(bot, "can_manage_tags"):
-            raise TitleDenied("denied")
+            raise TitleDenied("bot_tags")
         if not operator and not has_right(actor, "can_manage_tags"):
             if actor_id != target_id:
-                raise TitleDenied("denied")
+                raise TitleDenied("actor_tags")
             # None on MEMBER is not proof: Telegram default restrictions still apply.
             from waku.plugins.agent.tools.moderation_permissions import default_rights
 
@@ -100,9 +100,9 @@ async def _members(client, chat_id, actor_id, target_id):
                 actor.permissions is not None
                 and actor.permissions.can_edit_tag is not True
             ):
-                raise TitleDenied("denied")
+                raise TitleDenied("self_tag_disabled")
     else:
-        raise TitleDenied("denied")
+        raise TitleDenied("target_not_member")
     return target
 
 

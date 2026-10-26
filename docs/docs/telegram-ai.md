@@ -92,6 +92,45 @@ Khi yêu cầu chưa rõ, AI phải hỏi lại trước khi thực hiện.
 Khi thao tác và đối tượng đã rõ, bot gọi tool ngay; không yêu cầu xác nhận thêm.
 Tool kiểm tra quyền thực tế ngay trước khi gửi thao tác.
 
+### Tìm thông tin và nhận diện ảnh
+
+Bot dùng công cụ có sẵn `search(query, path="web://")` cho yêu cầu tra cứu,
+kể cả câu nối tiếp như “tìm đi”, và
+chủ động kiểm chứng thông tin có thể lỗi thời hoặc chưa chắc chắn. Kết quả có
+URL nguồn; nếu tìm chưa ra thì bot nói rõ mức độ chắc chắn. Tìm bằng mô tả ảnh
+không phải dịch vụ đối sánh ảnh ngược, nên không bảo đảm nhận diện nhân vật.
+Công tắc `websearch` trong cấu hình công cụ vẫn được tôn trọng.
+
+Mirror cần yêu cầu chuyển/tải file rõ ràng. Trước khi gửi lệnh, một lượt AI riêng
+xác minh ý định từ tin hiện tại và ngữ cảnh reply. Tìm tên nhân vật, nguồn ảnh,
+thông tin hoặc “tìm đi” không cấp quyền mirror/ytdl. Khi không xác minh được,
+bot không gửi lệnh hay chuyển tiếp file. Lỗi Mirror ngắn như `Info result is None`
+được ghi nhận là thất bại theo đúng lệnh gốc, không đợi `/status` để kết luận.
+
+### Xoá tin nhắn qua chat
+
+- Reply rồi nói “xoá tin này”: user thường chỉ được xoá tin của mình hoặc Waku.
+- Admin bot/chủ bot và admin nhóm có quyền **Xoá tin nhắn** được yêu cầu xoá
+  bất kỳ tin đang reply; bot vẫn cần quyền Telegram thực tế khi xoá tin người khác.
+- “Xoá 10 tin nhắn” từ admin chỉ xoá 10 tin **của chính Waku** gần nhất, giữ tin
+  người dùng và tin yêu cầu. Tối đa 100 tin/lượt, tìm trong 2000 ID tin gần nhất;
+  trong topic thì giới hạn đúng topic. Không đủ tin thì báo số thực tế.
+
+Tiện ích này hoạt động cả khi AI quản trị thành viên tắt. Business và Guest không
+được dùng. Khi kết quả xoá chưa xác định, tool không tự gửi lại thao tác.
+
+### Quyền `/tag` và `/xtag`
+
+Không reply thì sửa nhãn của chính mình; reply thì sửa nhãn tác giả tin đó.
+Admin bot/chủ bot được yêu cầu ở mọi nhóm nhưng không vượt quyền Telegram của bot.
+Với thành viên thường, bot cần **Quản lý nhãn**; người gọi cần quyền này hoặc
+quyền admin bot để sửa người khác. Thành viên thường chỉ tự sửa khi nhóm cho phép.
+Với chức danh admin, bot cần **Thêm quản trị viên** và đối tượng phải sửa được
+theo Telegram. Admin nhóm cần quyền thêm admin và đúng chuỗi bổ nhiệm; chủ nhóm
+và admin bot vẫn phải tuân thủ khả năng sửa đối tượng của bot. Bot không sửa chức
+danh chủ nhóm. Lỗi phân biệt rõ thiếu quyền người gọi, quyền bot hay đối tượng
+không sửa được; đặt nhãn không tự cấp/gỡ quyền admin.
+
 ## Menu, quyền và các lệnh Telegram
 
 `/config` trong nhóm, `/sett`, thay đổi lời chào `/greet`, `/qp` và

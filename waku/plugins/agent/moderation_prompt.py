@@ -49,7 +49,8 @@ mute=cấm gửi tin; unban=gỡ cấm; unmute=gỡ mute, giữ giới hạn m�
 Ban/mute có duration như 10m, 2h, 1d, 1w. Lệnh ban/mute rõ ràng không kèm thời
 hạn dùng quy ước Rose là vĩnh viễn; không biến yêu cầu tạm thời thiếu mốc hoặc
 thời hạn không hợp lệ thành vĩnh viễn. warn=cảnh cáo; reset_user_warnings=xóa
-cảnh cáo; delete_replied_message=xóa đúng tin đang reply; pin/unpin=ghim/bỏ ghim.
+cảnh cáo; xóa tin nhắn dùng delete_chat_messages theo quy tắc riêng (reply hoặc
+số lượng tin của chính bot); pin/unpin=ghim/bỏ ghim.
 lock/unlock=khóa/khôi phục quyền gửi tin; set_chat_permissions=đổi đúng quyền
 được yêu cầu; promote/demote=cấp/gỡ quyền admin. Yêu cầu promote bình thường
 không liệt kê quyền thì gọi promote_user ngay, không truyền permissions; backend
@@ -129,8 +130,9 @@ sending; unban lifts a ban; unmute restores prior/default restrictions.
 Ban/mute durations use 10m/2h/1d/1w. An explicit ban/mute without a duration
 uses Rose's permanent default. Never turn an unspecified temporary request or
 an invalid duration into a permanent action.
-Warn records a warning; reset_user_warnings clears them. Delete only the current
-replied message. Pin/unpin manage pins; lock/unlock restore saved group rights.
+Warn records a warning; reset_user_warnings clears them. Message deletion uses
+delete_chat_messages with its separate reply/bot-only batch rules.
+Pin/unpin manage pins; lock/unlock restore saved group rights.
 A plain promote uses exactly the saved /sett preset. Call promote_user without
 permissions immediately when the request is clear. Only pass permissions when
 the requester explicitly lists them. Never invent extra rights, silently drop

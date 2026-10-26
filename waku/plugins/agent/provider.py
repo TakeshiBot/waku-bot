@@ -56,7 +56,9 @@ def _unavailable_media(value: Any) -> Any:
         return (
             "[Media unavailable because the vision request failed. Do not claim "
             "to see its content. Telegram message IDs and attachment metadata "
-            "remain usable for file operations such as mirror.]"
+            "remain usable for file operations only if the user explicitly requested "
+            "that operation. An unavailable image never authorizes mirror/download; "
+            "image identification is research, not a transfer.]"
         )
     if isinstance(value, list):
         return [_unavailable_media(item) for item in value]

@@ -24,6 +24,7 @@ from waku.logger import logger
 from waku.plugins.agent.localization import localized_message, tr
 from waku.services import link_parse, manyacg
 from waku.services.personality import instructions as personality_instructions
+from waku.services.web_research import research_instructions
 
 from . import (
     datatype,
@@ -255,7 +256,9 @@ if app_config.agent and app_config.agent_chat_model:
                     sequential=True,
                 )
                 for name in moderation.MODERATION_RIGHTS
+                if name != "delete_replied_message"
             ],
+            Tool(tools.delete_chat_messages, sequential=True),
             Tool(
                 tools.image_ops,
                 prepare=tools.prepare_image_tools,
@@ -350,6 +353,10 @@ if app_config.agent and app_config.agent_chat_model:
             + tools.mirror_instructions()
             + "\n\n"
             + tools.credit_instructions()
+            + "\n\n"
+            + research_instructions()
+            + "\n\n"
+            + tools.message_deletion_instructions()
             + "\n\n"
             + personality_instructions('tg("blockUser", {"reason": "your judgment", "duration_minutes": 1})')
         )

@@ -43,6 +43,7 @@ _DISABLED = {
     "JDownloader is currently disabled by the Bot Owner.",
     "SABnzbd is currently disabled by the Bot Owner.",
     "Seedr is currently disabled by the Bot Owner.",
+    "Info result is None",
 }
 _RESULT_LABEL = re.compile(
     r"(?:(?:cloud|mega|rclone|index|view|download|gofile|buzzheavier|pixeldrain|doodstream|streamtape|mixdrop|litterbox|catbox|1fichier|uploadhaven|uploadnow|fileditch|filebin|gdrive|drive|filemoon|send|filepress|filelions|gdtot|krakenfiles)\s*(?:link)?|[A-Za-z][A-Za-z0-9 _-]{0,50} Link)\Z",
@@ -243,6 +244,8 @@ def parse_reply(message, task):
             return dict(payload, event="cancelled", error=reason)
     upload_error = _untag(message, text)
     if upload_error:
+        if upload_error in _DISABLED or upload_error.startswith("ERROR:"):
+            return dict(payload, event="failed", error=upload_error[:2048])
         if task.get("mirror_options", {}).get("-yt") and re.fullmatch(
             r"Your (?:video|playlist \(\d+ videos\)) has been uploaded to YouTube successfully!",
             upload_error,
