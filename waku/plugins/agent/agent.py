@@ -266,7 +266,7 @@ if app_config.agent and app_config.agent_chat_model:
                 sequential=True,
             ),
             Tool(
-                tools.grant_ai_credits,
+                tools.manage_ai_credits,
                 prepare=tools.prepare_credit_grant,
                 sequential=True,
             ),

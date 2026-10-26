@@ -996,7 +996,8 @@ class AgentCreditLedger(Base):
 
     Balances alone do not show provenance. Every grant or charge appends a ledger row in the same transaction.
     For future payments, `ref` stores an external reference unique per account to deduplicate callbacks.
-    `reason` is "admin" (panel grant/adjustment) or "usage" (usage charge).
+    `reason` is "admin" (panel/grant), "usage" (usage charge), or
+    "chat_<action>:<amount>" (a retry-safe chat admin adjustment).
     """
 
     __tablename__ = "agent_credit_ledger"

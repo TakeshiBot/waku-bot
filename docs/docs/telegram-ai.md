@@ -19,7 +19,7 @@ không suy diễn rằng bot chưa hỗ trợ chức năng đó.
 Quyền toàn bot được đọc lại khi thực hiện, không dùng vai trò đã lưu trong menu.
 Admin ẩn danh không được thực thi khi không xác minh được danh tính người ra lệnh.
 
-## Cấp credit AI qua chat
+## Quản lý credit AI qua chat
 
 Chủ bot và admin toàn bot có thể yêu cầu bằng chat trong DM hoặc nhóm, không cần
 bật AI quản trị nhóm. Gọi bot theo cách thông thường, ví dụ:
@@ -29,13 +29,23 @@ bật AI quản trị nhóm. Gọi bot theo cách thông thường, ví dụ:
 - `waku, thêm cho nhóm này 1000 token` để cộng vào quỹ của nhóm hiện tại.
 - Trong DM hoặc nhóm khác: `waku, cấp cho nhóm -1001234567890 1000 credit`;
   nhóm công khai cũng có thể được chọn bằng `@username`.
+- `waku, người này còn bao nhiêu credit?` khi reply tin của user.
+- `waku, nhóm này còn bao nhiêu token?` hoặc hỏi bằng ID/@username nhóm.
+- `waku, trừ của @username 500 credit` để giảm số dư 500.
+- `waku, đặt credit của nhóm này thành 2000` để thay số dư bằng 2000.
+- `waku, xoá hết credit của user 123456789` để đưa số dư về 0.
 
 Token và credit ở đây là cùng một đơn vị hạn mức AI, không phải xu. Số được yêu cầu
-được **cộng thêm** vào số dư đang có, dùng chung với `/quota` và Mini App. AI tự
-hiểu yêu cầu và viết lời xác nhận dựa trên kết quả thực tế. Nếu chưa rõ số lượng
-hoặc người nhận thì bot hỏi lại. Một tin yêu cầu chỉ cấp một lần cho mỗi tài khoản,
-kể cả khi AI gọi lại tool. Admin nhóm đơn thuần, admin ẩn danh, Business và Guest
-không có quyền cấp credit qua tính năng này.
+dùng chung với `/quota` và Mini App. Cộng/trừ thay đổi số dư theo lượng yêu cầu;
+đặt số dư thay thế số hiện tại. Trừ quá số dư bị từ chối, không tạo nợ mới. Xoá
+credit giữ lại lịch sử và chỉ đưa số dư về 0, không xoá user/nhóm hay hạn mức miễn
+phí hằng ngày. Số dư âm có sẵn là nợ từ mức dùng AI thực tế.
+
+AI tự hiểu yêu cầu và viết lời xác nhận dựa trên kết quả thực tế. Nếu chưa rõ thao
+tác, số lượng hoặc đối tượng thì bot hỏi lại. Mỗi tin yêu cầu chỉ chỉnh một lần
+cho mỗi tài khoản, kể cả khi AI gọi lại tool; hỏi số dư luôn đọc dữ liệu hiện tại.
+Admin nhóm đơn thuần, admin ẩn danh, Business và Guest không được truy vấn hay
+chỉnh credit của đối tượng qua tính năng này.
 
 ## Chat khi bot chưa tham gia nhóm (Guest Mode)
 

@@ -451,6 +451,60 @@ async def grant_credits(
 
 
 @with_tx
+async def manage_credits(
+    scope: str,
+    scope_id: int,
+    action: str,
+    amount: int,
+    ref: str,
+    session: AsyncSession | None = None,
+) -> tuple[int, bool]:
+    """Apply a chat-admin adjustment once per account/request, preserving its ledger.
+
+    Persist the operation as well as its amount: retrying a set/clear after a
+    later top-up must not overwrite that top-up. Even a zero-change operation
+    needs a receipt. Add uses the existing grant format for compatibility.
+    """
+    assert session is not None
+    if (
+        scope not in (SCOPE_USER, SCOPE_CHAT)
+        or action not in ("add", "subtract", "set", "clear")
+        or type(amount) is not int
+        or not 0 <= amount <= 10**12
+        or (action in ("add", "subtract") and amount == 0)
+        or (action == "clear" and amount != 0)
+        or not ref
+    ):
+        raise ValueError("invalid_credit_operation")
+    if action == "add":
+        return await grant_credits(scope, scope_id, amount, ref, session=session)
+
+    await _lock_credit_account(session, scope, scope_id)
+    reason = f"chat_{action}:{amount}"
+    previous = await session.scalar(
+        sqlalchemy.select(AgentCreditLedger).where(
+            AgentCreditLedger.scope == scope,
+            AgentCreditLedger.scope_id == scope_id,
+            AgentCreditLedger.ref == ref,
+        )
+    )
+    if previous is not None:
+        if previous.reason != reason:
+            raise ValueError("credit_operation_conflict")
+        return await get_credit(scope, scope_id, session=session), False
+
+    balance = await get_credit(scope, scope_id, session=session)
+    if action == "subtract" and balance < amount:
+        raise ValueError("insufficient_credits")
+    delta = -amount if action == "subtract" else amount - balance
+    balance = await adjust_credits(
+        scope, scope_id, delta, reason, ref, session=session
+    )
+    await session.flush()
+    return balance, True
+
+
+@with_tx
 async def set_credit(
     scope: str,
     scope_id: int,
@@ -512,6 +566,7 @@ __all__ = [
     "get_credit",
     "get_usage",
     "grant_credits",
+    "manage_credits",
     "quota_day",
     "record_and_charge",
     "record_usage",
