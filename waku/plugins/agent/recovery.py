@@ -41,6 +41,7 @@ async def compose_status_reply(model, deps, lang, facts, additional_instructions
             "request": (message_plain_text(deps.message) or "")[:2000],
             "status": facts,
             "moderation_results": receipts,
+            "credit_grant_results": list(getattr(deps, "credit_grant_results", {}).values()),
             "side_effects_started": bool(getattr(deps, "side_effects_started", False)),
         },
         ensure_ascii=False,

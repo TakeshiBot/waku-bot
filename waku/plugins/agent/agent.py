@@ -262,6 +262,11 @@ if app_config.agent and app_config.agent_chat_model:
                 sequential=True,
             ),
             Tool(
+                tools.grant_ai_credits,
+                prepare=tools.prepare_credit_grant,
+                sequential=True,
+            ),
+            Tool(
                 tools.mirror,
                 prepare=tools.prepare_mirror,
                 sequential=True,
@@ -336,6 +341,8 @@ if app_config.agent and app_config.agent_chat_model:
             + await periodic_expression_instructions(ctx)
             + "\n\n"
             + tools.mirror_instructions()
+            + "\n\n"
+            + tools.credit_instructions()
             + "\n\n"
             + personality_instructions('tg("blockUser", {"reason": "your judgment", "duration_minutes": 1})')
         )

@@ -193,6 +193,7 @@ class ContextDeps:
     )
     # Turn-local moderation receipts prevent repeating successful mutations.
     side_effects_started: bool = False
+    credit_grant_results: dict[str, dict[str, Any]] = field(default_factory=dict)
     moderation_results: dict[str, str] = field(default_factory=dict)
     moderation_reference: ModerationReference | None = None
     moderation_candidates: list[ModerationCandidate] = field(default_factory=list)

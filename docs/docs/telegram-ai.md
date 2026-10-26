@@ -19,6 +19,24 @@ không suy diễn rằng bot chưa hỗ trợ chức năng đó.
 Quyền toàn bot được đọc lại khi thực hiện, không dùng vai trò đã lưu trong menu.
 Admin ẩn danh không được thực thi khi không xác minh được danh tính người ra lệnh.
 
+## Cấp credit AI qua chat
+
+Chủ bot và admin toàn bot có thể yêu cầu bằng chat trong DM hoặc nhóm, không cần
+bật AI quản trị nhóm. Gọi bot theo cách thông thường, ví dụ:
+
+- Reply tin của user: `waku, thêm cho người này 1000 token`.
+- `waku, cấp cho @username 1000 credit` hoặc dùng ID Telegram của user.
+- `waku, thêm cho nhóm này 1000 token` để cộng vào quỹ của nhóm hiện tại.
+- Trong DM hoặc nhóm khác: `waku, cấp cho nhóm -1001234567890 1000 credit`;
+  nhóm công khai cũng có thể được chọn bằng `@username`.
+
+Token và credit ở đây là cùng một đơn vị hạn mức AI, không phải xu. Số được yêu cầu
+được **cộng thêm** vào số dư đang có, dùng chung với `/quota` và Mini App. AI tự
+hiểu yêu cầu và viết lời xác nhận dựa trên kết quả thực tế. Nếu chưa rõ số lượng
+hoặc người nhận thì bot hỏi lại. Một tin yêu cầu chỉ cấp một lần cho mỗi tài khoản,
+kể cả khi AI gọi lại tool. Admin nhóm đơn thuần, admin ẩn danh, Business và Guest
+không có quyền cấp credit qua tính năng này.
+
 ## Chat khi bot chưa tham gia nhóm (Guest Mode)
 
 Trong Mini App của **@BotFather**, chọn bot → Settings → bật **Guest Mode**.

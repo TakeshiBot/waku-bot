@@ -7,6 +7,7 @@ from .code_repo import (
     get_code_agentfs,  # noqa: F401
     init_code_repository,  # noqa: F401
 )
+from .credits import *  # noqa: F403
 from .db import *  # noqa: F403
 from .image import *  # noqa: F403
 from .io import *  # noqa: F403
