@@ -1,15 +1,64 @@
 """Periodic expression hints for ordinary Telegram AI turns."""
 
-from pydantic_ai import RunContext
+from typing import Any
+
+from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.tools import ToolDefinition
+from pyrogram.enums import ChatType, MessageMediaType
 
 from waku import common
+from waku.common.utils import get_reply_target
 from waku.config import app_config
 
 from . import datatype, state
 from .expression_policy import expression_settings
 from .localization import tr
 from .tools.prepare import prepare_sticker_tools
+
+
+def requires_media_text_reply(deps: datatype.ContextDeps) -> bool:
+    """Captionless media sent directly to the bot still deserves a spoken reply."""
+    message = deps.message
+    if (
+        not deps.periodic_expressions_enabled
+        or message is None
+        or getattr(message, "business_connection_id", None)
+        or getattr(message, "guest_query_id", None)
+        or getattr(message, "media", None)
+        not in (MessageMediaType.PHOTO, MessageMediaType.STICKER)
+        or common.message_plain_text(message).strip()
+        or deps.sent_texts
+        or deps.image_delivered
+        or deps.mirror_dispatched
+    ):
+        return False
+    chat = getattr(message, "chat", None)
+    if chat is None:
+        return False
+    if chat.type == ChatType.PRIVATE:
+        return True
+    if not getattr(message, "reply_to_message", None):
+        return False
+    reply = get_reply_target(message)
+    bot_id = getattr(getattr(deps.client, "me", None), "id", None)
+    return bool(
+        bot_id
+        and reply
+        and getattr(getattr(reply, "chat", None), "id", None) == deps.chat_id
+        and getattr(getattr(reply, "from_user", None), "id", None) == bot_id
+    )
+
+
+def media_reply_instructions(ctx: RunContext[datatype.ContextDeps]) -> str:
+    if requires_media_text_reply(ctx.deps):
+        return tr("media_text_reply_required", locale=ctx.deps.locale or None)
+    return ""
+
+
+def validate_media_reply(ctx: RunContext[datatype.ContextDeps], output: Any) -> Any:
+    if isinstance(output, datatype.EndTurn) and requires_media_text_reply(ctx.deps):
+        raise ModelRetry(tr("media_text_reply_required", locale=ctx.deps.locale or None))
+    return output
 
 
 def _due(completed_turns: int, interval: int) -> bool:

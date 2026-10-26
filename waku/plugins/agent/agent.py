@@ -38,7 +38,11 @@ from . import (
     trace,
     utils,
 )
-from .expressions import periodic_expression_instructions
+from .expressions import (
+    media_reply_instructions,
+    periodic_expression_instructions,
+    validate_media_reply,
+)
 from .history import compact_history
 from .model_log import ModelActivityLog
 from .moderation_prompt import group_moderation_instructions
@@ -326,6 +330,7 @@ if app_config.agent and app_config.agent_chat_model:
     logger.info(
         "Telegram AI moderation tools registered: {}", len(moderation.MODERATION_RIGHTS)
     )
+    agent.output_validator(validate_media_reply)
 
     @agent.instructions
     async def _dynamic_instructions(ctx: RunContext[datatype.ContextDeps]) -> str:
@@ -337,6 +342,8 @@ if app_config.agent and app_config.agent_chat_model:
             + group_moderation_instructions(ctx.deps.locale or app_config.lang)
             + "\n\n"
             + await moderation.group_moderation_context(ctx)
+            + "\n\n"
+            + media_reply_instructions(ctx)
             + "\n\n"
             + await periodic_expression_instructions(ctx)
             + "\n\n"
