@@ -15,7 +15,6 @@ from .protocols import (
     _sandbox_enabled,
     _waku_enabled,
     _web_fetch_enabled,
-    _web_search_enabled,
 )
 
 
@@ -105,7 +104,9 @@ async def prepare_search(
         {
             "waku://": _waku_enabled(),
             "work://": bool(app_config.agent_workspace_enabled),
-            "web://": _web_search_enabled(),
+            # Dedicated websearch matches the old bot's unambiguous Internet tool.
+            # The web:// route remains callable for existing conversation history.
+            "web://": False,
             "chat://": _is_group_chat(ctx.deps),
             "memory://": await _memory_enabled(ctx),
         },

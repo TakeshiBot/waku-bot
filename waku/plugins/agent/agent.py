@@ -24,7 +24,11 @@ from waku.logger import logger
 from waku.plugins.agent.localization import localized_message, tr
 from waku.services import link_parse, manyacg
 from waku.services.personality import instructions as personality_instructions
-from waku.services.web_research import research_instructions
+from waku.services.web_research import (
+    prepare_search_web,
+    research_instructions,
+    search_web,
+)
 
 from . import (
     datatype,
@@ -259,6 +263,7 @@ if app_config.agent and app_config.agent_chat_model:
                 if name != "delete_replied_message"
             ],
             Tool(tools.delete_chat_messages, sequential=True),
+            Tool(search_web, name="websearch", prepare=prepare_search_web, sequential=True),
             Tool(
                 tools.image_ops,
                 prepare=tools.prepare_image_tools,

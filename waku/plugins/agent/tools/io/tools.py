@@ -5,13 +5,12 @@ from __future__ import annotations
 import builtins
 from typing import Any
 
-from ddgs import DDGS
 from pydantic_ai import ModelRetry, RunContext, ToolReturn
-from pydantic_ai.common_tools.duckduckgo import DuckDuckGoSearchTool
 
 from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.agent.localization import tr
+from waku.services.web_research import search_web
 
 from .. import bot, chat, code_repo, datatype, workspace
 from .content import _read_content
@@ -287,17 +286,19 @@ def _format_search_results(query: str, results: builtins.list[Any]) -> str:
     lines = [tr("tool_search_results_for_p0_p1", p0=query, p1=len(results))]
     for i, r in enumerate(results, 1):
         title = r.get("title") or ""
-        url = r.get("href") or ""
-        snippet = r.get("body") or ""
+        url = r.get("url") or r.get("href") or ""
+        snippet = r.get("snippet") or r.get("body") or ""
         lines.append(f"\n{i}. {title}\n   {url}\n   {snippet}")
     return "\n".join(lines)
 
 
 async def _search_web(query: str, max_results: int) -> str:
-    results = await DuckDuckGoSearchTool(
-        DDGS(), max_results=min(max_results, 10)
-    ).__call__(query)
-    return _format_search_results(query, results)
+    result = await search_web(None, query, max_results=min(max_results, 10))
+    if result["status"] in {"failed", "invalid_query"}:
+        return f"Web search failed: {result['error']}. No source was verified."
+    if result["status"] == "disabled":
+        return tr("websearch_disabled")
+    return _format_search_results(query, result.get("results", []))
 
 
 async def search(

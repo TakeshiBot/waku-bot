@@ -94,12 +94,19 @@ Tool kiểm tra quyền thực tế ngay trước khi gửi thao tác.
 
 ### Tìm thông tin và nhận diện ảnh
 
-Bot dùng công cụ có sẵn `search(query, path="web://")` cho yêu cầu tra cứu,
+Bot dùng công cụ `websearch(query)` như codebase cũ cho yêu cầu tra cứu,
 kể cả câu nối tiếp như “tìm đi”, và
 chủ động kiểm chứng thông tin có thể lỗi thời hoặc chưa chắc chắn. Kết quả có
 URL nguồn; nếu tìm chưa ra thì bot nói rõ mức độ chắc chắn. Tìm bằng mô tả ảnh
 không phải dịch vụ đối sánh ảnh ngược, nên không bảo đảm nhận diện nhân vật.
 Công tắc `websearch` trong cấu hình công cụ vẫn được tôn trọng.
+
+Backend dùng DDGS như bản cũ, gửi nguyên truy vấn AI chọn và trả về tiêu đề,
+URL, trích đoạn thực tế. AI cần đối chiếu đúng đối tượng, ngày và nội dung nguồn;
+nếu chưa đủ thông tin thì tìm tiếp hoặc đọc trang nguồn, không tự suy diễn.
+AI có thể nói trước khi tìm bằng tin nhắn hội thoại bình thường rồi gửi kết quả
+thành tin tiếp theo. Không dùng câu chờ cố định hay bộ đếm thời gian để gửi chat.
+Log INFO ghi truy vấn, trạng thái, số kết quả và URL nguồn để xác minh lượt tìm thật.
 
 Mirror cần yêu cầu chuyển/tải file rõ ràng. Trước khi gửi lệnh, một lượt AI riêng
 xác minh ý định từ tin hiện tại và ngữ cảnh reply. Tìm tên nhân vật, nguồn ảnh,

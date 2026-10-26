@@ -86,7 +86,7 @@ def mirror_instructions() -> str:
         "mirror, leech, clone or download links or Telegram attachments, use the mirror tool if it is available. "
         "Information lookup, identifying a character/image, finding an image or its source, "
         "and follow-ups such as 'find it'/'tìm đi' are research, NEVER a mirror/download task. "
-        "For research use the available web search tool (Telegram: search with path='web://'; "
+        "For research use the available web search tool (Telegram: websearch; "
         "Discord: search_web) and read. Never substitute mirror/ytdl when unsure or when "
         "reverse image search is unavailable. An attachment in the conversation does not authorize transfer. "
         "Choose mode to match the user's intent: mirror/m, leech/l, qbmirror/qm, qbleech/ql, "

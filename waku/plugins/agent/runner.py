@@ -583,7 +583,6 @@ async def _run_agent_impl(
                     deps=deps,
                     usage_limits=safety.build_usage_limits(),
                 ) as agent_run:
-                    replied = False
                     full_output_parts: list[str] = []
                     output: Any = None
                     node = agent_run.next_node
@@ -613,7 +612,6 @@ async def _run_agent_impl(
                                                 deps, part.content, markdown=True
                                             )
                                             full_output_parts.append(part.content)
-                                            replied = True
                         # next() runs the full capability lifecycle, which
                         # drains end-of-run pending messages into a redirect.
                         node = await agent_run.next(node)
@@ -637,7 +635,7 @@ async def _run_agent_impl(
                         logger.debug(
                             f"Agent returned {type(output).__name__} for user {user_id}"
                         )
-                    elif not replied and output and not text_already_sent(deps, output):
+                    elif output and not text_already_sent(deps, output):
                         if await reply_output(client, message, output, deps=deps):
                             record_sent_text(deps, output, markdown=True)
                             full_output_parts.append(output)
