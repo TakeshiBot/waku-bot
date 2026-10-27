@@ -108,6 +108,8 @@ AI có thể nói trước khi tìm bằng tin nhắn hội thoại bình thư�
 thành tin tiếp theo. Không dùng câu chờ cố định hay bộ đếm thời gian để gửi chat.
 Log INFO ghi truy vấn, trạng thái, số kết quả và URL nguồn để xác minh lượt tìm thật.
 
+Khi đọc HTML, bot giữ liên kết trang và URL ảnh (gồm ảnh lazy-load, `srcset`),
+đổi đường dẫn tương đối thành URL đầy đủ để AI có thể mở bài và lấy ảnh thực tế.
 Ảnh lấy từ website được tải qua HTTP an toàn rồi upload bằng `tg("sendPhoto", ...)`.
 Bot kiểm tra định dạng thực tế; WebP và các ảnh raster được hỗ trợ khác tự chuyển
 thành JPEG, không chỉ đổi đuôi file. JPEG/PNG phù hợp được giữ nguyên; gửi dạng
