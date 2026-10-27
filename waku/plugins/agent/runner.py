@@ -43,7 +43,7 @@ from waku.plugins.agent.prompt import (
 )
 from waku.plugins.agent.recovery import reply_agent_status
 from waku.plugins.agent.whitelist import is_chat_allowed
-from waku.services.deferred_delivery import DeferredDelivery
+from waku.services.deferred_delivery import DeferredDelivery, DeferredDeliveryError
 
 
 async def get_chat_model_override(chat_id: int, role: str = "main") -> str | None:
@@ -773,7 +773,14 @@ async def _run_agent_impl(
             deps=deps,
             lang=lang,
             fallback=err_text,
-            facts="The main AI run was interrupted. Explain any verified moderation results without inventing success or repeating actions.",
+            facts=(
+                f"The AI chat reply was completed, but the following photo delivery failed: {e}. "
+                "Explain the photo delivery failure in your own voice. This error is not a "
+                "content policy rejection; do not invent moderation or say the user must "
+                "confirm an action. Do not claim the photos arrived."
+                if isinstance(e, DeferredDeliveryError) else
+                "The main AI run was interrupted. Explain any verified moderation results without inventing success or repeating actions."
+            ),
             additional_instructions=additional_instructions,
             subject=subject,
         )

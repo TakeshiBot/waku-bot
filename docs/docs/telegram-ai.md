@@ -108,6 +108,15 @@ AI có thể nói trước khi tìm bằng tin nhắn hội thoại bình thư�
 thành tin tiếp theo. Không dùng câu chờ cố định hay bộ đếm thời gian để gửi chat.
 Log INFO ghi truy vấn, trạng thái, số kết quả và URL nguồn để xác minh lượt tìm thật.
 
+Ảnh lấy từ website được tải qua HTTP an toàn rồi upload bằng `tg("sendPhoto", ...)`.
+Bot kiểm tra định dạng thực tế; WebP và các ảnh raster được hỗ trợ khác tự chuyển
+thành JPEG, không chỉ đổi đuôi file. JPEG/PNG phù hợp được giữ nguyên; gửi dạng
+tài liệu vẫn giữ file gốc. `tg("sendMediaGroup", ...)` gửi album 2–10 ảnh với caption
+và spoiler của từng ảnh; lời chat vẫn do AI viết riêng. Lấy ảnh web không cần Mirror.
+Yêu cầu website hoặc cosplayer cụ thể phải tìm đúng nguồn đó, không thay bằng tag
+trong kho anime ngẫu nhiên. Ảnh từ kho anime cũng được tải và kiểm tra trước khi
+báo chuẩn bị xong; album upload file thực tế thay vì giao URL CDN cho Telegram tải.
+
 Mirror cần yêu cầu chuyển/tải file rõ ràng. Trước khi gửi lệnh, một lượt AI riêng
 xác minh ý định từ tin hiện tại và ngữ cảnh reply. Tìm tên nhân vật, nguồn ảnh,
 thông tin hoặc “tìm đi” không cấp quyền mirror/ytdl. Khi không xác minh được,

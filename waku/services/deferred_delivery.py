@@ -4,6 +4,10 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 
+class DeferredDeliveryError(RuntimeError):
+    """Photos failed after the AI reply; this is distinct from model failure."""
+
+
 class DeferredDelivery:
     def __init__(self):
         self._pending: list[
@@ -19,7 +23,13 @@ class DeferredDelivery:
             try:
                 result = await send()
                 if not result.success:
-                    raise RuntimeError(result.message or "Deferred image delivery failed")
+                    raise DeferredDeliveryError(result.message or "Deferred image delivery failed")
+            except DeferredDeliveryError:
+                raise
+            except Exception as error:
+                raise DeferredDeliveryError(
+                    f"Photo delivery failed ({type(error).__name__}): {error}"
+                ) from error
             finally:
                 await cleanup()
 

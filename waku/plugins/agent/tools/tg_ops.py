@@ -8,6 +8,7 @@ current chat and cannot be overridden.
 
 from __future__ import annotations
 
+import asyncio
 from io import BytesIO
 from typing import Any
 
@@ -16,6 +17,7 @@ import pyrogram.errors
 from pydantic_ai import RunContext
 
 from waku.common.safe_http import DEFAULT_MAX_BYTES, UnsafeUrlError, safe_download_bytes
+from waku.common.telegram_photo import prepare_photo_upload
 from waku.common.telegram_runtime import prepare_telegram_output
 from waku.logger import logger
 from waku.plugins.agent.expression_policy import expression_settings
@@ -37,6 +39,11 @@ _METHODS: dict[str, tuple[str, set[str], set[str]]] = {
         "send_photo",
         {"photo", "caption", "has_spoiler", "reply_to_message_id"},
         {"photo"},
+    ),
+    "sendMediaGroup": (
+        "send_media_group",
+        {"media", "reply_to_message_id"},
+        {"media"},
     ),
     "sendDocument": (
         "send_document",
@@ -182,6 +189,28 @@ async def _convert_params(
         )
     kwargs: dict[str, Any] = {}
     for key, value in params.items():
+        if method == "sendMediaGroup" and key == "media":
+            if not isinstance(value, list) or not 2 <= len(value) <= 10:
+                return None, "A photo album needs 2-10 media items. Use sendPhoto for one image."
+            album = []
+            for item in value:
+                if not isinstance(item, dict) or item.get("type") != "photo" or "media" not in item:
+                    return None, "Each album item needs type='photo' and media=<image reference>."
+                if set(item) - {"type", "media", "caption", "has_spoiler"}:
+                    return None, "Photo album items support type, media, caption and has_spoiler."
+                photo_params = {k: v for k, v in item.items() if k not in {"type", "media"}}
+                photo_params["photo"] = item["media"]
+                photo_kwargs, error = await _convert_params(ctx, "sendPhoto", photo_params)
+                if error:
+                    return None, error
+                assert photo_kwargs is not None
+                album.append(pyrogram.types.InputMediaPhoto(
+                    media=photo_kwargs["photo"],
+                    caption=photo_kwargs.get("caption", ""),
+                    has_spoiler=photo_kwargs.get("has_spoiler", False),
+                ))
+            kwargs["media"] = album
+            continue
         if key == "parse_mode":
             if value is None:
                 kwargs[key] = None
@@ -289,6 +318,16 @@ async def _convert_params(
             return None, (tr("media_target_invalid", p0=key))
         else:
             kwargs[key] = value
+    if method == "sendPhoto":
+        try:
+            kwargs["photo"] = await asyncio.to_thread(prepare_photo_upload, kwargs["photo"])
+        except Exception as error:
+            logger.warning("Photo preparation failed: {}", type(error).__name__)
+            return None, (
+                "Photo preparation failed: " + type(error).__name__
+                + ". Supply an actual readable image, not a web page. "
+                "WEBP and other supported raster images are converted automatically."
+            )
     if method == "sendReaction" and "message_id" not in kwargs:
         # No target given: react to the message being answered. That is the
         # only id this tool can vouch for, so the common case never depends on
@@ -345,6 +384,7 @@ async def tg(
 
     Standard methods (params follow Bot API field names):
     - sendPhoto: photo (http(s) URL, work:// or waku:// reference), caption, has_spoiler, reply_to_message_id
+    - sendMediaGroup: media (2-10 photo items: {type: "photo", media: image reference, caption?: image caption, has_spoiler?: bool}), reply_to_message_id
     - sendDocument: document (http(s) URL or a work:// / waku:// reference) OR content (plain text made into the document), plus file_name, caption, reply_to_message_id
     - sendReaction: emoji; message_id is optional (omit it to react to the message being answered)
     - sendPoll: question, options (2-8 strings), is_anonymous, allows_multiple_answers, reply_to_message_id
@@ -353,6 +393,12 @@ async def tg(
     - sendMessage: text, parse_mode (HTML / MarkdownV2), disable_web_page_preview, reply_to_message_id
 
     Media fields accept a public http(s) URL, a work:// file reference from this chat's workspace, or a waku:// codebase file.
+    Photos are downloaded and validated; WEBP and other supported raster formats
+    are automatically converted to JPEG before upload. A .webp URL is supported;
+    you do not need shell tools, a workspace conversion, or Mirror to send it.
+    Use real image URLs extracted from the requested source, not invented paths.
+    For multiple photos prefer sendMediaGroup; split larger sets into albums of
+    at most 10. Keep conversational replies separate from image captions.
 
     Bot extensions:
     - scheduleMessage: text, schedule_time (ISO 8601, must be in the future).
@@ -380,6 +426,11 @@ async def tg(
         return "Use the admin-only mirror tool for Mirror requests; raw forwarding is disabled."
     if method in {"sendPhoto", "sendDocument", "sendVideo", "sendAudio", "sendAnimation", "sendVoice"} and is_raw_mirror_command(
         params.get("caption"), ctx.deps.chat_id
+    ):
+        return "Use the admin-only mirror tool for Mirror requests; raw forwarding is disabled."
+    if method == "sendMediaGroup" and isinstance(params.get("media"), list) and any(
+        isinstance(item, dict) and is_raw_mirror_command(item.get("caption"), ctx.deps.chat_id)
+        for item in params["media"]
     ):
         return "Use the admin-only mirror tool for Mirror requests; raw forwarding is disabled."
 
@@ -433,6 +484,9 @@ async def tg(
     if method == "sendReaction":
         getattr(ctx.deps, "tools_called_this_turn", set()).add("tg.sendReaction")
         ctx.deps.side_effects_started = True
+    if method == "sendMediaGroup":
+        ctx.deps.side_effects_started = True
+        return "Photo album sent. Message IDs: " + ", ".join(str(item.id) for item in result)
     message_id = getattr(result, "id", None) or getattr(result, "message_id", None)
     if message_id is not None:
         return tr("tool_p0_sent_message_id_p1", p0=method, p1=message_id)

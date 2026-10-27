@@ -141,7 +141,7 @@ async def write(
     denied = _require(protocol, ctx.deps)
     if denied:
         return denied
-    if isinstance(content, str):
+    if isinstance(content, str) and "\n" not in content and "\r" not in content:
         try:
             _split_target(content)
         except ValueError:

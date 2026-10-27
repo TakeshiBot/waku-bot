@@ -1,7 +1,9 @@
+import asyncio
 import datetime
 import html
 from dataclasses import dataclass
 from hashlib import md5
+from io import BytesIO
 from typing import Literal
 
 import pyrogram
@@ -11,6 +13,8 @@ from pydantic_ai import ModelRetry, RunContext
 from waku import common, database, i18n
 from waku.bot.client import client
 from waku.common.rich_message import message_plain_text
+from waku.common.safe_http import safe_download_bytes
+from waku.common.telegram_photo import prepare_photo_upload
 from waku.common.telegram_runtime import telegram_chat_allowed
 from waku.config import app_config
 from waku.logger import logger
@@ -479,6 +483,7 @@ class AnimePhotoResult:
     # Internal capability metadata for the model, never a user-facing sentence.
     random_only: bool = False
     delivery_pending: bool = False
+    prepared_count: int = 0
 
 
 async def _fetch_manyacg_anime_artwork(
@@ -496,7 +501,13 @@ async def _fetch_anime_artwork(keyword: str = "", r18_mode: int = 0, *, scope=No
 async def send_anime_photo(
     ctx: RunContext[datatype.ContextDeps], keyword: str = "", count: int = 1
 ) -> AnimePhotoResult:
-    """Get and send anime photos (also called setu).
+    """Send random anime illustrations from the built-in ManyACG/nekos catalogs.
+
+    This tool DOES NOT browse websites or retrieve real-person/cosplayer photos.
+    Never use it for a user-specified website, URL, photographer or cosplayer.
+    Use websearch/read to find the requested site's actual image URLs, then
+    tg('sendPhoto', ...) or tg('sendMediaGroup', ...) to upload them. 'Random'
+    does not permit substituting this catalog for the user's requested source.
 
     Args:
         keyword: Optional tag/theme to search in ManyACG, e.g. "nekomimi" or
@@ -565,23 +576,27 @@ async def send_anime_photo(
         if not fetched:
             return AnimePhotoResult(success=False, message=tr("anime_fetch_failed"))
 
+        # Validate and encode the actual files before telling the model that
+        # delivery is pending. Telegram cannot always fetch these CDN URLs.
+        prepared = await _prepare_anime_uploads(fetched)
         queue = getattr(ctx.deps, "deferred_images", None)
         if queue is not None:
             async def cleanup():
                 for artwork, picture in fetched:
                     await release_anime_image(f"telegram:{ctx.deps.chat_id}", artwork, picture)
 
-            queue.add(lambda: _deliver_anime_photos(ctx, fetched), cleanup)
+            queue.add(lambda: _deliver_anime_photos(ctx, fetched, prepared), cleanup)
             deferred = True
             artwork, _ = fetched[0]
             return AnimePhotoResult(
                 delivery_pending=True,
+                prepared_count=len(fetched),
                 data=AnimePhotoInfo(
                     title=artwork["title"], source_url=artwork["source_url"],
-                    r18=artwork["r18"], tags=artwork.get("tags", [])[:10],
+                    r18=artwork["r18"], tags=(artwork.get("tags") or [])[:10],
                 ),
             )
-        return await _deliver_anime_photos(ctx, fetched)
+        return await _deliver_anime_photos(ctx, fetched, prepared)
     except Exception as e:
         logger.error(f"send_anime_photo error: {e.__class__.__name__}:{e}")
         return AnimePhotoResult(
@@ -594,13 +609,23 @@ async def send_anime_photo(
                 await release_anime_image(f"telegram:{ctx.deps.chat_id}", artwork, picture)
 
 
-async def _deliver_anime_photos(ctx, fetched):
+async def _prepare_anime_uploads(fetched) -> list[BytesIO]:
+    photos = []
+    for _, picture in fetched:
+        raw = await safe_download_bytes(picture["regular"])
+        photo = BytesIO(raw)
+        photo.name = "photo"
+        photos.append(await asyncio.to_thread(prepare_photo_upload, photo))
+    return photos
+
+
+async def _deliver_anime_photos(ctx, fetched, prepared):
     enabled, mode = await telegram_image_settings(ctx.deps.chat_id)
     if not enabled or any(not image_allowed(artwork["r18"], mode) for artwork, _ in fetched):
         return AnimePhotoResult(success=False, message="Image settings changed before delivery; the prepared images are no longer permitted.")
     if len(fetched) == 1:
         artwork, picture = fetched[0]
-        result = await _send_anime_photo_single(ctx, artwork, picture)
+        result = await _send_anime_photo_single(ctx, artwork, picture, prepared[0])
         if result.success:
             ctx.deps.side_effects_started = True
             await remember_anime_image(f"telegram:{ctx.deps.chat_id}", artwork, picture)
@@ -613,7 +638,7 @@ async def _deliver_anime_photos(ctx, fetched):
         | pyrogram.types.InputMediaDocument
     ] = [
         pyrogram.types.InputMediaPhoto(
-            media=picture["regular"],
+            media=prepared[i],
             caption=(
                 f"<a href='{html.escape(artwork['source_url'], quote=True)}'>{html.escape(artwork['title'][:200])}</a>"
                 if i == 0
@@ -637,18 +662,19 @@ async def _deliver_anime_photos(ctx, fetched):
     first_artwork, _ = fetched[0]
     return AnimePhotoResult(
         success=True,
+        prepared_count=len(fetched),
         data=AnimePhotoInfo(
             title=first_artwork["title"],
             source_url=first_artwork["source_url"],
             r18=first_artwork["r18"],
-            description=first_artwork.get("description", "")[:512],
+            description=(first_artwork.get("description") or "")[:512],
             artist=Artist(
-                name=first_artwork.get("artist", {}).get("name", ""),
-                type=first_artwork["artist"].get("type", ""),
-                username=first_artwork["artist"].get("username", ""),
-                uid=first_artwork["artist"].get("uid", ""),
+                name=(first_artwork.get("artist") or {}).get("name", ""),
+                type=(first_artwork.get("artist") or {}).get("type", ""),
+                username=(first_artwork.get("artist") or {}).get("username", ""),
+                uid=(first_artwork.get("artist") or {}).get("uid", ""),
             ),
-            tags=first_artwork.get("tags", [])[:10],
+            tags=(first_artwork.get("tags") or [])[:10],
         ),
     )
 
@@ -657,6 +683,7 @@ async def _send_anime_photo_single(
     ctx: RunContext[datatype.ContextDeps],
     artwork: dict,
     picture: dict,
+    photo: BytesIO,
 ) -> AnimePhotoResult:
     user_config = await database.get_user_config(ctx.deps.user_id)
     lang = user_config.lang
@@ -667,7 +694,7 @@ async def _send_anime_photo_single(
     )
     await ctx.deps.client.send_photo(
         chat_id=ctx.deps.chat_id,
-        photo=picture["regular"],
+        photo=photo,
         caption=f"<a href='{html.escape(artwork['source_url'], quote=True)}'>{html.escape(artwork['title'][:200])}</a>",
         parse_mode=pyrogram.enums.ParseMode.HTML,
         reply_markup=pyrogram.types.InlineKeyboardMarkup(
@@ -691,18 +718,19 @@ async def _send_anime_photo_single(
     )
     return AnimePhotoResult(
         success=True,
+        prepared_count=1,
         data=AnimePhotoInfo(
             title=artwork["title"],
             source_url=artwork["source_url"],
             r18=artwork["r18"],
-            description=artwork.get("description", "")[:512],
+            description=(artwork.get("description") or "")[:512],
             artist=Artist(
-                name=artwork.get("artist", {}).get("name", ""),
-                type=artwork["artist"].get("type", ""),
-                username=artwork["artist"].get("username", ""),
-                uid=artwork["artist"].get("uid", ""),
+                name=(artwork.get("artist") or {}).get("name", ""),
+                type=(artwork.get("artist") or {}).get("type", ""),
+                username=(artwork.get("artist") or {}).get("username", ""),
+                uid=(artwork.get("artist") or {}).get("uid", ""),
             ),
-            tags=artwork.get("tags", [])[:10],
+            tags=(artwork.get("tags") or [])[:10],
         ),
     )
 
