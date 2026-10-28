@@ -190,7 +190,7 @@ async function handle(env:Env, job:TelegramJob,analyze:boolean,hop=0) {
     if (!url) {
       await tg(env,'sendMessage',{chat_id:message.chat.id,text:HELP}); return;
     }
-    download=await downloadImage(url,maxBytes(env));bytes=download.bytes;
+    download=await downloadImage(url,maxBytes(env));bytes=download.bytes;info.source_url=download.url;
   }
   const saved = await save(env,bytes,info,String(message.from!.id),file?.file_name || null,file?null:(message.text || '').match(/https?:\/\/[^\s<>]+/i)?.[0] || null);
   if(download)await recordImportAliases(env,saved.row.id,[download.input,download.url,...(download.used_original?[download.identity]:[])]);

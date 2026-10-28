@@ -193,6 +193,8 @@ test('original URL imports persist full content and dedup renditions without tre
   assert.equal(sourceRequests.length,before,'preflight normalizes locally without probing remote CDNs');
   const result=await (await call('/v1/images','POST',{url:small,manual:true})).json() as any;
   assert.equal(result.import.used_original,true);assert.equal(result.import.fallback_reason,null);assert.equal(sourceRequests.length,before+1);
+  assert.equal(result.image.source_url,result.import.fetched_url);
+  assert.equal(result.image.source_url,small.replace('360x360','orig'));
   const stored=await mf.dispatchFetch(result.image.url);assert.ok(Buffer.from(await stored.arrayBuffer()).includes(Buffer.from('original')));
   const other='https://pbs.twimg.com/media/qa-original?format=png&name=large';
   const duplicate=await (await call('/v1/images/duplicates','POST',{urls:[other]})).json() as any;
@@ -201,9 +203,13 @@ test('original URL imports persist full content and dedup renditions without tre
   const fallbackUrl='https://pbs.twimg.com/media/qa-fallback?format=jpg&name=360x360';
   const fallback=await (await call('/v1/images','POST',{url:fallbackUrl,manual:true})).json() as any;
   assert.equal(fallback.import.used_original,false);assert.equal(fallback.import.fallback_reason,'download_failed');
+  assert.equal(fallback.image.source_url,fallbackUrl,'fallback source reflects the file actually downloaded');
   const retry=await (await call('/v1/images/duplicates','POST',{urls:[fallbackUrl.replace('360x360','orig')]})).json() as any;
   assert.equal(retry.duplicates.length,0,'a thumbnail fallback must not mark the original as already stored');
   const db=await mf.getD1Database('DB');
+  await db.prepare('UPDATE images SET source_url=? WHERE id=?').bind(small,result.image.id).run();
+  const reimport=await (await call('/v1/images','POST',{url:small,source_url:'https://artist.site.com/post/1',manual:true,title:'Should not replace title'})).json() as any;
+  assert.equal(reimport.duplicate,true);assert.equal(reimport.image.source_url,reimport.import.fetched_url);assert.equal(reimport.image.title,result.image.title);
   await db.prepare('DELETE FROM image_import_urls WHERE image_id=?').bind(result.image.id).run();
   await db.prepare('INSERT INTO image_import_urls(url,image_id) VALUES (?,?)').bind(small,result.image.id).run();
   const legacy=await (await call('/v1/images/duplicates','POST',{urls:[small]})).json() as any;assert.equal(legacy.duplicates.length,0,'old raw thumbnail aliases never prevent upgrading');

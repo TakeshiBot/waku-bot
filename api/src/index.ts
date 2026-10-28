@@ -194,7 +194,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
       importUrl=publicUrl(body.url).href;
       manual=body.manual===true;
       batchId=body.batch_id;
-      download=await downloadImage(importUrl,maxBytes(env));bytes=download.bytes;
+      download=await downloadImage(importUrl,maxBytes(env));bytes=download.bytes;info.source_url=download.url;
     }
     if (batchId) {
       if (typeof batchId!=='string' || !uuid.test(batchId)) throw new HttpError(400,'invalid_batch','Đợt AI không hợp lệ.');

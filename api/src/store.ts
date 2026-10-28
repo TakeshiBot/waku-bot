@@ -43,6 +43,18 @@ export async function presentMany(env:Env, rows:ImageRow[], base:string) {
   }));
 }
 
+async function importedSource(env:Env,row:ImageRow,source:string|null,importUrl:string|null) {
+  if(importUrl&&source&&row.source_url!==source){
+    // Refresh only the source on duplicate imports. A concurrent manual edit
+    // wins, and the existing title, tags and classification stay intact.
+    const changed=await env.DB.prepare('UPDATE images SET source_url=? WHERE id=? AND metadata_version=? RETURNING *')
+      .bind(source,row.id,row.metadata_version).first<ImageRow>();
+    if(changed){await libraryChanged(env);return changed;}
+    return image(env,row.id);
+  }
+  return row;
+}
+
 export async function save(env: Env, bytes: ArrayBuffer, info: Metadata, uploader: string | null, originalName:string|null=null, importUrl:string|null=null) {
   if (bytes.byteLength > maxBytes(env)) throw new HttpError(413,'too_large','Ảnh vượt giới hạn dung lượng.');
   const kind = imageType(bytes);
@@ -50,7 +62,7 @@ export async function save(env: Env, bytes: ArrayBuffer, info: Metadata, uploade
   const existing = await env.DB.prepare('SELECT * FROM images WHERE sha256 = ?').bind(hash).first<ImageRow>();
   if (existing) {
     if(importUrl)await env.DB.prepare('INSERT INTO image_import_urls(url,image_id) VALUES (?,?) ON CONFLICT(url) DO UPDATE SET image_id=excluded.image_id').bind(importUrl,existing.id).run();
-    return {row:existing, duplicate:true};
+    return {row:await importedSource(env,existing,info.source_url,importUrl), duplicate:true};
   }
   const id = crypto.randomUUID();
   // Unique object keys prevent a pending delete from removing a re-upload of
@@ -72,7 +84,7 @@ export async function save(env: Env, bytes: ArrayBuffer, info: Metadata, uploade
   }
   if(row.id===id) await libraryChanged(env);
   if(importUrl)await env.DB.prepare('INSERT INTO image_import_urls(url,image_id) VALUES (?,?) ON CONFLICT(url) DO UPDATE SET image_id=excluded.image_id').bind(importUrl,row.id).run();
-  return {row, duplicate:row.id !== id};
+  return {row:await importedSource(env,row,info.source_url,importUrl), duplicate:row.id !== id};
 }
 
 export async function update(env: Env, id: string, info: Metadata) {

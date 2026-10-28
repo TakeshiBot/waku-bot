@@ -179,6 +179,8 @@ Nguồn không nhận diện hoặc URL có chữ ký không rõ được giữ 
 
 Kiểm tra trùng chuẩn hóa link ngay trên máy chủ, không gọi CDN lúc preflight. Các kích thước/định dạng của cùng ảnh được nhận diện cùng nguồn; chỉ ghi nhận danh tính bản gốc khi đã tải thành công bản đó. Những link thumbnail lưu trước bản nâng cấp này không ngăn việc lấy lại bản gốc. API upload URL trả thêm `import`: `source`, `preferred_url`, `fetched_url`, `used_original`, `fallback_reason`.
 
+Khi nhập ảnh bằng URL, `source_url` luôn lấy URL thực tế tải thành công: bản gốc khi nâng cấp được, bản từ link khi phải fallback. Quy tắc dùng chung cho web/API/bot upload Telegram; upload file vẫn giữ nguồn nhập thủ công. Import lại ảnh trùng nội dung cũng cập nhật riêng link nguồn, giữ nguyên tên/tag/phân loại và tôn trọng chỉnh sửa thủ công đang diễn ra đồng thời.
+
 Tham khảo quy tắc nguồn: [Discord CDN](https://docs.discord.com/developers/reference#signed-attachment-cdn-urls), [Unsplash image URLs](https://unsplash.com/documentation#dynamically-resizable-images), [Pexels photo resource](https://www.pexels.com/api/documentation/#photos), [Shopify image URL](https://shopify.dev/docs/api/liquid/filters/image_url), [WordPress image CDN](https://developer.wordpress.com/docs/developer-tools/site-accelerator-api/). Các mẫu X/Pixiv/Pinterest cũng được đối chiếu với URL và cơ chế tải của [gallery-dl](https://github.com/mikf/gallery-dl/tree/master/gallery_dl/extractor).
 
 Web rảnh chỉ kiểm tra một request mỗi phút; khi có tác vụ chuyển sang mỗi 8 giây, gộp tiến trình và thống kê. Tab trình duyệt bị ẩn ngừng polling. Chỉ tải lại danh sách khi phiên bản thư viện thay đổi; giữ lại các phần tử ảnh để tránh nháy. Hàng đợi chạy độc lập qua continuation/Cron, không phụ thuộc web liên tục gọi drain.
