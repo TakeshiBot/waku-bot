@@ -172,9 +172,10 @@ async def _send_prepared(ctx, items, as_documents: bool, requested_count: int):
         return DiscordWebImageResult(success=False, message=error)
     sent = 0
     batch = []
+    dispatched = False
 
     async def send_batch():
-        nonlocal sent
+        nonlocal sent, dispatched
         files = [
             discord.File(
                 io.BytesIO(item.data),
@@ -223,8 +224,21 @@ async def _send_prepared(ctx, items, as_documents: bool, requested_count: int):
         try:
             # Unknown transport outcomes must never cause an automatic re-upload.
             ctx.deps.side_effects_started = True
-            await message.channel.send(**kwargs)
-            sent += len(batch)
+            dispatched = True
+            async with asyncio.timeout(60):
+                delivered = await message.channel.send(**kwargs)
+            attachments = getattr(delivered, "attachments", None)
+            if not isinstance(attachments, list):
+                raise RuntimeError(
+                    "Discord did not return an attachment delivery receipt."
+                )
+            confirmed = len(attachments)
+            sent += confirmed
+            dispatched = False
+            if confirmed != len(batch):
+                raise ValueError(
+                    "Discord returned fewer attachments than were uploaded."
+                )
         finally:
             for file in files:
                 file.close()
@@ -243,15 +257,40 @@ async def _send_prepared(ctx, items, as_documents: bool, requested_count: int):
         if batch:
             await send_batch()
     except Exception as error:
+        status = getattr(error, "status", None)
+        if isinstance(error, discord.RateLimited):
+            status = 429
+        rejected = isinstance(status, int) and 400 <= status < 500
+        outcome = "failed" if rejected or not dispatched else "unconfirmed"
+        retry_after = getattr(error, "retry_after", None)
+        logger.warning(
+            "Discord web media delivery failed: channel={} status={} code={} error={} confirmed={}/{}",
+            message.channel.id,
+            status,
+            getattr(error, "code", None),
+            type(error).__name__,
+            sent,
+            requested_count,
+        )
         return DiscordWebImageResult(
             success=False,
             requested_count=requested_count,
             sent_count=sent,
+            delivery_status=outcome,
+            error_type=type(error).__name__,
+            http_status=status if isinstance(status, int) else None,
+            error_code=getattr(error, "code", None),
+            retry_after=float(retry_after)
+            if isinstance(retry_after, (int, float))
+            else None,
             message=f"Media upload failed ({type(error).__name__}); {sent} files confirmed "
             f"out of {requested_count}. Do not automatically repeat the upload.",
         )
     return DiscordWebImageResult(
-        success=True, requested_count=requested_count, sent_count=sent
+        success=True,
+        requested_count=requested_count,
+        sent_count=sent,
+        delivery_status="sent",
     )
 
 
@@ -372,7 +411,9 @@ async def search_and_send_web_images(ctx, query: str, count: int):
             continue
         urls.add(url)
         item = DiscordWebMediaItem(
-            url, str(row.get("title") or "")[:1024], source_url=str(row.get("url") or url)
+            url,
+            str(row.get("title") or "")[:1024],
+            source_url=str(row.get("url") or url),
         )
         if not _permitted(item, mode):
             continue

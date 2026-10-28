@@ -8,6 +8,10 @@ import pydantic_ai
 from pydantic_ai import UserContent
 from pydantic_ai.messages import (
     ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    UserPromptPart,
 )
 
 from waku import common
@@ -15,10 +19,11 @@ from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.agent import provider
 from waku.plugins.agent.safety import build_usage_limits
-from waku.services.deferred_delivery import DeferredDelivery
+from waku.services.deferred_delivery import DeferredDelivery, DeferredDeliveryError
 
 from . import state
 from .constants import _DISCORD_TEMPORARY_ERROR_REPLIES
+from .delivery import compose_delivery_notice, media_receipts, receipt_context
 from .history import _prepare_discord_history, _sanitize_discord_history
 from .messages import _send_reply
 from .models import DiscordContextDeps
@@ -234,6 +239,7 @@ async def _run_discord_agent_once(
                 "Discord run failed after tool side effects"
             ) from error
         raise
+    delivery_error = None
     try:
         if deps.image_delivered or deps.mirror_dispatched:
             if stream is not None:
@@ -247,7 +253,14 @@ async def _run_discord_agent_once(
             )
         if result.output and not streamed:
             await _send_reply(message, str(result.output))
-        await deps.deferred_images.flush()
+        try:
+            await deps.deferred_images.flush()
+        except DeferredDeliveryError as error:
+            delivery_error = error
+            logger.warning(
+                "Discord deferred media failed: channel={} request={} error={}",
+                message.channel.id, message.id, type(error.__cause__ or error).__name__,
+            )
     except BaseException as error:
         if stream is not None:
             await stream.abort(
@@ -260,14 +273,36 @@ async def _run_discord_agent_once(
         raise DiscordPostRunError("Discord reply delivery failed") from error
     finally:
         await deps.deferred_images.discard()
+    history = list(result.all_messages())
+    receipts = media_receipts(message, history, deps.deferred_images.results, delivery_error)
+    if receipts:
+        history.append(ModelRequest(parts=[UserPromptPart(receipt_context(receipts))]))
     try:
         await common.memttlcache.set(
             history_key,
-            _sanitize_discord_history(result.all_messages()),
+            _sanitize_discord_history(history),
             ttl=app_config.cachettl_agent_history,
         )
     except Exception as error:
-        raise DiscordPostRunError("Discord history persistence failed") from error
+        if delivery_error is None:
+            raise DiscordPostRunError("Discord history persistence failed") from error
+        logger.warning("Discord media receipt persistence failed: {}", type(error).__name__)
+
+    if delivery_error is not None:
+        # Receipts are already persisted even if text/model access is also lost.
+        # The isolated writer cannot call image tools or duplicate an upload.
+        try:
+            notice = await compose_delivery_notice(message, receipts)
+            if notice:
+                async with asyncio.timeout(30):
+                    await _send_reply(message, notice)
+                history.append(ModelResponse(parts=[TextPart(notice)]))
+                await common.memttlcache.set(
+                    history_key, _sanitize_discord_history(history),
+                    ttl=app_config.cachettl_agent_history,
+                )
+        except Exception as error:
+            logger.warning("Discord media failure notice unavailable: {}", type(error).__name__)
 
 
 async def _discord_recovery_reply(

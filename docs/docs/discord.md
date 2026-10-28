@@ -139,6 +139,18 @@ caption của Discord. WebP được kiểm tra/chuyển định dạng như Tel
 gửi tài liệu giữ nguyên byte và tên file gốc. Lỗi chuẩn bị không gửi album dở;
 kết quả tìm thiếu ảnh báo đúng số đã chuẩn bị, không mặc nhận gửi đủ.
 
+Giới hạn 10 tệp áp dụng cho một album, không chặn yêu cầu gửi tiếp ở lượt sau.
+Kết quả gửi được lưu riêng theo ID yêu cầu: đã gửi, thất bại hoặc chưa xác nhận.
+Bot chỉ đếm ảnh được Discord xác nhận trong phản hồi đính kèm. Nếu bị giới hạn,
+thiếu quyền, lỗi dung lượng hoặc timeout sau lời chat, AI viết một tin báo lại
+theo kết quả thực tế; timeout không bị coi là bằng chứng ảnh chắc chắn chưa tới.
+Không tự chạy lại tool upload khi kết quả chưa rõ. Lượt chat sau vẫn có kết quả
+gửi để không nhầm album cũ với yêu cầu mới. Nếu API chat hoặc quyền gửi tin cũng
+bị lỗi, kết quả đã lưu vẫn được giữ để lượt sau sử dụng.
+
+Tin nhắn hội thoại và bản xem trước streaming dùng dòng sát nhau, không chèn
+dòng trắng giữa các câu/đoạn; khoảng trắng trong khối code được giữ nguyên.
+
 Streaming được bật mặc định theo `agent_streaming` chung. Khi model bắt đầu
 trả lời, Waku gửi một tin rồi cập nhật dần nội dung, tối đa khoảng một lần mỗi
 2 giây. Khi hoàn tất, bot chốt tin đó và gửi các đoạn còn lại nếu câu trả lời

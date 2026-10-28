@@ -377,7 +377,20 @@ async def _build_prompt_impl(message: discord.Message, user_prompt: str) -> tupl
     return contents, needs_multimodal
 
 def _split_reply(text: str) -> list[str]:
-    remaining = text.strip()
+    # Keep prose compact in previews and final messages, without changing code.
+    lines = []
+    fence = None
+    for line in text.splitlines():
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        if marker:
+            token = marker.group(1)
+            if fence is None:
+                fence = token
+            elif token[0] == fence[0] and len(token) >= len(fence):
+                fence = None
+        if line.strip() or fence is not None:
+            lines.append(line)
+    remaining = "\n".join(lines).strip()
     if not remaining:
         return []
     chunks: list[str] = []
@@ -417,7 +430,7 @@ def _split_reply(text: str) -> list[str]:
 
     if len(chunks) > DISCORD_REPLY_MAX_MESSAGES:
         chunks = chunks[:DISCORD_REPLY_MAX_MESSAGES]
-        suffix = "\n\n… (phần còn lại quá dài nên đã lược bớt)"
+        suffix = "\n… (phần còn lại quá dài nên đã lược bớt)"
         closing_fence = "\n```" if chunks[-1].endswith("\n```") else ""
         last_body = chunks[-1][: -len(closing_fence)] if closing_fence else chunks[-1]
         chunks[-1] = (

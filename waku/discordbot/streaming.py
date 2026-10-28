@@ -125,7 +125,7 @@ class DiscordReplyStream:
             content = (
                 _split_reply(self.text)[0] if self.text.strip() else self._displayed
             )
-            content = content[: 1900 - len(note) - 2].rstrip() + "\n\n" + note
+            content = content[: 1900 - len(note) - 1].rstrip() + "\n" + note
             try:
                 await self.preview.edit(
                     content=content, allowed_mentions=discord.AllowedMentions.none()

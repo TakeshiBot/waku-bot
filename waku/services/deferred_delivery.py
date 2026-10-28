@@ -7,9 +7,14 @@ from typing import Any
 class DeferredDeliveryError(RuntimeError):
     """Photos failed after the AI reply; this is distinct from model failure."""
 
+    def __init__(self, message: str, *, result=None):
+        super().__init__(message)
+        self.result = result
+
 
 class DeferredDelivery:
     def __init__(self):
+        self.results: list[Any] = []
         self._pending: list[
             tuple[Callable[[], Awaitable[Any]], Callable[[], Awaitable[None]]]
         ] = []
@@ -22,8 +27,12 @@ class DeferredDelivery:
             send, cleanup = self._pending.pop(0)
             try:
                 result = await send()
+                self.results.append(result)
                 if not result.success:
-                    raise DeferredDeliveryError(result.message or "Deferred image delivery failed")
+                    raise DeferredDeliveryError(
+                        result.message or "Deferred image delivery failed",
+                        result=result,
+                    )
             except DeferredDeliveryError:
                 raise
             except Exception as error:

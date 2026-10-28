@@ -146,6 +146,11 @@ class DiscordWebImageResult:
     prepared_count: int = 0
     sent_count: int = 0
     delivery_pending: bool = False
+    delivery_status: str | None = None
+    error_type: str | None = None
+    http_status: int | None = None
+    error_code: int | None = None
+    retry_after: float | None = None
 
 
 @dataclass
