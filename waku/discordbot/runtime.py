@@ -46,6 +46,11 @@ from .tools.search import (
 )
 from .tools.server import find_discord_channel, get_discord_server_info
 from .tools.users import find_discord_user, mention_discord_user
+from .tools.web_media import (
+    prepare_web_reader,
+    read_discord_web_page,
+    send_discord_web_media,
+)
 
 _LIFECYCLE_LOCK = asyncio.Lock()
 _CLOSE_TIMEOUT = 10
@@ -112,6 +117,8 @@ async def _start_discord_bot() -> None:
             Tool(update_discord_group_memory, sequential=True),
             Tool(send_discord_reaction, sequential=True),
             Tool(send_discord_web_image, sequential=True),
+            Tool(read_discord_web_page, prepare=prepare_web_reader),
+            Tool(send_discord_web_media, sequential=True),
             Tool(send_discord_anime_photo, sequential=True),
             Tool(discord_image_ops, sequential=True, prepare=prepare_discord_image_tools),
             Tool(schedule_discord_message, sequential=True),
@@ -149,7 +156,7 @@ async def _start_discord_bot() -> None:
             "or an explicit request to edit an image. Ordinary send/show/photo requests "
             "must not trigger generation, even if you can describe a matching image. "
             "After generated/edited image delivery, end silently without a completion "
-            "sentence. For API anime images, write your normal reply as a separate "
+            "sentence. For existing web/file and API anime images, write your normal reply as a separate "
             "chat message; the image caption contains artwork metadata only. "
             "If delivery_pending is true, images are prepared and will be sent "
             "after your final chat reply. Reply now without another image tool call; "
@@ -184,6 +191,20 @@ async def _start_discord_bot() -> None:
             "advertise it when explaining what Waku can do. Only call "
             "send_discord_web_image when the user clearly asks for web/internet "
             "image search or requests an image from the internet/web. "
+            "For a named website/gallery/person, use search_web and read_discord_web_page "
+            "to find the actual source's image/file URLs, then call send_discord_web_media "
+            "once with all requested media (up to 10). This is the same source-reading "
+            "and upload flow as Telegram. A follow-up such as '10 more random ones' "
+            "keeps the previous website/subject and requests count=10, never just one. "
+            "For general web image search use send_discord_web_image with count set "
+            "to the requested quantity. Do not use the anime catalog for website/cosplay photos. "
+            "Use as_documents=True for original web files; do not send a page link "
+            "instead of an upload when the file is downloadable. Keep each caption "
+            "to image/file/source metadata, with no search-status boilerplate or "
+            "conversational reply inside it. Multiple web photos/files are grouped "
+            "as native attachments, with numbered metadata captions matching their order. "
+            "If only fewer photos can be prepared, report the actual prepared_count "
+            "honestly; do not claim all requested photos are ready. "
             "If an image tool returns success=False with wait_seconds or a busy "
             "message, tell the user to wait a few seconds and do not claim an image "
             "was sent. For requests above 10 images, explain the batch limit in "

@@ -142,6 +142,19 @@ class DiscordWebImageResult:
     message: str | None = None
     title: str | None = None
     source_url: str | None = None
+    requested_count: int = 1
+    prepared_count: int = 0
+    sent_count: int = 0
+    delivery_pending: bool = False
+
+
+@dataclass
+class DiscordWebMediaItem:
+    url: str
+    caption: str = ""
+    filename: str | None = None
+    source_url: str | None = None
+    spoiler: bool = False
 
 @dataclass
 class DiscordReactionResult:

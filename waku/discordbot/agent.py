@@ -165,7 +165,7 @@ async def _run_discord_agent_once(
                 # for tool execution instead of timing out a legitimate action.
                 response_started.set()
                 if getattr(event.part, "tool_name", None) in {
-                    "send_discord_anime_photo", "send_discord_web_image",
+                    "send_discord_anime_photo", "send_discord_web_image", "send_discord_web_media",
                     "mirror_discord",
                 } and stream is not None:
                     # Remove pre-tool narration before sending media, including premature failure claims.

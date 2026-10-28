@@ -126,6 +126,19 @@ Nếu ảnh được chọn không đọc được, bot báo lỗi thay vì sử
 Ảnh tạo/sửa có caption `Tạo bởi waku meow~!` và không kèm tin nhắn hoàn tất
 riêng. Công tắc ảnh, chế độ an toàn/R18 và quyền đính kèm file vẫn được kiểm tra.
 
+Ảnh/file lấy từ web dùng cùng bước đọc HTML và lấy URL thật như Telegram.
+AI có thể mở bài/gallery, lấy ảnh lazy-load và gửi 1–10 URL trong một lượt.
+Tool tìm ảnh web cũng nhận số lượng, không dừng sau ảnh đầu tiên. Với yêu cầu
+nguồn cụ thể hoặc câu tiếp nối như “thêm 10 ảnh”, AI giữ website/chủ đề đang nói.
+
+Lời chat do AI viết được gửi riêng trước album. Một ảnh giữ embed; nhiều ảnh
+được gửi thành các tệp đính kèm để Discord hiển thị gallery, kèm caption metadata
+đánh số theo thứ tự ảnh và nút chi tiết nguồn. Không chèn câu tìm kiếm cố định
+vào caption. Chỉ tách album khi chạm giới hạn 10 tệp, dung lượng hoặc độ dài
+caption của Discord. WebP được kiểm tra/chuyển định dạng như Telegram; chế độ
+gửi tài liệu giữ nguyên byte và tên file gốc. Lỗi chuẩn bị không gửi album dở;
+kết quả tìm thiếu ảnh báo đúng số đã chuẩn bị, không mặc nhận gửi đủ.
+
 Streaming được bật mặc định theo `agent_streaming` chung. Khi model bắt đầu
 trả lời, Waku gửi một tin rồi cập nhật dần nội dung, tối đa khoảng một lần mỗi
 2 giây. Khi hoàn tất, bot chốt tin đó và gửi các đoạn còn lại nếu câu trả lời

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import re
 from types import SimpleNamespace
 
@@ -21,10 +20,7 @@ from ..constants import (
     _DISCORD_IMAGE_BUSY_WAIT_SECONDS,
 )
 from ..media import (
-    _download_image_bytes,
     _fetch_discord_anime_artwork,
-    _image_filename,
-    _search_web_images,
     _send_discord_anime_photos,
 )
 from ..messages import _resolve_discord_channel
@@ -42,7 +38,6 @@ from ..permissions import (
     _is_discord_bot_admin,
 )
 from ..settings import (
-    _contains_r18_keyword,
     _discord_dm_settings,
     _discord_guild_settings,
 )
@@ -50,81 +45,22 @@ from ..state import _discord_image_lock
 
 
 async def send_discord_web_image(
-    ctx: RunContext[DiscordContextDeps], query: str
+    ctx: RunContext[DiscordContextDeps], query: str, count: int = 1
 ) -> DiscordWebImageResult:
-    """Hidden tool: search the web for an image and upload it to Discord.
+    """Search the web for 1-10 photos and prepare a single attachment album.
 
-    Do not mention, list, propose, or advertise this as a normal Waku feature.
-    Use it only when the user explicitly asks for a web/internet image search or
-    an image from the internet/web that is not specifically anime/Pixiv/seg.
-
-    Args:
-        query: Image search query.
+    Use count for the full requested amount, including follow-up requests.
+    Preserve the source/subject from conversation context. For a named website
+    or gallery, prefer read_discord_web_page followed by send_discord_web_media
+    with the real photo URLs, rather than search-result thumbnails.
+    Captions contain source metadata only; write your conversational reply
+    separately. delivery_pending means the album follows that final reply.
+    Do not call repeatedly for the same batch or claim more photos than the
+    returned prepared_count. This is explicit-use web retrieval, not generation.
     """
-    message = ctx.deps.message
-    settings = await _discord_guild_settings(message.guild) if message.guild is not None else await _discord_dm_settings(message.author)
-    if not settings.setu_enabled:
-        return DiscordWebImageResult(success=False, message="Image sending is disabled for this conversation.")
-    search_query = query.strip()
-    if not search_query:
-        return DiscordWebImageResult(success=False, message="Image search query is empty.")
-    r18_mode = settings.r18_mode if message.guild is not None else 0
-    if r18_mode == 0 and _contains_r18_keyword(search_query):
-        return DiscordWebImageResult(
-            success=False,
-            message="R18 web image search is disabled in this Discord server.",
-        )
+    from .web_media import search_and_send_web_images
 
-    try:
-        results = await _search_web_images(search_query)
-    except Exception as e:
-        logger.error(f"Discord web image search error: {e.__class__.__name__}: {e}")
-        return DiscordWebImageResult(success=False, message="Web image search failed.")
-
-    for result in results:
-        image_url = result.get("image") or result.get("thumbnail")
-        if not image_url:
-            continue
-        title = str(result.get("title") or search_query)
-        source_url = str(result.get("url") or image_url)
-        if r18_mode == 0 and _contains_r18_keyword(" ".join([title, source_url, image_url])):
-            continue
-        try:
-            downloaded = await _download_image_bytes(str(image_url))
-        except Exception as e:
-            logger.debug(f"Discord web image download skipped: {e.__class__.__name__}: {e}")
-            continue
-        if downloaded is None:
-            continue
-        data, content_type = downloaded
-        file = discord.File(io.BytesIO(data), filename=_image_filename(content_type))
-        embed = discord.Embed(
-            title=title[:256],
-            url=source_url,
-            description=f"Web image search: `{search_query[:120]}`",
-            color=0x8AC5FF,
-        )
-        embed.set_image(url=f"attachment://{file.filename}")
-        try:
-            await message.channel.send(embed=embed, file=file, reference=message)
-            ctx.deps.side_effects_started = True
-            ctx.deps.image_delivered = True
-        except discord.HTTPException as e:
-            logger.warning(f"Discord web image upload failed: {e}")
-            return DiscordWebImageResult(
-                success=False,
-                message="Discord could not upload the web image.",
-            )
-        return DiscordWebImageResult(
-            success=True,
-            title=title,
-            source_url=source_url,
-        )
-
-    return DiscordWebImageResult(
-        success=False,
-        message="Could not find a downloadable image result.",
-    )
+    return await search_and_send_web_images(ctx, query, count)
 
 async def send_discord_anime_photo(
     ctx: RunContext[DiscordContextDeps],
@@ -136,6 +72,10 @@ async def send_discord_anime_photo(
     count: int = 1,
 ) -> DiscordAnimePhotoResult:
     """Get and send an anime/Pixiv image to the current Discord chat.
+
+    This is the built-in anime illustration catalog, not a website scraper or a
+    real-person/cosplay library. For a named website/gallery/cosplayer, research
+    that actual source and use send_discord_web_media with its real photo URLs.
 
     Call this tool when the user naturally asks Waku to send/show/give an
     anime/Pixiv image, picture, photo, seg, ảnh, hình, or similar. The current

@@ -7,10 +7,12 @@ from .search import (
 )
 from .server import find_discord_channel, get_discord_server_info
 from .users import find_discord_user, mention_discord_user
+from .web_media import read_discord_web_page, send_discord_web_media
 
 __all__ = [
     "find_discord_channel", "find_discord_user", "get_discord_server_info",
     "mention_discord_user", "search_discord_group_memory", "search_discord_messages",
     "send_discord_anime_photo", "send_discord_reaction", "send_discord_web_image",
     "update_discord_group_memory",
+    "read_discord_web_page", "send_discord_web_media",
 ]

@@ -2,7 +2,7 @@ import mimetypes
 import re
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 import aiohttp
 from pydantic_ai import ModelRetry, RunContext
@@ -15,6 +15,7 @@ from waku.common.safe_http import (
     safe_download,
 )
 from waku.common.utils import is_explicit_reply
+from waku.common.web_content import web_page_text as _response_text
 from waku.config import app_config
 from waku.database import get_chat_by_id
 from waku.logger import logger
@@ -71,69 +72,6 @@ def _is_text_media_type(media_type: str | None) -> bool:
         "application/toml",
         "application/x-www-form-urlencoded",
     }
-
-
-def _response_text(raw: bytes, url: str = "") -> str:
-    """Keep navigable links and image sources when reducing HTML for the agent."""
-    try:
-        from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup(raw, "html.parser")
-        if not soup.find():
-            return raw.decode("utf-8", errors="replace")
-
-        def web_url(value: object) -> str | None:
-            if not isinstance(value, str) or not value.strip():
-                return None
-            resolved = urljoin(url, value.strip())
-            return resolved if urlparse(resolved).scheme in ("http", "https") else None
-
-        # A relative image/link is resolved against the document's declared base.
-        base = soup.find("base", href=True)
-        if base is not None:
-            url = web_url(base.get("href")) or url
-        for tag in soup(["script", "style", "nav", "footer", "aside"]):
-            tag.decompose()
-
-        for tag in soup.find_all(["img", "source"]):
-            if tag.name == "source" and tag.find_parent("picture") is None:
-                continue
-            sources: list[str] = []
-            for attr in ("data-src", "data-lazy-src", "data-original", "src"):
-                source = web_url(tag.get(attr))
-                if source and source not in sources:
-                    sources.append(source)
-            for attr in ("data-srcset", "srcset"):
-                value = tag.get(attr)
-                if isinstance(value, str):
-                    for candidate in value.split(","):
-                        parts = candidate.strip().split()
-                        source = web_url(parts[0]) if parts else None
-                        if source and source not in sources:
-                            sources.append(source)
-            label = str(tag.get("alt") or "image").replace("\n", " ")
-            tag.replace_with(
-                "\n" + "\n".join(f"![{label}]({src})" for src in sources) + "\n"
-            )
-
-        for tag in soup.find_all("a", href=True):
-            target = web_url(tag.get("href"))
-            if target:
-                label = tag.get_text(" ", strip=True) or target
-                tag.replace_with(f"[{label}]({target})")
-
-        # Preview metadata sometimes contains the only publicly exposed image.
-        for tag in soup.find_all("meta"):
-            if (
-                tag.get("property") in ("og:image", "og:image:url")
-                or tag.get("name") == "twitter:image"
-            ):
-                source = web_url(tag.get("content"))
-                if source:
-                    tag.replace_with(f"\n![preview image]({source})\n")
-        return soup.get_text("\n", strip=True)
-    except Exception:
-        return raw.decode("utf-8", errors="replace")
 
 
 async def _fetch_http(url: str) -> WebFetchResult:
