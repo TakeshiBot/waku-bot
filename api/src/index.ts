@@ -3,6 +3,8 @@ import { choose, image, maxBytes, present, presentMany, remove, save, update } f
 import { processJobs, refreshAnalysisReceipt, webhook } from './telegram';
 import {enqueueAnalysis,processAnalysis} from './analysis';
 import { HttpError, type Env, type ImageRow } from './types';
+import {authorize,sessionCookie,clearSession} from './auth';
+import {acquireSlot,releaseSlot,continueWork} from './queue';
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 function integer(value:string|null, fallback:number, max:number) {
@@ -24,6 +26,21 @@ function response(data:unknown, status=200) {
 async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Response> {
   const url=new URL(request.url), path=url.pathname;
   const base=(env.PUBLIC_BASE_URL || url.origin).replace(/\/$/,'');
+  if (request.method==='GET' && (path==='/' || /^\/assets\/[\w.-]+$/.test(path)) && env.ASSETS) {
+    const result=await env.ASSETS.fetch(request);
+    const headers=new Headers(result.headers);
+    headers.set('content-security-policy',"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; font-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+    headers.set('x-content-type-options','nosniff');headers.set('referrer-policy','no-referrer');
+    headers.set('cache-control',path==='/'?'no-store':'public, max-age=300');
+    return new Response(result.body,{status:result.status,headers});
+  }
+  if (path==='/internal/jobs' && request.method==='POST') {
+    if (!equalSecret(request.headers.get('authorization') || '',`Bearer ${env.API_KEY}`) || !env.API_KEY) throw new HttpError(401,'unauthorized','Không có quyền.');
+    const task=await json(request),hop=Number(task.hop);
+    if (!['ai','upload'].includes(String(task.kind)) || !Number.isInteger(hop) || hop<1 || hop>8) throw new HttpError(400,'invalid_job','Tác vụ không hợp lệ.');
+    ctx.waitUntil(task.kind==='ai'?processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job),hop):processJobs(env,1,undefined,true,hop));
+    return response({accepted:true});
+  }
   if (path==='/health' && request.method==='GET') return response({ok:true,service:'waku-api'});
   if (path==='/telegram/webhook' && request.method==='POST') return webhook(request,env,ctx);
   if (path.startsWith('/media/') && ['GET','HEAD'].includes(request.method)) {
@@ -46,8 +63,23 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     return new Response(object.body,{headers});
   }
   if (!path.startsWith('/v1/')) throw new HttpError(404,'not_found','Không tìm thấy đường dẫn.');
-  if (!env.API_KEY) throw new HttpError(503,'not_configured','API chưa được cấu hình.');
-  if (!equalSecret(request.headers.get('authorization') || '',`Bearer ${env.API_KEY}`)) throw new HttpError(401,'unauthorized','API key không hợp lệ.');
+  await authorize(request,env);
+  if (path==='/v1/session') {
+    if (request.method==='POST') return Response.json({ok:true},{headers:{'set-cookie':await sessionCookie(env),'cache-control':'no-store'}});
+    if (request.method==='GET') return response({ok:true,max_image_mb:maxBytes(env)/1024/1024,concurrency:2});
+    if (request.method==='DELETE') return Response.json({ok:true},{headers:{'set-cookie':clearSession(),'cache-control':'no-store'}});
+  }
+  if (path==='/v1/jobs/drain' && request.method==='POST') {
+    ctx.waitUntil(Promise.all([continueWork(env,'upload',0),continueWork(env,'ai',0)]));
+    return response({accepted:true});
+  }
+  if (path==='/v1/stats' && request.method==='GET') {
+    const images=await env.DB.prepare(`SELECT COUNT(*) total,COALESCE(SUM(size),0) bytes,
+      COALESCE(SUM(rating='safe'),0) safe,COALESCE(SUM(rating='r18'),0) r18,COALESCE(SUM(rating='unknown'),0) unknown FROM images`).first();
+    const ai=await env.DB.prepare("SELECT COUNT(*) pending FROM image_analysis WHERE status IN ('pending','running')").first();
+    const uploads=await env.DB.prepare("SELECT COUNT(*) pending FROM telegram_jobs WHERE status IN ('pending','running')").first();
+    return response({images,ai_pending:ai?.pending || 0,uploads_pending:uploads?.pending || 0});
+  }
   if (path==='/v1/images/random' && request.method==='GET') {
     const exclude=(url.searchParams.get('exclude') || '').split(',').filter(Boolean);
     if (exclude.length>100 || exclude.some(x=>!uuid.test(x))) throw new HttpError(400,'invalid_exclude','exclude: tối đa 100 ID ảnh.');
@@ -64,12 +96,28 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
       try {cursor=JSON.parse(atob(before));} catch {throw new HttpError(400,'invalid_cursor','Cursor không hợp lệ.');}
       if (!cursor || !Number.isSafeInteger(cursor.time) || !uuid.test(cursor.id)) throw new HttpError(400,'invalid_cursor','Cursor không hợp lệ.');
     }
-    const rows=await env.DB.prepare(`SELECT * FROM images ${cursor?'WHERE created_at<? OR (created_at=? AND id<?)':''} ORDER BY created_at DESC,id DESC LIMIT ?`)
-      .bind(...(cursor?[cursor.time,cursor.time,cursor.id]:[]),limit+1).all<ImageRow>();
+    const filters:string[]=[],params:(string|number)[]=[];
+    const rating=url.searchParams.get('rating');
+    if (rating) {
+      if (!['safe','r18','unknown'].includes(rating)) throw new HttpError(400,'invalid_rating','Phân loại không hợp lệ.');
+      filters.push('i.rating=?');params.push(rating);
+    }
+    const query=(url.searchParams.get('q') || '').trim();
+    if (query.length>100) throw new HttpError(400,'invalid_query','Từ khóa tối đa 100 ký tự.');
+    if (query) {
+      const escaped='%'+query.toLowerCase().replace(/[\\%_]/g,'\\$&')+'%';
+      filters.push("(LOWER(i.title) LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM image_tags t WHERE t.image_id=i.id AND t.tag LIKE ? ESCAPE '\\'))");params.push(escaped,escaped);
+    }
+    if (cursor) {filters.push('(i.created_at<? OR (i.created_at=? AND i.id<?))');params.push(cursor.time,cursor.time,cursor.id);}
+    const rows=await env.DB.prepare(`SELECT i.* FROM images i ${filters.length?'WHERE '+filters.join(' AND '):''} ORDER BY i.created_at DESC,i.id DESC LIMIT ?`)
+      .bind(...params,limit+1).all<ImageRow>();
     const page=rows.results.slice(0,limit), last=page.at(-1);
     return response({images:await presentMany(env,page,base),next:rows.results.length>limit && last?btoa(JSON.stringify({time:last.created_at,id:last.id})):null});
   }
   if (path==='/v1/images' && request.method==='POST') {
+    const slot=await acquireSlot(env,'upload');
+    if (!slot) return Response.json({error:{code:'busy',message:'Đang xử lý 2 ảnh. File này sẽ được thử lại sau.'}},{status:429,headers:{'retry-after':'2','cache-control':'no-store'}});
+    try {
     let bytes:ArrayBuffer, info, manual=false;
     if (request.headers.get('content-type')?.startsWith('multipart/form-data')) {
       const body=await boundedBody(request,maxBytes(env)+65536);
@@ -92,6 +140,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     await enqueueAnalysis(env,result.row.id,manual);
     ctx.waitUntil(processAnalysis(env,result.row.id,job=>refreshAnalysisReceipt(env,job)));
     return response({image:await present(env,result.row,base),duplicate:result.duplicate},result.duplicate?200:201);
+    } finally {await releaseSlot(env,slot);ctx.waitUntil(continueWork(env,'upload'));}
   }
   const match=path.match(/^\/v1\/images\/([^/]+)$/);
   if (match && uuid.test(match[1])) {
@@ -105,6 +154,15 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
       return response({image:await present(env,changed,base)});
     }
     if (request.method==='DELETE') {await remove(env,id); return response({deleted:true,id});}
+  }
+  const analyze=path.match(/^\/v1\/images\/([a-f0-9-]{36})\/analyze$/);
+  if (analyze && request.method==='POST') {
+    await image(env,analyze[1]);
+    const {aiEnabled}=await import('./analysis');
+    if (!aiEnabled(env)) throw new HttpError(503,'ai_not_configured','Chưa cấu hình API AI.');
+    await enqueueAnalysis(env,analyze[1],false,true);
+    ctx.waitUntil(processAnalysis(env,analyze[1],job=>refreshAnalysisReceipt(env,job)));
+    return response({queued:true});
   }
   throw new HttpError(404,'not_found','Không tìm thấy đường dẫn.');
 }

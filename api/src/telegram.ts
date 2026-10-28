@@ -2,6 +2,7 @@ import { boundedBody, captionMetadata, equalSecret, fetchImage, owner } from './
 import { cleanupObjects, image, maxBytes, present, remove, save, update as updateMetadata } from './store';
 import {aiEnabled,enqueueAnalysis,processAnalysis,type AnalysisJob} from './analysis';
 import { HttpError, type Env, type TelegramJob } from './types';
+import {acquireSlot,releaseSlot,continueWork} from './queue';
 
 interface TgFile {file_id:string; file_size?:number;}
 interface TgMessage {message_id:number; chat:{id:number;type:string}; from?:{id:number}; text?:string; caption?:string; photo?:TgFile[]; document?:TgFile & {mime_type?:string};reply_to_message?:TgMessage;}
@@ -11,6 +12,18 @@ class TelegramError extends Error {
 }
 
 async function tg<T>(env:Env, method:string, payload:unknown):Promise<T> {
+  if (['sendPhoto','sendMessage'].includes(method)) {
+    const chat=(payload as {chat_id?:number}).chat_id;
+    if (chat) {
+      const now=Date.now();
+      const reserved=await env.DB.prepare(`INSERT INTO telegram_send_times(chat_id,next_send) VALUES (?,?)
+        ON CONFLICT(chat_id) DO UPDATE SET next_send=MAX(next_send,?)+1100 RETURNING next_send`)
+        .bind(chat,now+1100,now).first<{next_send:number}>();
+      const delay=Math.max(0,(reserved?.next_send || now)-1100-now);
+      if (delay>10000) throw new TelegramError(429,Math.ceil(delay/1000));
+      if (delay) await new Promise(resolve=>setTimeout(resolve,delay));
+    }
+  }
   const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, {
     method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(payload), signal:AbortSignal.timeout(15000),
   });
@@ -96,7 +109,7 @@ async function receipt(env:Env, job:TelegramJob, message:TgMessage, id:string, b
     .bind(message.chat.id,sent.message_id,photo?1:0,id).run();
 }
 
-async function handle(env:Env, job:TelegramJob,analyze:boolean) {
+async function handle(env:Env, job:TelegramJob,analyze:boolean,hop=0) {
   const {update,base} = JSON.parse(job.payload) as {update:Update;base:string};
   const callback = update.callback_query;
   const message = callback?.message ?? update.message!;
@@ -119,7 +132,7 @@ async function handle(env:Env, job:TelegramJob,analyze:boolean) {
       await env.DB.prepare('UPDATE image_analysis SET chat_id=?,message_id=?,photo=? WHERE image_id=?')
         .bind(message.chat.id,message.message_id,message.photo?1:0,id).run();
       await tg(env,'answerCallbackQuery',{callback_query_id:callback.id,text:'Đã gửi ảnh cho AI xem.'});
-      await processAnalysis(env,id,pending=>refreshAnalysisReceipt(env,pending));
+      await processAnalysis(env,id,pending=>refreshAnalysisReceipt(env,pending),hop);
     } else {
       await image(env,id);
       await env.DB.prepare('UPDATE images SET rating=?,metadata_version=metadata_version+1 WHERE id=?').bind(match[2],id).run();
@@ -158,7 +171,7 @@ async function handle(env:Env, job:TelegramJob,analyze:boolean) {
   }
   if (job.image_id) {
     if (!job.notified) await receipt(env,job,message,job.image_id,base,false);
-    if (analyze) await processAnalysis(env,job.image_id,pending=>refreshAnalysisReceipt(env,pending));
+    if (analyze) await processAnalysis(env,job.image_id,pending=>refreshAnalysisReceipt(env,pending),hop);
     return;
   }
   const file = message.photo?.at(-1) ?? message.document;
@@ -182,13 +195,20 @@ async function handle(env:Env, job:TelegramJob,analyze:boolean) {
   await enqueueAnalysis(env,saved.row.id,/#manual(?:\s|$)/i.test(message.caption || message.text || ''));
   await env.DB.prepare('UPDATE telegram_jobs SET image_id=? WHERE id=?').bind(saved.row.id,job.id).run();
   await receipt(env,job,message,saved.row.id,base,saved.duplicate);
-  if (analyze) await processAnalysis(env,saved.row.id,pending=>refreshAnalysisReceipt(env,pending));
+  if (analyze) await processAnalysis(env,saved.row.id,pending=>refreshAnalysisReceipt(env,pending),hop);
 }
 
 // Recover one upload per cron invocation to stay below the Free plan's query
 // budget even when an image has the maximum number of tags. Normal webhooks
 // each process their own job immediately and do not wait for this recovery.
-export async function processJobs(env:Env, limit=1, only?:string,analyze=true) {
+export async function processJobs(env:Env, limit=1, only?:string,analyze=true,hop=0) {
+  const slot=await acquireSlot(env,'upload');
+  if (!slot) return;
+  try {await runJobs(env,limit,only,analyze,hop);}
+  finally {await releaseSlot(env,slot);await continueWork(env,'upload',hop);}
+}
+
+async function runJobs(env:Env, limit=1, only?:string,analyze=true,hop=0) {
   const now=Date.now();
   const rows = await env.DB.prepare(`SELECT id FROM telegram_jobs WHERE
     ((status='pending' AND next_attempt<=?) OR (status='running' AND lease_until<?))
@@ -199,7 +219,7 @@ export async function processJobs(env:Env, limit=1, only?:string,analyze=true) {
       .bind(now+120000,entry.id,now,now).first<TelegramJob>();
     if (!job) continue;
     try {
-      await handle(env,job,analyze);
+      await handle(env,job,analyze,hop);
       await env.DB.prepare('UPDATE telegram_jobs SET status=\'done\',lease_until=0 WHERE id=?').bind(job.id).run();
     } catch (error) {
       // Never log exception text: fetch errors may contain the bot token URL.

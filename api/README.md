@@ -6,6 +6,24 @@ Kho ảnh riêng chạy trên Cloudflare Workers + R2 + D1. Bot Telegram nhận 
 
 Mở DM của bot upload bằng tài khoản đã cấp quyền. Gửi một hoặc nhiều ảnh; mỗi ảnh được xử lý riêng. Gửi dạng **file ảnh** nếu muốn giữ nguyên chất lượng; ảnh gửi dạng Photo được lưu theo bản Telegram đã nén.
 
+Có thể chọn cả đợt nhiều ảnh/file, kể cả khi Telegram tách thành nhiều album. Bot lưu từng update vào hàng đợi D1; toàn hệ thống giới hạn **2 upload và 2 lượt AI đồng thời**, không phải 2 lượt cho mỗi Worker. Phản hồi mới trong cùng chat được giãn ít nhất khoảng 1,1 giây để tránh gửi dồn. Mỗi file được lưu độc lập, file lỗi không chặn cả đợt. Caption chỉ đi cùng file mà Telegram gắn caption đó; muốn áp dụng tag chung cho cả đợt, dùng trang web bên dưới.
+
+## Trang quản lý trên web
+
+Mở URL gốc của Worker, ví dụ `https://waku-api.your-account.workers.dev/`. Trang được phục vụ ngay trên Worker hiện có, không cần thêm hosting, domain hoặc dịch vụ khác.
+
+Đăng nhập bằng `API_KEY` trong file local `api/.secrets.json` (không phải key AI hoặc token Telegram). Key không được ghi vào HTML, URL hoặc localStorage. Sau khi xác thực, trình duyệt dùng cookie HttpOnly/Secure, hiệu lực 8 giờ. Đăng xuất để xóa phiên trên trình duyệt.
+
+- Chọn/kéo thả nhiều ảnh, hoặc dán nhiều URL ảnh trực tiếp (mỗi dòng một link).
+- Chọn tag chung, phân loại và bật/tắt AI cho đợt upload; mặc định dùng AI. Các lựa chọn này được chốt khi bấm bắt đầu.
+- Trình duyệt tải tối đa **2 file mỗi lượt**. Có tiến độ từng file, tạm dừng sau các file đang chạy, bỏ file chờ và thử lại mục lỗi. Khi máy chủ bận, file sẽ chờ rồi thử lại.
+- Giữ tab mở trong lúc upload. Sau khi ảnh được lưu, AI chạy nền và tiếp tục dù đóng trang; các file vẫn còn chờ ở trình duyệt chưa được gửi lên máy chủ.
+- Thư viện có tìm theo tên/tag, lọc An toàn/R18/chưa phân loại, phân trang, sửa tên/tag/nguồn, đổi phân loại, chạy lại AI, sao chép link và xóa ảnh.
+- Ảnh R18 được làm mờ trong thư viện, có tùy chọn hiện ảnh; mở chi tiết để xem và chỉnh sửa.
+- Web và bot Telegram dùng chung dữ liệu, không có hai kho ảnh riêng.
+
+Hàng đợi D1 có khóa lease theo từng slot, tiếp tục xử lý theo chuỗi ngắn để không vượt giới hạn gọi Worker lồng nhau. Cron mỗi phút khôi phục các tác vụ bị gián đoạn; khi đang mở web, trang cũng đánh thức hàng đợi. Không cam kết tốc độ cố định cho đợt lớn vì còn phụ thuộc Telegram, provider AI và hạn mức Cloudflare.
+
 Caption ví dụ:
 
 ```text
@@ -97,15 +115,20 @@ Các đường dẫn `/v1/*` cần header `Authorization: Bearer API_KEY`. Lấy
 | Method | Đường dẫn | Chức năng |
 | --- | --- | --- |
 | GET | `/health` | Kiểm tra Worker đang phản hồi |
+| POST/GET/DELETE | `/v1/session` | Đăng nhập, kiểm tra hoặc xóa cookie phiên web |
+| GET | `/v1/stats` | Dung lượng, số ảnh và tác vụ đang chờ |
 | POST | `/v1/images` | Upload multipart `file`, hoặc JSON chứa `url` |
-| GET | `/v1/images?limit=20&before=CURSOR` | Danh sách, tối đa 100/trang; `next` là cursor trang kế |
+| GET | `/v1/images?limit=20&before=CURSOR&q=maid&rating=safe` | Danh sách/tìm tên và tag/lọc phân loại, tối đa 100/trang; `next` là cursor trang kế |
 | GET | `/v1/images/random?count=10&rating=safe&tags=cat,cute` | Lấy tối đa 10 ảnh, các tag kết hợp AND |
 | GET | `/v1/images/ID` | Xem metadata |
 | PATCH | `/v1/images/ID` | Sửa các trường `title`, `tags`, `rating`, `source_url` |
 | DELETE | `/v1/images/ID` | Xóa ảnh |
+| POST | `/v1/images/ID/analyze` | Đưa ảnh vào hàng đợi AI để phân tích lại |
 | GET/HEAD | `/media/ID` | File ảnh gốc, không cần API key |
 
 `rating` của random: `safe` (mặc định), `r18`, `mixed`. Ảnh `unknown` không xuất hiện trong random. Kết quả ít hơn `count` nếu kho không đủ ảnh phù hợp; không lặp ID trong cùng lượt. Truyền `exclude=ID1,ID2,...` để tránh lặp giữa các lượt; tổng số tag và ID loại trừ tối đa 96. Bot gọi API cần lưu lịch sử ID đã gửi.
+
+Một POST upload chỉ nhận một file/URL. Muốn upload nhiều ảnh qua API, gọi riêng từng ảnh với tối đa 2 request đồng thời; HTTP 429 có `Retry-After` khi slot upload đang bận. Web đã tự xử lý hàng đợi và thử lại, không cần gộp cả đợt vào một request lớn.
 
 Upload:
 

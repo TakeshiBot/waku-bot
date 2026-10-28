@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f6f5f1"><meta name="description" content="Kho ảnh riêng của Waku. Tải nhiều ảnh, tự gắn tag và quản lý thư viện.">
+  <title>Kho ảnh · Waku</title><link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/app.js"></script>
+</head>
+<body>
+  <svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 6-6 4 4 3-3 5 5"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3ZM20 2v4m-2-2h4"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="m10 13 4-4m-6 7-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 2 1-1a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0" transform="translate(2 1)"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  </defs></svg>
+
+  <section class="login" id="login">
+    <div class="login-art" aria-hidden="true"><div class="art-frame art-one"></div><div class="art-frame art-two"></div><div class="art-frame art-three"><svg><use href="#i-image"/></svg></div><span class="art-spark">✦</span><p>MỘT NƠI CHO MỌI TẤM ẢNH.</p></div>
+    <div class="login-main"><a class="brand" href="/"><span class="brand-mark">w.</span><span>waku<span class="brand-sub">IMAGE LIBRARY</span></span></a>
+      <form id="login-form" class="login-form"><span class="eyebrow">THƯ VIỆN CÁ NHÂN</span><h1>Kho ảnh<br>của bạn.</h1><p>Tải lên, tìm lại và giữ mọi thứ ngăn nắp.<br>AI lo phần gắn tag, bạn chọn những gì mình thích.</p>
+        <label for="api-key">API key</label><input id="api-key" name="key" type="password" autocomplete="off" spellcheck="false" placeholder="Nhập key để mở thư viện" required>
+        <button class="primary login-submit" type="submit">Mở thư viện <svg><use href="#i-arrow"/></svg></button>
+        <p class="login-note">Key chỉ dùng để đăng nhập. Trình duyệt giữ phiên trong 8 giờ.</p><p id="login-error" class="error" role="alert"></p>
+      </form><span class="login-footer">WAKU LIBRARY <span>Ảnh của bạn. Không gian của bạn.</span></span>
+    </div>
+  </section>
+
+  <div class="app" id="app" hidden>
+    <aside class="sidebar"><a class="brand" href="/"><span class="brand-mark">w.</span><span>waku<span class="brand-sub">IMAGE LIBRARY</span></span></a>
+      <div class="nav-label">KHÔNG GIAN CỦA BẠN</div><nav><button class="nav-item selected" id="nav-library"><svg><use href="#i-grid"/></svg>Kho ảnh <span id="nav-count">0</span></button><button class="nav-item" id="nav-upload"><svg><use href="#i-upload"/></svg>Tải ảnh lên</button></nav>
+      <div class="sidebar-bottom"><div class="connection"><i></i> Thư viện riêng</div><button class="logout" id="logout">Đăng xuất <span>↗</span></button><div class="sidebar-foot">WAKU API <span>v1</span></div></div>
+    </aside>
+    <main class="main">
+      <header class="page-header"><div><span class="eyebrow">THƯ VIỆN CÁ NHÂN</span><h1>Kho ảnh<span class="heading-dot">.</span></h1><p>Mọi tấm ảnh, một nơi để tìm lại.</p></div><button class="primary" id="upload-shortcut"><svg><use href="#i-upload"/></svg>Tải ảnh lên</button></header>
+      <section class="stats" aria-label="Thống kê"><div class="stat"><span>Tổng ảnh</span><strong id="stat-total">—</strong><small>trong thư viện</small></div><div class="stat"><span>Dung lượng</span><strong id="stat-size">—</strong><small>đã lưu trữ</small></div><div class="stat"><span>Đang xử lý</span><strong id="stat-pending">—</strong><small id="stat-pending-note">AI và hàng đợi upload</small></div></section>
+      <div class="workspace">
+        <section class="library"><div class="library-top"><h2>Thư viện <span id="visible-count"></span></h2><label class="reveal-option"><input type="checkbox" id="reveal-r18">Hiện ảnh R18</label></div>
+          <div class="search"><svg><use href="#i-search"/></svg><input id="search" type="search" placeholder="Tìm theo tên hoặc tag…" aria-label="Tìm theo tên hoặc tag" maxlength="100"></div>
+          <div class="filters" role="group" aria-label="Lọc phân loại"><button class="active" data-rating="">Tất cả</button><button data-rating="safe">An toàn</button><button data-rating="r18">R18</button><button data-rating="unknown">Chờ phân loại</button><button class="refresh" id="refresh" aria-label="Làm mới thư viện">↻</button></div>
+          <div class="gallery" id="gallery" aria-live="polite"></div>
+          <div class="empty" id="empty" hidden><div class="empty-icon"><svg><use href="#i-image"/></svg></div><h3>Một khởi đầu mới.</h3><p>Thêm những tấm ảnh đầu tiên.<br>Phần sắp xếp, cứ để Waku lo.</p><button id="empty-upload" class="secondary">Chọn ảnh để tải lên <span>↗</span></button></div>
+          <p class="list-status" id="list-status" role="status"></p><button class="secondary load-more" id="load-more" hidden>Xem thêm ảnh ↓</button>
+        </section>
+
+        <aside class="upload-panel" id="upload-panel"><div class="panel-heading"><div><span class="eyebrow">THÊM VÀO BỘ SƯU TẬP</span><h2>Tải ảnh lên</h2></div><span class="small-mark">↗</span></div>
+          <div class="dropzone" id="dropzone"><div class="upload-icon"><svg><use href="#i-upload"/></svg></div><strong>Thả ảnh vào đây</strong><span>hoặc chọn nhiều file từ máy</span><button class="secondary" id="choose-files">Chọn ảnh</button><small id="upload-limits">JPG, PNG, WebP, GIF, AVIF · tối đa 10 MB/ảnh</small><input id="file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif,.jpg,.jpeg,.png,.webp,.gif,.avif" multiple hidden></div>
+          <details class="url-import"><summary><svg><use href="#i-link"/></svg>Thêm từ link ảnh <span>+</span></summary><textarea id="image-urls" placeholder="Dán link ảnh trực tiếp, mỗi link một dòng" rows="3" aria-label="Link ảnh"></textarea><button class="secondary" id="add-urls">Thêm vào hàng đợi</button></details>
+          <div class="upload-options"><label class="toggle-row" for="use-ai"><span><svg><use href="#i-spark"/></svg>AI tự gắn tag<small>Tên ảnh, tag và phân loại</small></span><input id="use-ai" type="checkbox" checked></label><div class="field-row"><label>Phân loại<select id="upload-rating"><option value="unknown">Để AI chọn</option><option value="safe">An toàn</option><option value="r18">R18</option></select></label></div><label class="field">Tag chung <span>tùy chọn</span><input id="upload-tags" placeholder="maid, cat_ears, anime" maxlength="2000"></label><details class="source-option"><summary>Thêm link nguồn</summary><input id="upload-source" type="url" placeholder="https://…" aria-label="Link nguồn"></details></div>
+          <div class="queue-heading"><h3>Hàng đợi <span id="queue-count">0</span></h3><button class="text-button" id="clear-done">Dọn mục xong</button></div><div class="queue-list" id="queue-list"><p class="queue-empty">Ảnh bạn chọn sẽ xuất hiện ở đây.</p></div>
+          <div class="queue-progress" id="queue-progress" hidden><span id="queue-summary"></span><progress id="batch-progress" value="0" max="1"></progress></div>
+          <div class="queue-actions"><button class="primary" id="start-upload" disabled>Bắt đầu tải lên <svg><use href="#i-arrow"/></svg></button><button class="secondary" id="pause-upload" hidden>Tạm dừng</button><button class="text-button" id="retry-errors" hidden>Thử lại mục lỗi</button></div><p class="panel-note"><i></i> 2 ảnh mỗi lượt. File lỗi không làm dừng cả đợt.</p>
+        </aside>
+      </div>
+      <footer class="page-footer"><span>MỘT CHÚT NGĂN NẮP, THÊM NHIỀU CẢM HỨNG.</span><span>waku / image library</span></footer>
+    </main>
+  </div>
+  <dialog class="editor" id="editor"><button type="button" class="icon-button editor-close" id="editor-close" aria-label="Đóng"><svg><use href="#i-close"/></svg></button><div class="editor-image"><img id="edit-preview" alt="Ảnh đang chỉnh sửa"></div><form id="edit-form"><span class="eyebrow">CHI TIẾT ẢNH</span><h2>Gọn gàng theo ý bạn.</h2><label class="field">Tên ảnh<input id="edit-title" maxlength="200"></label><label class="field">Tag <span>cách nhau bằng dấu phẩy</span><textarea id="edit-tags" rows="3"></textarea></label><label class="field">Phân loại<select id="edit-rating"><option value="unknown">Chưa phân loại</option><option value="safe">An toàn</option><option value="r18">R18</option></select></label><label class="field">Link nguồn<input id="edit-source" type="url" placeholder="https://…"></label><div class="edit-meta" id="edit-meta"></div><div class="edit-actions"><button class="primary" id="save-image" type="submit">Lưu thay đổi</button><button class="secondary" id="analyze-image" type="button">✦ AI gắn tag</button></div><div class="edit-bottom"><button class="text-button" type="button" id="copy-link">Sao chép link ↗</button><button class="danger-link" type="button" id="delete-image">Xóa ảnh</button></div></form></dialog>
+  <dialog class="confirm-dialog" id="confirm-delete"><h2>Xóa ảnh này?</h2><p>Ảnh và tag sẽ được xóa khỏi thư viện.</p><div><button class="secondary" id="cancel-delete">Giữ lại</button><button class="danger" id="confirm-delete-button">Xóa ảnh</button></div></dialog>
+  <div class="toast" id="toast" role="status" hidden></div><noscript>Vui lòng bật JavaScript để dùng thư viện ảnh.</noscript>
+</body></html>

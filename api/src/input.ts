@@ -32,7 +32,7 @@ export function publicUrl(raw: unknown): URL {
 }
 
 export function tags(value: unknown): string[] {
-  const values = typeof value === 'string' ? value.split(',') : value;
+  const values = typeof value === 'string' ? (value.trim()?value.split(','):[]) : value;
   if (values === undefined || values === null) return [];
   if (!Array.isArray(values) || values.length > 30) throw new HttpError(400, 'invalid_tags', 'Tối đa 30 tag.');
   return [...new Set(values.map(x => {

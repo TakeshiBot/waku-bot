@@ -1,6 +1,7 @@
 import {boundedBody,metadata} from './input';
 import {image,present} from './store';
 import type {Env,Metadata,Rating} from './types';
+import {acquireSlot,releaseSlot,continueWork} from './queue';
 
 export function aiEnabled(env:Env) {return Boolean(env.AI_BASE_URL && env.AI_API_KEY && env.AI_MODEL);}
 
@@ -72,8 +73,15 @@ async function infer(env:Env,url:string,info:Metadata):Promise<Metadata> {
 export interface AnalysisJob {image_id:string;attempts:number;lease_until:number;chat_id:number|null;message_id:number|null;photo:number;}
 
 // The callback edits an existing receipt; no second chat message is sent.
-export async function processAnalysis(env:Env,only?:string,notify?:(job:AnalysisJob)=>Promise<void>):Promise<boolean> {
+export async function processAnalysis(env:Env,only?:string,notify?:(job:AnalysisJob)=>Promise<void>,hop=0):Promise<boolean> {
   if (!aiEnabled(env)) return false;
+  const slot=await acquireSlot(env,'ai');
+  if (!slot) return false;
+  try {return await analyzeOne(env,only,notify);}
+  finally {await releaseSlot(env,slot);await continueWork(env,'ai',hop);}
+}
+
+async function analyzeOne(env:Env,only?:string,notify?:(job:AnalysisJob)=>Promise<void>):Promise<boolean> {
   const now=Date.now();
   const job=await env.DB.prepare(`UPDATE image_analysis SET status='running',attempts=attempts+1,lease_until=?
     WHERE image_id=(SELECT image_id FROM image_analysis WHERE

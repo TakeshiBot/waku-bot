@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {Miniflare,convertV4MiniflareOptions,Response as MockResponse} from 'miniflare';
 import {captionMetadata,publicUrl} from '../src/input.ts';
+import {acquireSlot,releaseSlot} from '../src/queue.ts';
 
 // Real D1/R2 bindings and the bundled Worker; no production credentials/network.
 let mf:Miniflare;
@@ -17,19 +18,20 @@ before(async()=>{
     bindings:{API_KEY:key,TELEGRAM_WEBHOOK_SECRET:secret,TELEGRAM_BOT_TOKEN:'123456789:test',OWNER_IDS:'101',PUBLIC_BASE_URL:'https://images.example.com',MAX_IMAGE_MB:'1'},
     outboundService:async(request:Request)=>{
       const url=new URL(request.url);
+      if (url.hostname==='images.example.com' && url.pathname==='/internal/jobs') return mf.dispatchFetch(url.href,{method:'POST',headers:Object.fromEntries(request.headers),body:await request.text()});
       if (url.hostname==='cdn.example.com') {
         if (url.pathname==='/redirect') return new MockResponse(null,{status:302,headers:{location:'http://127.0.0.1/private'}});
         return new MockResponse(png,{headers:{'content-type':'image/png'}});
       }
       assert.equal(url.hostname,'api.telegram.org','No external requests allowed in tests');
-      if (url.pathname.includes('/file/bot')) return new MockResponse(png);
+      if (url.pathname.includes('/file/bot')) return new MockResponse(url.pathname.includes('/bulk-')?Buffer.concat([png,Buffer.from(url.pathname)]):png);
       const method=url.pathname.split('/').at(-1)!;
       const body=await request.json();sent.push({method,body});
-      return MockResponse.json({ok:true,result:method==='getFile'?{file_path:'photos/test.png'}:{message_id:100}});
+      return MockResponse.json({ok:true,result:method==='getFile'?{file_path:`photos/${String(body.file_id).startsWith('bulk-')?body.file_id:'test'}.png`}:{message_id:100}});
     },
   }));
   const db=await mf.getD1Database('DB');
-  for (const name of ['0001_initial.sql','0002_ai_tags.sql']) {
+  for (const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql']) {
     const migration=await readFile(`migrations/${name}`,'utf8');
     await db.batch(migration.split(';').map(s=>s.trim()).filter(Boolean).map(sql=>db.prepare(sql)));
   }
@@ -80,6 +82,29 @@ test('private API, webhook secret, owner and DM boundaries',async()=>{
   assert.equal((await db.prepare('SELECT COUNT(*) n FROM telegram_jobs').first())?.n,0);
 });
 
+test('browser sessions use HttpOnly cookies, reject cross-origin writes and expire on logout',async()=>{
+  const login=await call('/v1/session','POST');
+  assert.equal(login.status,200);
+  const cookie=login.headers.get('set-cookie')!;
+  assert.match(cookie,/HttpOnly/);assert.match(cookie,/Secure/);assert.match(cookie,/SameSite=Strict/);
+  const session=cookie.split(';')[0];
+  const read=await mf.dispatchFetch('https://images.example.com/v1/stats',{headers:{cookie:session}});assert.equal(read.status,200);
+  const denied=await mf.dispatchFetch('https://images.example.com/v1/session',{method:'DELETE',headers:{cookie:session,origin:'https://evil.example.com'}});assert.equal(denied.status,403);
+  const logout=await mf.dispatchFetch('https://images.example.com/v1/session',{method:'DELETE',headers:{cookie:session,origin:'https://images.example.com'}});assert.equal(logout.status,200);assert.match(logout.headers.get('set-cookie')!,/Max-Age=0/);
+  const tampered=await mf.dispatchFetch('https://images.example.com/v1/stats',{headers:{cookie:session+'x'}});assert.equal(tampered.status,401);
+  assert.equal((await mf.dispatchFetch('https://images.example.com/internal/jobs',{method:'POST',body:'{}'})).status,401);
+});
+
+test('global upload semaphore admits two jobs, rejects excess and can recover an expired lease',async()=>{
+  const db=await mf.getD1Database('DB'),env={DB:db} as any;
+  const claims=await Promise.all([acquireSlot(env,'upload'),acquireSlot(env,'upload'),acquireSlot(env,'upload')]);
+  assert.equal(claims.filter(Boolean).length,2);
+  const blocked=await call('/v1/images','POST',{url:'https://cdn.example.com/a.png'});assert.equal(blocked.status,429);assert.equal(blocked.headers.get('retry-after'),'2');
+  for(const token of claims.filter(Boolean))await releaseSlot(env,token!);
+  await db.prepare("UPDATE worker_slots SET lease_until=?,token='dead' WHERE kind='upload' AND slot=1").bind(Date.now()-1).run();
+  const recovered=await acquireSlot(env,'upload');assert.ok(recovered);await releaseSlot(env,recovered!);
+});
+
 test('upload, duplicate metadata, MIME, conditional GET, PATCH and delete',async()=>{
   const first=await upload(1), again=await upload(1,'r18','wrong');
   assert.equal(first.duplicate,false);assert.equal(again.duplicate,true);
@@ -117,6 +142,9 @@ test('random albums: count 10, AND tag filtering, ratings, exclusions and pagina
   const next=await (await call(`/v1/images?limit=10&before=${encodeURIComponent(page.next)}`)).json() as any;
   assert.equal(page.images.length,10);assert.equal(next.images.length,5);
   assert.equal(new Set([...page.images,...next.images].map((x:any)=>x.id)).size,15);
+  const filtered=await (await call('/v1/images?q=cute&rating=r18')).json() as any;
+  assert.equal(filtered.images.length,1);assert.equal(filtered.images[0].rating,'r18');
+  const stats=await (await call('/v1/stats')).json() as any;assert.equal(stats.images.total,15);assert.equal(stats.images.unknown,1);
 });
 
 test('URL imports, unsupported files, unsafe redirects, size and malformed metadata',async()=>{
@@ -149,4 +177,19 @@ test('Telegram photo ingestion, update dedup and classification callback change 
   await webhook({update_id:102,callback_query:{...cb,id:'delete',data:`delete:${id}`}});
   assert.equal((await finished('tg:102')).status,'done');
   assert.equal((await call(`/v1/images/${id}`)).status,404);
+});
+
+test('Telegram album burst is persisted and all five files drain through the bounded queue',async()=>{
+  await Promise.all(Array.from({length:5},(_,i)=>webhook({update_id:1000+i,message:{
+    message_id:100+i,media_group_id:'album-1',from:{id:101},chat:{id:101,type:'private'},photo:[{file_id:`bulk-${i}`}],caption:'#safe',
+  }})));
+  // This fixture uses the same configured owner as the main worker setup.
+  const db=await mf.getD1Database('DB');
+  let jobs:any[]=[];
+  for(let i=0;i<200;i++){
+    jobs=(await db.prepare("SELECT * FROM telegram_jobs WHERE id IN ('tg:1000','tg:1001','tg:1002','tg:1003','tg:1004')").all()).results;
+    if(jobs.length===5 && jobs.every(job=>job.status==='done'))break;
+    await new Promise(resolve=>setTimeout(resolve,75));
+  }
+  assert.equal(jobs.length,5);assert.ok(jobs.every(job=>job.status==='done'));assert.equal(new Set(jobs.map(job=>job.image_id)).size,5);
 });

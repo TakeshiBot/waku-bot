@@ -5,6 +5,7 @@ import {Miniflare,convertV4MiniflareOptions,Response as MockResponse} from 'mini
 import {parseAnalysis} from '../src/analysis.ts';
 
 let mf:Miniflare, calls=0, fail=false, hold:Promise<void>|undefined, release:()=>void;
+let burst=false,active=0,peak=0;
 const sent:Array<{method:string;body:any}>=[];
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
 const predicted={title:'Ảnh anime',tags:['anime','blue_hair','cat_ears'],rating:'safe',rating_confidence:0.99};
@@ -18,15 +19,20 @@ before(async()=>{
     },
     outboundService:async(request:Request)=>{
       const url=new URL(request.url);
+      if(url.hostname==='images.example.com' && url.pathname==='/internal/jobs') return mf.dispatchFetch(url.href,{method:'POST',headers:Object.fromEntries(request.headers),body:await request.text()});
       if(url.hostname==='vision.example.com') {
         calls++;
+        active++;peak=Math.max(peak,active);
+        try {
         assert.equal(request.headers.get('authorization'),'Bearer vision-key');
         const body=await request.json() as any;
         assert.equal(body.model,'vision-model');
         assert.match(body.messages[1].content[1].image_url.url,/^https:\/\/images\.example\.com\/media\//);
         if(hold) await hold;
+        if(burst)await new Promise(resolve=>setTimeout(resolve,100));
         if(fail) return new MockResponse('{}',{status:401});
         return MockResponse.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(predicted)}}]});
+        } finally {active--;}
       }
       assert.equal(url.hostname,'api.telegram.org');
       if(url.pathname.includes('/file/bot')) return new MockResponse(png);
@@ -35,7 +41,7 @@ before(async()=>{
     },
   }));
   const db=await mf.getD1Database('DB');
-  for(const name of ['0001_initial.sql','0002_ai_tags.sql']) {
+  for(const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql']) {
     const sql=await readFile('migrations/'+name,'utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));
   }
 });
@@ -111,4 +117,12 @@ test('Telegram automatic analysis edits the original receipt; manual tag editing
   await jobDone('401');
   const changed=(await api(`/v1/images/${result.id}`)).image;
   assert.deepEqual(changed.tags,['manual_cat']);
+});
+
+test('bulk image analysis drains the queue with at most two concurrent provider requests',async()=>{
+  peak=0;burst=true;const images=[];
+  for(let i=50;i<56;i++)images.push(await upload(i));
+  const results=await Promise.all(images.map(image=>finished(image.id)));
+  burst=false;
+  assert.ok(peak<=2);assert.equal(results.filter(image=>image.ai_status==='done').length,6);
 });
