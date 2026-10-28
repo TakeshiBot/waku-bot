@@ -5,7 +5,7 @@ import {aiEnabled,enqueueAnalysis,processAnalysis} from './analysis';
 import { HttpError, type Env, type ImageRow } from './types';
 import {authorize,sessionCookie,clearSession} from './auth';
 import {acquireSlot,releaseSlot,continueWork} from './queue';
-import {attachBatch,batchProgress,createBatch,stopPendingAnalysis} from './batches';
+import {attachBatch,batchProgress,createBatch,stopPendingAnalysis,controlAnalysis,queueProgress} from './batches';
 import {manageProviders} from './providers';
 import {imageSourcePlan} from './image-sources';
 
@@ -41,7 +41,8 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     if (!equalSecret(request.headers.get('authorization') || '',`Bearer ${env.API_KEY}`) || !env.API_KEY) throw new HttpError(401,'unauthorized','Không có quyền.');
     const task=await json(request),hop=Number(task.hop);
     if (!['ai','upload'].includes(String(task.kind)) || !Number.isInteger(hop) || hop<1 || hop>8) throw new HttpError(400,'invalid_job','Tác vụ không hợp lệ.');
-    ctx.waitUntil(task.kind==='ai'?processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job),hop):processJobs(env,1,undefined,true,hop));
+    if(task.token!==undefined&&(task.kind!=='ai'||typeof task.token!=='string'||!/^[a-f0-9]{32}$/.test(task.token)))throw new HttpError(400,'invalid_job','Tác vụ không hợp lệ.');
+    ctx.waitUntil(task.kind==='ai'?processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job),hop,task.token as string|undefined):processJobs(env,1,undefined,true,hop));
     return response({accepted:true});
   }
   if (path==='/health' && request.method==='GET') return response({ok:true,service:'waku-api'});
@@ -69,7 +70,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
   await authorize(request,env);
   if(path.startsWith('/v1/ai/')){
     const settings=await manageProviders(request,env,['POST','PATCH','PUT'].includes(request.method)?await json(request):{});
-    if(request.method!=='GET')ctx.waitUntil(Promise.all([processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job)),processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job))]));
+    if(request.method!=='GET')ctx.waitUntil(processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job)));
     return response(settings);
   }
   if (path==='/v1/session') {
@@ -81,6 +82,15 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     if (!await aiEnabled(env)) throw new HttpError(503,'ai_not_configured','Chưa cấu hình API AI.');
     return response({id:await createBatch(env)},201);
   }
+  if(path==='/v1/analysis/control' && request.method==='POST'){
+    const body=await json(request);
+    if(body.batch_id!==undefined&&(typeof body.batch_id!=='string'||!uuid.test(body.batch_id)))throw new HttpError(400,'invalid_batch','Đợt AI không hợp lệ.');
+    if(!['pause','resume','cancel','retry'].includes(String(body.action)))throw new HttpError(400,'invalid_action','Thao tác AI không hợp lệ.');
+    if(['resume','retry'].includes(String(body.action))&&!await aiEnabled(env))throw new HttpError(503,'ai_not_configured','Bật ít nhất một API và chọn model vision trước khi chạy.');
+    const progress=await controlAnalysis(env,String(body.action),body.batch_id as string|undefined);
+    if(['resume','retry'].includes(String(body.action)))ctx.waitUntil(processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job)));
+    return response({progress});
+  }
   const batchMatch=path.match(/^\/v1\/analysis-batches\/([a-f0-9-]{36})$/);
   if (batchMatch) {
     const id=batchMatch[1];
@@ -91,7 +101,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
       if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length>100 || body.ids.some(id=>typeof id!=='string' || !uuid.test(id)))
         throw new HttpError(400,'invalid_ids','Mỗi lượt nhận 1–100 ID ảnh.');
       const added=await attachBatch(env,id,body.ids as string[],true);
-      ctx.waitUntil(Promise.all([processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job)),processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job))]));
+      ctx.waitUntil(processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job)));
       return response({added});
     }
   }
@@ -102,12 +112,12 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
   if ((path==='/v1/stats' || path==='/v1/state') && request.method==='GET') {
     const images=await env.DB.prepare(`SELECT COUNT(*) total,COALESCE(SUM(size),0) bytes,
       COALESCE(SUM(rating='safe'),0) safe,COALESCE(SUM(rating='r18'),0) r18,COALESCE(SUM(rating='unknown'),0) unknown FROM images`).first();
-    const ai=await env.DB.prepare("SELECT COUNT(*) pending FROM image_analysis WHERE status IN ('pending','running')").first();
+    const ai=await queueProgress(env);
     const uploads=await env.DB.prepare("SELECT COUNT(*) pending FROM telegram_jobs WHERE status IN ('pending','running')").first();
     const revision=await env.DB.prepare('SELECT version FROM library_revision WHERE id=1').first<{version:number}>();
     let batch=null;const batchId=url.searchParams.get('batch');
     if(batchId && uuid.test(batchId))try{batch=await batchProgress(env,batchId);}catch(error){if(!(error instanceof HttpError && error.status===404))throw error;}
-    return response({images,ai_pending:ai?.pending || 0,uploads_pending:uploads?.pending || 0,revision:revision?.version || 0,batch});
+    return response({images,ai_pending:Number(ai.pending)+Number(ai.running),uploads_pending:uploads?.pending || 0,revision:revision?.version || 0,batch,ai_queue:ai});
   }
   if(path==='/v1/filters' && request.method==='GET') {
     const query=(url.searchParams.get('q') || '').slice(0,64).toLowerCase();

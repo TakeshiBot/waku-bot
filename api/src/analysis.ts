@@ -1,15 +1,15 @@
 import {boundedBody,metadata} from './input';
 import {image,present,libraryChanged} from './store';
 import type {Env,Metadata,Rating} from './types';
-import {acquireSlot,releaseSlot,continueWork} from './queue';
-import {aiConnection,type AiConnection} from './providers';
+import {releaseAiSlot,continueWork,dispatchAnalysis} from './queue';
+import {hasAiConnection,initializeAiProviders,connectionForProvider,type AiConnection} from './providers';
 
-export async function aiEnabled(env:Env) {return Boolean(await aiConnection(env));}
+export async function aiEnabled(env:Env) {return hasAiConnection(env);}
 
 export async function enqueueAnalysis(env:Env,id:string,manual=false,force=false) {
   const enabled=!manual&&await aiEnabled(env);
   await env.DB.prepare(`INSERT INTO image_analysis(image_id,status,last_error) VALUES (?,?,?)
-    ON CONFLICT(image_id) DO ${force?`UPDATE SET status='pending',attempts=0,lease_until=0,next_attempt=0,last_error=NULL
+    ON CONFLICT(image_id) DO ${force?`UPDATE SET status='pending',control='active',attempts=0,lease_token=NULL,lease_until=0,next_attempt=0,last_error=NULL
     WHERE image_analysis.status!='running'`:'NOTHING'}`)
     .bind(id,enabled?'pending':'skipped',manual?'manual':enabled?null:'not_configured').run();
   await libraryChanged(env);
@@ -45,7 +45,7 @@ export function parseAnalysis(value:unknown):Metadata {
   return metadata({title:result.title.slice(0,200),tags:cleaned,rating,image_type:imageType});
 }
 
-async function infer(config:AiConnection,url:string,info:Metadata):Promise<Metadata> {
+async function inferResponse(config:AiConnection,url:string,info:Metadata,signal:AbortSignal):Promise<Metadata> {
   const endpoint=new URL(config.base_url.replace(/\/$/,'')+'/chat/completions');
   if (endpoint.protocol!=='https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) throw new AnalysisError('invalid_provider');
   let response:Response;
@@ -58,7 +58,7 @@ async function infer(config:AiConnection,url:string,info:Metadata):Promise<Metad
           {type:'text',text:`Existing user metadata (preserve user choices): ${JSON.stringify(info)}`},
           {type:'image_url',image_url:{url,detail:'auto'}},
         ]},
-      ]}),signal:AbortSignal.timeout(15000),
+      ]}),signal,
     });
   } catch {throw new AnalysisError('provider_unavailable',true);}
   if (!response.ok) {await response.body?.cancel();throw new AnalysisError(`provider_http_${response.status}`,response.status===429 || response.status>=500);}
@@ -75,26 +75,40 @@ async function infer(config:AiConnection,url:string,info:Metadata):Promise<Metad
   return parseAnalysis(choice?.message?.content);
 }
 
-export interface AnalysisJob {image_id:string;attempts:number;lease_until:number;chat_id:number|null;message_id:number|null;photo:number;}
-
-// The callback edits an existing receipt; no second chat message is sent.
-export async function processAnalysis(env:Env,only?:string,notify?:(job:AnalysisJob)=>Promise<void>,hop=0):Promise<boolean> {
-  const config=await aiConnection(env);if(!config)return false;
-  const slot=await acquireSlot(env,'ai');
-  if (!slot) return false;
-  try {return await analyzeOne(env,config,only,notify);}
-  finally {await releaseSlot(env,slot);await continueWork(env,'ai',hop);}
+// Cover headers AND body; some compatible gateways send headers then stall.
+// The explicit race also bounds response bodies that ignore fetch cancellation.
+async function infer(config:AiConnection,url:string,info:Metadata):Promise<Metadata> {
+  const controller=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
+  try{return await Promise.race([inferResponse(config,url,info,controller.signal),new Promise<never>((_,reject)=>{
+    timer=setTimeout(()=>{reject(new AnalysisError('provider_timeout',true));controller.abort();},20000);
+  })]);}finally{if(timer!==undefined)clearTimeout(timer);controller.abort();}
 }
 
-async function analyzeOne(env:Env,config:AiConnection,only?:string,notify?:(job:AnalysisJob)=>Promise<void>):Promise<boolean> {
-  const now=Date.now();
-  const job=await env.DB.prepare(`UPDATE image_analysis SET status='running',attempts=attempts+1,lease_until=?
-    WHERE image_id=(SELECT image_id FROM image_analysis WHERE
-      ((status='pending' AND next_attempt<=?) OR (status='running' AND lease_until<?))
-      ${only?'AND image_id=?':''} ORDER BY next_attempt LIMIT 1) RETURNING *`)
-    .bind(now+120000,now,now,...(only?[only]:[])).first<AnalysisJob>();
-  if (!job) return false;
-  await env.DB.prepare("UPDATE analysis_batch_items SET status='running' WHERE image_id=? AND status='pending'").bind(job.image_id).run();
+export interface AnalysisJob {image_id:string;attempts:number;lease_until:number;lease_token:string;provider_id:string;control:string;queue_paused:number;chat_id:number|null;message_id:number|null;photo:number;}
+
+// The callback edits an existing receipt; no second chat message is sent.
+export async function processAnalysis(env:Env,_only?:string,notify?:(job:AnalysisJob)=>Promise<void>,hop=0,token?:string):Promise<boolean> {
+  if(!token){await initializeAiProviders(env);return (await dispatchAnalysis(env,hop))>0;}
+  try{
+    const job=await env.DB.prepare(`SELECT a.*,(SELECT paused FROM analysis_queue_settings WHERE id=1) queue_paused
+      FROM image_analysis a JOIN ai_provider_slots s ON s.token=a.lease_token
+      WHERE a.lease_token=? AND a.status='running' AND a.lease_until>? AND s.lease_until>?`)
+      .bind(token,Date.now(),Date.now()).first<AnalysisJob>();
+    if(!job)return false;
+    const config=job.control==='active'&&!job.queue_paused?await connectionForProvider(env,job.provider_id):null;
+    if(!config){
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE image_analysis SET status='pending',attempts=MAX(0,attempts-1),next_attempt=0,lease_until=0
+          WHERE image_id=? AND lease_token=? AND status='running'`).bind(job.image_id,token),
+        env.DB.prepare(`UPDATE analysis_batch_items SET status='pending' WHERE image_id=? AND status='running'
+          AND EXISTS(SELECT 1 FROM image_analysis WHERE image_id=? AND lease_token=? AND status='pending')`).bind(job.image_id,job.image_id,token),
+      ]);return false;
+    }
+    return await analyzeOne(env,config,job,notify);
+  }finally{await releaseAiSlot(env,token);await continueWork(env,'ai',hop);}
+}
+
+async function analyzeOne(env:Env,config:AiConnection,job:AnalysisJob,notify?:(job:AnalysisJob)=>Promise<void>):Promise<boolean> {
   try {
     const row=await image(env,job.image_id), current=await present(env,row,env.PUBLIC_BASE_URL);
     const predicted=await infer(config,current.url,{title:current.title,tags:current.tags,rating:current.rating,source_url:current.source_url,image_type:current.image_type});
@@ -104,32 +118,51 @@ async function analyzeOne(env:Env,config:AiConnection,only?:string,notify?:(job:
     const results=await env.DB.batch([
       env.DB.prepare(`UPDATE images SET title=CASE WHEN title='' THEN ? ELSE title END,
         rating=CASE WHEN rating='unknown' THEN ? ELSE rating END,image_type=COALESCE(image_type,?)
-        WHERE id=? AND metadata_version=?`).bind(predicted.title,predicted.rating,predicted.image_type || null,row.id,row.metadata_version),
+        WHERE id=? AND metadata_version=? AND EXISTS(SELECT 1 FROM image_analysis WHERE image_id=? AND lease_token=? AND status='running')`)
+        .bind(predicted.title,predicted.rating,predicted.image_type || null,row.id,row.metadata_version,row.id,job.lease_token),
       env.DB.prepare(`INSERT OR IGNORE INTO image_tags(image_id,tag)
-        SELECT i.id,t.value FROM images i,json_each(?) t WHERE i.id=? AND i.metadata_version=?`)
-        .bind(JSON.stringify(combined),row.id,row.metadata_version),
+        SELECT i.id,t.value FROM images i,json_each(?) t WHERE i.id=? AND i.metadata_version=?
+        AND EXISTS(SELECT 1 FROM image_analysis WHERE image_id=? AND lease_token=? AND status='running')`)
+        .bind(JSON.stringify(combined),row.id,row.metadata_version,row.id,job.lease_token),
       env.DB.prepare(`UPDATE image_analysis SET status=CASE WHEN EXISTS
         (SELECT 1 FROM images WHERE id=? AND metadata_version=?) THEN 'done' ELSE 'skipped' END,
-        lease_until=0,last_error=NULL WHERE image_id=? AND lease_until=?`)
-        .bind(row.id,row.metadata_version,row.id,job.lease_until),
+        lease_until=0,last_error=NULL WHERE image_id=? AND lease_token=? AND status='running'`)
+        .bind(row.id,row.metadata_version,row.id,job.lease_token),
       env.DB.prepare(`UPDATE analysis_batch_items SET status=CASE WHEN EXISTS
         (SELECT 1 FROM images WHERE id=? AND metadata_version=?) THEN 'done' ELSE 'skipped' END
-        WHERE image_id=? AND status IN ('pending','running')`).bind(row.id,row.metadata_version,row.id),
+        WHERE image_id=? AND status IN ('pending','running')
+        AND EXISTS(SELECT 1 FROM image_analysis WHERE image_id=? AND lease_token=?)`).bind(row.id,row.metadata_version,row.id,row.id,job.lease_token),
+      env.DB.prepare('UPDATE ai_providers SET cooldown_until=0,last_error=NULL WHERE id=? AND config_version=?').bind(config.provider_id,config.config_version),
     ]);
-    if (!results[0].meta.changes) console.info('AI metadata skipped: manual changes took priority');
+    if (!results[0].meta.changes) console.info('AI result discarded: job stopped or metadata changed');
   } catch(error) {
     const code=error instanceof AnalysisError?error.code:'analysis_failed';
-    const retry=error instanceof AnalysisError && error.retryable && job.attempts<3;
-    await env.DB.prepare('UPDATE image_analysis SET status=?,last_error=?,next_attempt=?,lease_until=0 WHERE image_id=? AND lease_until=?')
-      .bind(retry?'pending':'failed',code,Date.now()+60000*job.attempts,job.image_id,job.lease_until).run();
-    await env.DB.prepare("UPDATE analysis_batch_items SET status=? WHERE image_id=? AND status IN ('pending','running')")
-      .bind(retry?'pending':'failed',job.image_id).run();
+    const other=error instanceof AnalysisError?await env.DB.prepare(`SELECT 1 FROM ai_providers p JOIN ai_models m
+      ON m.id=p.preferred_model_id AND m.provider_id=p.id WHERE p.enabled=1 AND p.id!=? AND p.cooldown_until<=? LIMIT 1`)
+      .bind(config.provider_id,Date.now()).first():null;
+    const retry=error instanceof AnalysisError&&(error.retryable||Boolean(other))&&job.attempts<3;
+    const updates=[
+      env.DB.prepare("UPDATE image_analysis SET status=?,last_error=?,next_attempt=?,lease_until=0 WHERE image_id=? AND lease_token=? AND status='running'")
+        .bind(retry?'pending':'failed',code,Date.now()+(other?0:60000*job.attempts),job.image_id,job.lease_token),
+      env.DB.prepare(`UPDATE analysis_batch_items SET status=? WHERE image_id=? AND status IN ('pending','running')
+        AND EXISTS(SELECT 1 FROM image_analysis WHERE image_id=? AND lease_token=?)`)
+        .bind(retry?'pending':'failed',job.image_id,job.image_id,job.lease_token),
+    ];
+    if(error instanceof AnalysisError){
+      const delay=/provider_http_(400|401|403|404)|invalid_provider/.test(code)?300000:code==='provider_http_429'?60000:30000;
+      updates.push(env.DB.prepare('UPDATE ai_providers SET cooldown_until=?,last_error=? WHERE id=? AND config_version=?')
+        .bind(Date.now()+delay,code,config.provider_id,config.config_version));
+    }
+    await env.DB.batch(updates);
     // No upstream error text: it may contain the key, image URL or image data.
     console.warn('AI image tagging incomplete',{image_id:job.image_id,code,retry});
   }
   await libraryChanged(env);
-  if (notify && job.chat_id && job.message_id) {
-    try {await notify(job);} catch {console.warn('AI tags saved; Telegram receipt could not be refreshed');}
+  if (notify) {
+    // Another API may finish before Telegram has attached its receipt IDs.
+    const current=await env.DB.prepare('SELECT * FROM image_analysis WHERE image_id=? AND lease_token=?')
+      .bind(job.image_id,job.lease_token).first<AnalysisJob>();
+    if(current?.chat_id&&current.message_id)try {await notify(current);} catch {console.warn('AI tags saved; Telegram receipt could not be refreshed');}
   }
   return true;
 }

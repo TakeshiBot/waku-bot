@@ -106,8 +106,11 @@ async function receipt(env:Env, job:TelegramJob, message:TgMessage, id:string, b
     catch(error) {if (!(error instanceof TelegramError && error.status===400)) throw error;}
   }
   const sent=result ?? await tg<{message_id:number}>(env,'sendMessage',{chat_id:message.chat.id,text,parse_mode:'HTML',link_preview_options:{is_disabled:true},reply_markup:controls(id,data.url,row.rating)});
-  await env.DB.prepare('UPDATE image_analysis SET chat_id=?,message_id=?,photo=? WHERE image_id=? AND message_id IS NULL')
-    .bind(message.chat.id,sent.message_id,photo?1:0,id).run();
+  const attached=await env.DB.prepare('UPDATE image_analysis SET chat_id=?,message_id=?,photo=? WHERE image_id=? AND message_id IS NULL RETURNING *')
+    .bind(message.chat.id,sent.message_id,photo?1:0,id).first<AnalysisJob & {status:string}>();
+  if(attached&&['pending','running'].includes(data.ai_status)&&!['pending','running'].includes(attached.status)){
+    try{await refreshAnalysisReceipt(env,attached);}catch{console.warn('Telegram receipt refresh deferred');}
+  }
 }
 
 async function handle(env:Env, job:TelegramJob,analyze:boolean,hop=0) {

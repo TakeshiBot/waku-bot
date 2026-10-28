@@ -8,23 +8,26 @@ export function setupProviders({api,toast,onChange}){
   function accept(data){settings=data;if(!data.providers.some(provider=>provider.id===viewing))viewing=data.selected_provider || data.providers[0]?.id || null;onChange(data.enabled);}
   function resetModel(){editingModel=null;$('model-name').value='';$('model-form-label').textContent='Thêm model';$('save-model').textContent='Thêm model';$('cancel-model').hidden=true;}
   function render(){
-    if(!settings)return;const active=settings.providers.find(provider=>provider.id===settings.selected_provider),model=active?.models.find(model=>model.id===settings.selected_model);
-    $('api-current').textContent=model?`Đang dùng: ${active.name} · ${model.model}`:active?`${active.name} · Chọn hoặc thêm model để dùng AI.`:'Chưa chọn API và model. Upload thủ công vẫn dùng bình thường.';
+    if(!settings)return;const active=settings.active_providers || [];
+    $('api-current').replaceChildren();
+    if(active.length){$('api-current').append(node('strong','',`${active.length} API đang bật · tối đa ${settings.parallelism} ảnh song song`));for(const item of active)$('api-current').append(node('span','api-current-item',`${item.name} · ${item.model}`));}
+    else $('api-current').textContent='Chưa bật API có model. Upload thủ công vẫn dùng bình thường.';
     const list=$('provider-list');list.replaceChildren();
     for(const provider of settings.providers){
-      const row=node('div','provider-row'+(provider.id===settings.selected_provider?' active':'')),label=node('label'),radio=node('input'),description=node('span');radio.type='radio';radio.name='active-provider';radio.value=provider.id;radio.checked=provider.id===settings.selected_provider;radio.disabled=busy;
-      description.append(node('strong','',provider.name),node('small','',provider.base_url));label.append(radio,description);
-      radio.addEventListener('change',()=>choose(provider.id));
-      radio.addEventListener('click',()=>{if(provider.id===settings.selected_provider&&viewing!==provider.id){viewing=provider.id;resetModel();render();}});
-      const edit=node('button','text-button','Sửa');edit.type='button';edit.disabled=busy;edit.setAttribute('aria-label','Sửa API '+provider.name);edit.addEventListener('click',()=>showProviderForm(provider));row.append(label,edit);list.append(row);
+      const row=node('div','provider-row'+(provider.enabled?' active':'')+(provider.id===viewing?' viewing':'')),check=node('input'),description=node('button','provider-choice'),text=node('span');check.type='checkbox';check.name='active-provider';check.value=provider.id;check.checked=provider.enabled;check.disabled=busy;check.setAttribute('aria-label','Bật API '+provider.name);
+      text.append(node('strong','',provider.name),node('small','',provider.base_url));description.append(text);description.type='button';description.disabled=busy;description.setAttribute('aria-label','Xem model của '+provider.name);
+      check.addEventListener('change',()=>choose(provider.id,undefined,check.checked));
+      description.addEventListener('click',()=>{viewing=provider.id;resetModel();render();});
+      const edit=node('button','text-button','Sửa');edit.type='button';edit.disabled=busy;edit.setAttribute('aria-label','Sửa API '+provider.name);edit.addEventListener('click',()=>showProviderForm(provider));row.append(check,description,edit);list.append(row);
     }
     if(!settings.providers.length)list.append(node('p','api-note','Chưa có API nào.'));
     $('provider-form').hidden=true;$('provider-empty').hidden=Boolean(currentProvider());$('provider-detail').hidden=!currentProvider();
     const provider=currentProvider();if(!provider)return;
     $('provider-detail-name').textContent=provider.name;$('provider-detail-url').textContent=provider.base_url;$('model-count').textContent=provider.models.length+' model';
+    $('provider-detail-state').textContent=!provider.enabled?'Đang tắt · chọn model rồi tích bật API để dùng.':!provider.preferred_model_id?'Đang bật · cần thêm hoặc chọn model vision.':provider.cooldown_until>Date.now()?'API đang tạm chờ do lỗi. Có thể sửa kết nối hoặc tắt/bật API để thử lại.':'Đang bật · dùng model đã chọn, tối đa 2 ảnh song song.';
     const models=$('model-list');models.replaceChildren();
     for(const model of provider.models){
-      const row=node('div','model-row'+(model.id===settings.selected_model?' active':'')),label=node('label'),radio=node('input');radio.type='radio';radio.name='active-model';radio.value=model.id;radio.checked=model.id===settings.selected_model;radio.disabled=busy;radio.addEventListener('change',()=>choose(provider.id,model.id));label.append(radio,node('span','',model.model));
+      const row=node('div','model-row'+(model.id===provider.preferred_model_id?' active':'')),label=node('label'),radio=node('input');radio.type='radio';radio.name='active-model-'+provider.id;radio.value=model.id;radio.checked=model.id===provider.preferred_model_id;radio.disabled=busy;radio.addEventListener('change',()=>choose(provider.id,model.id));label.append(radio,node('span','',model.model));
       const edit=node('button','text-button','Sửa');edit.type='button';edit.disabled=busy;edit.setAttribute('aria-label','Sửa model '+model.model);edit.addEventListener('click',()=>{editingModel=model.id;$('model-name').value=model.model;$('model-form-label').textContent='Sửa model';$('save-model').textContent='Lưu model';$('cancel-model').hidden=false;$('model-name').focus();});
       const remove=node('button','danger-link','Xóa');remove.type='button';remove.disabled=busy;remove.setAttribute('aria-label','Xóa model '+model.model);remove.addEventListener('click',async()=>{if(!confirm('Xóa model '+model.model+'?'))return;await mutate('/v1/ai/models/'+model.id,'DELETE');});row.append(label,edit,remove);models.append(row);
     }
@@ -36,8 +39,8 @@ export function setupProviders({api,toast,onChange}){
     catch(cause){error(cause.message);return false;}
     finally{lock(false);}
   }
-  async function choose(providerId,modelId){
-    const before=viewing;viewing=providerId;const ok=await mutate('/v1/ai/selection','PUT',{provider_id:providerId,...(modelId?{model_id:modelId}:{})});if(!ok){viewing=before;render();}
+  async function choose(providerId,modelId,enabled){
+    const before=viewing;viewing=providerId;const ok=await mutate('/v1/ai/selection','PUT',{provider_id:providerId,...(modelId?{model_id:modelId}:{}),...(enabled!==undefined?{enabled}:{})});if(!ok){viewing=before;render();}
   }
   function showProviderForm(provider){
     if(busy)return;error();editingProvider=provider?.id || null;if(provider)viewing=provider.id;

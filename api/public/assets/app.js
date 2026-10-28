@@ -1,8 +1,8 @@
-import {setupProviders} from './providers.js?v=6';
+import {setupProviders} from './providers.js?v=10';
 const $=id=>document.getElementById(id);
 const state={authenticated:false,maxMb:10,images:new Map(),cursor:null,query:'',rating:'',queue:[],pumping:false,paused:true,editing:null,listVersion:0,statsBusy:false,
   selected:new Set(),allSelected:false,selectionBusy:false,bulkBusy:false,deleteTargets:[],editTargets:[],loadedLimit:48,uploadIds:new Set(),starting:false,aiBatchId:null,aiProgress:null,aiPending:0,aiEnqueueing:false,
-  revision:null,lastStats:0,galleryDirty:false,gallerySignature:'',filterTags:new Set(),filterTypes:new Set(),tagsLoaded:0,checking:0,aiAvailable:false};
+  revision:null,lastStats:0,galleryDirty:false,gallerySignature:'',filterTags:new Set(),filterTypes:new Set(),tagsLoaded:0,checking:0,aiAvailable:false,aiQueue:null,aiControlBusy:false,aiDismissed:false};
 const number=n=>new Intl.NumberFormat('vi-VN').format(n || 0);
 const bytes=n=>n>=1073741824?(n/1073741824).toFixed(1)+' GB':n>=1048576?(n/1048576).toFixed(1)+' MB':(n/1024).toFixed(0)+' KB';
 const tagList=value=>value.trim().split(/[,\n]|\s+(?=#)/).map(x=>x.trim().replace(/^#/, '')).filter(Boolean);
@@ -31,7 +31,7 @@ async function enter(session){
 }
 function schedulePoll(){
   clearTimeout(pollTimer);if(!state.authenticated||document.hidden)return;
-  const active=state.pumping||state.starting||state.aiPending>0||state.aiEnqueueing||Boolean(state.aiProgress?.pending||state.aiProgress?.running);
+  const q=state.aiQueue,active=state.pumping||state.starting||state.aiEnqueueing||Boolean(q?.running)||Boolean(q?.control!=='paused'&&q?.pending>q?.paused);
   pollTimer=setTimeout(()=>refreshStats(true),active?8000:60000);
 }
 $('login-form').addEventListener('submit',async event=>{
@@ -53,7 +53,7 @@ async function refreshStats(updateGallery=false,force=false){
     const batchId=state.aiBatchId,stats=await api('/v1/state'+(batchId?'?batch='+encodeURIComponent(batchId):''));state.lastStats=Date.now();
     $('stat-total').textContent=number(stats.images.total);$('nav-count').textContent=number(stats.images.total);$('stat-size').textContent=bytes(stats.images.bytes);
     const pending=Number(stats.ai_pending)+Number(stats.uploads_pending);$('stat-pending').textContent=number(pending);$('stat-pending-note').textContent=pending?`${number(stats.ai_pending)} AI · ${number(stats.uploads_pending)} upload`:'Mọi thứ đã sẵn sàng';
-    state.aiPending=Number(stats.ai_pending);if(batchId&&batchId===state.aiBatchId){if(stats.batch)state.aiProgress=stats.batch;else setAiBatch(null);}renderAiProgress();
+    state.aiPending=Number(stats.ai_pending);state.aiQueue=stats.ai_queue;if(batchId&&batchId===state.aiBatchId){if(stats.batch)state.aiProgress=stats.batch;else setAiBatch(null);}renderAiProgress();
     const changed=state.revision!==null&&state.revision!==stats.revision;state.revision=stats.revision;state.galleryDirty ||= changed;
     if(updateGallery&&state.galleryDirty){await loadImages(false);state.galleryDirty=false;}
   }catch(error){if(state.authenticated)$('list-status').textContent=error.message;}
@@ -178,21 +178,32 @@ $('select-all').addEventListener('change',async()=>{
 });
 $('clear-selection').addEventListener('click',()=>{state.selected.clear();state.allSelected=false;renderGallery();});
 function setAiBatch(id){
-  state.aiBatchId=id;state.aiProgress=null;
+  state.aiBatchId=id;state.aiProgress=null;state.aiDismissed=false;
   try{if(id)sessionStorage.setItem('waku-ai-batch',id);else sessionStorage.removeItem('waku-ai-batch');}catch{}
 }
 async function refreshAiProgress(){
   await refreshStats(true,true);
 }
 function renderAiProgress(){
-  const p=state.aiProgress,active=state.aiPending>0||state.aiEnqueueing||state.pumping&&Boolean(state.aiBatchId);
-  $('ai-progress').hidden=!active&&!p?.total;
-  $('dismiss-ai').disabled=active||Boolean(p?.pending||p?.running);
+  const p=state.aiProgress||state.aiQueue,active=state.aiPending>0||state.aiEnqueueing||state.pumping&&Boolean(state.aiBatchId),paused=p?.control==='paused'||!state.aiProgress&&p?.paused>0||state.aiQueue?.control==='paused';
+  $('ai-progress').hidden=!active&&!(state.aiProgress?.total)&&(!(p?.failed||p?.cancelled)||state.aiDismissed);
+  $('dismiss-ai').disabled=active||Boolean(p?.pending||p?.running)||state.aiControlBusy;
+  $('pause-ai').textContent=paused?'Tiếp tục':'Tạm dừng';$('pause-ai').disabled=state.aiControlBusy||!p?.pending&&!p?.running;
+  $('cancel-ai').disabled=state.aiControlBusy||!p?.pending&&!p?.running;
+  $('retry-ai').hidden=!p?.failed&&!p?.cancelled;$('retry-ai').textContent=p?.failed?'Chạy lại ảnh lỗi':'Chạy lại ảnh đã huỷ';$('retry-ai').disabled=state.aiControlBusy||!state.aiAvailable;
+  $('ai-control-note').textContent=state.aiControlBusy?'Đang cập nhật…':(state.aiProgress?'Đợt đang xem.':'Toàn bộ hàng đợi.')+(paused?' Đã tạm dừng; ảnh đang chạy có thể hoàn tất.':' Mỗi lượt API tối đa 20 giây, thử tối đa 3 lần.');
+  const q=state.aiQueue;
+  if(!paused&&!state.aiControlBusy&&p?.pending&&!p?.running){
+    const ready=Math.max(q?.next_attempt||0,q?.provider_ready_at||0);
+    if(q?.provider_ready_at===null)$('ai-control-note').textContent+=' Cần bật API và chọn model vision để tiếp tục.';
+    else if(ready>Date.now())$('ai-control-note').textContent+=` Tự thử tiếp sau khoảng ${Math.ceil((ready-Date.now())/1000)} giây.`;
+  }
+  $('pause-ai').dataset.action=paused?'resume':'pause';
   const progress=$('ai-progress-bar');
   if(p?.total){
-    const finished=p.done+p.failed+p.skipped;progress.max=p.total;progress.value=finished;
-    $('ai-summary').textContent=`AI gắn tag · đã xử lý ${finished}/${p.total}`;
-    $('ai-detail').textContent=`${p.done} thành công · ${p.running} đang chạy · ${p.pending} chờ${p.failed?' · '+p.failed+' lỗi':''}${p.skipped?' · '+p.skipped+' bỏ qua':''}`;
+    const finished=p.done+p.failed+p.skipped+(p.cancelled||0);progress.max=p.total;progress.value=finished;
+    $('ai-summary').textContent=`AI gắn tag${paused?' · tạm dừng':''} · đã xử lý ${finished}/${p.total}`;
+    $('ai-detail').textContent=`${p.done} thành công · ${p.running} đang chạy · ${p.pending} chờ${p.failed?' · '+p.failed+' lỗi':''}${p.cancelled?' · '+p.cancelled+' đã huỷ':''}${p.skipped?' · '+p.skipped+' bỏ qua':''}`;
     $('ai-progress').classList.toggle('has-errors',p.failed>0);
   }else{
     progress.removeAttribute('value');progress.max=1;$('ai-progress').classList.remove('has-errors');
@@ -200,7 +211,21 @@ function renderAiProgress(){
     $('ai-detail').textContent=state.aiPending?`${state.aiPending} ảnh đang chờ hoặc xử lý`:'Đợi ảnh tải lên để bắt đầu.';
   }
 }
-$('dismiss-ai').addEventListener('click',()=>{setAiBatch(null);renderAiProgress();});
+$('dismiss-ai').addEventListener('click',()=>{setAiBatch(null);state.aiDismissed=true;renderAiProgress();});
+async function controlAi(action){
+  if(state.aiControlBusy)return;
+  const batchId=state.aiQueue?.control==='paused'&&action==='resume'?null:state.aiBatchId;
+  if(action==='cancel'&&!confirm('Huỷ các ảnh chưa xử lý xong '+(batchId?'trong đợt này':'trong hàng đợi')+'? Ảnh và tag đã lưu vẫn được giữ nguyên.'))return;
+  state.aiControlBusy=true;renderAiProgress();
+  try{
+    const data=await api('/v1/analysis/control',{method:'POST',body:JSON.stringify({action,...(batchId?{batch_id:batchId}:{})})});
+    if(batchId===state.aiBatchId&&batchId)state.aiProgress=data.progress;else state.aiQueue=data.progress;
+    state.aiDismissed=false;state.galleryDirty=true;await refreshAiProgress();
+  }catch(error){toast(error.message);}finally{state.aiControlBusy=false;renderAiProgress();schedulePoll();}
+}
+$('pause-ai').addEventListener('click',()=>controlAi($('pause-ai').dataset.action));
+$('cancel-ai').addEventListener('click',()=>controlAi('cancel'));
+$('retry-ai').addEventListener('click',()=>controlAi('retry'));
 async function queueAi(ids){
   if(!ids.length)return;state.bulkBusy=true;state.aiEnqueueing=true;state.bulkLabel='Đang xếp hàng AI…';renderSelection();
   renderAiProgress();

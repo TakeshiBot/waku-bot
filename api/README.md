@@ -6,7 +6,7 @@ Kho ảnh riêng chạy trên Cloudflare Workers + R2 + D1. Bot Telegram nhận 
 
 Mở DM của bot upload bằng tài khoản đã cấp quyền. Gửi một hoặc nhiều ảnh; mỗi ảnh được xử lý riêng. Gửi dạng **file ảnh** nếu muốn giữ nguyên chất lượng; ảnh gửi dạng Photo được lưu theo bản Telegram đã nén.
 
-Có thể chọn cả đợt nhiều ảnh/file, kể cả khi Telegram tách thành nhiều album. Bot lưu từng update vào hàng đợi D1; toàn hệ thống giới hạn **2 upload và 2 lượt AI đồng thời**, không phải 2 lượt cho mỗi Worker. Phản hồi mới trong cùng chat được giãn ít nhất khoảng 1,1 giây để tránh gửi dồn. Mỗi file được lưu độc lập, file lỗi không chặn cả đợt. Caption chỉ đi cùng file mà Telegram gắn caption đó; muốn áp dụng tag chung cho cả đợt, dùng trang web bên dưới.
+Có thể chọn cả đợt nhiều ảnh/file, kể cả khi Telegram tách thành nhiều album. Bot lưu từng update vào hàng đợi D1; toàn hệ thống giới hạn **2 upload đồng thời**, còn AI giới hạn **2 ảnh/API đang bật**, không phải 2 lượt cho mỗi Worker. Ví dụ bật 3 API thì xử lý tối đa 6 ảnh AI song song. Phản hồi mới trong cùng chat được giãn ít nhất khoảng 1,1 giây để tránh gửi dồn. Mỗi file được lưu độc lập, file lỗi không chặn cả đợt. Caption chỉ đi cùng file mà Telegram gắn caption đó; muốn áp dụng tag chung cho cả đợt, dùng trang web bên dưới.
 
 ## Trang quản lý trên web
 
@@ -28,15 +28,23 @@ Nút **Sửa** cạnh Xóa mở popup sửa hàng loạt **Phân loại** và **
 
 **Lọc** nằm cùng hàng với Chọn tất cả. Trên máy tính rê chuột vào để mở, giữ bảng khi di chuyển bên trong và thu lại khi rời ra; trên điện thoại bấm để mở/đóng. Có thể dùng bàn phím và Escape. Logo Waku được dùng ở sidebar, trang đăng nhập và biểu tượng tab.
 
-**API & Model** nằm trên nút Đăng xuất ở sidebar (biểu tượng bánh răng trên điện thoại). Thêm/sửa/xóa kết nối bằng tên, Base URL OpenAI-compatible và key; mỗi API lưu được nhiều Model ID. Tích chọn một API và một model để dùng, tự nhớ model đã chọn khi chuyển qua lại giữa các API. Thêm tối đa 30 API và 100 model/API. Cấu hình hiện có được nhập thành **API Waku** lần đầu mở mục này.
+**API & Model** nằm trên nút Đăng xuất ở sidebar (biểu tượng bánh răng trên điện thoại). Thêm/sửa/xóa kết nối bằng tên, Base URL OpenAI-compatible và key; mỗi API lưu được nhiều Model ID. Checkbox bật/tắt từng API độc lập; bấm tên API để xem model mà không đổi trạng thái bật. Mỗi API có một model vision được chọn bằng radio và được ghi nhớ riêng, kể cả khi tắt. Có thể bật nhiều API để chia hàng đợi song song; chọn model của API đang tắt không tự bật API đó. Thêm tối đa 30 API và 100 model/API. Cấu hình hiện có được nhập thành **API Waku** lần đầu mở mục này.
 
-Lựa chọn được lưu trong D1 và dùng chung cho web/bot upload Telegram, không cần deploy. Lượt AI đang chạy tiếp tục với cấu hình đã lấy; các lượt kế tiếp đọc lựa chọn mới. Xóa model đang dùng sẽ chọn model còn lại của API nếu có; xóa API đang dùng sẽ ngừng AI đến khi chọn kết nối khác, không âm thầm quay về cấu hình cũ. Upload thủ công vẫn hoạt động.
+Lựa chọn được lưu trong D1 và dùng chung cho web/bot upload Telegram, không cần deploy. Lượt AI đang chạy tiếp tục với cấu hình đã lấy; các lượt kế tiếp đọc lựa chọn mới. Xóa model đang dùng sẽ chọn model còn lại của API nếu có; xóa/tắt một API không tắt các API khác. Nếu không còn API có model đang bật, upload thủ công vẫn hoạt động và AI chờ đến khi có kết nối. Migration từ cấu hình cũ chỉ bật API đã được chọn trước đó, giữ nguyên các API khác ở trạng thái tắt.
+
+Hàng đợi đặt chỗ API và ảnh trong cùng transaction D1 để tránh một ảnh chạy đồng thời ở nhiều API. Mỗi API có 2 slot riêng, chọn slot ít dùng trước; không còn trần 2 lượt AI cho toàn hệ thống. Mỗi ảnh chạy trong invocation riêng, chia fan-out thành nhóm để giữ giới hạn Worker/D1. Nếu ACK gọi Worker bị thất lạc, giữ lease thay vì lập tức gửi lại; Cron khôi phục khi lease hết hạn. Kết quả chỉ được ghi nếu lượt chạy vẫn sở hữu lease và metadata chưa bị sửa tay.
+
+API lỗi được tạm chờ: 30 giây cho lỗi tạm thời/output, 60 giây khi 429, 5 phút cho lỗi cấu hình 400/401/403/404. Nếu còn API khác sẵn sàng, ảnh lỗi được đưa lại hàng đợi để API đó thử; tổng tối đa 3 lần/ảnh. Không tăng số lần gọi do API vừa bị tắt/xóa trước lúc thực sự bắt đầu. Sửa kết nối/model hoặc tắt/bật API xóa khoảng chờ; phản hồi từ cấu hình cũ không ghi đè trạng thái cấu hình mới.
 
 Key nhà cung cấp được mã hóa AES-GCM trước khi lưu D1, không trả lại qua API và không lưu ở localStorage. Khi sửa API, để trống key để giữ key cũ. Khóa mã hóa được dẫn xuất từ `API_KEY` quản trị: nếu thay `API_KEY`, cần nhập lại các key nhà cung cấp đã lưu. Sau khi quản lý API trên web, danh sách D1 là nguồn cấu hình chính; deploy lại secret AI không ghi đè lựa chọn này.
 
 Khi bắt đầu upload, web chuyển sang **Chờ phân loại** và hiện trước các file đang chờ/gửi, sau đó thay bằng ảnh đã lưu. Tab này gồm ảnh `unknown` và ảnh còn chờ/chạy AI, kể cả ảnh đã được nhập phân loại thủ công. Khi AI xong, ảnh đã có phân loại chuyển sang tab tương ứng; ảnh vẫn chưa rõ phân loại ở lại. Có thể chọn ảnh trong tab này rồi bấm **AI gắn tag** để xử lý hàng loạt.
 
 Thanh upload đếm **ảnh được API xác nhận đã lưu / tổng ảnh của đợt**, không cộng file lỗi vào số đã lưu. Thanh AI phía trên danh sách dùng bộ đếm D1 riêng theo đợt: đang chờ, đang chạy, thành công, lỗi, bỏ qua. Đây là hai tiến trình khác nhau; upload xong không đồng nghĩa AI đã hoàn tất. ID đợt AI được giữ trong sessionStorage để tiếp tục theo dõi sau khi tải lại trang; API key không được lưu ở đó.
+
+Thanh AI có **Tạm dừng / Tiếp tục**, **Huỷ**, **Chạy lại ảnh lỗi** (hoặc ảnh đã huỷ). Khi đang xem một đợt, nút tác động vào đợt đó; nếu không theo dõi đợt riêng thì tác động toàn hàng đợi. Tạm dừng được lưu ở D1, không mất khi tải lại trang; ảnh đang gọi API có thể hoàn tất nhưng không nhận ảnh tiếp theo. Huỷ không xoá ảnh/tag đã lưu, vô hiệu hoá kết quả đến muộn. Chạy lại chỉ lấy ảnh lỗi/đã huỷ, không chạy lại ảnh thành công. Tạm dừng toàn hàng đợi còn giữ cả ảnh mới tải lên, đến khi bấm Tiếp tục.
+
+Mỗi lượt gọi AI có timeout **20 giây cho cả kết nối lẫn nội dung trả về**, tối đa **3 lần thử/ảnh**. Lỗi tạm thời có thời gian chờ rồi tự thử lại; thanh tiến trình hiển thị thời gian chờ hoặc nhắc bật API khi chưa có kết nối. Worker mất phản hồi được Cron lấy lại sau lease tối đa 2 phút; hết 3 lần sẽ chuyển sang lỗi để bấm chạy lại, không lặp vô hạn. Không đặt timeout cứng cho toàn đợt vì đợt lớn cần được xếp hàng tuần tự.
 
 Hàng đợi D1 có khóa lease theo từng slot, tiếp tục xử lý theo chuỗi ngắn để không vượt giới hạn gọi Worker lồng nhau. Cron mỗi phút khôi phục các tác vụ bị gián đoạn; khi đang mở web, trang cũng đánh thức hàng đợi. Không cam kết tốc độ cố định cho đợt lớn vì còn phụ thuộc Telegram, provider AI và hạn mức Cloudflare.
 
@@ -139,7 +147,7 @@ Các đường dẫn `/v1/*` cần header `Authorization: Bearer API_KEY`. Lấy
 | PATCH/DELETE | `/v1/ai/providers/ID` | Sửa/xóa API; key trống giữ nguyên |
 | POST | `/v1/ai/providers/ID/models` | Thêm `{"model":"model-id"}` |
 | PATCH/DELETE | `/v1/ai/models/ID` | Sửa/xóa model |
-| PUT | `/v1/ai/selection` | Chọn `provider_id`, `model_id`; không gửi model để nhớ lại model gần nhất |
+| PUT | `/v1/ai/selection` | Đổi riêng một API: `provider_id`, `enabled` (tùy chọn), `model_id` (tùy chọn); không tắt API khác. `provider_id:null` tắt tất cả |
 | GET | `/v1/filters?q=cat` | Các tag hiện có và số ảnh, tối đa 1.000 tag; tìm tiếp bằng `q` |
 | POST | `/v1/images/duplicates` | Kiểm tra trước khi upload: `{"hashes":["SHA256"],"urls":["https://…"]}`, tối đa 100 mục/lượt |
 | POST | `/v1/images` | Upload multipart `file`, hoặc JSON chứa `url` |
@@ -153,6 +161,7 @@ Các đường dẫn `/v1/*` cần header `Authorization: Bearer API_KEY`. Lấy
 | POST | `/v1/analysis-batches` | Tạo một đợt AI, trả `id` |
 | POST | `/v1/analysis-batches/ID` | Xếp hàng AI cho `{"ids":[...]}` (tối đa 100 ID/lượt) |
 | GET | `/v1/analysis-batches/ID` | Tiến trình thật của đợt AI |
+| POST | `/v1/analysis/control` | `{"action":"pause|resume|cancel|retry","batch_id":"ID tùy chọn"}`; bỏ batch_id để áp dụng toàn hàng đợi |
 | GET/HEAD | `/media/ID` | File ảnh gốc, không cần API key |
 
 `rating` của random: `safe` (mặc định), `r18`, `mixed`. Ảnh `unknown` không xuất hiện trong random. Kết quả ít hơn `count` nếu kho không đủ ảnh phù hợp; không lặp ID trong cùng lượt. Truyền `exclude=ID1,ID2,...` để tránh lặp giữa các lượt; tổng số tag và ID loại trừ tối đa 96. Bot gọi API cần lưu lịch sử ID đã gửi.

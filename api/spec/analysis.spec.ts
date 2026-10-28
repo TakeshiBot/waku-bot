@@ -1,4 +1,4 @@
-import {after,before,test} from 'node:test';
+import {after,before,beforeEach,test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {Miniflare,convertV4MiniflareOptions,Response as MockResponse} from 'miniflare';
@@ -42,11 +42,12 @@ before(async()=>{
     },
   }));
   const db=await mf.getD1Database('DB');
-  for(const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql','0004_analysis_batches.sql','0005_library_filters.sql','0006_ai_providers.sql']) {
+  for(const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql','0004_analysis_batches.sql','0005_library_filters.sql','0006_ai_providers.sql','0007_parallel_ai.sql','0008_analysis_controls.sql']) {
     const sql=await readFile('migrations/'+name,'utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));
   }
 });
 after(async()=>{release?.();await mf?.dispose();});
+beforeEach(async()=>{await(await mf.getD1Database('DB')).prepare('UPDATE ai_providers SET cooldown_until=0,last_error=NULL').run();});
 async function api(path:string,method='GET',body?:any) {
   const req=new Request('https://images.example.com'+path,{method,headers:{authorization:'Bearer key',...(body && !(body instanceof FormData)?{'content-type':'application/json'}:{})},...(body?{body:body instanceof FormData?body:JSON.stringify(body)}:{})});
   const res=await mf.dispatchFetch(req.url,{method,headers:Object.fromEntries(req.headers),...(body?{body:Buffer.from(await req.arrayBuffer())}:{})});
@@ -156,6 +157,7 @@ test('bulk AI action creates jobs for manually uploaded images and reports progr
 test('saved API/model CRUD is encrypted, persists selection and drives actual inference without deploy',async()=>{
   const initial=await api('/v1/ai/settings');assert.equal(initial.providers.length,1);assert.equal(initial.enabled,true);
   const legacyId=initial.selected_provider,legacyModelId=initial.selected_model;
+  await api('/v1/ai/selection','PUT',{provider_id:legacyId,enabled:false});
   assert.ok(!JSON.stringify(initial).includes('vision-key'));
   const create=await api('/v1/ai/providers','POST',{name:'Alternative API',base_url:'https://vision.example.com/v2',api_key:'alternative-key'});
   const provider=create.providers.find((p:any)=>p.name==='Alternative API');assert.ok(provider);
@@ -166,7 +168,7 @@ test('saved API/model CRUD is encrypted, persists selection and drives actual in
   const second=await api('/v1/ai/providers/'+provider.id+'/models','POST',{model:'second-vision'});
   const backup=second.providers.find((p:any)=>p.id===provider.id).models[1];
   expectedKey='alternative-key';expectedModel='alternative-vision';expectedPath='/v2/chat/completions';
-  await api('/v1/ai/selection','PUT',{provider_id:provider.id,model_id:model.id});
+  await api('/v1/ai/selection','PUT',{provider_id:provider.id,model_id:model.id,enabled:true});
   assert.equal((await finished((await upload(240)).id)).ai_status,'done');
   await api('/v1/ai/providers/'+provider.id,'PATCH',{name:'Renamed API',base_url:'https://vision.example.com/v3',api_key:'rotated-key'});
   await api('/v1/ai/providers/'+provider.id,'PATCH',{name:'Renamed again'});
@@ -179,7 +181,7 @@ test('saved API/model CRUD is encrypted, persists selection and drives actual in
   assert.equal((await finished((await upload(242)).id)).ai_status,'done');
   const deleted=await api('/v1/ai/providers/'+provider.id,'DELETE');assert.equal(deleted.enabled,false);assert.equal((await api('/v1/session')).ai_enabled,false,'deleting selected API must not silently fall back to environment');
   expectedKey='vision-key';expectedModel='vision-model';expectedPath='/v1/chat/completions';
-  const restored=await api('/v1/ai/selection','PUT',{provider_id:legacyId,model_id:legacyModelId});assert.equal(restored.enabled,true);
+  const restored=await api('/v1/ai/selection','PUT',{provider_id:legacyId,model_id:legacyModelId,enabled:true});assert.equal(restored.enabled,true);
 });
 
 test('bulk manual classification wins over AI inference already in flight',async()=>{
