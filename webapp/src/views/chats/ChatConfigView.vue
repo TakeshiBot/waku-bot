@@ -54,6 +54,7 @@ const EMPTY_CONFIG: ChatConfigInput = {
   ai_reply_other_bots_enabled: false,
   ai_comment: false,
   agent_moderation_enabled: false,
+  ai_member_tags_enabled: true,
   setu_enabled: true,
   convert_b23_enabled: true,
   parse_links_enabled: true,

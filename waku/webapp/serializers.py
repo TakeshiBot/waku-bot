@@ -76,6 +76,7 @@ def chat_config_out(config: ChatConfig) -> ChatConfigOut:
         ai_reply_other_bots_enabled=config.ai_reply_other_bots_enabled,
         ai_comment=config.ai_comment,
         agent_moderation_enabled=config.agent_moderation_enabled,
+        ai_member_tags_enabled=config.ai_member_tags_enabled,
         setu_enabled=config.setu_enabled,
         convert_b23_enabled=config.convert_b23_enabled,
         parse_links_enabled=config.parse_links_enabled,

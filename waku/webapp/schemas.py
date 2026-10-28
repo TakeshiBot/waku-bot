@@ -269,6 +269,7 @@ class ChatConfigOut(ApiModel):
     ai_reply_other_bots_enabled: bool
     ai_comment: bool
     agent_moderation_enabled: bool
+    ai_member_tags_enabled: bool = True
     setu_enabled: bool
     convert_b23_enabled: bool
     parse_links_enabled: bool
@@ -303,6 +304,7 @@ class ChatConfigIn(ApiModel):
     ai_reply_other_bots_enabled: bool
     ai_comment: bool
     agent_moderation_enabled: bool = False
+    ai_member_tags_enabled: bool = True
     setu_enabled: bool
     convert_b23_enabled: bool
     parse_links_enabled: bool

@@ -45,6 +45,7 @@ _FIELDS = (
     ("sticker_memory_enabled", "sticker_memory_enabled"),
     ("bot_reply", "bot_reply"),
     ("reactions_enabled", "reactions_enabled"),
+    ("ai_member_tags", "ai_member_tags_enabled"),
 )
 # Read each column top to bottom; keep callback indices stable for open menus.
 _BUTTON_ORDER = (
@@ -64,6 +65,7 @@ _BUTTON_ORDER = (
     "setu_enabled",
     "waifu_enabled",
     "pick_bottle_enabled",
+    "ai_member_tags_enabled",
 )
 _EXPRESSION_FIELDS = ("sticker_memory_enabled", "reactions_enabled")
 _TTL = 15 * 60

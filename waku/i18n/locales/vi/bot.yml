@@ -613,6 +613,7 @@ bot:
       delete_events: Xóa Sự Kiện
       quote_pin_message: Ghim Trích Dẫn
       ai_reply: AI Trả Lời
+      ai_member_tags: AI Gắn Tag
       ai_reply_other_bots_enabled: Trả Lời Bot Khác
       setu_enabled: Ảnh Ngẫu Nhiên
       unpin_channel_pin_enabled: Bỏ Ghim Từ Kênh

@@ -353,3 +353,16 @@ Mỗi người lưu cùng một ảnh tối đa một lần; ảnh đã ở tron
 không được gửi lặp. Nếu chưa mở DM hoặc đã chặn bot, mở bot và bấm **Start**, rồi
 bấm lại **Lưu**. Nút phụ thuộc metadata cache; mất cache hoặc hết hạn thì không
 thể xác minh lượt lưu cũ.
+
+## AI gắn tag cho thành viên mới
+
+**AI Gắn Tag** trong `/config` nhóm mặc định bật, độc lập với AI trả lời,
+AI quản trị và `/greet`. Bot cần quyền quản trị **Quản lý tag thành viên**.
+AI dùng model chat đã cấu hình để tạo tag anime/wibu vui vẻ theo tên người mới,
+tối đa 16 ký tự và không có emoji. Không dùng danh sách tag hoặc tag dự phòng.
+
+Sau khi gắn thành công, nếu nhóm chưa đặt `/greet`, bot gửi lời chào ngắn với
+tag là liên kết mở hồ sơ thành viên. Nếu đã có greet, chỉ gửi greet đã đặt.
+Không đủ quyền, AI lỗi hoặc gắn tag thất bại thì không gửi lời chào AI.
+Greet đã cấu hình vẫn hoạt động riêng. Bot chỉ xử lý lúc vào nhóm, không tự
+gắn lại khi người dùng sửa tag; tag có sẵn cũng được giữ nguyên.

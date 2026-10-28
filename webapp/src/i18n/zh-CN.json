@@ -201,6 +201,8 @@
     "ai_comment": "AI评论",
     "ai_commentHint": "允许 AI 评论关联频道的帖子",
     "agent_moderation_enabled": "AI group moderation",
+    "ai_member_tags_enabled": "AI 成员标签",
+    "ai_member_tags_enabledHint": "根据新成员昵称生成有趣的动漫标签；未设置欢迎语时发送简短欢迎",
     "agent_moderation_enabledHint": "允许 AI 执行有效的群管理请求",
     "setu_enabled": "随机涩图",
     "setu_enabledHint": "按本群选择的图片模式发送随机图片",

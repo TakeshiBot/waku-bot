@@ -136,6 +136,7 @@ export interface ChatConfig {
   ai_reply_other_bots_enabled: boolean;
   ai_comment: boolean;
   agent_moderation_enabled: boolean;
+  ai_member_tags_enabled: boolean;
   setu_enabled: boolean;
   convert_b23_enabled: boolean;
   parse_links_enabled: boolean;

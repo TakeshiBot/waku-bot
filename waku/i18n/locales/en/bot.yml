@@ -505,6 +505,7 @@ bot:
       delete_events: Delete Events
       quote_pin_message: Pin Quoted Message
       ai_reply: AI Reply
+      ai_member_tags: AI Member Tags
       ai_reply_other_bots_enabled: Reply to Other Bots
       ai_comment: AI Comment
       setu_enabled: Random Lewds

@@ -7,6 +7,7 @@ from waku import common, database, i18n
 from waku.common.telegram_authority import can_manage_group_settings
 from waku.logger import logger
 from waku.plugins.preference_save import preview_preference
+from waku.services.new_member_tags import is_present, queue_new_members
 
 
 @Client.on_message(pyrogram.filters.command("greet") & pyrogram.filters.group, group=0)
@@ -88,26 +89,20 @@ async def set_greeting_command(client: Client, message: pyrogram.types.Message):
             )
 
 
-@Client.on_message(pyrogram.filters.new_chat_members, group=1)
+@Client.on_message(pyrogram.filters.new_chat_members & pyrogram.filters.group, group=1)
 async def greeting_new_member(client: Client, message: pyrogram.types.Message):
     chat = message.chat
     if not chat or chat.id is None:
         return
-    db_chat = await database.get_chat_by_id(chat.id)
-    if db_chat is None:
-        return
-    chat_config = db_chat.chat_config
-    if not chat_config.greeting:
-        return
     if not message.new_chat_members:
         return
-    new_member = message.new_chat_members[0]  # TODO: handle multiple new members
-    t = Template(chat_config.greeting)
-    greet_text = t.safe_substitute(
-        user=new_member.mention(style="html"),
-        chat=chat.title,
-    )
-    await message.reply(
-        greet_text,
-        parse_mode=pyrogram.enums.ParseMode.HTML,
+    queue_new_members(client, chat, message.new_chat_members, message.date)
+
+
+@Client.on_chat_member_updated(pyrogram.filters.group, group=1)
+async def greeting_member_joined(client: Client, update: pyrogram.types.ChatMemberUpdated):
+    if is_present(update.old_chat_member) or not is_present(update.new_chat_member):
+        return
+    queue_new_members(
+        client, update.chat, [update.new_chat_member.user], update.date
     )

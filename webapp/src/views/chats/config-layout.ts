@@ -34,6 +34,7 @@ export const TOGGLE_GROUPS: ToggleGroup[] = [
       "ai_reply",
       "ai_comment",
       "agent_moderation_enabled",
+      "ai_member_tags_enabled",
       "group_memory_enabled",
       "ai_reply_other_bots_enabled",
       "bot_reply",

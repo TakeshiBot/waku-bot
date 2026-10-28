@@ -201,6 +201,8 @@
     "ai_comment": "AI Bình Luận",
     "ai_commentHint": "Cho phép AI bình luận bài đăng từ kênh liên kết",
     "agent_moderation_enabled": "AI Quản Trị",
+    "ai_member_tags_enabled": "AI Gắn Tag",
+    "ai_member_tags_enabledHint": "AI đặt tag anime vui vẻ theo tên thành viên mới; chào ngắn nếu nhóm chưa đặt greet",
     "agent_moderation_enabledHint": "Cho phép AI thực hiện yêu cầu quản trị nhóm hợp lệ",
     "setu_enabled": "Ảnh Ngẫu Nhiên",
     "setu_enabledHint": "Cho phép gửi ảnh ngẫu nhiên theo chế độ ảnh của nhóm",

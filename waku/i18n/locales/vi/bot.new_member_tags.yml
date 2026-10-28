@@ -1,0 +1,3 @@
+bot:
+  new_member_tags:
+    welcome: "Chào bạn {user}!"

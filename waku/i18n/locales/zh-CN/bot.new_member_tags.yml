@@ -1,0 +1,6 @@
+bot:
+  new_member_tags:
+    welcome: "欢迎，{user}！"
+  button:
+    chat_config:
+      ai_member_tags: AI 成员标签

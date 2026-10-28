@@ -154,6 +154,7 @@ class ChatConfig:
     ai_reply_other_bots_enabled: bool = False
     ai_comment: bool = False
     agent_moderation_enabled: bool = True
+    ai_member_tags_enabled: bool = True
     setu_enabled: bool = True
     telegram_r18_mode: int = 0
     convert_b23_enabled: bool = True
@@ -215,6 +216,7 @@ class ChatConfig:
             ai_comment=data.get("ai_comment", False),
             agent_moderation_enabled=data.get("agent_moderation_enabled", False)
             is True,
+            ai_member_tags_enabled=data.get("ai_member_tags_enabled", True) is True,
             group_memory_enabled=data.get("group_memory_enabled", True),
             sticker_memory_enabled=data.get("sticker_memory_enabled", True),
             reactions_enabled=data.get("reactions_enabled", True),
