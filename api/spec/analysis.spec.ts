@@ -41,7 +41,7 @@ before(async()=>{
     },
   }));
   const db=await mf.getD1Database('DB');
-  for(const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql']) {
+  for(const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql','0004_analysis_batches.sql']) {
     const sql=await readFile('migrations/'+name,'utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));
   }
 });
@@ -125,4 +125,28 @@ test('bulk image analysis drains the queue with at most two concurrent provider 
   const results=await Promise.all(images.map(image=>finished(image.id)));
   burst=false;
   assert.ok(peak<=2);assert.equal(results.filter(image=>image.ai_status==='done').length,6);
+});
+
+test('analysis batch progress and pending view follow the actual queued/running/completed images',async()=>{
+  const {id}=await api('/v1/analysis-batches','POST',{});
+  hold=new Promise(resolve=>{release=resolve;});
+  const images=[];for(let i=60;i<63;i++)images.push(await upload(i,{batch_id:id,rating:'safe',tags:'batch_progress'}));
+  const progress=await api('/v1/analysis-batches/'+id);
+  assert.equal(progress.total,3);assert.equal(progress.done,0);assert.equal(progress.pending+progress.running,3);
+  const waiting=await api('/v1/images?view=pending&q=batch_progress');assert.equal(waiting.images.length,3);
+  const ready=await api('/v1/images?view=classified&rating=safe&q=batch_progress');assert.equal(ready.images.length,0);
+  release();hold=undefined;await Promise.all(images.map(image=>finished(image.id)));
+  const done=await api('/v1/analysis-batches/'+id);assert.equal(done.total,3);assert.equal(done.done,3);assert.equal(done.pending+done.running+done.failed,0);
+  assert.equal((await api('/v1/images?view=pending&q=batch_progress')).images.length,0);
+  fail=true;
+  const errorBatch=await api('/v1/analysis-batches','POST',{});const errorImage=await upload(63,{batch_id:errorBatch.id});await finished(errorImage.id);fail=false;
+  const failed=await api('/v1/analysis-batches/'+errorBatch.id);assert.equal(failed.failed,1);assert.equal(failed.done,0);
+});
+
+test('bulk AI action creates jobs for manually uploaded images and reports progress',async()=>{
+  const images=[];for(let i=70;i<73;i++)images.push(await upload(i,{manual:'true'}));
+  const batch=await api('/v1/analysis-batches','POST',{});
+  const accepted=await api('/v1/analysis-batches/'+batch.id,'POST',{ids:images.map(image=>image.id)});assert.equal(accepted.added,3);
+  await Promise.all(images.map(image=>finished(image.id)));
+  const result=await api('/v1/analysis-batches/'+batch.id);assert.equal(result.total,3);assert.equal(result.done,3);
 });

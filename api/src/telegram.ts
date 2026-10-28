@@ -3,6 +3,7 @@ import { cleanupObjects, image, maxBytes, present, remove, save, update as updat
 import {aiEnabled,enqueueAnalysis,processAnalysis,type AnalysisJob} from './analysis';
 import { HttpError, type Env, type TelegramJob } from './types';
 import {acquireSlot,releaseSlot,continueWork} from './queue';
+import {stopPendingAnalysis} from './batches';
 
 interface TgFile {file_id:string; file_size?:number;}
 interface TgMessage {message_id:number; chat:{id:number;type:string}; from?:{id:number}; text?:string; caption?:string; photo?:TgFile[]; document?:TgFile & {mime_type?:string};reply_to_message?:TgMessage;}
@@ -157,7 +158,7 @@ async function handle(env:Env, job:TelegramJob,analyze:boolean,hop=0) {
     const chosen=raw==='-'?[]:captionMetadata(raw).tags;
     if (raw!=='-' && !chosen.length) throw new HttpError(400,'invalid_tags','Gửi tag dạng #tag1 #tag2.');
     await updateMetadata(env,target,{title:current.title,source_url:current.source_url,rating:current.rating,tags:chosen});
-    await env.DB.prepare("UPDATE image_analysis SET status='skipped',last_error='manual_edit' WHERE image_id=? AND status='pending'").bind(target).run();
+    await stopPendingAnalysis(env,target);
     const stored=await env.DB.prepare('SELECT * FROM image_analysis WHERE image_id=?').bind(target).first<AnalysisJob>();
     if (stored) await refreshAnalysisReceipt(env,stored);
     await tg(env,'sendMessage',{chat_id:message.chat.id,text:'Đã cập nhật tag.'});return;
@@ -243,5 +244,6 @@ async function runJobs(env:Env, limit=1, only?:string,analyze=true,hop=0) {
   if (!only) {
     await cleanupObjects(env);
     await env.DB.prepare("DELETE FROM telegram_jobs WHERE status IN ('done','failed','uncertain') AND created_at<?").bind(Date.now()-7*86400000).run();
+    await env.DB.prepare('DELETE FROM analysis_batches WHERE created_at<?').bind(Date.now()-7*86400000).run();
   }
 }

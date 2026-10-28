@@ -22,6 +22,12 @@ Mở URL gốc của Worker, ví dụ `https://waku-api.your-account.workers.dev
 - Ảnh R18 được làm mờ trong thư viện, có tùy chọn hiện ảnh; mở chi tiết để xem và chỉnh sửa.
 - Web và bot Telegram dùng chung dữ liệu, không có hai kho ảnh riêng.
 
+Trên PC, lưới ảnh hiển thị 6 cột; màn hình nhỏ tự giảm cột. Mỗi ảnh có checkbox, **Chọn tất cả** lấy toàn bộ kết quả trong tab/bộ lọc hiện tại, kể cả trang chưa tải. **Bỏ chọn** xóa lựa chọn; **Xóa** hỏi lại tổng số ảnh trước khi xóa hàng loạt.
+
+Khi bắt đầu upload, web chuyển sang **Chờ phân loại** và hiện trước các file đang chờ/gửi, sau đó thay bằng ảnh đã lưu. Tab này gồm ảnh `unknown` và ảnh còn chờ/chạy AI, kể cả ảnh đã được nhập phân loại thủ công. Khi AI xong, ảnh đã có phân loại chuyển sang tab tương ứng; ảnh vẫn chưa rõ phân loại ở lại. Có thể chọn ảnh trong tab này rồi bấm **AI gắn tag** để xử lý hàng loạt.
+
+Thanh upload đếm **ảnh được API xác nhận đã lưu / tổng ảnh của đợt**, không cộng file lỗi vào số đã lưu. Thanh AI phía trên danh sách dùng bộ đếm D1 riêng theo đợt: đang chờ, đang chạy, thành công, lỗi, bỏ qua. Đây là hai tiến trình khác nhau; upload xong không đồng nghĩa AI đã hoàn tất. ID đợt AI được giữ trong sessionStorage để tiếp tục theo dõi sau khi tải lại trang; API key không được lưu ở đó.
+
 Hàng đợi D1 có khóa lease theo từng slot, tiếp tục xử lý theo chuỗi ngắn để không vượt giới hạn gọi Worker lồng nhau. Cron mỗi phút khôi phục các tác vụ bị gián đoạn; khi đang mở web, trang cũng đánh thức hàng đợi. Không cam kết tốc độ cố định cho đợt lớn vì còn phụ thuộc Telegram, provider AI và hạn mức Cloudflare.
 
 Caption ví dụ:
@@ -124,11 +130,16 @@ Các đường dẫn `/v1/*` cần header `Authorization: Bearer API_KEY`. Lấy
 | PATCH | `/v1/images/ID` | Sửa các trường `title`, `tags`, `rating`, `source_url` |
 | DELETE | `/v1/images/ID` | Xóa ảnh |
 | POST | `/v1/images/ID/analyze` | Đưa ảnh vào hàng đợi AI để phân tích lại |
+| POST | `/v1/analysis-batches` | Tạo một đợt AI, trả `id` |
+| POST | `/v1/analysis-batches/ID` | Xếp hàng AI cho `{"ids":[...]}` (tối đa 100 ID/lượt) |
+| GET | `/v1/analysis-batches/ID` | Tiến trình thật của đợt AI |
 | GET/HEAD | `/media/ID` | File ảnh gốc, không cần API key |
 
 `rating` của random: `safe` (mặc định), `r18`, `mixed`. Ảnh `unknown` không xuất hiện trong random. Kết quả ít hơn `count` nếu kho không đủ ảnh phù hợp; không lặp ID trong cùng lượt. Truyền `exclude=ID1,ID2,...` để tránh lặp giữa các lượt; tổng số tag và ID loại trừ tối đa 96. Bot gọi API cần lưu lịch sử ID đã gửi.
 
 Một POST upload chỉ nhận một file/URL. Muốn upload nhiều ảnh qua API, gọi riêng từng ảnh với tối đa 2 request đồng thời; HTTP 429 có `Retry-After` khi slot upload đang bận. Web đã tự xử lý hàng đợi và thử lại, không cần gộp cả đợt vào một request lớn.
+
+Upload có thể truyền thêm `batch_id` để gắn tác vụ AI vào đợt đã tạo. Danh sách ảnh hỗ trợ `view=pending` (chưa phân loại hoặc AI đang chờ/chạy), hoặc `view=classified` kết hợp `rating=safe|r18` để chỉ lấy ảnh đã xử lý xong.
 
 Upload:
 

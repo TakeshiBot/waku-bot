@@ -1,10 +1,11 @@
 import { boundedBody, equalSecret, fetchImage, metadata, tags } from './input';
 import { choose, image, maxBytes, present, presentMany, remove, save, update } from './store';
 import { processJobs, refreshAnalysisReceipt, webhook } from './telegram';
-import {enqueueAnalysis,processAnalysis} from './analysis';
+import {aiEnabled,enqueueAnalysis,processAnalysis} from './analysis';
 import { HttpError, type Env, type ImageRow } from './types';
 import {authorize,sessionCookie,clearSession} from './auth';
 import {acquireSlot,releaseSlot,continueWork} from './queue';
+import {attachBatch,batchProgress,createBatch,stopPendingAnalysis} from './batches';
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 function integer(value:string|null, fallback:number, max:number) {
@@ -66,8 +67,26 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
   await authorize(request,env);
   if (path==='/v1/session') {
     if (request.method==='POST') return Response.json({ok:true},{headers:{'set-cookie':await sessionCookie(env),'cache-control':'no-store'}});
-    if (request.method==='GET') return response({ok:true,max_image_mb:maxBytes(env)/1024/1024,concurrency:2});
+    if (request.method==='GET') return response({ok:true,max_image_mb:maxBytes(env)/1024/1024,concurrency:2,ai_enabled:aiEnabled(env)});
     if (request.method==='DELETE') return Response.json({ok:true},{headers:{'set-cookie':clearSession(),'cache-control':'no-store'}});
+  }
+  if (path==='/v1/analysis-batches' && request.method==='POST') {
+    if (!aiEnabled(env)) throw new HttpError(503,'ai_not_configured','Chưa cấu hình API AI.');
+    return response({id:await createBatch(env)},201);
+  }
+  const batchMatch=path.match(/^\/v1\/analysis-batches\/([a-f0-9-]{36})$/);
+  if (batchMatch) {
+    const id=batchMatch[1];
+    if (request.method==='GET') return response(await batchProgress(env,id));
+    if (request.method==='POST') {
+      if (!aiEnabled(env)) throw new HttpError(503,'ai_not_configured','Chưa cấu hình API AI.');
+      const body=await json(request);
+      if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length>100 || body.ids.some(id=>typeof id!=='string' || !uuid.test(id)))
+        throw new HttpError(400,'invalid_ids','Mỗi lượt nhận 1–100 ID ảnh.');
+      const added=await attachBatch(env,id,body.ids as string[],true);
+      ctx.waitUntil(Promise.all([processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job)),processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job))]));
+      return response({added});
+    }
   }
   if (path==='/v1/jobs/drain' && request.method==='POST') {
     ctx.waitUntil(Promise.all([continueWork(env,'upload',0),continueWork(env,'ai',0)]));
@@ -97,6 +116,10 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
       if (!cursor || !Number.isSafeInteger(cursor.time) || !uuid.test(cursor.id)) throw new HttpError(400,'invalid_cursor','Cursor không hợp lệ.');
     }
     const filters:string[]=[],params:(string|number)[]=[];
+    const view=url.searchParams.get('view');
+    if (view && !['pending','classified'].includes(view)) throw new HttpError(400,'invalid_view','Mục ảnh không hợp lệ.');
+    if (view==='pending') filters.push("(i.rating='unknown' OR EXISTS (SELECT 1 FROM image_analysis a WHERE a.image_id=i.id AND a.status IN ('pending','running')))");
+    if (view==='classified') filters.push("NOT EXISTS (SELECT 1 FROM image_analysis a WHERE a.image_id=i.id AND a.status IN ('pending','running'))");
     const rating=url.searchParams.get('rating');
     if (rating) {
       if (!['safe','r18','unknown'].includes(rating)) throw new HttpError(400,'invalid_rating','Phân loại không hợp lệ.');
@@ -118,7 +141,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     const slot=await acquireSlot(env,'upload');
     if (!slot) return Response.json({error:{code:'busy',message:'Đang xử lý 2 ảnh. File này sẽ được thử lại sau.'}},{status:429,headers:{'retry-after':'2','cache-control':'no-store'}});
     try {
-    let bytes:ArrayBuffer, info, manual=false;
+    let bytes:ArrayBuffer, info, manual=false,batchId:unknown;
     if (request.headers.get('content-type')?.startsWith('multipart/form-data')) {
       const body=await boundedBody(request,maxBytes(env)+65536);
       let form:FormData;
@@ -128,16 +151,23 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
       if (!file || typeof file==='string') throw new HttpError(400,'missing_file','Thiếu file ảnh.');
       bytes=await file.arrayBuffer();
       manual=form.get('manual')==='true';
+      batchId=form.get('batch_id');
       info=metadata(Object.fromEntries(['title','tags','rating','source_url'].filter(key=>form.has(key)).map(key=>[key,form.get(key)])));
     } else {
       const body=await json(request);
       if (typeof body.url!=='string') throw new HttpError(400,'missing_url','Thiếu URL ảnh.');
       info=metadata(body);
       manual=body.manual===true;
+      batchId=body.batch_id;
       bytes=await fetchImage(body.url,maxBytes(env));
+    }
+    if (batchId) {
+      if (typeof batchId!=='string' || !uuid.test(batchId)) throw new HttpError(400,'invalid_batch','Đợt AI không hợp lệ.');
+      await batchProgress(env,batchId);
     }
     const result=await save(env,bytes,info,null);
     await enqueueAnalysis(env,result.row.id,manual);
+    if (batchId && typeof batchId==='string') await attachBatch(env,batchId,[result.row.id]);
     ctx.waitUntil(processAnalysis(env,result.row.id,job=>refreshAnalysisReceipt(env,job)));
     return response({image:await present(env,result.row,base),duplicate:result.duplicate},result.duplicate?200:201);
     } finally {await releaseSlot(env,slot);ctx.waitUntil(continueWork(env,'upload'));}
@@ -150,7 +180,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
       const current=await present(env,row,base), body=await json(request);
       const info=metadata({...current,...body});
       const changed=await update(env,id,info);
-      if (Object.hasOwn(body,'tags')) await env.DB.prepare("UPDATE image_analysis SET status='skipped',last_error='manual_edit' WHERE image_id=? AND status='pending'").bind(id).run();
+      if (Object.hasOwn(body,'tags')) await stopPendingAnalysis(env,id);
       return response({image:await present(env,changed,base)});
     }
     if (request.method==='DELETE') {await remove(env,id); return response({deleted:true,id});}
@@ -158,11 +188,10 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
   const analyze=path.match(/^\/v1\/images\/([a-f0-9-]{36})\/analyze$/);
   if (analyze && request.method==='POST') {
     await image(env,analyze[1]);
-    const {aiEnabled}=await import('./analysis');
     if (!aiEnabled(env)) throw new HttpError(503,'ai_not_configured','Chưa cấu hình API AI.');
-    await enqueueAnalysis(env,analyze[1],false,true);
+    const batchId=await createBatch(env);await attachBatch(env,batchId,[analyze[1]],true);
     ctx.waitUntil(processAnalysis(env,analyze[1],job=>refreshAnalysisReceipt(env,job)));
-    return response({queued:true});
+    return response({queued:true,batch_id:batchId});
   }
   throw new HttpError(404,'not_found','Không tìm thấy đường dẫn.');
 }

@@ -89,6 +89,7 @@ async function analyzeOne(env:Env,only?:string,notify?:(job:AnalysisJob)=>Promis
       ${only?'AND image_id=?':''} ORDER BY next_attempt LIMIT 1) RETURNING *`)
     .bind(now+120000,now,now,...(only?[only]:[])).first<AnalysisJob>();
   if (!job) return false;
+  await env.DB.prepare("UPDATE analysis_batch_items SET status='running' WHERE image_id=? AND status='pending'").bind(job.image_id).run();
   try {
     const row=await image(env,job.image_id), current=await present(env,row,env.PUBLIC_BASE_URL);
     const predicted=await infer(env,current.url,{title:current.title,tags:current.tags,rating:current.rating,source_url:current.source_url});
@@ -106,6 +107,9 @@ async function analyzeOne(env:Env,only?:string,notify?:(job:AnalysisJob)=>Promis
         (SELECT 1 FROM images WHERE id=? AND metadata_version=?) THEN 'done' ELSE 'skipped' END,
         lease_until=0,last_error=NULL WHERE image_id=? AND lease_until=?`)
         .bind(row.id,row.metadata_version,row.id,job.lease_until),
+      env.DB.prepare(`UPDATE analysis_batch_items SET status=CASE WHEN EXISTS
+        (SELECT 1 FROM images WHERE id=? AND metadata_version=?) THEN 'done' ELSE 'skipped' END
+        WHERE image_id=? AND status IN ('pending','running')`).bind(row.id,row.metadata_version,row.id),
     ]);
     if (!results[0].meta.changes) console.info('AI metadata skipped: manual changes took priority');
   } catch(error) {
@@ -113,6 +117,8 @@ async function analyzeOne(env:Env,only?:string,notify?:(job:AnalysisJob)=>Promis
     const retry=error instanceof AnalysisError && error.retryable && job.attempts<3;
     await env.DB.prepare('UPDATE image_analysis SET status=?,last_error=?,next_attempt=?,lease_until=0 WHERE image_id=? AND lease_until=?')
       .bind(retry?'pending':'failed',code,Date.now()+60000*job.attempts,job.image_id,job.lease_until).run();
+    await env.DB.prepare("UPDATE analysis_batch_items SET status=? WHERE image_id=? AND status IN ('pending','running')")
+      .bind(retry?'pending':'failed',job.image_id).run();
     // No upstream error text: it may contain the key, image URL or image data.
     console.warn('AI image tagging incomplete',{image_id:job.image_id,code,retry});
   }
