@@ -1,4 +1,5 @@
 import {HttpError,type Env} from './types';
+import {libraryChanged} from './store';
 
 export async function batchProgress(env:Env,id:string) {
   const batch=await env.DB.prepare('SELECT id FROM analysis_batches WHERE id=?').bind(id).first();
@@ -27,7 +28,7 @@ export async function attachBatch(env:Env,batchId:string,ids:string[],force=fals
   await env.DB.prepare(`INSERT INTO analysis_batch_items(batch_id,image_id,status)
     SELECT ?,image_id,status FROM image_analysis WHERE image_id IN (SELECT value FROM json_each(?))
     ON CONFLICT(batch_id,image_id) DO UPDATE SET status=excluded.status`).bind(batchId,encoded).run();
-  return rows.results.length;
+  await libraryChanged(env);return rows.results.length;
 }
 export async function stopPendingAnalysis(env:Env,id:string) {
   await env.DB.batch([
@@ -35,4 +36,5 @@ export async function stopPendingAnalysis(env:Env,id:string) {
     env.DB.prepare(`UPDATE analysis_batch_items SET status='skipped' WHERE image_id=? AND status IN ('pending','running')
       AND EXISTS (SELECT 1 FROM image_analysis WHERE image_id=? AND status='skipped')`).bind(id,id),
   ]);
+  await libraryChanged(env);
 }

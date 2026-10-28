@@ -6,9 +6,10 @@ import {parseAnalysis} from '../src/analysis.ts';
 
 let mf:Miniflare, calls=0, fail=false, hold:Promise<void>|undefined, release:()=>void;
 let burst=false,active=0,peak=0;
+let expectedKey='vision-key',expectedModel='vision-model',expectedPath='/v1/chat/completions';
 const sent:Array<{method:string;body:any}>=[];
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
-const predicted={title:'Ảnh anime',tags:['anime','blue_hair','cat_ears'],rating:'safe',rating_confidence:0.99};
+const predicted={title:'Ảnh anime',tags:['anime','blue_hair','cat_ears'],rating:'safe',rating_confidence:0.99,image_type:'anime'};
 
 before(async()=>{
   mf=new Miniflare(convertV4MiniflareOptions({
@@ -24,9 +25,9 @@ before(async()=>{
         calls++;
         active++;peak=Math.max(peak,active);
         try {
-        assert.equal(request.headers.get('authorization'),'Bearer vision-key');
+        assert.equal(request.headers.get('authorization'),'Bearer '+expectedKey);assert.equal(url.pathname,expectedPath);
         const body=await request.json() as any;
-        assert.equal(body.model,'vision-model');
+        assert.equal(body.model,expectedModel);
         assert.match(body.messages[1].content[1].image_url.url,/^https:\/\/images\.example\.com\/media\//);
         if(hold) await hold;
         if(burst)await new Promise(resolve=>setTimeout(resolve,100));
@@ -41,7 +42,7 @@ before(async()=>{
     },
   }));
   const db=await mf.getD1Database('DB');
-  for(const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql','0004_analysis_batches.sql']) {
+  for(const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql','0004_analysis_batches.sql','0005_library_filters.sql','0006_ai_providers.sql']) {
     const sql=await readFile('migrations/'+name,'utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));
   }
 });
@@ -76,10 +77,11 @@ async function jobDone(id:string) {
 }
 
 test('AI adds tags, preserves manual title/rating, duplicate is not analyzed again, manual bypass works',async()=>{
-  const first=await upload(1,{title:'My title',tags:'custom',rating:'r18'});
+  const first=await upload(1,{title:'My title',tags:'custom',rating:'r18',image_type:'real'});
   const result=await finished(first.id);
   assert.equal(result.ai_status,'done');assert.equal(result.title,'My title');assert.equal(result.rating,'r18');
   assert.deepEqual(result.tags,['anime','blue_hair','cat_ears','custom']);
+  assert.equal(result.image_type,'real','AI preserves a user-selected image type');
   const before=calls;await upload(1);assert.equal(calls,before);
   const manual=await upload(2,{manual:'true',tags:'only_manual',rating:'safe'});
   assert.equal(manual.ai_status,'skipped');assert.deepEqual(manual.tags,['only_manual']);assert.equal(calls,before);
@@ -149,4 +151,33 @@ test('bulk AI action creates jobs for manually uploaded images and reports progr
   const accepted=await api('/v1/analysis-batches/'+batch.id,'POST',{ids:images.map(image=>image.id)});assert.equal(accepted.added,3);
   await Promise.all(images.map(image=>finished(image.id)));
   const result=await api('/v1/analysis-batches/'+batch.id);assert.equal(result.total,3);assert.equal(result.done,3);
+});
+
+test('saved API/model CRUD is encrypted, persists selection and drives actual inference without deploy',async()=>{
+  const initial=await api('/v1/ai/settings');assert.equal(initial.providers.length,1);assert.equal(initial.enabled,true);
+  const legacyId=initial.selected_provider,legacyModelId=initial.selected_model;
+  assert.ok(!JSON.stringify(initial).includes('vision-key'));
+  const create=await api('/v1/ai/providers','POST',{name:'Alternative API',base_url:'https://vision.example.com/v2',api_key:'alternative-key'});
+  const provider=create.providers.find((p:any)=>p.name==='Alternative API');assert.ok(provider);
+  const db=await mf.getD1Database('DB'),stored=await db.prepare('SELECT key_cipher FROM ai_providers WHERE id=?').bind(provider.id).first<{key_cipher:string}>();
+  assert.ok(stored?.key_cipher);assert.ok(!stored.key_cipher.includes('alternative-key'));
+  const first=await api('/v1/ai/providers/'+provider.id+'/models','POST',{model:'alternative-vision'});
+  const model=first.providers.find((p:any)=>p.id===provider.id).models[0];
+  const second=await api('/v1/ai/providers/'+provider.id+'/models','POST',{model:'second-vision'});
+  const backup=second.providers.find((p:any)=>p.id===provider.id).models[1];
+  expectedKey='alternative-key';expectedModel='alternative-vision';expectedPath='/v2/chat/completions';
+  await api('/v1/ai/selection','PUT',{provider_id:provider.id,model_id:model.id});
+  assert.equal((await finished((await upload(240)).id)).ai_status,'done');
+  await api('/v1/ai/providers/'+provider.id,'PATCH',{name:'Renamed API',base_url:'https://vision.example.com/v3',api_key:'rotated-key'});
+  await api('/v1/ai/providers/'+provider.id,'PATCH',{name:'Renamed again'});
+  expectedKey='rotated-key';expectedModel='renamed-vision';expectedPath='/v3/chat/completions';
+  await api('/v1/ai/models/'+model.id,'PATCH',{model:'renamed-vision'});
+  assert.equal((await finished((await upload(241)).id)).ai_status,'done');
+  const saved=await api('/v1/ai/settings');assert.equal(saved.selected_model,model.id);assert.equal(saved.providers.find((p:any)=>p.id===provider.id).name,'Renamed again');
+  assert.ok(!JSON.stringify(saved).includes('rotated-key'));
+  expectedModel='second-vision';const removed=await api('/v1/ai/models/'+model.id,'DELETE');assert.equal(removed.selected_model,backup.id);
+  assert.equal((await finished((await upload(242)).id)).ai_status,'done');
+  const deleted=await api('/v1/ai/providers/'+provider.id,'DELETE');assert.equal(deleted.enabled,false);assert.equal((await api('/v1/session')).ai_enabled,false,'deleting selected API must not silently fall back to environment');
+  expectedKey='vision-key';expectedModel='vision-model';expectedPath='/v1/chat/completions';
+  const restored=await api('/v1/ai/selection','PUT',{provider_id:legacyId,model_id:legacyModelId});assert.equal(restored.enabled,true);
 });

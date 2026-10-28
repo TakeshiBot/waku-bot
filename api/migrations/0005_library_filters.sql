@@ -1,0 +1,10 @@
+ALTER TABLE images ADD COLUMN image_type TEXT CHECK(image_type IN ('anime','real'));
+ALTER TABLE images ADD COLUMN original_name TEXT;
+ALTER TABLE images ADD COLUMN import_url TEXT;
+CREATE INDEX images_type ON images(image_type);
+CREATE INDEX images_import_url ON images(import_url);
+CREATE TABLE image_import_urls (url TEXT PRIMARY KEY,image_id TEXT NOT NULL REFERENCES images(id) ON DELETE CASCADE);
+UPDATE images SET image_type='real' WHERE EXISTS (SELECT 1 FROM image_tags t WHERE t.image_id=images.id AND t.tag IN ('cosplay','photo','photography','real_person'));
+UPDATE images SET image_type='anime' WHERE image_type IS NULL AND EXISTS (SELECT 1 FROM image_tags t WHERE t.image_id=images.id AND t.tag IN ('anime','illustration','drawing','anime_art','digital_art'));
+CREATE TABLE library_revision (id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL);
+INSERT INTO library_revision(id,version) VALUES(1,1);

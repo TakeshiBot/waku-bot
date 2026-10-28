@@ -1,11 +1,11 @@
-import { boundedBody, captionMetadata, equalSecret, fetchImage, owner } from './input';
-import { cleanupObjects, image, maxBytes, present, remove, save, update as updateMetadata } from './store';
+import { boundedBody, captionMetadata, equalSecret, downloadImage, owner,type ImageDownload } from './input';
+import { cleanupObjects, image, maxBytes, present, remove, save, update as updateMetadata,recordImportAliases } from './store';
 import {aiEnabled,enqueueAnalysis,processAnalysis,type AnalysisJob} from './analysis';
 import { HttpError, type Env, type TelegramJob } from './types';
 import {acquireSlot,releaseSlot,continueWork} from './queue';
 import {stopPendingAnalysis} from './batches';
 
-interface TgFile {file_id:string; file_size?:number;}
+interface TgFile {file_id:string; file_size?:number; file_name?:string;}
 interface TgMessage {message_id:number; chat:{id:number;type:string}; from?:{id:number}; text?:string; caption?:string; photo?:TgFile[]; document?:TgFile & {mime_type?:string};reply_to_message?:TgMessage;}
 interface Update {update_id:number; message?:TgMessage; callback_query?:{id:string;from:{id:number};data?:string;message?:TgMessage};}
 class TelegramError extends Error {
@@ -127,7 +127,7 @@ async function handle(env:Env, job:TelegramJob,analyze:boolean,hop=0) {
       await tg(env,'answerCallbackQuery',{callback_query_id:callback.id});
       await tg(env,'sendMessage',{chat_id:message.chat.id,text:`Sửa tag cho ảnh: ${base}/media/${id}\nReply tin này với #tag1 #tag2, hoặc dấu - để xóa toàn bộ tag.`,reply_markup:{force_reply:true,selective:true}});
     } else if (match[1]==='analyze') {
-      if (!aiEnabled(env)) {await tg(env,'answerCallbackQuery',{callback_query_id:callback.id,text:'Chưa cấu hình API AI.',show_alert:true});return;}
+      if (!await aiEnabled(env)) {await tg(env,'answerCallbackQuery',{callback_query_id:callback.id,text:'Chưa cấu hình API AI.',show_alert:true});return;}
       await image(env,id);
       await enqueueAnalysis(env,id,false,true);
       await env.DB.prepare('UPDATE image_analysis SET chat_id=?,message_id=?,photo=? WHERE image_id=?')
@@ -177,7 +177,7 @@ async function handle(env:Env, job:TelegramJob,analyze:boolean,hop=0) {
   }
   const file = message.photo?.at(-1) ?? message.document;
   const info = captionMetadata(message.caption || (file ? '' : message.text || ''));
-  let bytes:ArrayBuffer;
+  let bytes:ArrayBuffer,download:ImageDownload|undefined;
   if (file) {
     if (file.file_size && file.file_size > maxBytes(env)) throw new HttpError(413,'too_large','Ảnh vượt giới hạn dung lượng.');
     const remote = await tg<{file_path?:string}>(env,'getFile',{file_id:file.file_id});
@@ -190,9 +190,10 @@ async function handle(env:Env, job:TelegramJob,analyze:boolean,hop=0) {
     if (!url) {
       await tg(env,'sendMessage',{chat_id:message.chat.id,text:HELP}); return;
     }
-    bytes = await fetchImage(url,maxBytes(env));
+    download=await downloadImage(url,maxBytes(env));bytes=download.bytes;
   }
-  const saved = await save(env,bytes,info,String(message.from!.id));
+  const saved = await save(env,bytes,info,String(message.from!.id),file?.file_name || null,file?null:(message.text || '').match(/https?:\/\/[^\s<>]+/i)?.[0] || null);
+  if(download)await recordImportAliases(env,saved.row.id,[download.input,download.url,...(download.used_original?[download.identity]:[])]);
   await enqueueAnalysis(env,saved.row.id,/#manual(?:\s|$)/i.test(message.caption || message.text || ''));
   await env.DB.prepare('UPDATE telegram_jobs SET image_id=? WHERE id=?').bind(saved.row.id,job.id).run();
   await receipt(env,job,message,saved.row.id,base,saved.duplicate);

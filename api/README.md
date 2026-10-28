@@ -24,6 +24,14 @@ Mở URL gốc của Worker, ví dụ `https://waku-api.your-account.workers.dev
 
 Trên PC, lưới ảnh hiển thị 6 cột; màn hình nhỏ tự giảm cột. Mỗi ảnh có checkbox, **Chọn tất cả** lấy toàn bộ kết quả trong tab/bộ lọc hiện tại, kể cả trang chưa tải. **Bỏ chọn** xóa lựa chọn; **Xóa** hỏi lại tổng số ảnh trước khi xóa hàng loạt.
 
+**Lọc** nằm cùng hàng với Chọn tất cả. Trên máy tính rê chuột vào để mở, giữ bảng khi di chuyển bên trong và thu lại khi rời ra; trên điện thoại bấm để mở/đóng. Có thể dùng bàn phím và Escape. Logo Waku được dùng ở sidebar, trang đăng nhập và biểu tượng tab.
+
+**API & Model** nằm trên nút Đăng xuất ở sidebar (biểu tượng bánh răng trên điện thoại). Thêm/sửa/xóa kết nối bằng tên, Base URL OpenAI-compatible và key; mỗi API lưu được nhiều Model ID. Tích chọn một API và một model để dùng, tự nhớ model đã chọn khi chuyển qua lại giữa các API. Thêm tối đa 30 API và 100 model/API. Cấu hình hiện có được nhập thành **API Waku** lần đầu mở mục này.
+
+Lựa chọn được lưu trong D1 và dùng chung cho web/bot upload Telegram, không cần deploy. Lượt AI đang chạy tiếp tục với cấu hình đã lấy; các lượt kế tiếp đọc lựa chọn mới. Xóa model đang dùng sẽ chọn model còn lại của API nếu có; xóa API đang dùng sẽ ngừng AI đến khi chọn kết nối khác, không âm thầm quay về cấu hình cũ. Upload thủ công vẫn hoạt động.
+
+Key nhà cung cấp được mã hóa AES-GCM trước khi lưu D1, không trả lại qua API và không lưu ở localStorage. Khi sửa API, để trống key để giữ key cũ. Khóa mã hóa được dẫn xuất từ `API_KEY` quản trị: nếu thay `API_KEY`, cần nhập lại các key nhà cung cấp đã lưu. Sau khi quản lý API trên web, danh sách D1 là nguồn cấu hình chính; deploy lại secret AI không ghi đè lựa chọn này.
+
 Khi bắt đầu upload, web chuyển sang **Chờ phân loại** và hiện trước các file đang chờ/gửi, sau đó thay bằng ảnh đã lưu. Tab này gồm ảnh `unknown` và ảnh còn chờ/chạy AI, kể cả ảnh đã được nhập phân loại thủ công. Khi AI xong, ảnh đã có phân loại chuyển sang tab tương ứng; ảnh vẫn chưa rõ phân loại ở lại. Có thể chọn ảnh trong tab này rồi bấm **AI gắn tag** để xử lý hàng loạt.
 
 Thanh upload đếm **ảnh được API xác nhận đã lưu / tổng ảnh của đợt**, không cộng file lỗi vào số đã lưu. Thanh AI phía trên danh sách dùng bộ đếm D1 riêng theo đợt: đang chờ, đang chạy, thành công, lỗi, bỏ qua. Đây là hai tiến trình khác nhau; upload xong không đồng nghĩa AI đã hoàn tất. ID đợt AI được giữ trong sessionStorage để tiếp tục theo dõi sau khi tải lại trang; API key không được lưu ở đó.
@@ -123,11 +131,20 @@ Các đường dẫn `/v1/*` cần header `Authorization: Bearer API_KEY`. Lấy
 | GET | `/health` | Kiểm tra Worker đang phản hồi |
 | POST/GET/DELETE | `/v1/session` | Đăng nhập, kiểm tra hoặc xóa cookie phiên web |
 | GET | `/v1/stats` | Dung lượng, số ảnh và tác vụ đang chờ |
+| GET | `/v1/state?batch=ID` | Gộp thống kê, phiên bản thư viện và tiến trình AI trong một request |
+| GET | `/v1/ai/settings` | Danh sách API/model và lựa chọn đang dùng, không trả key |
+| POST | `/v1/ai/providers` | Lưu API: `name`, `base_url`, `api_key` |
+| PATCH/DELETE | `/v1/ai/providers/ID` | Sửa/xóa API; key trống giữ nguyên |
+| POST | `/v1/ai/providers/ID/models` | Thêm `{"model":"model-id"}` |
+| PATCH/DELETE | `/v1/ai/models/ID` | Sửa/xóa model |
+| PUT | `/v1/ai/selection` | Chọn `provider_id`, `model_id`; không gửi model để nhớ lại model gần nhất |
+| GET | `/v1/filters?q=cat` | Các tag hiện có và số ảnh, tối đa 1.000 tag; tìm tiếp bằng `q` |
+| POST | `/v1/images/duplicates` | Kiểm tra trước khi upload: `{"hashes":["SHA256"],"urls":["https://…"]}`, tối đa 100 mục/lượt |
 | POST | `/v1/images` | Upload multipart `file`, hoặc JSON chứa `url` |
 | GET | `/v1/images?limit=20&before=CURSOR&q=maid&rating=safe` | Danh sách/tìm tên và tag/lọc phân loại, tối đa 100/trang; `next` là cursor trang kế |
 | GET | `/v1/images/random?count=10&rating=safe&tags=cat,cute` | Lấy tối đa 10 ảnh, các tag kết hợp AND |
 | GET | `/v1/images/ID` | Xem metadata |
-| PATCH | `/v1/images/ID` | Sửa các trường `title`, `tags`, `rating`, `source_url` |
+| PATCH | `/v1/images/ID` | Sửa các trường `title`, `tags`, `rating`, `source_url`, `image_type` |
 | DELETE | `/v1/images/ID` | Xóa ảnh |
 | POST | `/v1/images/ID/analyze` | Đưa ảnh vào hàng đợi AI để phân tích lại |
 | POST | `/v1/analysis-batches` | Tạo một đợt AI, trả `id` |
@@ -140,6 +157,31 @@ Các đường dẫn `/v1/*` cần header `Authorization: Bearer API_KEY`. Lấy
 Một POST upload chỉ nhận một file/URL. Muốn upload nhiều ảnh qua API, gọi riêng từng ảnh với tối đa 2 request đồng thời; HTTP 429 có `Retry-After` khi slot upload đang bận. Web đã tự xử lý hàng đợi và thử lại, không cần gộp cả đợt vào một request lớn.
 
 Upload có thể truyền thêm `batch_id` để gắn tác vụ AI vào đợt đã tạo. Danh sách ảnh hỗ trợ `view=pending` (chưa phân loại hoặc AI đang chờ/chạy), hoặc `view=classified` kết hợp `rating=safe|r18` để chỉ lấy ảnh đã xử lý xong.
+
+Kiểu ảnh `image_type`: `anime` (vẽ/anime) hoặc `real` (người thật/ảnh chụp). Có thể chọn lúc upload hoặc sửa chi tiết; AI chỉ điền khi chưa có lựa chọn. Ảnh cũ có tag nhận diện rõ được chuyển kiểu tương ứng khi migrate, còn lại để chưa xác định. Lọc danh sách bằng `types=anime,real` và `tags=maid,cat_ears`; nhiều giá trị trong từng mục kết hợp OR, các mục kết hợp AND. Lọc tag của random vẫn dùng AND như trước.
+
+Web tính SHA-256 tại trình duyệt rồi kiểm tra theo lô trước upload; ảnh trùng nội dung kể cả đổi tên và ảnh lặp trong hàng đợi đều được bỏ qua. File gốc được ghi `original_name`; link import đã gặp cũng được ghi nhớ. Link mới chưa từng gặp phải tải về mới xác định được nội dung trùng. Máy chủ vẫn kiểm tra hash lần cuối để xử lý upload đồng thời.
+
+### Ưu tiên ảnh gốc từ link
+
+Web, REST API và bot upload Telegram dùng chung bộ tải ảnh, tự ưu tiên bản gốc của **link ảnh trực tiếp** từ:
+
+- X/Twitter (`pbs.twimg.com`): `name=orig`, hỗ trợ cả URL `.jpg:small` cũ và avatar có hậu tố kích thước; thử JPG/PNG khi cần.
+- Discord: chuyển media proxy về CDN gốc, bỏ tham số thu nhỏ và giữ nguyên `ex`, `is`, `hm` xác thực.
+- Pinterest (`i.pinimg.com`): chuyển đường dẫn kích thước sang `originals`, có thử định dạng thay thế.
+- Pixiv (`i.pximg.net`): chuyển thumbnail/master sang `img-original`, kèm Referer và thử JPG/PNG.
+- Imgur: bỏ hậu tố thumbnail đúng mẫu ID; không cắt nhầm ký tự cuối ID ảnh gốc.
+- Reddit: chuyển `preview.redd.it` sang `i.redd.it`; không đoán nguồn từ external-preview.
+- Unsplash, Pexels, Shopify CDN và WordPress: gỡ các tham số/đường dẫn thu nhỏ đã biết; giữ thông tin như `ixid`, `v` hoặc tham số xác thực.
+- Wikimedia: chuyển thumbnail raster về file gốc; giữ thumbnail PNG của SVG/PDF vì importer không nhận các file gốc đó.
+
+Nguồn không nhận diện hoặc URL có chữ ký không rõ được giữ nguyên, không xóa query tùy tiện. Nếu bản gốc lỗi/không tồn tại/quá giới hạn dung lượng, thử lại URL người dùng gửi. Web ghi rõ khi chỉ lưu được bản từ link; không nhận bản fallback là ảnh gốc. Mỗi ảnh tối đa 4 ứng viên, chỉ gọi ứng viên kế tiếp khi cần, tổng thời gian tải tối đa khoảng 25 giây. Giới hạn dung lượng ảnh vẫn áp dụng cho từng bản tải. Không upscale và không mở khóa ảnh cần đăng nhập.
+
+Kiểm tra trùng chuẩn hóa link ngay trên máy chủ, không gọi CDN lúc preflight. Các kích thước/định dạng của cùng ảnh được nhận diện cùng nguồn; chỉ ghi nhận danh tính bản gốc khi đã tải thành công bản đó. Những link thumbnail lưu trước bản nâng cấp này không ngăn việc lấy lại bản gốc. API upload URL trả thêm `import`: `source`, `preferred_url`, `fetched_url`, `used_original`, `fallback_reason`.
+
+Tham khảo quy tắc nguồn: [Discord CDN](https://docs.discord.com/developers/reference#signed-attachment-cdn-urls), [Unsplash image URLs](https://unsplash.com/documentation#dynamically-resizable-images), [Pexels photo resource](https://www.pexels.com/api/documentation/#photos), [Shopify image URL](https://shopify.dev/docs/api/liquid/filters/image_url), [WordPress image CDN](https://developer.wordpress.com/docs/developer-tools/site-accelerator-api/). Các mẫu X/Pixiv/Pinterest cũng được đối chiếu với URL và cơ chế tải của [gallery-dl](https://github.com/mikf/gallery-dl/tree/master/gallery_dl/extractor).
+
+Web rảnh chỉ kiểm tra một request mỗi phút; khi có tác vụ chuyển sang mỗi 8 giây, gộp tiến trình và thống kê. Tab trình duyệt bị ẩn ngừng polling. Chỉ tải lại danh sách khi phiên bản thư viện thay đổi; giữ lại các phần tử ảnh để tránh nháy. Hàng đợi chạy độc lập qua continuation/Cron, không phụ thuộc web liên tục gọi drain.
 
 Upload:
 

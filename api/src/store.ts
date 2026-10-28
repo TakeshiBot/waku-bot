@@ -5,6 +5,10 @@ export function maxBytes(env: Env): number {
   return Math.min(20, Math.max(1, Number(env.MAX_IMAGE_MB) || 10)) * 1024 * 1024;
 }
 
+export async function libraryChanged(env:Env) {
+  await env.DB.prepare('UPDATE library_revision SET version=version+1 WHERE id=1').run();
+}
+
 export async function image(env: Env, id: string): Promise<ImageRow> {
   const row = await env.DB.prepare('SELECT * FROM images WHERE id = ?').bind(id).first<ImageRow>();
   if (!row) throw new HttpError(404, 'not_found', 'Không tìm thấy ảnh.');
@@ -13,6 +17,12 @@ export async function image(env: Env, id: string): Promise<ImageRow> {
 
 export async function present(env: Env, row: ImageRow, base: string) {
   return (await presentMany(env,[row],base))[0];
+}
+
+export async function recordImportAliases(env:Env,id:string,urls:string[]) {
+  const aliases=[...new Set(urls)];if(!aliases.length)return;
+  await env.DB.prepare(`INSERT INTO image_import_urls(url,image_id) SELECT value,? FROM json_each(?) WHERE true
+    ON CONFLICT(url) DO UPDATE SET image_id=excluded.image_id`).bind(id,JSON.stringify(aliases)).run();
 }
 
 export async function presentMany(env:Env, rows:ImageRow[], base:string) {
@@ -27,28 +37,31 @@ export async function presentMany(env:Env, rows:ImageRow[], base:string) {
   return rows.map(row=>({
     id:row.id, url:`${base}/media/${row.id}`, filename:row.filename,
     mime_type:row.mime_type, size:row.size, sha256:row.sha256, title:row.title,
-    source_url:row.source_url, rating:row.rating, tags:allTags.get(row.id) || [],
+    source_url:row.source_url, rating:row.rating, image_type:row.image_type, original_name:row.original_name, tags:allTags.get(row.id) || [],
     created_at:new Date(row.created_at).toISOString(),
     ai_status:states.get(row.id) || 'off',
   }));
 }
 
-export async function save(env: Env, bytes: ArrayBuffer, info: Metadata, uploader: string | null) {
+export async function save(env: Env, bytes: ArrayBuffer, info: Metadata, uploader: string | null, originalName:string|null=null, importUrl:string|null=null) {
   if (bytes.byteLength > maxBytes(env)) throw new HttpError(413,'too_large','Ảnh vượt giới hạn dung lượng.');
   const kind = imageType(bytes);
   const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(x=>x.toString(16).padStart(2,'0')).join('');
   const existing = await env.DB.prepare('SELECT * FROM images WHERE sha256 = ?').bind(hash).first<ImageRow>();
-  if (existing) return {row:existing, duplicate:true};
+  if (existing) {
+    if(importUrl)await env.DB.prepare('INSERT INTO image_import_urls(url,image_id) VALUES (?,?) ON CONFLICT(url) DO UPDATE SET image_id=excluded.image_id').bind(importUrl,existing.id).run();
+    return {row:existing, duplicate:true};
+  }
   const id = crypto.randomUUID();
   // Unique object keys prevent a pending delete from removing a re-upload of
   // the same hash. The UNIQUE hash in D1 remains the deduplication authority.
   const key = `images/${id}.${kind.ext}`;
   await env.IMAGES.put(key, bytes, {httpMetadata:{contentType:kind.mime}});
   await env.DB.batch([env.DB.prepare(`INSERT OR IGNORE INTO images
-    (id,sha256,object_key,filename,mime_type,size,title,source_url,rating,uploader_id,random_key,created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+    (id,sha256,object_key,filename,mime_type,size,title,source_url,rating,uploader_id,random_key,created_at,image_type,original_name,import_url)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
       id,hash,key,`${id}.${kind.ext}`,kind.mime,bytes.byteLength,info.title,info.source_url,
-      info.rating,uploader,crypto.getRandomValues(new Uint32Array(1))[0]/2**32,Date.now(),
+      info.rating,uploader,crypto.getRandomValues(new Uint32Array(1))[0]/2**32,Date.now(),info.image_type || null,originalName?.slice(0,255) || null,importUrl,
     ),env.DB.prepare(`INSERT OR IGNORE INTO image_tags(image_id,tag)
       SELECT i.id,t.value FROM images i,json_each(?) t WHERE i.id=?`).bind(JSON.stringify(info.tags),id)]);
   const row = await env.DB.prepare('SELECT * FROM images WHERE sha256 = ?').bind(hash).first<ImageRow>();
@@ -57,17 +70,19 @@ export async function save(env: Env, bytes: ArrayBuffer, info: Metadata, uploade
     await env.DB.prepare('INSERT OR IGNORE INTO object_deletions(object_key) VALUES (?)').bind(key).run();
     await deleteObject(env,key);
   }
+  if(row.id===id) await libraryChanged(env);
+  if(importUrl)await env.DB.prepare('INSERT INTO image_import_urls(url,image_id) VALUES (?,?) ON CONFLICT(url) DO UPDATE SET image_id=excluded.image_id').bind(importUrl,row.id).run();
   return {row, duplicate:row.id !== id};
 }
 
 export async function update(env: Env, id: string, info: Metadata) {
   await image(env,id);
   await env.DB.batch([
-    env.DB.prepare('UPDATE images SET title=?,source_url=?,rating=?,metadata_version=metadata_version+1 WHERE id=?').bind(info.title,info.source_url,info.rating,id),
+    env.DB.prepare('UPDATE images SET title=?,source_url=?,rating=?,image_type=?,metadata_version=metadata_version+1 WHERE id=?').bind(info.title,info.source_url,info.rating,info.image_type || null,id),
     env.DB.prepare('DELETE FROM image_tags WHERE image_id=?').bind(id),
     env.DB.prepare('INSERT INTO image_tags(image_id,tag) SELECT ?,value FROM json_each(?)').bind(id,JSON.stringify(info.tags)),
   ]);
-  return image(env,id);
+  await libraryChanged(env);return image(env,id);
 }
 
 export async function remove(env: Env, id: string) {
@@ -78,6 +93,7 @@ export async function remove(env: Env, id: string) {
     env.DB.prepare('DELETE FROM images WHERE id=?').bind(id),
   ]);
   await deleteObject(env,row.object_key);
+  await libraryChanged(env);
 }
 
 async function deleteObject(env: Env, key: string) {

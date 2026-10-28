@@ -1,4 +1,5 @@
 import { HttpError, type Metadata, type Rating } from './types';
+import {imageSourcePlan,imageHeaders} from './image-sources';
 
 export function equalSecret(actual: string, expected: string | undefined): boolean {
   if (!expected) return false;
@@ -48,7 +49,8 @@ export function metadata(input: Record<string, unknown>): Metadata {
   if (!['safe','r18','unknown'].includes(String(rating))) throw new HttpError(400, 'invalid_rating', 'rating: safe, r18 hoặc unknown.');
   if (input.title !== undefined && (typeof input.title !== 'string' || input.title.length > 200)) throw new HttpError(400, 'invalid_title', 'Tên ảnh tối đa 200 ký tự.');
   const source = input.source_url ? publicUrl(input.source_url).href : null;
-  return { title: String(input.title ?? '').trim(), tags: tags(input.tags), rating: rating as Rating, source_url: source };
+  if (input.image_type != null && input.image_type!=='' && !['anime','real'].includes(String(input.image_type))) throw new HttpError(400,'invalid_type','Kiểu ảnh: anime hoặc real.');
+  return { title: String(input.title ?? '').trim(), tags: tags(input.tags), rating: rating as Rating, source_url: source, image_type:input.image_type || null } as Metadata;
 }
 
 export function captionMetadata(caption: string): Metadata {
@@ -96,10 +98,12 @@ export async function boundedBody(response: Response | Request, limit: number): 
   return joined.buffer;
 }
 
-export async function fetchImage(raw: string, limit: number): Promise<ArrayBuffer> {
-  let url = publicUrl(raw);
+async function requestImage(raw:string,limit:number,timeout:number):Promise<{bytes:ArrayBuffer;url:string}> {
+  let url=publicUrl(raw);const signal=AbortSignal.timeout(timeout);
   for (let i=0; i<5; i++) {
-    const response = await fetch(url, {redirect:'manual', signal:AbortSignal.timeout(20000), headers:{'User-Agent':'WakuImageAPI/0.1'}});
+    let response:Response;
+    try{response=await fetch(url,{redirect:'manual',signal,headers:imageHeaders(url)});}
+    catch{throw new HttpError(422,'source_unavailable','Không kết nối được nguồn ảnh. Hãy thử lại sau.');}
     if ([301,302,303,307,308].includes(response.status)) {
       await response.body?.cancel();
       const location = response.headers.get('location');
@@ -108,7 +112,37 @@ export async function fetchImage(raw: string, limit: number): Promise<ArrayBuffe
       continue;
     }
     if (!response.ok) { await response.body?.cancel(); throw new HttpError(422, 'download_failed', `Nguồn ảnh trả HTTP ${response.status}.`); }
-    return boundedBody(response, limit);
+    try{const bytes=await boundedBody(response,limit);imageType(bytes);return {bytes,url:url.href};}
+    catch(error){try{await response.body?.cancel();}catch{}throw error;}
   }
   throw new HttpError(400, 'redirect_limit', 'Link chuyển hướng quá nhiều lần.');
+}
+
+export interface ImageDownload {
+  bytes:ArrayBuffer;url:string;input:string;identity:string;source:string|null;
+  preferred_url:string;used_original:boolean;fallback_reason:string|null;
+}
+export async function downloadImage(raw:string,limit:number):Promise<ImageDownload> {
+  const plan=imageSourcePlan(publicUrl(raw)),deadline=Date.now()+25000;
+  let firstError:unknown,lastError:unknown,skipAlternatives=false;
+  for(let i=0;i<plan.candidates.length;i++){
+    const candidate=plan.candidates[i];if(skipAlternatives&&candidate.original)continue;
+    const remaining=deadline-Date.now();if(remaining<=0)break;
+    try{
+      const result=await requestImage(candidate.url,limit,Math.min(remaining,candidate.original?6500:20000));
+      return {...result,input:plan.input,identity:plan.identity,source:plan.source,preferred_url:plan.preferred_url,
+        used_original:candidate.original,fallback_reason:!candidate.original&&firstError?(firstError instanceof HttpError?firstError.code:'source_unavailable'):null};
+    }catch(error){
+      if(error instanceof HttpError&&['unsafe_url','invalid_url','bad_redirect'].includes(error.code))throw error;
+      firstError ??= error;lastError=error;
+      // Extension alternatives are useful for a missing JPG/PNG, not for
+      // timeouts, rate limiting or files that already exceed the size limit.
+      if(candidate.original&&!(error instanceof HttpError&&(error.code==='not_image'||error.code==='download_failed'&&/HTTP (404|415)\./.test(error.message))))skipAlternatives=true;
+    }
+  }
+  if(lastError instanceof HttpError)throw lastError;
+  throw new HttpError(422,'source_unavailable','Không tải được ảnh từ nguồn. Hãy thử lại sau.');
+}
+export async function fetchImage(raw:string,limit:number):Promise<ArrayBuffer> {
+  return (await downloadImage(raw,limit)).bytes;
 }

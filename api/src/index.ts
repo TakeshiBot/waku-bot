@@ -1,11 +1,13 @@
-import { boundedBody, equalSecret, fetchImage, metadata, tags } from './input';
-import { choose, image, maxBytes, present, presentMany, remove, save, update } from './store';
+import { boundedBody, equalSecret, downloadImage, metadata, tags,publicUrl,type ImageDownload } from './input';
+import { choose, image, maxBytes, present, presentMany, remove, save, update,recordImportAliases } from './store';
 import { processJobs, refreshAnalysisReceipt, webhook } from './telegram';
 import {aiEnabled,enqueueAnalysis,processAnalysis} from './analysis';
 import { HttpError, type Env, type ImageRow } from './types';
 import {authorize,sessionCookie,clearSession} from './auth';
 import {acquireSlot,releaseSlot,continueWork} from './queue';
 import {attachBatch,batchProgress,createBatch,stopPendingAnalysis} from './batches';
+import {manageProviders} from './providers';
+import {imageSourcePlan} from './image-sources';
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 function integer(value:string|null, fallback:number, max:number) {
@@ -65,13 +67,18 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
   }
   if (!path.startsWith('/v1/')) throw new HttpError(404,'not_found','Không tìm thấy đường dẫn.');
   await authorize(request,env);
+  if(path.startsWith('/v1/ai/')){
+    const settings=await manageProviders(request,env,['POST','PATCH','PUT'].includes(request.method)?await json(request):{});
+    if(request.method!=='GET')ctx.waitUntil(Promise.all([processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job)),processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job))]));
+    return response(settings);
+  }
   if (path==='/v1/session') {
     if (request.method==='POST') return Response.json({ok:true},{headers:{'set-cookie':await sessionCookie(env),'cache-control':'no-store'}});
-    if (request.method==='GET') return response({ok:true,max_image_mb:maxBytes(env)/1024/1024,concurrency:2,ai_enabled:aiEnabled(env)});
+    if (request.method==='GET') return response({ok:true,max_image_mb:maxBytes(env)/1024/1024,concurrency:2,ai_enabled:await aiEnabled(env)});
     if (request.method==='DELETE') return Response.json({ok:true},{headers:{'set-cookie':clearSession(),'cache-control':'no-store'}});
   }
   if (path==='/v1/analysis-batches' && request.method==='POST') {
-    if (!aiEnabled(env)) throw new HttpError(503,'ai_not_configured','Chưa cấu hình API AI.');
+    if (!await aiEnabled(env)) throw new HttpError(503,'ai_not_configured','Chưa cấu hình API AI.');
     return response({id:await createBatch(env)},201);
   }
   const batchMatch=path.match(/^\/v1\/analysis-batches\/([a-f0-9-]{36})$/);
@@ -79,7 +86,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     const id=batchMatch[1];
     if (request.method==='GET') return response(await batchProgress(env,id));
     if (request.method==='POST') {
-      if (!aiEnabled(env)) throw new HttpError(503,'ai_not_configured','Chưa cấu hình API AI.');
+      if (!await aiEnabled(env)) throw new HttpError(503,'ai_not_configured','Chưa cấu hình API AI.');
       const body=await json(request);
       if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length>100 || body.ids.some(id=>typeof id!=='string' || !uuid.test(id)))
         throw new HttpError(400,'invalid_ids','Mỗi lượt nhận 1–100 ID ảnh.');
@@ -92,12 +99,33 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     ctx.waitUntil(Promise.all([continueWork(env,'upload',0),continueWork(env,'ai',0)]));
     return response({accepted:true});
   }
-  if (path==='/v1/stats' && request.method==='GET') {
+  if ((path==='/v1/stats' || path==='/v1/state') && request.method==='GET') {
     const images=await env.DB.prepare(`SELECT COUNT(*) total,COALESCE(SUM(size),0) bytes,
       COALESCE(SUM(rating='safe'),0) safe,COALESCE(SUM(rating='r18'),0) r18,COALESCE(SUM(rating='unknown'),0) unknown FROM images`).first();
     const ai=await env.DB.prepare("SELECT COUNT(*) pending FROM image_analysis WHERE status IN ('pending','running')").first();
     const uploads=await env.DB.prepare("SELECT COUNT(*) pending FROM telegram_jobs WHERE status IN ('pending','running')").first();
-    return response({images,ai_pending:ai?.pending || 0,uploads_pending:uploads?.pending || 0});
+    const revision=await env.DB.prepare('SELECT version FROM library_revision WHERE id=1').first<{version:number}>();
+    let batch=null;const batchId=url.searchParams.get('batch');
+    if(batchId && uuid.test(batchId))try{batch=await batchProgress(env,batchId);}catch(error){if(!(error instanceof HttpError && error.status===404))throw error;}
+    return response({images,ai_pending:ai?.pending || 0,uploads_pending:uploads?.pending || 0,revision:revision?.version || 0,batch});
+  }
+  if(path==='/v1/filters' && request.method==='GET') {
+    const query=(url.searchParams.get('q') || '').slice(0,64).toLowerCase();
+    const rows=await env.DB.prepare("SELECT tag,COUNT(*) count FROM image_tags WHERE instr(tag,?)>0 GROUP BY tag ORDER BY tag LIMIT 1000").bind(query).all();
+    return response({tags:rows.results});
+  }
+  if(path==='/v1/images/duplicates' && request.method==='POST') {
+    const body=await json(request),hashes=body.hashes ?? [],urls=body.urls ?? [];
+    if(!Array.isArray(hashes)||!Array.isArray(urls)||hashes.length+urls.length>100
+      ||hashes.some(x=>typeof x!=='string'||!/^[a-f0-9]{64}$/.test(x))||urls.some(x=>typeof x!=='string'||x.length>4096))
+      throw new HttpError(400,'invalid_fingerprints','Tối đa 100 mã ảnh hoặc link mỗi lượt.');
+    const links=(urls as string[]).map(raw=>imageSourcePlan(publicUrl(raw)));
+    const lookups=links.map(link=>({input:link.input,lookup:link.identity}));
+    const rows=await env.DB.prepare(`SELECT id,sha256,NULL import_url FROM images WHERE sha256 IN (SELECT value FROM json_each(?))
+      UNION ALL SELECT i.id,i.sha256,json_extract(j.value,'$.input') import_url FROM json_each(?) j
+      JOIN image_import_urls u ON u.url=json_extract(j.value,'$.lookup') JOIN images i ON i.id=u.image_id`)
+      .bind(JSON.stringify(hashes),JSON.stringify(lookups)).all();
+    return response({duplicates:rows.results,links:links.map(({input,identity,preferred_url,source})=>({input,identity,preferred_url,source}))});
   }
   if (path==='/v1/images/random' && request.method==='GET') {
     const exclude=(url.searchParams.get('exclude') || '').split(',').filter(Boolean);
@@ -125,6 +153,11 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
       if (!['safe','r18','unknown'].includes(rating)) throw new HttpError(400,'invalid_rating','Phân loại không hợp lệ.');
       filters.push('i.rating=?');params.push(rating);
     }
+    const filterTags=tags(url.searchParams.get('tags'));
+    if(filterTags.length){filters.push('EXISTS (SELECT 1 FROM image_tags t WHERE t.image_id=i.id AND t.tag IN (SELECT value FROM json_each(?)))');params.push(JSON.stringify(filterTags));}
+    const types=(url.searchParams.get('types') || '').split(',').filter(Boolean);
+    if(types.some(type=>!['anime','real'].includes(type)))throw new HttpError(400,'invalid_type','Kiểu ảnh không hợp lệ.');
+    if(types.length){filters.push('i.image_type IN (SELECT value FROM json_each(?))');params.push(JSON.stringify(types));}
     const query=(url.searchParams.get('q') || '').trim();
     if (query.length>100) throw new HttpError(400,'invalid_query','Từ khóa tối đa 100 ký tự.');
     if (query) {
@@ -141,7 +174,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     const slot=await acquireSlot(env,'upload');
     if (!slot) return Response.json({error:{code:'busy',message:'Đang xử lý 2 ảnh. File này sẽ được thử lại sau.'}},{status:429,headers:{'retry-after':'2','cache-control':'no-store'}});
     try {
-    let bytes:ArrayBuffer, info, manual=false,batchId:unknown;
+    let bytes:ArrayBuffer, info, manual=false,batchId:unknown,originalName:string|null=null,importUrl:string|null=null,download:ImageDownload|undefined;
     if (request.headers.get('content-type')?.startsWith('multipart/form-data')) {
       const body=await boundedBody(request,maxBytes(env)+65536);
       let form:FormData;
@@ -150,26 +183,29 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
       const file=form.get('file');
       if (!file || typeof file==='string') throw new HttpError(400,'missing_file','Thiếu file ảnh.');
       bytes=await file.arrayBuffer();
+      originalName=file.name;
       manual=form.get('manual')==='true';
       batchId=form.get('batch_id');
-      info=metadata(Object.fromEntries(['title','tags','rating','source_url'].filter(key=>form.has(key)).map(key=>[key,form.get(key)])));
+      info=metadata(Object.fromEntries(['title','tags','rating','source_url','image_type'].filter(key=>form.has(key)).map(key=>[key,form.get(key)])));
     } else {
       const body=await json(request);
       if (typeof body.url!=='string') throw new HttpError(400,'missing_url','Thiếu URL ảnh.');
       info=metadata(body);
+      importUrl=publicUrl(body.url).href;
       manual=body.manual===true;
       batchId=body.batch_id;
-      bytes=await fetchImage(body.url,maxBytes(env));
+      download=await downloadImage(importUrl,maxBytes(env));bytes=download.bytes;
     }
     if (batchId) {
       if (typeof batchId!=='string' || !uuid.test(batchId)) throw new HttpError(400,'invalid_batch','Đợt AI không hợp lệ.');
       await batchProgress(env,batchId);
     }
-    const result=await save(env,bytes,info,null);
+    const result=await save(env,bytes,info,null,originalName,importUrl);
+    if(download)await recordImportAliases(env,result.row.id,[download.input,download.url,...(download.used_original?[download.identity]:[])]);
     await enqueueAnalysis(env,result.row.id,manual);
     if (batchId && typeof batchId==='string') await attachBatch(env,batchId,[result.row.id]);
     ctx.waitUntil(processAnalysis(env,result.row.id,job=>refreshAnalysisReceipt(env,job)));
-    return response({image:await present(env,result.row,base),duplicate:result.duplicate},result.duplicate?200:201);
+    return response({image:await present(env,result.row,base),duplicate:result.duplicate,...(download?{import:{source:download.source,preferred_url:download.preferred_url,fetched_url:download.url,used_original:download.used_original,fallback_reason:download.fallback_reason}}:{})},result.duplicate?200:201);
     } finally {await releaseSlot(env,slot);ctx.waitUntil(continueWork(env,'upload'));}
   }
   const match=path.match(/^\/v1\/images\/([^/]+)$/);
@@ -188,7 +224,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
   const analyze=path.match(/^\/v1\/images\/([a-f0-9-]{36})\/analyze$/);
   if (analyze && request.method==='POST') {
     await image(env,analyze[1]);
-    if (!aiEnabled(env)) throw new HttpError(503,'ai_not_configured','Chưa cấu hình API AI.');
+    if (!await aiEnabled(env)) throw new HttpError(503,'ai_not_configured','Chưa cấu hình API AI.');
     const batchId=await createBatch(env);await attachBatch(env,batchId,[analyze[1]],true);
     ctx.waitUntil(processAnalysis(env,analyze[1],job=>refreshAnalysisReceipt(env,job)));
     return response({queued:true,batch_id:batchId});

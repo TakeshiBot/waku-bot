@@ -14,12 +14,14 @@ export interface Env {
 }
 
 export type Rating = 'safe' | 'r18' | 'unknown';
-export interface Metadata { title: string; tags: string[]; rating: Rating; source_url: string | null; }
+export type ImageType = 'anime' | 'real';
+export interface Metadata { title: string; tags: string[]; rating: Rating; source_url: string | null; image_type?: ImageType | null; }
 export interface ImageRow {
   id: string; sha256: string; object_key: string; filename: string; mime_type: string;
   size: number; title: string; source_url: string | null; rating: Rating;
   uploader_id: string | null; random_key: number; created_at: number;
   metadata_version: number;
+  image_type: ImageType | null; original_name: string | null; import_url: string | null;
 }
 export interface TelegramJob {
   id: string; payload: string; attempts: number; image_id: string | null; notified: number;

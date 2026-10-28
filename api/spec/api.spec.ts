@@ -9,6 +9,7 @@ import {acquireSlot,releaseSlot} from '../src/queue.ts';
 let mf:Miniflare;
 const key='test-api-key', secret='test-webhook-secret';
 const sent:Array<{method:string;body:Record<string,any>}>=[];
+const sourceRequests:string[]=[];
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
 
 before(async()=>{
@@ -23,6 +24,11 @@ before(async()=>{
         if (url.pathname==='/redirect') return new MockResponse(null,{status:302,headers:{location:'http://127.0.0.1/private'}});
         return new MockResponse(png,{headers:{'content-type':'image/png'}});
       }
+      if(url.hostname==='pbs.twimg.com'){
+        sourceRequests.push(url.href);
+        if(url.pathname==='/media/qa-fallback'&&url.searchParams.get('name')==='orig')return new MockResponse(null,{status:403});
+        return new MockResponse(Buffer.concat([png,Buffer.from(url.pathname+(url.searchParams.get('name')==='orig'?'original':'thumbnail'))]),{headers:{'content-type':'image/png'}});
+      }
       assert.equal(url.hostname,'api.telegram.org','No external requests allowed in tests');
       if (url.pathname.includes('/file/bot')) return new MockResponse(url.pathname.includes('/bulk-')?Buffer.concat([png,Buffer.from(url.pathname)]):png);
       const method=url.pathname.split('/').at(-1)!;
@@ -31,7 +37,7 @@ before(async()=>{
     },
   }));
   const db=await mf.getD1Database('DB');
-  for (const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql','0004_analysis_batches.sql']) {
+  for (const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql','0004_analysis_batches.sql','0005_library_filters.sql','0006_ai_providers.sql']) {
     const migration=await readFile(`migrations/${name}`,'utf8');
     await db.batch(migration.split(';').map(s=>s.trim()).filter(Boolean).map(sql=>db.prepare(sql)));
   }
@@ -156,7 +162,52 @@ test('URL imports, unsupported files, unsafe redirects, size and malformed metad
   assert.equal((await call('/v1/images','POST',html)).status,415);
   const large=new FormData();large.set('file',new Blob([new Uint8Array(1024*1024+1)]),'big.png');
   assert.equal((await call('/v1/images','POST',large)).status,413);
-  assert.deepEqual(captionMetadata('Mèo #cat #safe https://www.pixiv.net/a'),{title:'Mèo',tags:['cat'],rating:'safe',source_url:'https://www.pixiv.net/a'});
+  assert.deepEqual(captionMetadata('Mèo #cat #safe https://www.pixiv.net/a'),{title:'Mèo',tags:['cat'],rating:'safe',source_url:'https://www.pixiv.net/a',image_type:null});
+});
+
+test('image types, checkbox filters, content dedup preflight and lightweight state revisions',async()=>{
+  const initial=await (await call('/v1/state')).json() as any;
+  const form=new FormData();form.set('file',new Blob([png,Buffer.from('typed-image')]),'original-name.png');form.set('image_type','real');form.set('rating','safe');form.set('manual','true');form.set('tags','qa_tag,cosplay');
+  const created=await (await call('/v1/images','POST',form)).json() as any;
+  assert.equal(created.image.image_type,'real');assert.equal(created.image.original_name,'original-name.png');
+  const dedup=await (await call('/v1/images/duplicates','POST',{hashes:[created.image.sha256]})).json() as any;
+  assert.equal(dedup.duplicates[0].id,created.image.id);
+  const imported=await (await call('/v1/images','POST',{url:'https://cdn.example.com/second-photo.png',manual:true})).json() as any;
+  const sameUrl=await (await call('/v1/images/duplicates','POST',{urls:['https://cdn.example.com/second-photo.png']})).json() as any;assert.equal(sameUrl.duplicates[0].id,imported.image.id);
+  // An existing content hash remains canonical even when imported under another URL.
+  const typed=await (await call('/v1/images?types=real&tags=qa_tag&rating=safe')).json() as any;assert.deepEqual(typed.images.map((x:any)=>x.id),[created.image.id]);
+  const other=await (await call('/v1/images?types=anime&tags=qa_tag')).json() as any;assert.equal(other.images.length,0);
+  assert.equal((await call('/v1/images?types=invalid')).status,400);
+  assert.equal((await call('/v1/images/duplicates','POST',{hashes:['invalid']})).status,400);
+  const available=await (await call('/v1/filters?q=qa_')).json() as any;assert.ok(available.tags.some((t:any)=>t.tag==='qa_tag'));
+  const after=await (await call('/v1/state')).json() as any;assert.ok(after.revision>initial.revision);
+  const unchanged=await (await call('/v1/state')).json() as any;assert.equal(unchanged.revision,after.revision);
+  await call('/v1/images/'+created.image.id,'DELETE');
+});
+
+test('original URL imports persist full content and dedup renditions without treating failed fallback as full',async()=>{
+  const small='https://pbs.twimg.com/media/qa-original?format=jpg&name=360x360';
+  const before=sourceRequests.length;
+  const initial=await (await call('/v1/images/duplicates','POST',{urls:[small]})).json() as any;
+  assert.equal(initial.duplicates.length,0);assert.equal(initial.links[0].preferred_url,small.replace('360x360','orig'));
+  assert.equal(sourceRequests.length,before,'preflight normalizes locally without probing remote CDNs');
+  const result=await (await call('/v1/images','POST',{url:small,manual:true})).json() as any;
+  assert.equal(result.import.used_original,true);assert.equal(result.import.fallback_reason,null);assert.equal(sourceRequests.length,before+1);
+  const stored=await mf.dispatchFetch(result.image.url);assert.ok(Buffer.from(await stored.arrayBuffer()).includes(Buffer.from('original')));
+  const other='https://pbs.twimg.com/media/qa-original?format=png&name=large';
+  const duplicate=await (await call('/v1/images/duplicates','POST',{urls:[other]})).json() as any;
+  assert.equal(duplicate.duplicates[0].id,result.image.id);assert.equal(duplicate.duplicates[0].import_url,other);
+  assert.equal(sourceRequests.length,before+1,'different sizes do not cause a second source download');
+  const fallbackUrl='https://pbs.twimg.com/media/qa-fallback?format=jpg&name=360x360';
+  const fallback=await (await call('/v1/images','POST',{url:fallbackUrl,manual:true})).json() as any;
+  assert.equal(fallback.import.used_original,false);assert.equal(fallback.import.fallback_reason,'download_failed');
+  const retry=await (await call('/v1/images/duplicates','POST',{urls:[fallbackUrl.replace('360x360','orig')]})).json() as any;
+  assert.equal(retry.duplicates.length,0,'a thumbnail fallback must not mark the original as already stored');
+  const db=await mf.getD1Database('DB');
+  await db.prepare('DELETE FROM image_import_urls WHERE image_id=?').bind(result.image.id).run();
+  await db.prepare('INSERT INTO image_import_urls(url,image_id) VALUES (?,?)').bind(small,result.image.id).run();
+  const legacy=await (await call('/v1/images/duplicates','POST',{urls:[small]})).json() as any;assert.equal(legacy.duplicates.length,0,'old raw thumbnail aliases never prevent upgrading');
+  await call('/v1/images/'+result.image.id,'DELETE');await call('/v1/images/'+fallback.image.id,'DELETE');
 });
 
 test('Telegram photo ingestion, update dedup and classification callback change real API state',async()=>{
