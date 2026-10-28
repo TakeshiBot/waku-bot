@@ -44,12 +44,73 @@ def snapshot(rights: Any | None) -> dict:
     }
 
 
-def to_native(value: dict, *, until_date: int | None = None):
-    if not isinstance(value, dict) or any(
-        type(value.get(name)) is not bool for name in RIGHT_FIELDS
-    ):
+def normalize_defaults(value: dict | None) -> dict:
+    """Upgrade a persisted default-rights snapshot from older Telegram layers.
+
+    Telegram has added granular media rights over time. Old active locks may
+    therefore lack fields that a newer Kurigram release requires. The old
+    aggregate fields describe their safe effective value; unrelated new rights
+    default to allowed, as they did before Telegram introduced them.
+    """
+    if not isinstance(value, dict):
         raise ValueError("Invalid banned-rights snapshot")
-    date = value.get("until_date") if until_date is None else until_date
+    date = value.get("until_date", 0)
+    if type(date) is not int or not 0 <= date <= 2**31 - 1:
+        raise ValueError("Invalid banned-rights expiry")
+    if any(name in value and type(value[name]) is not bool for name in RIGHT_FIELDS):
+        raise ValueError("Invalid banned-rights snapshot")
+
+    legacy_messages = bool(value.get("send_messages", False))
+    legacy_media = bool(value.get("send_media", False))
+    granular_media = {
+        "send_photos",
+        "send_videos",
+        "send_roundvideos",
+        "send_audios",
+        "send_voices",
+        "send_docs",
+    }
+    return {
+        "until_date": date,
+        **{
+            name: value.get(
+                name,
+                legacy_messages
+                if name == "send_plain"
+                else legacy_media
+                if name in granular_media
+                else False,
+            )
+            for name in RIGHT_FIELDS
+        },
+    }
+
+
+def same_defaults(left: dict | None, right: dict | None) -> bool:
+    """Compare effective group defaults, not Telegram's wire representation.
+
+    Telegram returns INT32_MAX for default-rights until_date, even when the
+    request used 0. The legacy send_messages/send_media aggregate flags are
+    also redundant with the granular send permissions used by modern clients.
+    TDLib's RestrictedRights follows the same granular comparison:
+    https://github.com/tdlib/td/blob/master/td/telegram/DialogParticipant.cpp
+    Personal mute expiries must still be compared exactly; this is group-only.
+    """
+    try:
+        left = normalize_defaults(left)
+        right = normalize_defaults(right)
+    except ValueError:
+        return False
+    return all(
+        left.get(name) == right.get(name)
+        for name in RIGHT_FIELDS
+        if name not in {"send_messages", "send_media"}
+    )
+
+
+def to_native(value: dict, *, until_date: int | None = None):
+    value = normalize_defaults(value)
+    date = value["until_date"] if until_date is None else until_date
     if type(date) is not int or not 0 <= date <= 2**31 - 1:
         raise ValueError("Invalid banned-rights expiry")
     return raw.types.ChatBannedRights(

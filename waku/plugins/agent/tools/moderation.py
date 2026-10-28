@@ -2013,7 +2013,9 @@ async def lock_chat(ctx: RunContext[datatype.ContextDeps], duration: str = "") -
     if saved is not None:
         permissions.to_native(saved)
         permissions.to_native(state.get("lock_applied"))
-    if saved is not None and current != state.get("lock_applied"):
+    if saved is not None and not permissions.same_defaults(
+        current, state.get("lock_applied")
+    ):
         saved = current
     saved = current if saved is None else saved
     applied = permissions.muted(current)
@@ -2054,7 +2056,7 @@ async def unlock_chat(ctx: RunContext[datatype.ContextDeps]) -> str:
     restored = (
         state["lock_permissions"]
         if state.get("lock_permissions") is not None
-        and current == state.get("lock_applied")
+        and permissions.same_defaults(current, state.get("lock_applied"))
         else permissions.unmuted(current)
     )
     await _set_rights(ctx, restored, expected_current=current)
@@ -2104,14 +2106,18 @@ async def unlock_expired_chat(chat_id: int, generation: str, attempt: int = 0):
                 _schedule_unlock(chat_id, generation, until, attempt=attempt)
                 return
             current = await permissions.default_rights(client, chat_id)
-            if current == state["lock_permissions"]:
+            if permissions.same_defaults(current, state["lock_permissions"]):
                 # A previous restore may have succeeded before its ACK/DB write failed.
                 await store.patch_state(chat_id, 0, {key: None for key in _LOCK_KEYS})
                 return
             if (
-                current != state.get("lock_applied")
+                not permissions.same_defaults(current, state.get("lock_applied"))
                 or state.get("lock_permissions") is None
             ):
+                logger.info(
+                    "Scheduled group unlock skipped for chat {}: default permissions changed",
+                    chat_id,
+                )
                 return
             peer = await client.resolve_peer(chat_id)
             bot = await client.get_chat_member(chat_id, client.me.id)
@@ -2123,9 +2129,8 @@ async def unlock_expired_chat(chat_id: int, generation: str, attempt: int = 0):
             latest = await store.get_state(chat_id, 0)
             if latest.get("lock_generation") != generation:
                 return
-            if (
-                await permissions.default_rights(client, chat_id)
-                != state["lock_applied"]
+            if not permissions.same_defaults(
+                await permissions.default_rights(client, chat_id), state["lock_applied"]
             ):
                 return
             await client.invoke(
