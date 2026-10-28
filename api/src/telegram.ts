@@ -1,9 +1,10 @@
 import { boundedBody, captionMetadata, equalSecret, fetchImage, owner } from './input';
-import { cleanupObjects, image, maxBytes, present, remove, save } from './store';
+import { cleanupObjects, image, maxBytes, present, remove, save, update as updateMetadata } from './store';
+import {aiEnabled,enqueueAnalysis,processAnalysis,type AnalysisJob} from './analysis';
 import { HttpError, type Env, type TelegramJob } from './types';
 
 interface TgFile {file_id:string; file_size?:number;}
-interface TgMessage {message_id:number; chat:{id:number;type:string}; from?:{id:number}; text?:string; caption?:string; photo?:TgFile[]; document?:TgFile & {mime_type?:string};}
+interface TgMessage {message_id:number; chat:{id:number;type:string}; from?:{id:number}; text?:string; caption?:string; photo?:TgFile[]; document?:TgFile & {mime_type?:string};reply_to_message?:TgMessage;}
 interface Update {update_id:number; message?:TgMessage; callback_query?:{id:string;from:{id:number};data?:string;message?:TgMessage};}
 class TelegramError extends Error {
   constructor(public status:number, public retryAfter=0) {super(`Telegram HTTP ${status}`);}
@@ -22,7 +23,9 @@ function escape(value:string) {return value.replace(/&/g,'&amp;').replace(/</g,'
 function baseUrl(env:Env, fallback:string) {return (env.PUBLIC_BASE_URL || fallback).replace(/\/$/,'');}
 const HELP = 'Gửi ảnh hoặc file ảnh gốc, hoặc dán link ảnh trực tiếp.\n'
   + 'Caption: tên ảnh #tag1 #tag2 #safe (hoặc #r18), có thể kèm link nguồn.\n'
-  + 'Không ghi phân loại: ảnh chờ bạn bấm An toàn/R18, chưa xuất hiện trong API random.\n'
+  + 'Khi có API AI, bot tự xem ảnh để bổ sung tag và phân loại. Tag, tên và phân loại bạn nhập được ưu tiên.\n'
+  + 'Thêm #manual để chỉ nhập tay. Bấm Sửa tag, hoặc reply ảnh đã lưu bằng /tags #tag1 #tag2 để thay tag.\n'
+  + 'Ảnh chưa phân loại chưa xuất hiện trong API random; bạn vẫn có thể bấm An toàn/R18.\n'
   + 'Mỗi ảnh tối đa 10 MB mặc định. Gửi dạng file để giữ chất lượng gốc.\n'
   + '/stats — thống kê kho; /help — hướng dẫn. Chỉ tài khoản được cấp quyền dùng được bot.';
 
@@ -48,49 +51,82 @@ function controls(id:string, url:string, rating='unknown') {
   return {inline_keyboard:[
     [{text:'Xem ảnh',url}],
     [{text:`${rating==='safe'?'✅ ':''}An toàn`,callback_data:`rating:safe:${id}`},{text:`${rating==='r18'?'✅ ':''}R18`,callback_data:`rating:r18:${id}`}],
+    [{text:'✨ AI gắn tag',callback_data:`analyze:${id}`},{text:'✏️ Sửa tag',callback_data:`tags:${id}`}],
     [{text:'Xóa ảnh',callback_data:`delete:${id}`}],
   ]};
 }
 
-async function receipt(env:Env, job:TelegramJob, message:TgMessage, id:string, base:string, duplicate:boolean) {
+async function receiptText(env:Env,id:string,base:string,duplicate=false) {
   const row = await image(env,id);
   const data = await present(env,row,base);
   const rating = row.rating === 'unknown' ? 'Chưa phân loại — chọn nút bên dưới.' : row.rating === 'safe' ? 'An toàn' : 'R18';
+  const ai=data.ai_status==='pending' || data.ai_status==='running'?'AI đang xem ảnh…'
+    :data.ai_status==='done'?'AI đã gắn tag':data.ai_status==='failed'?'AI chưa phân tích được; bạn có thể thử lại hoặc nhập tay.':'';
   const text = `${duplicate ? 'Ảnh đã có trong kho' : 'Đã lưu ảnh'}\n${escape(row.title || row.filename)}\n`
     + `${rating}\n${data.tags.length ? escape(data.tags.map(t=>'#'+t).join(' ').slice(0,160))+'\n' : ''}`
+    + (ai?`${ai}\n`:'')
     + `<code>${escape(data.url)}</code>`;
+  return {text,row,data};
+}
+
+export async function refreshAnalysisReceipt(env:Env,job:AnalysisJob) {
+  if (!job.chat_id || !job.message_id) return;
+  const {text,row,data}=await receiptText(env,job.image_id,env.PUBLIC_BASE_URL);
+  await tg(env,job.photo?'editMessageCaption':'editMessageText',{
+    chat_id:job.chat_id,message_id:job.message_id,...(job.photo?{caption:text}:{text}),
+    parse_mode:'HTML',reply_markup:controls(row.id,data.url,row.rating),
+  });
+}
+
+async function receipt(env:Env, job:TelegramJob, message:TgMessage, id:string, base:string, duplicate:boolean) {
+  const {text,row,data}=await receiptText(env,id,base,duplicate);
   // Store the notification boundary before sending: a lost Telegram ACK must
   // not lead to repeatedly posting receipts. The saved image remains available.
   await env.DB.prepare('UPDATE telegram_jobs SET notified=1 WHERE id=?').bind(job.id).run();
   // Reuse the real Telegram photo/file ID when possible; URL-imports use a text
   // receipt so a format unsupported by sendPhoto cannot hide a successful upload.
   const file = message.photo?.at(-1)?.file_id;
+  let result:{message_id:number}|undefined,photo=false;
   if (file) {
-    try {await tg(env,'sendPhoto',{chat_id:message.chat.id,photo:file,caption:text,parse_mode:'HTML',reply_markup:controls(id,data.url,row.rating)}); return;}
+    try {result=await tg(env,'sendPhoto',{chat_id:message.chat.id,photo:file,caption:text,parse_mode:'HTML',reply_markup:controls(id,data.url,row.rating)});photo=true;}
     catch(error) {if (!(error instanceof TelegramError && error.status===400)) throw error;}
   }
-  await tg(env,'sendMessage',{chat_id:message.chat.id,text,parse_mode:'HTML',link_preview_options:{is_disabled:true},reply_markup:controls(id,data.url,row.rating)});
+  const sent=result ?? await tg<{message_id:number}>(env,'sendMessage',{chat_id:message.chat.id,text,parse_mode:'HTML',link_preview_options:{is_disabled:true},reply_markup:controls(id,data.url,row.rating)});
+  await env.DB.prepare('UPDATE image_analysis SET chat_id=?,message_id=?,photo=? WHERE image_id=? AND message_id IS NULL')
+    .bind(message.chat.id,sent.message_id,photo?1:0,id).run();
 }
 
-async function handle(env:Env, job:TelegramJob) {
+async function handle(env:Env, job:TelegramJob,analyze:boolean) {
   const {update,base} = JSON.parse(job.payload) as {update:Update;base:string};
   const callback = update.callback_query;
   const message = callback?.message ?? update.message!;
   if (callback) {
-    const match = callback.data?.match(/^(rating:(safe|r18)|delete):([a-f0-9-]{36})$/);
+    const match = callback.data?.match(/^(rating:(safe|r18)|delete|tags|analyze):([a-f0-9-]{36})$/);
     if (!match) return;
     const id = match[3];
     if (match[1] === 'delete') {
       try {await remove(env,id);} catch (e) {if (!(e instanceof HttpError && e.status===404)) throw e;}
       await tg(env,'answerCallbackQuery',{callback_query_id:callback.id,text:'Đã xóa ảnh.'});
       await tg(env,'editMessageReplyMarkup',{chat_id:message.chat.id,message_id:message.message_id,reply_markup:{inline_keyboard:[]}});
+    } else if (match[1]==='tags') {
+      await image(env,id);
+      await tg(env,'answerCallbackQuery',{callback_query_id:callback.id});
+      await tg(env,'sendMessage',{chat_id:message.chat.id,text:`Sửa tag cho ảnh: ${base}/media/${id}\nReply tin này với #tag1 #tag2, hoặc dấu - để xóa toàn bộ tag.`,reply_markup:{force_reply:true,selective:true}});
+    } else if (match[1]==='analyze') {
+      if (!aiEnabled(env)) {await tg(env,'answerCallbackQuery',{callback_query_id:callback.id,text:'Chưa cấu hình API AI.',show_alert:true});return;}
+      await image(env,id);
+      await enqueueAnalysis(env,id,false,true);
+      await env.DB.prepare('UPDATE image_analysis SET chat_id=?,message_id=?,photo=? WHERE image_id=?')
+        .bind(message.chat.id,message.message_id,message.photo?1:0,id).run();
+      await tg(env,'answerCallbackQuery',{callback_query_id:callback.id,text:'Đã gửi ảnh cho AI xem.'});
+      await processAnalysis(env,id,pending=>refreshAnalysisReceipt(env,pending));
     } else {
-      const row=await image(env,id);
-      await env.DB.prepare('UPDATE images SET rating=? WHERE id=?').bind(match[2],id).run();
+      await image(env,id);
+      await env.DB.prepare('UPDATE images SET rating=?,metadata_version=metadata_version+1 WHERE id=?').bind(match[2],id).run();
       await tg(env,'answerCallbackQuery',{callback_query_id:callback.id,text:match[2]==='safe'?'Đã chọn An toàn.':'Đã chọn R18.'});
       // Replace the old receipt as well as its buttons so the displayed rating
       // agrees with the classification actually used by the API.
-      const text=`Đã lưu ảnh\n${escape(row.title || row.filename)}\n${match[2]==='safe'?'An toàn':'R18'}\n<code>${escape(`${base}/media/${id}`)}</code>`;
+      const {text}=await receiptText(env,id,base);
       await tg(env,message.photo?'editMessageCaption':'editMessageText',{
         chat_id:message.chat.id,message_id:message.message_id,
         ...(message.photo?{caption:text}:{text}),parse_mode:'HTML',
@@ -98,6 +134,20 @@ async function handle(env:Env, job:TelegramJob) {
       });
     }
     return;
+  }
+  const reply=message.reply_to_message;
+  const target=(reply?.text || reply?.caption || '').match(/\/media\/([a-f0-9-]{36})(?:\s|$)/)?.[1];
+  if (target && message.text && (/^\/tags(?:\s|$)/i.test(message.text) || /^Sửa tag cho ảnh:/.test(reply?.text || '') || message.text.startsWith('#') || message.text==='-')) {
+    const current=await present(env,await image(env,target),base);
+    const raw=message.text.replace(/^\/tags\s*/i,'').trim();
+    if (!raw) throw new HttpError(400,'missing_tags','Gửi /tags #tag1 #tag2, hoặc /tags - để xóa hết tag.');
+    const chosen=raw==='-'?[]:captionMetadata(raw).tags;
+    if (raw!=='-' && !chosen.length) throw new HttpError(400,'invalid_tags','Gửi tag dạng #tag1 #tag2.');
+    await updateMetadata(env,target,{title:current.title,source_url:current.source_url,rating:current.rating,tags:chosen});
+    await env.DB.prepare("UPDATE image_analysis SET status='skipped',last_error='manual_edit' WHERE image_id=? AND status='pending'").bind(target).run();
+    const stored=await env.DB.prepare('SELECT * FROM image_analysis WHERE image_id=?').bind(target).first<AnalysisJob>();
+    if (stored) await refreshAnalysisReceipt(env,stored);
+    await tg(env,'sendMessage',{chat_id:message.chat.id,text:'Đã cập nhật tag.'});return;
   }
   if (/^\/(start|help)(?:\s|$)/i.test(message.text || '')) {
     await tg(env,'sendMessage',{chat_id:message.chat.id,text:HELP}); return;
@@ -108,6 +158,7 @@ async function handle(env:Env, job:TelegramJob) {
   }
   if (job.image_id) {
     if (!job.notified) await receipt(env,job,message,job.image_id,base,false);
+    if (analyze) await processAnalysis(env,job.image_id,pending=>refreshAnalysisReceipt(env,pending));
     return;
   }
   const file = message.photo?.at(-1) ?? message.document;
@@ -128,14 +179,16 @@ async function handle(env:Env, job:TelegramJob) {
     bytes = await fetchImage(url,maxBytes(env));
   }
   const saved = await save(env,bytes,info,String(message.from!.id));
+  await enqueueAnalysis(env,saved.row.id,/#manual(?:\s|$)/i.test(message.caption || message.text || ''));
   await env.DB.prepare('UPDATE telegram_jobs SET image_id=? WHERE id=?').bind(saved.row.id,job.id).run();
   await receipt(env,job,message,saved.row.id,base,saved.duplicate);
+  if (analyze) await processAnalysis(env,saved.row.id,pending=>refreshAnalysisReceipt(env,pending));
 }
 
 // Recover one upload per cron invocation to stay below the Free plan's query
 // budget even when an image has the maximum number of tags. Normal webhooks
 // each process their own job immediately and do not wait for this recovery.
-export async function processJobs(env:Env, limit=1, only?:string) {
+export async function processJobs(env:Env, limit=1, only?:string,analyze=true) {
   const now=Date.now();
   const rows = await env.DB.prepare(`SELECT id FROM telegram_jobs WHERE
     ((status='pending' AND next_attempt<=?) OR (status='running' AND lease_until<?))
@@ -146,7 +199,7 @@ export async function processJobs(env:Env, limit=1, only?:string) {
       .bind(now+120000,entry.id,now,now).first<TelegramJob>();
     if (!job) continue;
     try {
-      await handle(env,job);
+      await handle(env,job,analyze);
       await env.DB.prepare('UPDATE telegram_jobs SET status=\'done\',lease_until=0 WHERE id=?').bind(job.id).run();
     } catch (error) {
       // Never log exception text: fetch errors may contain the bot token URL.

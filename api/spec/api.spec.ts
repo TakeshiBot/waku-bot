@@ -29,8 +29,10 @@ before(async()=>{
     },
   }));
   const db=await mf.getD1Database('DB');
-  const migration=await readFile('migrations/0001_initial.sql','utf8');
-  await db.batch(migration.split(';').map(s=>s.trim()).filter(Boolean).map(sql=>db.prepare(sql)));
+  for (const name of ['0001_initial.sql','0002_ai_tags.sql']) {
+    const migration=await readFile(`migrations/${name}`,'utf8');
+    await db.batch(migration.split(';').map(s=>s.trim()).filter(Boolean).map(sql=>db.prepare(sql)));
+  }
 });
 after(async()=>{await mf?.dispose();});
 

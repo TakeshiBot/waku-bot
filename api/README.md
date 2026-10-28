@@ -1,6 +1,6 @@
 # Waku API
 
-Kho ảnh riêng chạy trên Cloudflare Workers + R2 + D1. Bot Telegram nhận ảnh hoặc link ảnh, lưu vào R2, trả link trực tiếp. Không cần VPS, Docker hay API AI. Source nằm trên nhánh `waku-api`; bot Waku hiện tại không bị thay đổi.
+Kho ảnh riêng chạy trên Cloudflare Workers + R2 + D1. Bot Telegram nhận ảnh hoặc link ảnh, lưu vào R2, trả link trực tiếp. Source nằm trong thư mục `api/` trên nhánh chính `v2` của repo Waku. API ảnh deploy độc lập lên Cloudflare, không chạy trong container bot; không cần VPS. Có thể thêm API vision để tự gắn tag, hoặc dùng hoàn toàn thủ công.
 
 ## Dùng bot
 
@@ -19,8 +19,12 @@ https://cdn.example.com/photo.webp #cat #safe
 ```
 
 - `#safe` / `#sfw`: ảnh an toàn; `#r18` / `#nsfw`: ảnh R18.
-- Không có phân loại: ảnh vẫn lưu nhưng chưa vào API random. Bấm **An toàn** hoặc **R18** dưới phản hồi để phân loại.
-- Tag và tiêu đề do người upload nhập, không tự đoán nhân vật bằng AI.
+- Khi cấu hình AI vision, ảnh được lưu ngay rồi AI bổ sung tag, tên ảnh còn trống và phân loại. Phản hồi Telegram được edit ngay trên tin nhắn cũ khi có kết quả.
+- Tên, phân loại và tag bạn nhập được giữ lại; AI bổ sung các tag còn thiếu. Tên nhân vật chỉ được thêm khi model nhận diện đủ chắc chắn, vẫn có thể nhận sai.
+- AI không chắc phân loại: giữ `unknown`, chưa vào API random. Bấm **An toàn** hoặc **R18** để sửa.
+- Thêm `#manual` vào caption để bỏ qua AI cho ảnh đó, chỉ dùng dữ liệu bạn nhập. Không có API vision thì bot tự dùng chế độ thủ công.
+- Nút **AI gắn tag** chạy lại phân tích, dùng được cả với ảnh cũ hoặc khi lần trước lỗi.
+- Nút **Sửa tag** mở tin nhắn để bạn reply `#tag1 #tag2`; hoặc reply thẳng ảnh/link đã lưu bằng `/tags #tag1 #tag2`. Đây là thay toàn bộ tag. Gửi `-` hoặc `/tags -` để xóa hết tag. Sửa tay trong lúc AI chạy sẽ được ưu tiên.
 - Nút **Xóa ảnh** xóa metadata và ảnh gốc trong R2.
 - `/stats` xem số ảnh, dung lượng và ảnh chờ phân loại.
 - Chỉ nhận trong DM của người thuộc `OWNER_IDS`; người khác không upload hoặc sửa ảnh được.
@@ -43,7 +47,7 @@ Account ID YOUR_CLOUDFLARE_ACCOUNT_ID
 Các nhãn `cloudflare_token = ...`, `account_id = ...` cũng được hỗ trợ. Có thể dùng biến môi trường `TELEGRAM_BOT_TOKEN`, `OWNER_IDS` (nhiều ID cách dấu phẩy), `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` thay cho file.
 
 ```powershell
-cd D:\project2026\waku-api\api
+cd D:\project2026\waku-bot\api
 npm.cmd ci
 npm.cmd run check
 npm.cmd test
@@ -55,7 +59,7 @@ Linux/macOS dùng `npm` thay `npm.cmd`. Chạy lại deploy để cập nhật s
 File tự sinh, không commit:
 
 - `wrangler.local.json`: Account ID, database ID, danh sách người upload, URL triển khai.
-- `.secrets.json`: API key và webhook secret; lưu an toàn để kết nối Waku sau này. Không gửi nội dung lên chat.
+- `.secrets.json`: API key, webhook secret và cấu hình AI đã cài (nếu có); lưu an toàn để kết nối Waku sau này. Không gửi nội dung lên chat.
 - `api.txt`, `.dev.vars*`, `.wrangler/`, `node_modules/` cũng được ignore.
 
 Đổi owner hoặc biến cấu hình trong `wrangler.jsonc`/credentials rồi chạy deploy. URL workers.dev được tạo từ account. Custom domain có thể cấu hình sau trong Cloudflare.
@@ -67,6 +71,24 @@ npm run webhook -- --credentials /path/to/api.txt
 ```
 
 Chạy local: copy `.dev.vars.example` thành `.dev.vars`, điền giá trị, `npm run db:local`, `npm run dev`. Telegram webhook cần URL HTTPS công khai nên phần đó dùng bản đã deploy hoặc tunnel riêng.
+
+## Tự gắn tag bằng AI
+
+Dùng provider **OpenAI-compatible Chat Completions có vision**, điền thêm vào file credentials (hoặc biến môi trường cùng tên viết HOA):
+
+```text
+ai_base_url = https://your-provider.example.com/v1
+ai_api_key = YOUR_VISION_KEY
+ai_model = YOUR_VISION_MODEL
+```
+
+Chạy lại deploy. Có thể dùng lại URL/key/model vision trong `settings.toml` của Waku; prefix provider trong Waku không thuộc model ID gửi đến API. Ví dụ `9router/ag/example-model` có model ID là `ag/example-model`, provider lấy từ `[agent_providers.9router]`. Cấu hình đã lưu trong `.secrets.json` được tái sử dụng ở các lần deploy tiếp theo; thay đổi Waku không tự đồng bộ sang đây.
+
+Model nhận URL ảnh đã lưu và metadata thủ công. Tag tự sinh dùng tiếng Anh, chữ thường và dấu `_` cho dễ tìm (`cat_ears`, `maid`, `blue_hair`, `cosplay`…). Chỉ tự gán `safe` khi độ chắc chắn cao; ảnh chưa xác định không bị trộn vào random an toàn. Giao diện và API vẫn cho bạn sửa lại.
+
+Ảnh luôn lưu trước; lỗi AI không làm mất ảnh hay báo upload thất bại. Tác vụ phân tích lưu trong D1 và được Cron khôi phục. Lỗi mạng/429/5xx được thử lại tối đa 3 lần; lỗi key/model/output cần sửa cấu hình hoặc bấm chạy lại. Upload trùng ảnh đã có tác vụ không tự gọi AI thêm lần nữa. Nhấn **AI gắn tag** sẽ chủ động gọi lại.
+
+API upload trả ảnh ngay, có thêm `ai_status`: `pending`, `running`, `done`, `failed`, `skipped` hoặc `off` (ảnh cũ chưa có tác vụ). Khi cần chờ tag, đọc lại `/v1/images/ID`. Thêm `manual=true` vào multipart, hoặc `"manual":true` vào JSON upload để bỏ qua AI. Phí phân tích tính theo provider AI bạn chọn, tách khỏi hạn mức miễn phí của Cloudflare.
 
 ## REST API
 

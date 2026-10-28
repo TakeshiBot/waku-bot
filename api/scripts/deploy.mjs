@@ -1,6 +1,6 @@
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
-import {cf,configureWebhook,credentials,failed,root,secrets,wrangler,writeConfig,localConfig} from './common.mjs';
+import {cf,configureWebhook,credentials,failed,root,secrets,writeSecrets,wrangler,writeConfig,localConfig} from './common.mjs';
 
 try {
   const creds=await credentials();
@@ -19,6 +19,10 @@ try {
   config.vars.PUBLIC_BASE_URL=`https://${config.name}.${subdomain}.workers.dev`;
   await writeConfig(config);
   const values=await secrets();
+  if (creds.aiUrl) {
+    Object.assign(values,{AI_BASE_URL:creds.aiUrl,AI_API_KEY:creds.aiKey,AI_MODEL:creds.aiModel});
+    await writeSecrets(values);
+  }
   console.log('Áp dụng schema D1...');
   await wrangler(creds,['d1','migrations','apply','DB','--remote','--config',localConfig]);
   console.log('Deploy Worker...');

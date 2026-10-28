@@ -44,6 +44,7 @@ tmp/
 pgload/
 
 # Local settings. Keep sanitized examples in version control.
+/api.txt
 settings*.toml
 .settings-editor-*
 !settings.ex.toml

@@ -21,11 +21,15 @@ export async function presentMany(env:Env, rows:ImageRow[], base:string) {
     .bind(...rows.map(row=>row.id)).all<{image_id:string;tag:string}>();
   const allTags=new Map<string,string[]>();
   for (const item of list.results) {const values=allTags.get(item.image_id) || [];values.push(item.tag);allTags.set(item.image_id,values);}
+  const analysis=await env.DB.prepare(`SELECT image_id,status FROM image_analysis WHERE image_id IN (${rows.map(()=>'?').join(',')})`)
+    .bind(...rows.map(row=>row.id)).all<{image_id:string;status:string}>();
+  const states=new Map(analysis.results.map(item=>[item.image_id,item.status]));
   return rows.map(row=>({
     id:row.id, url:`${base}/media/${row.id}`, filename:row.filename,
     mime_type:row.mime_type, size:row.size, sha256:row.sha256, title:row.title,
     source_url:row.source_url, rating:row.rating, tags:allTags.get(row.id) || [],
     created_at:new Date(row.created_at).toISOString(),
+    ai_status:states.get(row.id) || 'off',
   }));
 }
 
@@ -45,8 +49,8 @@ export async function save(env: Env, bytes: ArrayBuffer, info: Metadata, uploade
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
       id,hash,key,`${id}.${kind.ext}`,kind.mime,bytes.byteLength,info.title,info.source_url,
       info.rating,uploader,crypto.getRandomValues(new Uint32Array(1))[0]/2**32,Date.now(),
-    ),...info.tags.map(tag=>env.DB.prepare(
-      'INSERT OR IGNORE INTO image_tags(image_id,tag) SELECT id,? FROM images WHERE id=?').bind(tag,id))]);
+    ),env.DB.prepare(`INSERT OR IGNORE INTO image_tags(image_id,tag)
+      SELECT i.id,t.value FROM images i,json_each(?) t WHERE i.id=?`).bind(JSON.stringify(info.tags),id)]);
   const row = await env.DB.prepare('SELECT * FROM images WHERE sha256 = ?').bind(hash).first<ImageRow>();
   if (!row) throw new Error('Metadata persistence failed');
   if (row.id!==id) {
@@ -59,9 +63,9 @@ export async function save(env: Env, bytes: ArrayBuffer, info: Metadata, uploade
 export async function update(env: Env, id: string, info: Metadata) {
   await image(env,id);
   await env.DB.batch([
-    env.DB.prepare('UPDATE images SET title=?,source_url=?,rating=? WHERE id=?').bind(info.title,info.source_url,info.rating,id),
+    env.DB.prepare('UPDATE images SET title=?,source_url=?,rating=?,metadata_version=metadata_version+1 WHERE id=?').bind(info.title,info.source_url,info.rating,id),
     env.DB.prepare('DELETE FROM image_tags WHERE image_id=?').bind(id),
-    ...info.tags.map(tag=>env.DB.prepare('INSERT INTO image_tags(image_id,tag) VALUES (?,?)').bind(id,tag)),
+    env.DB.prepare('INSERT INTO image_tags(image_id,tag) SELECT ?,value FROM json_each(?)').bind(id,JSON.stringify(info.tags)),
   ]);
   return image(env,id);
 }

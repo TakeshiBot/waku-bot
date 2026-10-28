@@ -7,6 +7,9 @@ export interface Env {
   OWNER_IDS: string;
   PUBLIC_BASE_URL: string;
   MAX_IMAGE_MB?: string;
+  AI_BASE_URL?: string;
+  AI_API_KEY?: string;
+  AI_MODEL?: string;
 }
 
 export type Rating = 'safe' | 'r18' | 'unknown';
@@ -15,6 +18,7 @@ export interface ImageRow {
   id: string; sha256: string; object_key: string; filename: string; mime_type: string;
   size: number; title: string; source_url: string | null; rating: Rating;
   uploader_id: string | null; random_key: number; created_at: number;
+  metadata_version: number;
 }
 export interface TelegramJob {
   id: string; payload: string; attempts: number; image_id: string | null; notified: number;

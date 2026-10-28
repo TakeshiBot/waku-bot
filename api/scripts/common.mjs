@@ -18,9 +18,13 @@ export async function credentials() {
     account:process.env.CLOUDFLARE_ACCOUNT_ID || field(/^(?:account_id|account\s+id)(?:\s*[:=]\s*|\s+)([a-f0-9]{32})\s*$/im),
     bot:process.env.TELEGRAM_BOT_TOKEN || text.match(/\b\d{8,12}:[A-Za-z0-9_-]{30,}\b/)?.[0],
     owners:process.env.OWNER_IDS || field(/^(?:admin\s+id|owners?|owner_ids)(?:\s*[:=]\s*|\s+)([\d,\s]+)$/im)?.replace(/\s+/g,','),
+    aiUrl:process.env.AI_BASE_URL || field(/^ai_base_url(?:\s*[:=]\s*|\s+)([^\s]+)\s*$/im),
+    aiKey:process.env.AI_API_KEY || field(/^ai_api_key(?:\s*[:=]\s*|\s+)([^\s]+)\s*$/im),
+    aiModel:process.env.AI_MODEL || field(/^ai_model(?:\s*[:=]\s*|\s+)([^\s]+)\s*$/im),
   };
   if (!result.token || !result.account || !result.bot || !result.owners) throw new Error('Thiếu Cloudflare token/Account ID hoặc Telegram token/Owner ID. Dùng --credentials đường-dẫn-api.txt hoặc biến môi trường.');
   if (!/^[a-f0-9]{32}$/i.test(result.account) || !/^\d+(?:,\d+)*$/.test(result.owners)) throw new Error('Account ID hoặc Owner ID không hợp lệ.');
+  if ([result.aiUrl,result.aiKey,result.aiModel].some(Boolean) && ![result.aiUrl,result.aiKey,result.aiModel].every(Boolean)) throw new Error('Thiếu AI_BASE_URL, AI_API_KEY hoặc AI_MODEL. Cần điền đủ cả ba để bật AI.');
   return result;
 }
 
@@ -55,6 +59,7 @@ export async function secrets() {
   await writeFile(secretPath,JSON.stringify(values,null,2)+'\n',{mode:0o600,flag:'wx'});
   return values;
 }
+export async function writeSecrets(values) {await writeFile(secretPath,JSON.stringify(values,null,2)+'\n',{mode:0o600});}
 
 export async function wrangler(creds,args,input) {
   // Secrets are passed through stdin/env, never command arguments or log text.
@@ -64,7 +69,8 @@ export async function wrangler(creds,args,input) {
   });
   const redact=(data)=>{
     let message=data.toString();
-    for (const value of [creds.token,creds.bot,input]) if (value) message=message.split(value).join('[REDACTED]');
+    const inputValues=input?Object.values(JSON.parse(input)).filter(x=>typeof x==='string'):[];
+    for (const value of [creds.token,creds.bot,creds.aiKey,input,...inputValues]) if (value) message=message.split(value).join('[REDACTED]');
     return message.replace(/\b\d{8,12}:[A-Za-z0-9_-]{30,}/g,'[BOT_TOKEN]');
   };
   child.stdout.on('data',data=>process.stdout.write(redact(data)));

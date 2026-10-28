@@ -58,7 +58,7 @@ export function captionMetadata(caption: string): Metadata {
   const link = caption.match(/https?:\/\/[^\s<>]+/i)?.[0];
   return metadata({
     title: caption.replace(/#[\p{L}\p{N}_-]+/gu, '').replace(/https?:\/\/[^\s<>]+/g, '').trim().slice(0,200),
-    tags: matches.filter(x => !/^(r18|nsfw|safe|sfw)$/i.test(x)), rating, source_url: link,
+    tags: matches.filter(x => !/^(r18|nsfw|safe|sfw|manual)$/i.test(x)), rating, source_url: link,
   });
 }
 

@@ -90,6 +90,8 @@ webapp/node_modules/
 webapp/dist/
 waku/webapp/dist/
 # Local credentials and signed test launch data must not ship in images.
+api/
+api.txt
 .env
 .env.*
 *.env

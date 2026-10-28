@@ -1,6 +1,7 @@
 import { boundedBody, equalSecret, fetchImage, metadata, tags } from './input';
 import { choose, image, maxBytes, present, presentMany, remove, save, update } from './store';
-import { processJobs, webhook } from './telegram';
+import { processJobs, refreshAnalysisReceipt, webhook } from './telegram';
+import {enqueueAnalysis,processAnalysis} from './analysis';
 import { HttpError, type Env, type ImageRow } from './types';
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -69,7 +70,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     return response({images:await presentMany(env,page,base),next:rows.results.length>limit && last?btoa(JSON.stringify({time:last.created_at,id:last.id})):null});
   }
   if (path==='/v1/images' && request.method==='POST') {
-    let bytes:ArrayBuffer, info;
+    let bytes:ArrayBuffer, info, manual=false;
     if (request.headers.get('content-type')?.startsWith('multipart/form-data')) {
       const body=await boundedBody(request,maxBytes(env)+65536);
       let form:FormData;
@@ -78,14 +79,18 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
       const file=form.get('file');
       if (!file || typeof file==='string') throw new HttpError(400,'missing_file','Thiếu file ảnh.');
       bytes=await file.arrayBuffer();
+      manual=form.get('manual')==='true';
       info=metadata(Object.fromEntries(['title','tags','rating','source_url'].filter(key=>form.has(key)).map(key=>[key,form.get(key)])));
     } else {
       const body=await json(request);
       if (typeof body.url!=='string') throw new HttpError(400,'missing_url','Thiếu URL ảnh.');
       info=metadata(body);
+      manual=body.manual===true;
       bytes=await fetchImage(body.url,maxBytes(env));
     }
     const result=await save(env,bytes,info,null);
+    await enqueueAnalysis(env,result.row.id,manual);
+    ctx.waitUntil(processAnalysis(env,result.row.id,job=>refreshAnalysisReceipt(env,job)));
     return response({image:await present(env,result.row,base),duplicate:result.duplicate},result.duplicate?200:201);
   }
   const match=path.match(/^\/v1\/images\/([^/]+)$/);
@@ -95,7 +100,9 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     if (request.method==='PATCH') {
       const current=await present(env,row,base), body=await json(request);
       const info=metadata({...current,...body});
-      return response({image:await present(env,await update(env,id,info),base)});
+      const changed=await update(env,id,info);
+      if (Object.hasOwn(body,'tags')) await env.DB.prepare("UPDATE image_analysis SET status='skipped',last_error='manual_edit' WHERE image_id=? AND status='pending'").bind(id).run();
+      return response({image:await present(env,changed,base)});
     }
     if (request.method==='DELETE') {await remove(env,id); return response({deleted:true,id});}
   }
@@ -112,5 +119,10 @@ export default {
       return response({error:{code:'internal_error',message:'Chưa hoàn tất xử lý. Hãy thử lại sau.'}},500);
     }
   },
-  scheduled(_event:ScheduledController,env:Env,ctx:ExecutionContext) {ctx.waitUntil(processJobs(env));},
+  scheduled(_event:ScheduledController,env:Env,ctx:ExecutionContext) {
+    ctx.waitUntil((async()=>{
+      await processJobs(env,1,undefined,false);
+      await processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job));
+    })());
+  },
 } satisfies ExportedHandler<Env>;
