@@ -202,7 +202,7 @@
     "ai_commentHint": "Allow the AI to comment on linked-channel posts",
     "agent_moderation_enabled": "AI group moderation",
     "ai_member_tags_enabled": "AI Member Tags",
-    "ai_member_tags_enabledHint": "Give new members playful anime tags based on their names; welcome them when no custom greet is set",
+    "ai_member_tags_enabledHint": "Give new members playful anime tags based on their names, without sending a welcome message",
     "agent_moderation_enabledHint": "Allow the AI to perform valid group moderation requests",
     "setu_enabled": "Random Lewds",
     "setu_enabledHint": "Allow random images under the group's selected image mode",

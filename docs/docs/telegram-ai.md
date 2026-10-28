@@ -361,8 +361,7 @@ AI quản trị và `/greet`. Bot cần quyền quản trị **Quản lý tag th
 AI dùng model chat đã cấu hình để tạo tag anime/wibu vui vẻ theo tên người mới,
 tối đa 16 ký tự và không có emoji. Không dùng danh sách tag hoặc tag dự phòng.
 
-Sau khi gắn thành công, nếu nhóm chưa đặt `/greet`, bot gửi lời chào ngắn với
-tag là liên kết mở hồ sơ thành viên. Nếu đã có greet, chỉ gửi greet đã đặt.
-Không đủ quyền, AI lỗi hoặc gắn tag thất bại thì không gửi lời chào AI.
-Greet đã cấu hình vẫn hoạt động riêng. Bot chỉ xử lý lúc vào nhóm, không tự
+Tính năng chỉ gắn tag, không gửi lời chào hay thông báo kết quả.
+Không đủ quyền, AI lỗi hoặc gắn tag thất bại thì bỏ qua.
+`/greet` đã cấu hình vẫn hoạt động riêng. Bot chỉ xử lý lúc vào nhóm, không tự
 gắn lại khi người dùng sửa tag; tag có sẵn cũng được giữ nguyên.

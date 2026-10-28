@@ -13,7 +13,6 @@ from pyrogram import enums
 from waku import database
 from waku.common.memory_store import memttlcache
 from waku.config import app_config
-from waku.i18n import i18n
 from waku.logger import logger
 from waku.plugins.title.authority import TitleDenied, has_right, validate_title
 
@@ -157,15 +156,6 @@ async def _welcome_and_tag(client, chat, user, joined_at: datetime | None) -> No
             return
         if await client.set_chat_member_tag(chat.id, user.id, tag) is not True:
             return
-        if not custom_greeting and not config.greeting:
-            mention = f'<a href="tg://user?id={user.id}">{html.escape(tag)}</a>'
-            await client.send_message(
-                chat.id,
-                i18n.t("bot.new_member_tags.welcome", locale=config.lang).format(
-                    user=mention
-                ),
-                parse_mode=enums.ParseMode.HTML,
-            )
     except Exception as error:
         # No fabricated fallback tag or success message when AI/API fails.
         logger.warning(
