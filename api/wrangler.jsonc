@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "waku-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "workers_dev": true,
+  "vars": {
+    "OWNER_IDS": "YOUR_TELEGRAM_ID",
+    "PUBLIC_BASE_URL": "",
+    "MAX_IMAGE_MB": "10"
+  },
+  "r2_buckets": [{ "binding": "IMAGES", "bucket_name": "waku-api-images" }],
+  "d1_databases": [{
+    "binding": "DB", "database_name": "waku-api",
+    "database_id": "00000000-0000-0000-0000-000000000000",
+    "migrations_dir": "migrations"
+  }],
+  "triggers": { "crons": ["* * * * *"] },
+  "observability": { "enabled": true }
+}
