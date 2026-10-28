@@ -1,7 +1,7 @@
 import {setupProviders} from './providers.js?v=6';
 const $=id=>document.getElementById(id);
 const state={authenticated:false,maxMb:10,images:new Map(),cursor:null,query:'',rating:'',queue:[],pumping:false,paused:true,editing:null,listVersion:0,statsBusy:false,
-  selected:new Set(),allSelected:false,selectionBusy:false,bulkBusy:false,deleteTargets:[],loadedLimit:48,uploadIds:new Set(),starting:false,aiBatchId:null,aiProgress:null,aiPending:0,aiEnqueueing:false,
+  selected:new Set(),allSelected:false,selectionBusy:false,bulkBusy:false,deleteTargets:[],editTargets:[],loadedLimit:48,uploadIds:new Set(),starting:false,aiBatchId:null,aiProgress:null,aiPending:0,aiEnqueueing:false,
   revision:null,lastStats:0,galleryDirty:false,gallerySignature:'',filterTags:new Set(),filterTypes:new Set(),tagsLoaded:0,checking:0,aiAvailable:false};
 const number=n=>new Intl.NumberFormat('vi-VN').format(n || 0);
 const bytes=n=>n>=1073741824?(n/1073741824).toFixed(1)+' GB':n>=1048576?(n/1048576).toFixed(1)+' MB':(n/1024).toFixed(0)+' KB';
@@ -13,7 +13,7 @@ function element(tag,className,text){const el=document.createElement(tag);if(cla
 function icon(name){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');const use=document.createElementNS(svg.namespaceURI,'use');use.setAttribute('href','#i-'+name);svg.append(use);return svg;}
 function showLogin(message=''){
   state.authenticated=false;state.paused=true;clearTimeout(pollTimer);$('app').hidden=true;$('login').hidden=false;$('login-error').textContent=message;
-  $('editor').close();$('confirm-delete').close();$('api-settings').close();
+  $('editor').close();$('confirm-delete').close();$('bulk-edit').close();$('api-settings').close();
 }
 async function api(path,options={}){
   const response=await fetch(path,{credentials:'same-origin',...options,headers:{...(options.body && !(options.body instanceof FormData)?{'content-type':'application/json'}:{}),...options.headers},signal:options.signal || AbortSignal.timeout(30000)});
@@ -163,7 +163,7 @@ function renderSelection(){
   const count=state.selected.size,busy=state.bulkBusy||state.selectionBusy;
   $('selection-count').textContent=state.bulkBusy?state.bulkLabel || 'Đang xử lý…':`${number(count)} đã chọn`;
   $('select-all').checked=state.selectionBusy||state.allSelected&&count>0;$('select-all').indeterminate=!state.selectionBusy&&!state.allSelected&&count>0;
-  $('select-all').disabled=busy;$('clear-selection').disabled=busy||!count;$('bulk-delete').disabled=busy||!count;
+  $('select-all').disabled=busy;$('clear-selection').disabled=busy||!count;$('bulk-delete').disabled=busy||!count;$('bulk-edit-button').disabled=busy||!count;
   $('bulk-ai').hidden=state.rating!=='unknown';$('bulk-ai').disabled=busy||!count||!state.aiAvailable;
   document.querySelectorAll('.image-select input').forEach(input=>input.disabled=busy);
 }
@@ -217,6 +217,43 @@ function confirmDelete(ids){
   $('delete-description').textContent=`${ids.length} ảnh cùng tag sẽ được xóa khỏi thư viện. Thao tác này không thể hoàn tác.`;$('confirm-delete').showModal();
 }
 $('bulk-delete').addEventListener('click',()=>confirmDelete([...state.selected]));
+
+function bulkEditControls(){
+  const busy=state.bulkBusy,changed=Boolean($('bulk-edit-rating').value||$('bulk-edit-type').value);
+  $('bulk-edit-rating').disabled=busy;$('bulk-edit-type').disabled=busy;$('cancel-bulk-edit').disabled=busy;
+  $('save-bulk-edit').disabled=busy||!changed||!state.editTargets.length;
+}
+$('bulk-edit-button').addEventListener('click',()=>{
+  if(!state.selected.size||state.bulkBusy)return;state.editTargets=[...state.selected];
+  $('bulk-edit-title').textContent=`Sửa ${number(state.editTargets.length)} ảnh đã chọn`;
+  $('bulk-edit-rating').value='';$('bulk-edit-type').value='';$('bulk-edit-status').hidden=true;$('save-bulk-edit').textContent='Lưu thay đổi';
+  bulkEditControls();$('bulk-edit').showModal();
+});
+for(const id of ['bulk-edit-rating','bulk-edit-type'])$(id).addEventListener('change',bulkEditControls);
+$('cancel-bulk-edit').addEventListener('click',()=>$('bulk-edit').close());
+$('bulk-edit').addEventListener('cancel',event=>{if(state.bulkBusy)event.preventDefault();});
+$('bulk-edit-form').addEventListener('submit',async event=>{
+  event.preventDefault();if(state.bulkBusy||!state.editTargets.length)return;
+  const changes={},rating=$('bulk-edit-rating').value,type=$('bulk-edit-type').value;
+  if(rating)changes.rating=rating;if(type)changes.image_type=type==='clear'?null:type;
+  if(!Object.keys(changes).length)return;
+  const ids=[...state.editTargets],remaining=new Set(ids);let done=0,missing=0;
+  state.bulkBusy=true;bulkEditControls();renderSelection();$('bulk-edit-status').hidden=false;$('bulk-edit-status').textContent=`Đang lưu 0/${number(ids.length)} ảnh…`;
+  try{
+    for(let i=0;i<ids.length;i+=100){
+      const result=await api('/v1/images/bulk',{method:'PATCH',body:JSON.stringify({ids:ids.slice(i,i+100),...changes})});
+      done+=result.updated;missing+=result.missing.length;
+      for(const id of [...result.ids,...result.missing]){remaining.delete(id);state.selected.delete(id);}
+      for(const id of result.ids){const image=state.images.get(id);if(image)Object.assign(image,changes);}
+      state.bulkLabel=`Đã sửa ${number(done)}/${number(ids.length)} ảnh`;$('bulk-edit-status').textContent=state.bulkLabel+(missing?` · ${number(missing)} ảnh không còn tồn tại`:'');$('save-bulk-edit').textContent=`Đang lưu ${number(done)}/${number(ids.length)}`;renderSelection();
+    }
+    $('bulk-edit').close();toast(`Đã sửa ${number(done)} ảnh${missing?` · ${number(missing)} ảnh không còn tồn tại`:'.'}`);
+  }catch(error){$('bulk-edit-status').textContent=`Đã sửa ${number(done)}/${number(ids.length)} ảnh. ${error.message}`;}
+  finally{
+    state.editTargets=[...remaining];state.bulkBusy=false;state.bulkLabel='';state.allSelected=false;$('save-bulk-edit').textContent=remaining.size?'Thử lại':'Lưu thay đổi';if(remaining.size)$('bulk-edit-title').textContent=`Sửa ${number(remaining.size)} ảnh còn lại`;bulkEditControls();renderGallery();
+    await loadImages(false);refreshStats(false,true);
+  }
+});
 
 function addFiles(files){
   const added=[];for(const file of files){

@@ -24,6 +24,8 @@ Mở URL gốc của Worker, ví dụ `https://waku-api.your-account.workers.dev
 
 Trên PC, lưới ảnh hiển thị 6 cột; màn hình nhỏ tự giảm cột. Mỗi ảnh có checkbox, **Chọn tất cả** lấy toàn bộ kết quả trong tab/bộ lọc hiện tại, kể cả trang chưa tải. **Bỏ chọn** xóa lựa chọn; **Xóa** hỏi lại tổng số ảnh trước khi xóa hàng loạt.
 
+Nút **Sửa** cạnh Xóa mở popup sửa hàng loạt **Phân loại** và **Kiểu ảnh**. Mỗi mục mặc định **Giữ nguyên**, nên có thể chỉ sửa kiểu ảnh bị chọn nhầm lúc upload. Chọn giá trị rồi bấm Lưu thay đổi. Thao tác áp dụng cho các ảnh đã chọn, kể cả trang chưa tải, gửi tối đa 100 ID/request; giữ tên, tag và nguồn. Có thể thử lại các ảnh còn lỗi nếu một đợt chưa hoàn tất.
+
 **Lọc** nằm cùng hàng với Chọn tất cả. Trên máy tính rê chuột vào để mở, giữ bảng khi di chuyển bên trong và thu lại khi rời ra; trên điện thoại bấm để mở/đóng. Có thể dùng bàn phím và Escape. Logo Waku được dùng ở sidebar, trang đăng nhập và biểu tượng tab.
 
 **API & Model** nằm trên nút Đăng xuất ở sidebar (biểu tượng bánh răng trên điện thoại). Thêm/sửa/xóa kết nối bằng tên, Base URL OpenAI-compatible và key; mỗi API lưu được nhiều Model ID. Tích chọn một API và một model để dùng, tự nhớ model đã chọn khi chuyển qua lại giữa các API. Thêm tối đa 30 API và 100 model/API. Cấu hình hiện có được nhập thành **API Waku** lần đầu mở mục này.
@@ -145,6 +147,7 @@ Các đường dẫn `/v1/*` cần header `Authorization: Bearer API_KEY`. Lấy
 | GET | `/v1/images/random?count=10&rating=safe&tags=cat,cute` | Lấy tối đa 10 ảnh, các tag kết hợp AND |
 | GET | `/v1/images/ID` | Xem metadata |
 | PATCH | `/v1/images/ID` | Sửa các trường `title`, `tags`, `rating`, `source_url`, `image_type` |
+| PATCH | `/v1/images/bulk` | Sửa phân loại/kiểu ảnh hàng loạt: `ids` (1–100), `rating` và/hoặc `image_type`; trả `updated`, `ids`, `missing` |
 | DELETE | `/v1/images/ID` | Xóa ảnh |
 | POST | `/v1/images/ID/analyze` | Đưa ảnh vào hàng đợi AI để phân tích lại |
 | POST | `/v1/analysis-batches` | Tạo một đợt AI, trả `id` |

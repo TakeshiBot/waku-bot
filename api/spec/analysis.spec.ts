@@ -181,3 +181,11 @@ test('saved API/model CRUD is encrypted, persists selection and drives actual in
   expectedKey='vision-key';expectedModel='vision-model';expectedPath='/v1/chat/completions';
   const restored=await api('/v1/ai/selection','PUT',{provider_id:legacyId,model_id:legacyModelId});assert.equal(restored.enabled,true);
 });
+
+test('bulk manual classification wins over AI inference already in flight',async()=>{
+  hold=new Promise(resolve=>release=resolve);
+  try{
+    const image=await upload(250),updated=await api('/v1/images/bulk','PATCH',{ids:[image.id],rating:'r18',image_type:'real'});assert.equal(updated.updated,1);
+    release();hold=undefined;const result=await finished(image.id);assert.equal(result.rating,'r18');assert.equal(result.image_type,'real');
+  }finally{release();hold=undefined;}
+});

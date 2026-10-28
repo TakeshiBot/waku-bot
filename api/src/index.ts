@@ -1,5 +1,5 @@
 import { boundedBody, equalSecret, downloadImage, metadata, tags,publicUrl,type ImageDownload } from './input';
-import { choose, image, maxBytes, present, presentMany, remove, save, update,recordImportAliases } from './store';
+import { choose, image, maxBytes, present, presentMany, remove, save, update,recordImportAliases,libraryChanged } from './store';
 import { processJobs, refreshAnalysisReceipt, webhook } from './telegram';
 import {aiEnabled,enqueueAnalysis,processAnalysis} from './analysis';
 import { HttpError, type Env, type ImageRow } from './types';
@@ -134,6 +134,22 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     if (exclude.length+filterTags.length>96) throw new HttpError(400,'too_many_filters','Tổng tag và ID loại trừ tối đa 96.');
     const rows=await choose(env,url.searchParams.get('rating') || 'safe',filterTags,integer(url.searchParams.get('count'),1,10),exclude);
     return response({images:await presentMany(env,rows,base),count:rows.length});
+  }
+  if(path==='/v1/images/bulk'&&request.method==='PATCH'){
+    const body=await json(request),hasRating=Object.hasOwn(body,'rating'),hasType=Object.hasOwn(body,'image_type');
+    if(!Array.isArray(body.ids)||!body.ids.length||body.ids.length>100||body.ids.some(id=>typeof id!=='string'||!uuid.test(id)))
+      throw new HttpError(400,'invalid_ids','Chọn 1–100 ID ảnh mỗi lượt.');
+    if(!hasRating&&!hasType)throw new HttpError(400,'missing_changes','Chọn Phân loại hoặc Kiểu ảnh cần sửa.');
+    if(hasRating&&!['safe','r18','unknown'].includes(String(body.rating)))throw new HttpError(400,'invalid_rating','Phân loại không hợp lệ.');
+    if(hasType&&body.image_type!==null&&!['anime','real'].includes(String(body.image_type)))throw new HttpError(400,'invalid_type','Kiểu ảnh không hợp lệ.');
+    const ids=[...new Set(body.ids as string[])],sets=['metadata_version=metadata_version+1'],values:(string|null)[]=[];
+    if(hasRating){sets.push('rating=?');values.push(body.rating as string);}
+    if(hasType){sets.push('image_type=?');values.push(body.image_type as string|null);}
+    const rows=await env.DB.prepare(`UPDATE images SET ${sets.join(',')} WHERE id IN (SELECT value FROM json_each(?)) RETURNING id`)
+      .bind(...values,JSON.stringify(ids)).all<{id:string}>();
+    const updated=rows.results.map(row=>row.id),found=new Set(updated);
+    if(updated.length)await libraryChanged(env);
+    return response({updated:updated.length,ids:updated,missing:ids.filter(id=>!found.has(id))});
   }
   if (path==='/v1/images' && request.method==='GET') {
     const limit=integer(url.searchParams.get('limit'),20,100);

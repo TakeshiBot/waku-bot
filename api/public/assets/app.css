@@ -270,6 +270,10 @@ progress::-webkit-progress-value { background: #9cba7b; border-radius: 10px; }
 .confirm-dialog h2 { font-size: 22px; }
 .confirm-dialog p { font-size: 14px; color: #afc3a8; margin: 12px 0 24px; line-height: 1.7; }
 .confirm-dialog>div { display: flex; gap: 10px; justify-content: flex-end; }
+.bulk-edit-dialog { width: calc(100% - 32px); max-width: 420px; }
+.bulk-edit-dialog p { margin: 12px 0 18px; }
+.bulk-edit-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+.bulk-edit-dialog #bulk-edit-status { margin-bottom: 0; font-size: 13px; }
 .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); border: 1px solid #52634e; border-radius: 9px; background: #2b3e2c; color: #e2edda; padding: 13px 20px; font-size: 14px; box-shadow: 0 5px 25px #0004; z-index: 20; max-width: calc(100% - 30px); }
 .login { display: grid; grid-template-columns: 1fr 1fr; height: 100dvh; }
 .login-art { background: #182925; position: relative; overflow: hidden; min-height: 0; }

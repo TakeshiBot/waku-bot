@@ -250,3 +250,20 @@ test('Telegram album burst is persisted and all five files drain through the bou
   }
   assert.equal(jobs.length,5);assert.ok(jobs.every(job=>job.status==='done'));assert.equal(new Set(jobs.map(job=>job.image_id)).size,5);
 });
+
+test('bulk classification updates only requested fields and reports missing images',async()=>{
+  const first=(await upload(230,'safe','bulk_one')).image,second=(await upload(231,'r18','bulk_two')).image;
+  for(const item of [first,second])await call('/v1/images/'+item.id,'PATCH',{image_type:'real',source_url:'https://source.example.com/'+item.id});
+  const absent=crypto.randomUUID(),result=await (await call('/v1/images/bulk','PATCH',{ids:[first.id,second.id,first.id,absent],image_type:'anime'})).json() as any;
+  assert.equal(result.updated,2);assert.deepEqual(result.missing,[absent]);
+  for(const old of [first,second]){
+    const current=(await (await call('/v1/images/'+old.id)).json() as any).image;
+    assert.equal(current.image_type,'anime');assert.equal(current.rating,old.rating);assert.equal(current.title,old.title);assert.deepEqual(current.tags,old.tags);assert.equal(current.source_url,'https://source.example.com/'+old.id);
+  }
+  await call('/v1/images/bulk','PATCH',{ids:[first.id,second.id],rating:'unknown'});
+  const current=(await (await call('/v1/images/'+first.id)).json() as any).image;assert.equal(current.rating,'unknown');assert.equal(current.image_type,'anime');
+  assert.equal((await call('/v1/images/bulk','PATCH',{ids:[first.id]})).status,400);
+  assert.equal((await call('/v1/images/bulk','PATCH',{ids:['invalid'],rating:'safe'})).status,400);
+  assert.equal((await call('/v1/images/bulk','PATCH',{ids:[first.id],image_type:'invalid'})).status,400);
+  await call('/v1/images/bulk','PATCH',{ids:[first.id],image_type:null});assert.equal((await (await call('/v1/images/'+first.id)).json() as any).image.image_type,null);
+});
