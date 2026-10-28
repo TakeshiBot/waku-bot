@@ -78,9 +78,14 @@ $('search').addEventListener('input',()=>{clearTimeout(filterTimer);filterTimer=
 document.querySelectorAll('[data-rating]').forEach(button=>button.addEventListener('click',()=>{state.rating=button.dataset.rating;document.querySelectorAll('[data-rating]').forEach(b=>b.classList.toggle('active',b===button));loadImages(true);}));
 $('reveal-r18').addEventListener('change',()=>{$('gallery').classList.toggle('reveal',$('reveal-r18').checked);});
 $('load-more').addEventListener('click',()=>loadImages(false,true));$('refresh').addEventListener('click',()=>{loadImages(true);refreshStats();});
-function focusUpload(){$('upload-panel').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});$('choose-files').focus({preventScroll:true});}
+function setView(view){
+  document.body.dataset.view=view;
+  $('nav-library').classList.toggle('selected',view==='library');$('nav-upload').classList.toggle('selected',view==='upload');
+  $('nav-library').setAttribute('aria-label','Kho ảnh');$('nav-upload').setAttribute('aria-label','Tải ảnh lên');
+}
+function focusUpload(){setView('upload');$('upload-panel').scrollTop=0;$('choose-files').focus({preventScroll:true});}
 for(const id of ['upload-shortcut','nav-upload','empty-upload'])$(id).addEventListener('click',focusUpload);
-$('nav-library').addEventListener('click',()=>window.scrollTo({top:0,behavior:'smooth'}));
+$('nav-library').addEventListener('click',()=>{setView('library');$('library-results').scrollTop=0;});
 
 function addFiles(files){
   let added=0;for(const file of files){

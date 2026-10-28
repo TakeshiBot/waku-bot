@@ -2,11 +2,11 @@
 <html lang="vi">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#f6f5f1"><meta name="description" content="Kho ảnh riêng của Waku. Tải nhiều ảnh, tự gắn tag và quản lý thư viện.">
-  <title>Kho ảnh · Waku</title><link rel="stylesheet" href="/assets/app.css">
-  <script type="module" src="/assets/app.js"></script>
+  <meta name="theme-color" content="#111719"><meta name="color-scheme" content="dark"><meta name="description" content="Kho ảnh riêng của Waku. Tải nhiều ảnh, tự gắn tag và quản lý thư viện.">
+  <title>Kho ảnh · Waku</title><link rel="stylesheet" href="/assets/app.css?v=2">
+  <script type="module" src="/assets/app.js?v=2"></script>
 </head>
-<body>
+<body data-view="library">
   <svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
     <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
     <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></symbol>
@@ -41,15 +41,15 @@
         <section class="library"><div class="library-top"><h2>Thư viện <span id="visible-count"></span></h2><label class="reveal-option"><input type="checkbox" id="reveal-r18">Hiện ảnh R18</label></div>
           <div class="search"><svg><use href="#i-search"/></svg><input id="search" type="search" placeholder="Tìm theo tên hoặc tag…" aria-label="Tìm theo tên hoặc tag" maxlength="100"></div>
           <div class="filters" role="group" aria-label="Lọc phân loại"><button class="active" data-rating="">Tất cả</button><button data-rating="safe">An toàn</button><button data-rating="r18">R18</button><button data-rating="unknown">Chờ phân loại</button><button class="refresh" id="refresh" aria-label="Làm mới thư viện">↻</button></div>
-          <div class="gallery" id="gallery" aria-live="polite"></div>
+          <div class="library-results" id="library-results"><div class="gallery" id="gallery" aria-live="polite"></div>
           <div class="empty" id="empty" hidden><div class="empty-icon"><svg><use href="#i-image"/></svg></div><h3>Một khởi đầu mới.</h3><p>Thêm những tấm ảnh đầu tiên.<br>Phần sắp xếp, cứ để Waku lo.</p><button id="empty-upload" class="secondary">Chọn ảnh để tải lên <span>↗</span></button></div>
-          <p class="list-status" id="list-status" role="status"></p><button class="secondary load-more" id="load-more" hidden>Xem thêm ảnh ↓</button>
+          <p class="list-status" id="list-status" role="status"></p><button class="secondary load-more" id="load-more" hidden>Xem thêm ảnh ↓</button></div>
         </section>
 
         <aside class="upload-panel" id="upload-panel"><div class="panel-heading"><div><span class="eyebrow">THÊM VÀO BỘ SƯU TẬP</span><h2>Tải ảnh lên</h2></div><span class="small-mark">↗</span></div>
           <div class="dropzone" id="dropzone"><div class="upload-icon"><svg><use href="#i-upload"/></svg></div><strong>Thả ảnh vào đây</strong><span>hoặc chọn nhiều file từ máy</span><button class="secondary" id="choose-files">Chọn ảnh</button><small id="upload-limits">JPG, PNG, WebP, GIF, AVIF · tối đa 10 MB/ảnh</small><input id="file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif,.jpg,.jpeg,.png,.webp,.gif,.avif" multiple hidden></div>
           <details class="url-import"><summary><svg><use href="#i-link"/></svg>Thêm từ link ảnh <span>+</span></summary><textarea id="image-urls" placeholder="Dán link ảnh trực tiếp, mỗi link một dòng" rows="3" aria-label="Link ảnh"></textarea><button class="secondary" id="add-urls">Thêm vào hàng đợi</button></details>
-          <div class="upload-options"><label class="toggle-row" for="use-ai"><span><svg><use href="#i-spark"/></svg>AI tự gắn tag<small>Tên ảnh, tag và phân loại</small></span><input id="use-ai" type="checkbox" checked></label><div class="field-row"><label>Phân loại<select id="upload-rating"><option value="unknown">Để AI chọn</option><option value="safe">An toàn</option><option value="r18">R18</option></select></label></div><label class="field">Tag chung <span>tùy chọn</span><input id="upload-tags" placeholder="maid, cat_ears, anime" maxlength="2000"></label><details class="source-option"><summary>Thêm link nguồn</summary><input id="upload-source" type="url" placeholder="https://…" aria-label="Link nguồn"></details></div>
+          <div class="upload-options"><label class="toggle-row" for="use-ai"><span><svg><use href="#i-spark"/></svg>AI tự gắn tag<small>Tên ảnh, tag và phân loại</small></span><input id="use-ai" type="checkbox" checked></label><details class="advanced-options"><summary>Tag, phân loại và nguồn</summary><div class="field-row"><label>Phân loại<select id="upload-rating"><option value="unknown">Để AI chọn</option><option value="safe">An toàn</option><option value="r18">R18</option></select></label></div><label class="field">Tag chung <span>tùy chọn</span><input id="upload-tags" placeholder="maid, cat_ears, anime" maxlength="2000"></label><details class="source-option"><summary>Thêm link nguồn</summary><input id="upload-source" type="url" placeholder="https://…" aria-label="Link nguồn"></details></details></div>
           <div class="queue-heading"><h3>Hàng đợi <span id="queue-count">0</span></h3><button class="text-button" id="clear-done">Dọn mục xong</button></div><div class="queue-list" id="queue-list"><p class="queue-empty">Ảnh bạn chọn sẽ xuất hiện ở đây.</p></div>
           <div class="queue-progress" id="queue-progress" hidden><span id="queue-summary"></span><progress id="batch-progress" value="0" max="1"></progress></div>
           <div class="queue-actions"><button class="primary" id="start-upload" disabled>Bắt đầu tải lên <svg><use href="#i-arrow"/></svg></button><button class="secondary" id="pause-upload" hidden>Tạm dừng</button><button class="text-button" id="retry-errors" hidden>Thử lại mục lỗi</button></div><p class="panel-note"><i></i> 2 ảnh mỗi lượt. File lỗi không làm dừng cả đợt.</p>
