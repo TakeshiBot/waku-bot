@@ -31,16 +31,21 @@ export async function presentMany(env:Env, rows:ImageRow[], base:string) {
     .bind(...rows.map(row=>row.id)).all<{image_id:string;tag:string}>();
   const allTags=new Map<string,string[]>();
   for (const item of list.results) {const values=allTags.get(item.image_id) || [];values.push(item.tag);allTags.set(item.image_id,values);}
-  const analysis=await env.DB.prepare(`SELECT image_id,status FROM image_analysis WHERE image_id IN (${rows.map(()=>'?').join(',')})`)
-    .bind(...rows.map(row=>row.id)).all<{image_id:string;status:string}>();
-  const states=new Map(analysis.results.map(item=>[item.image_id,item.status]));
+  const analysis=await env.DB.prepare(`SELECT image_id,status,last_error FROM image_analysis WHERE image_id IN (${rows.map(()=>'?').join(',')})`)
+    .bind(...rows.map(row=>row.id)).all<{image_id:string;status:string;last_error:string|null}>();
+  const states=new Map(analysis.results.map(item=>[item.image_id,item]));
   return rows.map(row=>({
     id:row.id, url:`${base}/media/${row.id}`, filename:row.filename,
     mime_type:row.mime_type, size:row.size, sha256:row.sha256, title:row.title,
     source_url:row.source_url, rating:row.rating, image_type:row.image_type, original_name:row.original_name, tags:allTags.get(row.id) || [],
     created_at:new Date(row.created_at).toISOString(),
-    ai_status:states.get(row.id) || 'off',
+    ai_status:states.get(row.id)?.status || 'off',
+    ai_error:states.get(row.id)?.status==='failed'?safeAnalysisError(states.get(row.id)?.last_error):null,
   }));
+}
+
+function safeAnalysisError(code:unknown):string {
+  return typeof code==='string'&&/^(provider_http_\d{3}|provider_content_filtered|provider_timeout|provider_unavailable|invalid_provider|invalid_response|incomplete_response|image_missing|worker_timeout|analysis_failed|key_decryption_failed)$/.test(code)?code:'analysis_failed';
 }
 
 async function importedSource(env:Env,row:ImageRow,source:string|null,importUrl:string|null) {

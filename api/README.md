@@ -19,6 +19,7 @@ Mở URL gốc của Worker, ví dụ `https://waku-api.your-account.workers.dev
 - Trình duyệt tải tối đa **2 file mỗi lượt**. Có tiến độ từng file, tạm dừng sau các file đang chạy, bỏ file chờ và thử lại mục lỗi. Khi máy chủ bận, file sẽ chờ rồi thử lại.
 - Giữ tab mở trong lúc upload. Sau khi ảnh được lưu, AI chạy nền và tiếp tục dù đóng trang; các file vẫn còn chờ ở trình duyệt chưa được gửi lên máy chủ.
 - Thư viện có tìm theo tên/tag, lọc An toàn/R18/chưa phân loại, phân trang, sửa tên/tag/nguồn, đổi phân loại, chạy lại AI, sao chép link và xóa ảnh.
+- Các mục Tất cả / An toàn / R18 / Chờ phân loại nằm dưới Kho ảnh ở sidebar, kèm tổng số ảnh của từng mục. Số đếm dùng cùng điều kiện với danh sách, kể cả ảnh đang chạy lại AI, và được gộp trong request trạng thái sẵn có. Mỗi lần mở mục hoặc bấm Xem thêm tải 5 hàng: 30 ảnh ở bố cục 6 cột, 15 ảnh ở bố cục 3 cột, 10 ảnh ở bố cục 2 cột. Nút biểu tượng upload cạnh tiêu đề thư viện mở phần tải ảnh trên điện thoại.
 - Ảnh R18 được làm mờ trong thư viện, có tùy chọn hiện ảnh; mở chi tiết để xem và chỉnh sửa.
 - Web và bot Telegram dùng chung dữ liệu, không có hai kho ảnh riêng.
 
@@ -30,11 +31,13 @@ Nút **Sửa** cạnh Xóa mở popup sửa hàng loạt **Phân loại** và **
 
 **API & Model** nằm trên nút Đăng xuất ở sidebar (biểu tượng bánh răng trên điện thoại). Thêm/sửa/xóa kết nối bằng tên, Base URL OpenAI-compatible và key; mỗi API lưu được nhiều Model ID. Checkbox bật/tắt từng API độc lập; bấm tên API để xem model mà không đổi trạng thái bật. Mỗi API có một model vision được chọn bằng radio và được ghi nhớ riêng, kể cả khi tắt. Có thể bật nhiều API để chia hàng đợi song song; chọn model của API đang tắt không tự bật API đó. Thêm tối đa 30 API và 100 model/API. Cấu hình hiện có được nhập thành **API Waku** lần đầu mở mục này.
 
+Bảng API/Model giữ chiều cao cố định theo màn hình; danh sách model cuộn khi dài hơn 4 dòng. Bấm nền ngoài bảng hoặc Escape để đóng. Trên điện thoại, nội dung bên trong có thể cuộn để vẫn dùng được các form ở màn hình thấp.
+
 Lựa chọn được lưu trong D1 và dùng chung cho web/bot upload Telegram, không cần deploy. Lượt AI đang chạy tiếp tục với cấu hình đã lấy; các lượt kế tiếp đọc lựa chọn mới. Xóa model đang dùng sẽ chọn model còn lại của API nếu có; xóa/tắt một API không tắt các API khác. Nếu không còn API có model đang bật, upload thủ công vẫn hoạt động và AI chờ đến khi có kết nối. Migration từ cấu hình cũ chỉ bật API đã được chọn trước đó, giữ nguyên các API khác ở trạng thái tắt.
 
 Hàng đợi đặt chỗ API và ảnh trong cùng transaction D1 để tránh một ảnh chạy đồng thời ở nhiều API. Mỗi API có 2 slot riêng, chọn slot ít dùng trước; không còn trần 2 lượt AI cho toàn hệ thống. Mỗi ảnh chạy trong invocation riêng, chia fan-out thành nhóm để giữ giới hạn Worker/D1. Nếu ACK gọi Worker bị thất lạc, giữ lease thay vì lập tức gửi lại; Cron khôi phục khi lease hết hạn. Kết quả chỉ được ghi nếu lượt chạy vẫn sở hữu lease và metadata chưa bị sửa tay.
 
-API lỗi được tạm chờ: 30 giây cho lỗi tạm thời/output, 60 giây khi 429, 5 phút cho lỗi cấu hình 400/401/403/404. Nếu còn API khác sẵn sàng, ảnh lỗi được đưa lại hàng đợi để API đó thử; tổng tối đa 3 lần/ảnh. Không tăng số lần gọi do API vừa bị tắt/xóa trước lúc thực sự bắt đầu. Sửa kết nối/model hoặc tắt/bật API xóa khoảng chờ; phản hồi từ cấu hình cũ không ghi đè trạng thái cấu hình mới.
+Ảnh lỗi chuyển sang failed ngay, không tự gọi lại hoặc chuyển sang API khác. API chỉ tạm chờ khi bị 429 (60 giây) hoặc lỗi cấu hình 400/401/403/404 (5 phút); lỗi output/timeout của một ảnh không làm đứng các ảnh còn lại. Sửa kết nối/model hoặc tắt/bật API xóa khoảng chờ; phản hồi từ cấu hình cũ không ghi đè trạng thái cấu hình mới.
 
 Key nhà cung cấp được mã hóa AES-GCM trước khi lưu D1, không trả lại qua API và không lưu ở localStorage. Khi sửa API, để trống key để giữ key cũ. Khóa mã hóa được dẫn xuất từ `API_KEY` quản trị: nếu thay `API_KEY`, cần nhập lại các key nhà cung cấp đã lưu. Sau khi quản lý API trên web, danh sách D1 là nguồn cấu hình chính; deploy lại secret AI không ghi đè lựa chọn này.
 
@@ -42,9 +45,9 @@ Khi bắt đầu upload, web chuyển sang **Chờ phân loại** và hiện tr�
 
 Thanh upload đếm **ảnh được API xác nhận đã lưu / tổng ảnh của đợt**, không cộng file lỗi vào số đã lưu. Thanh AI phía trên danh sách dùng bộ đếm D1 riêng theo đợt: đang chờ, đang chạy, thành công, lỗi, bỏ qua. Đây là hai tiến trình khác nhau; upload xong không đồng nghĩa AI đã hoàn tất. ID đợt AI được giữ trong sessionStorage để tiếp tục theo dõi sau khi tải lại trang; API key không được lưu ở đó.
 
-Thanh AI có **Tạm dừng / Tiếp tục**, **Huỷ**, **Chạy lại ảnh lỗi** (hoặc ảnh đã huỷ). Khi đang xem một đợt, nút tác động vào đợt đó; nếu không theo dõi đợt riêng thì tác động toàn hàng đợi. Tạm dừng được lưu ở D1, không mất khi tải lại trang; ảnh đang gọi API có thể hoàn tất nhưng không nhận ảnh tiếp theo. Huỷ không xoá ảnh/tag đã lưu, vô hiệu hoá kết quả đến muộn. Chạy lại chỉ lấy ảnh lỗi/đã huỷ, không chạy lại ảnh thành công. Tạm dừng toàn hàng đợi còn giữ cả ảnh mới tải lên, đến khi bấm Tiếp tục.
+Thanh AI có **Tạm dừng / Tiếp tục**, **Huỷ**, **Chạy lại lỗi**. Chạy lại lỗi chỉ xuất hiện khi không còn ảnh chờ/chạy trong đợt hoặc sau khi Huỷ; API cũng từ chối chạy lại khi đợt chưa kết thúc. Khi đang xem một đợt, nút tác động vào đợt đó; nếu không theo dõi đợt riêng thì tác động toàn hàng đợi. Tạm dừng được lưu ở D1, không mất khi tải lại trang; ảnh đang gọi API có thể hoàn tất nhưng không nhận ảnh tiếp theo. Huỷ không xoá ảnh/tag đã lưu, vô hiệu hoá kết quả đến muộn. Chạy lại chỉ lấy ảnh lỗi/đã huỷ, không chạy lại ảnh thành công. Tạm dừng toàn hàng đợi còn giữ cả ảnh mới tải lên, đến khi bấm Tiếp tục.
 
-Mỗi lượt gọi AI có timeout **20 giây cho cả kết nối lẫn nội dung trả về**, tối đa **3 lần thử/ảnh**. Lỗi tạm thời có thời gian chờ rồi tự thử lại; thanh tiến trình hiển thị thời gian chờ hoặc nhắc bật API khi chưa có kết nối. Worker mất phản hồi được Cron lấy lại sau lease tối đa 2 phút; hết 3 lần sẽ chuyển sang lỗi để bấm chạy lại, không lặp vô hạn. Không đặt timeout cứng cho toàn đợt vì đợt lớn cần được xếp hàng tuần tự.
+Mỗi ảnh có timeout **10 giây**, gồm đọc ảnh từ R2, gọi API và đọc nội dung trả về. Ảnh được gửi trực tiếp dạng data URI để hỗ trợ gateway không nhận URL ảnh từ xa, không phụ thuộc gateway tải được CDN hay không. Mỗi ảnh chỉ gọi API một lần: lỗi/timeout chuyển sang failed, không tự thử lại. Worker mất phản hồi được Cron đánh dấu lỗi sau khi lease 20 giây hết hạn, không phát lại tác vụ. Chỉ bấm Chạy lại lỗi mới tạo lượt mới. Không đặt timeout cứng cho toàn đợt vì đợt lớn cần được xếp hàng tuần tự.
 
 Hàng đợi D1 có khóa lease theo từng slot, tiếp tục xử lý theo chuỗi ngắn để không vượt giới hạn gọi Worker lồng nhau. Cron mỗi phút khôi phục các tác vụ bị gián đoạn; khi đang mở web, trang cũng đánh thức hàng đợi. Không cam kết tốc độ cố định cho đợt lớn vì còn phụ thuộc Telegram, provider AI và hạn mức Cloudflare.
 
@@ -128,7 +131,9 @@ Chạy lại deploy. Có thể dùng lại URL/key/model vision trong `settings.
 
 Model nhận URL ảnh đã lưu và metadata thủ công. Tag tự sinh dùng tiếng Anh, chữ thường và dấu `_` cho dễ tìm (`cat_ears`, `maid`, `blue_hair`, `cosplay`…). Chỉ tự gán `safe` khi độ chắc chắn cao; ảnh chưa xác định không bị trộn vào random an toàn. Giao diện và API vẫn cho bạn sửa lại.
 
-Ảnh luôn lưu trước; lỗi AI không làm mất ảnh hay báo upload thất bại. Tác vụ phân tích lưu trong D1 và được Cron khôi phục. Lỗi mạng/429/5xx được thử lại tối đa 3 lần; lỗi key/model/output cần sửa cấu hình hoặc bấm chạy lại. Upload trùng ảnh đã có tác vụ không tự gọi AI thêm lần nữa. Nhấn **AI gắn tag** sẽ chủ động gọi lại.
+Ảnh luôn lưu trước; lỗi AI không làm mất ảnh hay báo upload thất bại. Tác vụ phân tích lưu trong D1. Mọi lỗi AI đều kết thúc lượt xử lý, không tự thử lại; cần sửa cấu hình nếu có lỗi key/model rồi bấm Chạy lại lỗi. Upload trùng ảnh đã có tác vụ không tự gọi AI thêm lần nữa. Nhấn **AI gắn tag** sẽ chủ động gọi lại.
+
+API phân biệt model từ chối nội dung (`ai_error=provider_content_filtered`) với lỗi định dạng, timeout hay kết nối. Nhận diện được cả OpenAI `finish_reason=content_filter` và Gemini `promptFeedback.blockReason` trong envelope của gateway. Web hiện nhãn **AI từ chối**; mở chi tiết ảnh để xem giải thích. Không tự đổi phân loại sang An toàn/R18 khi model chưa phân tích được và không tự thử model khác. Mã lỗi trả qua API không chứa nội dung phản hồi hay thông tin bí mật của nhà cung cấp.
 
 API upload trả ảnh ngay, có thêm `ai_status`: `pending`, `running`, `done`, `failed`, `skipped` hoặc `off` (ảnh cũ chưa có tác vụ). Khi cần chờ tag, đọc lại `/v1/images/ID`. Thêm `manual=true` vào multipart, hoặc `"manual":true` vào JSON upload để bỏ qua AI. Phí phân tích tính theo provider AI bạn chọn, tách khỏi hạn mức miễn phí của Cloudflare.
 

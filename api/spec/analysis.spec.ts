@@ -2,14 +2,28 @@ import {after,before,beforeEach,test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {Miniflare,convertV4MiniflareOptions,Response as MockResponse} from 'miniflare';
-import {parseAnalysis} from '../src/analysis.ts';
+import {parseAnalysis,parseVisionResponse} from '../src/analysis.ts';
 
 let mf:Miniflare, calls=0, fail=false, hold:Promise<void>|undefined, release:()=>void;
 let burst=false,active=0,peak=0;
+let blockedMode='';
 let expectedKey='vision-key',expectedModel='vision-model',expectedPath='/v1/chat/completions';
 const sent:Array<{method:string;body:any}>=[];
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
 const predicted={title:'Ảnh anime',tags:['anime','blue_hair','cat_ears'],rating:'safe',rating_confidence:0.99,image_type:'anime'};
+
+test('vision distinguishes provider content filters from malformed data and accepts native Gemini envelopes',()=>{
+  for(const response of [
+    {response:{promptFeedback:{blockReason:'PROHIBITED_CONTENT',blockReasonMessage:'upstream text'}}},
+    {choices:[{finish_reason:'content_filter',message:{content:''}}]},
+    {choices:[{message:{refusal:'upstream text',content:null}}]},
+    {response:{candidates:[{finishReason:'SAFETY'}]}},
+  ])assert.throws(()=>parseVisionResponse(response),/provider_content_filtered/);
+  const expected=parseAnalysis(JSON.stringify(predicted));
+  assert.deepEqual(parseVisionResponse({response:{candidates:[{finishReason:'STOP',content:{parts:[{thought:true,text:'not output'},{text:JSON.stringify(predicted)}]}}]}}),expected);
+  assert.deepEqual(parseVisionResponse({choices:[{finish_reason:'stop',message:{content:[{type:'text',text:JSON.stringify(predicted)}]}}]}),expected);
+  assert.throws(()=>parseVisionResponse({choices:[{message:{content:'not JSON'}}]}),/invalid_response/);
+});
 
 before(async()=>{
   mf=new Miniflare(convertV4MiniflareOptions({
@@ -28,10 +42,12 @@ before(async()=>{
         assert.equal(request.headers.get('authorization'),'Bearer '+expectedKey);assert.equal(url.pathname,expectedPath);
         const body=await request.json() as any;
         assert.equal(body.model,expectedModel);
-        assert.match(body.messages[1].content[1].image_url.url,/^https:\/\/images\.example\.com\/media\//);
+        assert.match(body.messages[1].content[1].image_url.url,/^data:image\/png;base64,/);
         if(hold) await hold;
         if(burst)await new Promise(resolve=>setTimeout(resolve,100));
         if(fail) return new MockResponse('{}',{status:401});
+        if(blockedMode==='gemini')return MockResponse.json({response:{promptFeedback:{blockReason:'PROHIBITED_CONTENT'}}});
+        if(blockedMode==='openai')return MockResponse.json({choices:[{finish_reason:'content_filter',message:{content:''}}]});
         return MockResponse.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(predicted)}}]});
         } finally {active--;}
       }
@@ -95,6 +111,15 @@ test('provider errors do not lose the image; conservative rating and invalid out
   assert.equal(parseAnalysis(JSON.stringify({...predicted,rating_confidence:0.5})).rating,'unknown');
   assert.throws(()=>parseAnalysis('I cannot inspect this image.'));
   assert.throws(()=>parseAnalysis(JSON.stringify({...predicted,tags:['https://malicious.com']})));
+});
+
+test('blocked images expose a safe error code, retain the file and remain failed without retry',async()=>{
+  try{for(const [index,mode]of ['gemini','openai'].entries()){
+    blockedMode=mode;const before=calls,file=await upload(180+index),result=await finished(file.id);
+    assert.equal(result.ai_status,'failed');assert.equal(result.ai_error,'provider_content_filtered');assert.equal(result.rating,'unknown');assert.deepEqual(result.tags,[]);
+    await api('/v1/jobs/drain','POST',{});assert.equal(calls,before+1);
+    const media=await mf.dispatchFetch(result.url);assert.equal(media.status,200);await media.arrayBuffer();
+  }}finally{blockedMode='';}
 });
 
 test('manual edit during inference wins over late AI results',async()=>{

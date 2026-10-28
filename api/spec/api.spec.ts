@@ -44,6 +44,22 @@ before(async()=>{
 });
 after(async()=>{await mf?.dispose();});
 
+test('sidebar tab counts match classified and pending lists while tagged images are queued again',async()=>{
+  const a=(await upload(175,'safe')).image,b=(await upload(176,'r18')).image;
+  const before=await(await call('/v1/state')).json() as any,db=await mf.getD1Database('DB');
+  await db.batch([
+    db.prepare("UPDATE image_analysis SET status='pending' WHERE image_id=?").bind(a.id),
+    db.prepare("UPDATE image_analysis SET status='running',lease_until=? WHERE image_id=?").bind(Date.now()+120000,b.id),
+  ]);
+  try{
+    const data=await(await call('/v1/state')).json() as any;
+    assert.equal(data.tabs.all,before.tabs.all);assert.equal(data.tabs.safe,before.tabs.safe-1);assert.equal(data.tabs.r18,before.tabs.r18-1);assert.equal(data.tabs.pending,before.tabs.pending+2);
+    for(const [key,query]of Object.entries({all:'',safe:'view=classified&rating=safe',r18:'view=classified&rating=r18',pending:'view=pending'})){
+      const list=await(await call('/v1/images?limit=100&'+query)).json() as any;assert.equal(data.tabs[key],list.images.length);
+    }
+  }finally{await db.prepare("UPDATE image_analysis SET status='skipped',lease_until=0 WHERE image_id IN (?,?)").bind(a.id,b.id).run();await call('/v1/images/'+a.id,'DELETE');await call('/v1/images/'+b.id,'DELETE');}
+});
+
 async function call(path:string,method='GET',body?:unknown) {
   const native=new Request(`https://images.example.com${path}`,{
     method,headers:{authorization:`Bearer ${key}`,...(body && !(body instanceof FormData)?{'content-type':'application/json'}:{})},

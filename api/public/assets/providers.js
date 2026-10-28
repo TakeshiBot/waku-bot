@@ -27,7 +27,7 @@ export function setupProviders({api,toast,onChange}){
     $('provider-detail-state').textContent=!provider.enabled?'Đang tắt · chọn model rồi tích bật API để dùng.':!provider.preferred_model_id?'Đang bật · cần thêm hoặc chọn model vision.':provider.cooldown_until>Date.now()?'API đang tạm chờ do lỗi. Có thể sửa kết nối hoặc tắt/bật API để thử lại.':'Đang bật · dùng model đã chọn, tối đa 2 ảnh song song.';
     const models=$('model-list');models.replaceChildren();
     for(const model of provider.models){
-      const row=node('div','model-row'+(model.id===provider.preferred_model_id?' active':'')),label=node('label'),radio=node('input');radio.type='radio';radio.name='active-model-'+provider.id;radio.value=model.id;radio.checked=model.id===provider.preferred_model_id;radio.disabled=busy;radio.addEventListener('change',()=>choose(provider.id,model.id));label.append(radio,node('span','',model.model));
+      const row=node('div','model-row'+(model.id===provider.preferred_model_id?' active':'')),label=node('label'),radio=node('input'),name=node('span','',model.model);name.title=model.model;radio.type='radio';radio.name='active-model-'+provider.id;radio.value=model.id;radio.checked=model.id===provider.preferred_model_id;radio.disabled=busy;radio.addEventListener('change',()=>choose(provider.id,model.id));label.append(radio,name);
       const edit=node('button','text-button','Sửa');edit.type='button';edit.disabled=busy;edit.setAttribute('aria-label','Sửa model '+model.model);edit.addEventListener('click',()=>{editingModel=model.id;$('model-name').value=model.model;$('model-form-label').textContent='Sửa model';$('save-model').textContent='Lưu model';$('cancel-model').hidden=false;$('model-name').focus();});
       const remove=node('button','danger-link','Xóa');remove.type='button';remove.disabled=busy;remove.setAttribute('aria-label','Xóa model '+model.model);remove.addEventListener('click',async()=>{if(!confirm('Xóa model '+model.model+'?'))return;await mutate('/v1/ai/models/'+model.id,'DELETE');});row.append(label,edit,remove);models.append(row);
     }
@@ -53,6 +53,10 @@ export function setupProviders({api,toast,onChange}){
     try{accept(await api('/v1/ai/settings'));resetModel();render();}catch(cause){error(cause.message);}finally{loading=false;lock(false);}
   });
   $('close-api-settings').addEventListener('click',()=>dialog.close());
+  let outside=false;
+  const isOutside=event=>{const box=dialog.getBoundingClientRect();return event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom;};
+  dialog.addEventListener('pointerdown',event=>outside=event.target===dialog&&isOutside(event));
+  dialog.addEventListener('click',event=>{if(outside&&event.target===dialog&&isOutside(event))dialog.close();outside=false;});
   dialog.addEventListener('close',()=>{$('provider-key').value='';});
   $('add-provider').addEventListener('click',()=>showProviderForm());
   $('edit-provider').addEventListener('click',()=>showProviderForm(currentProvider()));

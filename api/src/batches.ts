@@ -63,7 +63,8 @@ export async function queueProgress(env:Env) {
 // Invalidating the lease on cancel/retry prevents late results from being saved.
 export async function controlAnalysis(env:Env,action:string,batchId?:string) {
   if(!['pause','resume','cancel','retry'].includes(action))throw new HttpError(400,'invalid_action','Thao tác AI không hợp lệ.');
-  if(batchId)await batchProgress(env,batchId);
+  const progress=batchId?await batchProgress(env,batchId):await queueProgress(env);
+  if(action==='retry'&&(progress.pending||progress.running))throw new HttpError(409,'analysis_still_running','Chờ toàn bộ ảnh xử lý xong hoặc bấm Huỷ trước khi chạy lại lỗi.');
   const scope=batchId?'image_id IN (SELECT image_id FROM analysis_batch_items WHERE batch_id=?)':'1=1';
   const args=batchId?[batchId]:[];
   const control=action==='pause'?'paused':action==='cancel'?'cancelled':'active';

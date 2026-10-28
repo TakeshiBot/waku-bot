@@ -1,7 +1,7 @@
-import {setupProviders} from './providers.js?v=10';
+import {setupProviders} from './providers.js?v=13';
 const $=id=>document.getElementById(id);
 const state={authenticated:false,maxMb:10,images:new Map(),cursor:null,query:'',rating:'',queue:[],pumping:false,paused:true,editing:null,listVersion:0,statsBusy:false,
-  selected:new Set(),allSelected:false,selectionBusy:false,bulkBusy:false,deleteTargets:[],editTargets:[],loadedLimit:48,uploadIds:new Set(),starting:false,aiBatchId:null,aiProgress:null,aiPending:0,aiEnqueueing:false,
+  selected:new Set(),allSelected:false,selectionBusy:false,bulkBusy:false,deleteTargets:[],editTargets:[],loadedLimit:0,uploadIds:new Set(),starting:false,aiBatchId:null,aiProgress:null,aiPending:0,aiEnqueueing:false,
   revision:null,lastStats:0,galleryDirty:false,gallerySignature:'',filterTags:new Set(),filterTypes:new Set(),tagsLoaded:0,checking:0,aiAvailable:false,aiQueue:null,aiControlBusy:false,aiDismissed:false};
 const number=n=>new Intl.NumberFormat('vi-VN').format(n || 0);
 const bytes=n=>n>=1073741824?(n/1073741824).toFixed(1)+' GB':n>=1048576?(n/1048576).toFixed(1)+' MB':(n/1024).toFixed(0)+' KB';
@@ -11,6 +11,10 @@ let toastTimer,filterTimer,pollTimer;
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4000);}
 function element(tag,className,text){const el=document.createElement(tag);if(className)el.className=className;if(text!==undefined)el.textContent=text;return el;}
 function icon(name){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');const use=document.createElementNS(svg.namespaceURI,'use');use.setAttribute('href','#i-'+name);svg.append(use);return svg;}
+function analysisError(code){
+  const messages={provider_content_filtered:'Model từ chối phân tích ảnh do bộ lọc nội dung của nhà cung cấp. Đây không phải lỗi file. Bạn có thể gắn tag thủ công hoặc chọn một model vision khác.',provider_timeout:'Model không trả xong kết quả trong 10 giây. Ảnh không tự chạy lại.',worker_timeout:'Lượt xử lý bị gián đoạn. Ảnh không tự chạy lại.',invalid_response:'API trả kết quả không đúng định dạng gắn tag.',incomplete_response:'Model trả kết quả chưa đầy đủ.',provider_unavailable:'Không kết nối được API vision.',image_missing:'Không đọc được ảnh đã lưu.',key_decryption_failed:'Cần nhập lại key của API vision.'};
+  return messages[code]||(/^provider_http_\d{3}$/.test(code||'')?`API vision trả lỗi HTTP ${code.slice(-3)}. Kiểm tra API, key và model đang chọn.`:'Chưa phân tích được ảnh. Kiểm tra API/model rồi chủ động chạy lại.');
+}
 function showLogin(message=''){
   state.authenticated=false;state.paused=true;clearTimeout(pollTimer);$('app').hidden=true;$('login').hidden=false;$('login-error').textContent=message;
   $('editor').close();$('confirm-delete').close();$('bulk-edit').close();$('api-settings').close();
@@ -52,6 +56,7 @@ async function refreshStats(updateGallery=false,force=false){
     if(!force&&Date.now()-state.lastStats<2000)return;
     const batchId=state.aiBatchId,stats=await api('/v1/state'+(batchId?'?batch='+encodeURIComponent(batchId):''));state.lastStats=Date.now();
     $('stat-total').textContent=number(stats.images.total);$('nav-count').textContent=number(stats.images.total);$('stat-size').textContent=bytes(stats.images.bytes);
+    for(const count of document.querySelectorAll('[data-tab-count]'))count.textContent=`(${number(stats.tabs?.[count.dataset.tabCount])})`;
     const pending=Number(stats.ai_pending)+Number(stats.uploads_pending);$('stat-pending').textContent=number(pending);$('stat-pending-note').textContent=pending?`${number(stats.ai_pending)} AI · ${number(stats.uploads_pending)} upload`:'Mọi thứ đã sẵn sàng';
     state.aiPending=Number(stats.ai_pending);state.aiQueue=stats.ai_queue;if(batchId&&batchId===state.aiBatchId){if(stats.batch)state.aiProgress=stats.batch;else setAiBatch(null);}renderAiProgress();
     const changed=state.revision!==null&&state.revision!==stats.revision;state.revision=stats.revision;state.galleryDirty ||= changed;
@@ -60,7 +65,8 @@ async function refreshStats(updateGallery=false,force=false){
   finally{state.statsBusy=false;schedulePoll();}
 }
 async function loadImages(reset=false,more=false){
-  const version=++state.listVersion,wanted=reset?48:state.loadedLimit+(more?48:0),base=listParameters();
+  const pageSize=5*(parseInt(getComputedStyle($('gallery')).getPropertyValue('--gallery-columns'),10)||6);
+  const version=++state.listVersion,wanted=reset?pageSize:(state.loadedLimit||pageSize)+(more?pageSize:0),base=listParameters();
   if(reset)$('list-status').textContent='Đang mở thư viện…';
   try{
     const images=new Map();let cursor=null;
@@ -83,7 +89,8 @@ function listParameters(){
 function changeFilter(rating,clearSearch=false){
   state.rating=rating;state.selected.clear();state.allSelected=false;
   if(clearSearch){state.query='';$('search').value='';clearTimeout(filterTimer);}
-  document.querySelectorAll('[data-rating]').forEach(button=>button.classList.toggle('active',button.dataset.rating===rating));
+  document.querySelectorAll('[data-rating]').forEach(button=>{const active=button.dataset.rating===rating;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});
+  setView('library');
   loadImages(true);renderSelection();renderAiProgress();
 }
 function renderGallery(){
@@ -114,7 +121,7 @@ function renderGallery(){
     const tags=element('div','card-tags');for(const tag of image.tags.slice(0,2))tags.append(element('span','',tag));
     if(image.tags.length>2)tags.append(element('span','',`+${image.tags.length-2}`));
     if(['pending','running'].includes(image.ai_status))tags.append(element('span','ai-state busy','✦ AI'));
-    else if(image.ai_status==='failed')tags.append(element('span','ai-state','AI lỗi'));
+    else if(image.ai_status==='failed'){const error=element('span','ai-state',image.ai_error==='provider_content_filtered'?'AI từ chối':'AI lỗi');error.title=analysisError(image.ai_error);tags.append(error);}
     card.append(thumb,title,tags);gallery.append(card);
   }
   renderSelection();
@@ -152,11 +159,10 @@ $('clear-filters').addEventListener('click',()=>{state.filterTags.clear();state.
 document.addEventListener('click',event=>{if(!event.target.closest('.filter-anchor'))openFilter(false);});
 function setView(view){
   document.body.dataset.view=view;
-  $('nav-library').classList.toggle('selected',view==='library');$('nav-upload').classList.toggle('selected',view==='upload');
-  $('nav-library').setAttribute('aria-label','Kho ảnh');$('nav-upload').setAttribute('aria-label','Tải ảnh lên');
+  $('nav-library').classList.toggle('selected',view==='library');$('nav-library').setAttribute('aria-label','Kho ảnh');
 }
 function focusUpload(){setView('upload');$('upload-panel').scrollTop=0;$('choose-files').focus({preventScroll:true});}
-for(const id of ['nav-upload','empty-upload'])$(id).addEventListener('click',focusUpload);
+for(const id of ['show-upload','empty-upload'])$(id).addEventListener('click',focusUpload);
 $('nav-library').addEventListener('click',()=>{setView('library');$('library-results').scrollTop=0;});
 
 function renderSelection(){
@@ -190,13 +196,13 @@ function renderAiProgress(){
   $('dismiss-ai').disabled=active||Boolean(p?.pending||p?.running)||state.aiControlBusy;
   $('pause-ai').textContent=paused?'Tiếp tục':'Tạm dừng';$('pause-ai').disabled=state.aiControlBusy||!p?.pending&&!p?.running;
   $('cancel-ai').disabled=state.aiControlBusy||!p?.pending&&!p?.running;
-  $('retry-ai').hidden=!p?.failed&&!p?.cancelled;$('retry-ai').textContent=p?.failed?'Chạy lại ảnh lỗi':'Chạy lại ảnh đã huỷ';$('retry-ai').disabled=state.aiControlBusy||!state.aiAvailable;
-  $('ai-control-note').textContent=state.aiControlBusy?'Đang cập nhật…':(state.aiProgress?'Đợt đang xem.':'Toàn bộ hàng đợi.')+(paused?' Đã tạm dừng; ảnh đang chạy có thể hoàn tất.':' Mỗi lượt API tối đa 20 giây, thử tối đa 3 lần.');
+  $('retry-ai').hidden=!(p?.failed||p?.cancelled)||Boolean(p?.pending||p?.running)||state.aiEnqueueing;$('retry-ai').textContent='Chạy lại lỗi';$('retry-ai').disabled=state.aiControlBusy||!state.aiAvailable;
+  $('ai-control-note').textContent=state.aiControlBusy?'Đang cập nhật…':(state.aiProgress?'Đợt đang xem.':'Toàn bộ hàng đợi.')+(paused?' Đã tạm dừng; ảnh đang chạy có thể hoàn tất.':' Mỗi ảnh tối đa 10 giây. Ảnh lỗi không tự thử lại.');
   const q=state.aiQueue;
   if(!paused&&!state.aiControlBusy&&p?.pending&&!p?.running){
     const ready=Math.max(q?.next_attempt||0,q?.provider_ready_at||0);
     if(q?.provider_ready_at===null)$('ai-control-note').textContent+=' Cần bật API và chọn model vision để tiếp tục.';
-    else if(ready>Date.now())$('ai-control-note').textContent+=` Tự thử tiếp sau khoảng ${Math.ceil((ready-Date.now())/1000)} giây.`;
+    else if(ready>Date.now())$('ai-control-note').textContent+=` API tạm chờ khoảng ${Math.ceil((ready-Date.now())/1000)} giây trước khi nhận ảnh mới.`;
   }
   $('pause-ai').dataset.action=paused?'resume':'pause';
   const progress=$('ai-progress-bar');
@@ -386,7 +392,7 @@ $('clear-done').addEventListener('click',()=>{for(const item of state.queue)if([
 window.addEventListener('beforeunload',event=>{if(state.pumping || state.queue.some(x=>x.status==='queued')){event.preventDefault();event.returnValue='';}});
 
 async function openEditor(id){
-  try{const image=state.images.get(id) || (await api('/v1/images/'+id)).image;state.editing=image;state.images.set(id,image);$('edit-preview').src='/media/'+encodeURIComponent(id);$('edit-title').value=image.title;$('edit-tags').value=image.tags.join(', ');$('edit-rating').value=image.rating;$('edit-type').value=image.image_type || '';$('edit-source').value=image.source_url || '';$('analyze-image').hidden=image.rating!=='unknown'&&!['pending','running'].includes(image.ai_status);$('analyze-image').disabled=['pending','running'].includes(image.ai_status);$('edit-meta').textContent=`${bytes(image.size)} · ${image.mime_type.replace('image/','').toUpperCase()} · ${new Date(image.created_at).toLocaleDateString('vi-VN')}${image.original_name?' · '+image.original_name:''}`;$('editor').showModal();}
+  try{const image=state.images.get(id) || (await api('/v1/images/'+id)).image;state.editing=image;state.images.set(id,image);$('edit-preview').src='/media/'+encodeURIComponent(id);$('edit-title').value=image.title;$('edit-tags').value=image.tags.join(', ');$('edit-rating').value=image.rating;$('edit-type').value=image.image_type || '';$('edit-source').value=image.source_url || '';$('analyze-image').hidden=image.rating!=='unknown'&&!['pending','running'].includes(image.ai_status);$('analyze-image').disabled=['pending','running'].includes(image.ai_status);$('edit-meta').textContent=`${bytes(image.size)} · ${image.mime_type.replace('image/','').toUpperCase()} · ${new Date(image.created_at).toLocaleDateString('vi-VN')}${image.original_name?' · '+image.original_name:''}`;$('edit-ai-error').hidden=image.ai_status!=='failed';$('edit-ai-error').textContent=image.ai_status==='failed'?analysisError(image.ai_error):'';$('editor').showModal();}
   catch(error){toast(error.message);}
 }
 $('editor-close').addEventListener('click',()=>$('editor').close());

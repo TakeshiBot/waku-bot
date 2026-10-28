@@ -1,20 +1,16 @@
 import type {Env} from './types';
 import {libraryChanged} from './store';
 
-// A lost Worker acknowledgement may hold a lease, but may not retry forever.
+// Lost invocations fail instead of starting another automatic inference.
 export async function recoverAnalysis(env:Env) {
   const now=Date.now();
-  if(!await env.DB.prepare(`SELECT 1 WHERE EXISTS(SELECT 1 FROM image_analysis WHERE (status='running' AND lease_until<?) OR (status='pending' AND attempts>=3))
+  if(!await env.DB.prepare(`SELECT 1 WHERE EXISTS(SELECT 1 FROM image_analysis WHERE (status='running' AND lease_until<?) OR (status='pending' AND attempts>=1))
     OR EXISTS(SELECT 1 FROM ai_provider_slots WHERE token IS NOT NULL AND lease_until<?)`).bind(now,now).first())return;
   const results=await env.DB.batch([
     env.DB.prepare(`UPDATE analysis_batch_items SET status='failed' WHERE status IN ('pending','running')
-      AND image_id IN (SELECT image_id FROM image_analysis WHERE ((status='running' AND lease_until<?) OR status='pending') AND attempts>=3)`).bind(now),
+      AND image_id IN (SELECT image_id FROM image_analysis WHERE (status='running' AND lease_until<?) OR (status='pending' AND attempts>=1))`).bind(now),
     env.DB.prepare(`UPDATE image_analysis SET status='failed',last_error='worker_timeout',lease_token=NULL,lease_until=0
-      WHERE ((status='running' AND lease_until<?) OR status='pending') AND attempts>=3`).bind(now),
-    env.DB.prepare(`UPDATE analysis_batch_items SET status='pending' WHERE status='running' AND image_id IN
-      (SELECT image_id FROM image_analysis WHERE status='running' AND lease_until<? AND attempts<3)`).bind(now),
-    env.DB.prepare(`UPDATE image_analysis SET status='pending',last_error='worker_timeout',lease_token=NULL,lease_until=0,next_attempt=0
-      WHERE status='running' AND lease_until<? AND attempts<3`).bind(now),
+      WHERE (status='running' AND lease_until<?) OR (status='pending' AND attempts>=1)`).bind(now),
     env.DB.prepare('UPDATE ai_provider_slots SET token=NULL,image_id=NULL,lease_until=0 WHERE token IS NOT NULL AND lease_until<?').bind(now),
   ]);
   if(results.some(result=>result.meta.changes))await libraryChanged(env);
@@ -42,19 +38,19 @@ async function reserveAnalysis(env:Env) {
   // schedulers cannot assign the same image to two APIs or exceed API limits.
   const results=await env.DB.batch([
     env.DB.prepare(`UPDATE ai_provider_slots SET token=?,lease_until=?,last_started=?,image_id=(
-      SELECT image_id FROM image_analysis WHERE control='active' AND attempts<3 AND ((status='pending' AND next_attempt<=?) OR (status='running' AND lease_until<?))
+      SELECT image_id FROM image_analysis WHERE control='active' AND attempts=0 AND status='pending' AND next_attempt<=?
       ORDER BY next_attempt,image_id LIMIT 1)
       WHERE rowid=(SELECT s.rowid FROM ai_provider_slots s JOIN ai_providers p ON p.id=s.provider_id
       JOIN ai_models m ON m.id=p.preferred_model_id AND m.provider_id=p.id
       WHERE p.enabled=1 AND s.lease_until<? AND p.cooldown_until<=? AND (SELECT paused FROM analysis_queue_settings WHERE id=1)=0
       ORDER BY s.last_started,s.slot,s.provider_id LIMIT 1)
-      AND EXISTS(SELECT 1 FROM image_analysis WHERE control='active' AND attempts<3 AND ((status='pending' AND next_attempt<=?) OR (status='running' AND lease_until<?)))
-      RETURNING token`).bind(token,now+120000,now,now,now,now,now,now,now),
+      AND EXISTS(SELECT 1 FROM image_analysis WHERE control='active' AND attempts=0 AND status='pending' AND next_attempt<=?)
+      RETURNING token`).bind(token,now+20000,now,now,now,now,now),
     env.DB.prepare(`UPDATE image_analysis SET status='running',attempts=attempts+1,lease_until=?,lease_token=?,
       provider_id=(SELECT provider_id FROM ai_provider_slots WHERE token=?)
       WHERE image_id=(SELECT image_id FROM ai_provider_slots WHERE token=?)
-      AND ((status='pending' AND next_attempt<=?) OR (status='running' AND lease_until<?)) RETURNING image_id`)
-      .bind(now+120000,token,token,token,now,now),
+      AND control='active' AND attempts=0 AND status='pending' AND next_attempt<=? RETURNING image_id`)
+      .bind(now+20000,token,token,token,now),
     env.DB.prepare(`UPDATE analysis_batch_items SET status='running' WHERE status='pending'
       AND image_id=(SELECT image_id FROM ai_provider_slots WHERE token=?)`).bind(token),
   ]);
@@ -77,8 +73,8 @@ export async function dispatchAnalysis(env:Env,hop=0,limit=8):Promise<number> {
   if(!env.PUBLIC_BASE_URL||!env.API_KEY||hop>=8)return 0;
   await recoverAnalysis(env);
   const due=await env.DB.prepare(`SELECT 1 FROM image_analysis WHERE
-    control='active' AND attempts<3 AND ((status='pending' AND next_attempt<=?) OR (status='running' AND lease_until<?))
-    AND (SELECT paused FROM analysis_queue_settings WHERE id=1)=0 LIMIT 1`).bind(Date.now(),Date.now()).first();
+    control='active' AND attempts=0 AND status='pending' AND next_attempt<=?
+    AND (SELECT paused FROM analysis_queue_settings WHERE id=1)=0 LIMIT 1`).bind(Date.now()).first();
   if(!due)return 0;
   const tokens:string[]=[];
   for(let i=0;i<limit;i++){

@@ -110,14 +110,21 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     return response({accepted:true});
   }
   if ((path==='/v1/stats' || path==='/v1/state') && request.method==='GET') {
-    const images=await env.DB.prepare(`SELECT COUNT(*) total,COALESCE(SUM(size),0) bytes,
-      COALESCE(SUM(rating='safe'),0) safe,COALESCE(SUM(rating='r18'),0) r18,COALESCE(SUM(rating='unknown'),0) unknown FROM images`).first();
+    const counts=await env.DB.prepare(`SELECT COUNT(*) total,COALESCE(SUM(i.size),0) bytes,
+      COALESCE(SUM(i.rating='safe'),0) safe,COALESCE(SUM(i.rating='r18'),0) r18,COALESCE(SUM(i.rating='unknown'),0) unknown,
+      COALESCE(SUM(i.rating='safe' AND COALESCE(a.status,'') NOT IN ('pending','running')),0) classified_safe,
+      COALESCE(SUM(i.rating='r18' AND COALESCE(a.status,'') NOT IN ('pending','running')),0) classified_r18,
+      COALESCE(SUM(i.rating='unknown' OR a.status IN ('pending','running')),0) pending
+      FROM images i LEFT JOIN image_analysis a ON a.image_id=i.id`)
+      .first<{total:number;bytes:number;safe:number;r18:number;unknown:number;classified_safe:number;classified_r18:number;pending:number}>();
+    const {classified_safe,classified_r18,pending:pendingCount,...images}=counts!;
+    const tabs={all:images.total,safe:classified_safe,r18:classified_r18,pending:pendingCount};
     const ai=await queueProgress(env);
     const uploads=await env.DB.prepare("SELECT COUNT(*) pending FROM telegram_jobs WHERE status IN ('pending','running')").first();
     const revision=await env.DB.prepare('SELECT version FROM library_revision WHERE id=1').first<{version:number}>();
     let batch=null;const batchId=url.searchParams.get('batch');
     if(batchId && uuid.test(batchId))try{batch=await batchProgress(env,batchId);}catch(error){if(!(error instanceof HttpError && error.status===404))throw error;}
-    return response({images,ai_pending:Number(ai.pending)+Number(ai.running),uploads_pending:uploads?.pending || 0,revision:revision?.version || 0,batch,ai_queue:ai});
+    return response({images,tabs,ai_pending:Number(ai.pending)+Number(ai.running),uploads_pending:uploads?.pending || 0,revision:revision?.version || 0,batch,ai_queue:ai});
   }
   if(path==='/v1/filters' && request.method==='GET') {
     const query=(url.searchParams.get('q') || '').slice(0,64).toLowerCase();
