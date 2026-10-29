@@ -16,7 +16,7 @@ function element(tag,className,text){const el=document.createElement(tag);if(cla
 function icon(name){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');const use=document.createElementNS(svg.namespaceURI,'use');use.setAttribute('href','#i-'+name);svg.append(use);return svg;}
 function isClassified(image){return image.classified??Boolean(image.title?.trim()&&image.tags?.some(tag=>tag.trim())&&['safe','r18'].includes(image.rating)&&['anime','real'].includes(image.image_type)&&!['pending','running'].includes(image.ai_status));}
 function analysisError(code){
-  const messages={provider_content_filtered:'Model từ chối phân tích ảnh do bộ lọc nội dung của nhà cung cấp. Đây không phải lỗi file. Bạn có thể gắn tag thủ công hoặc chọn một model vision khác.',provider_timeout:'Model không trả xong kết quả trong 10 giây. Ảnh không tự chạy lại.',worker_timeout:'Lượt xử lý bị gián đoạn. Ảnh không tự chạy lại.',invalid_response:'API trả kết quả không đúng định dạng gắn tag.',incomplete_response:'Model trả kết quả chưa đầy đủ.',provider_unavailable:'Không kết nối được API vision.',image_missing:'Không đọc được ảnh đã lưu.',key_decryption_failed:'Cần nhập lại key của API vision.'};
+  const messages={provider_content_filtered:'Model từ chối phân tích ảnh do bộ lọc nội dung của nhà cung cấp. Đây không phải lỗi file. Bạn có thể gắn tag thủ công hoặc chọn một model vision khác.',provider_timeout:'Model không trả xong kết quả trong 10 giây. Ảnh không tự chạy lại.',worker_timeout:'Lượt xử lý bị gián đoạn. Ảnh không tự chạy lại.',invalid_response:'API trả kết quả không đúng định dạng gắn tag.',incomplete_response:'Model trả thiếu tên, tag, phân loại Safe/R18 hoặc kiểu ảnh. Lượt này chưa hoàn tất; bạn có thể chạy lại hoặc sửa thủ công.',classification_unresolved:'AI chưa xác định được Safe/R18 từ ảnh. Lượt này chưa hoàn tất; bạn có thể chạy lại hoặc chọn phân loại thủ công. Hệ thống không tự đoán.',provider_unavailable:'Không kết nối được API vision.',image_missing:'Không đọc được ảnh đã lưu.',key_decryption_failed:'Cần nhập lại key của API vision.'};
   return messages[code]||(/^provider_http_\d{3}$/.test(code||'')?`API vision trả lỗi HTTP ${code.slice(-3)}. Kiểm tra API, key và model đang chọn.`:'Chưa phân tích được ảnh. Kiểm tra API/model rồi chủ động chạy lại.');
 }
 function showLogin(message=''){
@@ -150,7 +150,7 @@ function renderGallery(){
     const tags=element('div','card-tags');for(const tag of image.tags.slice(0,2))tags.append(element('span','',tag));
     if(image.tags.length>2)tags.append(element('span','',`+${image.tags.length-2}`));
     if(['pending','running'].includes(image.ai_status))tags.append(element('span','ai-state busy','✦ AI'));
-    else if(image.ai_status==='failed'){const error=element('span','ai-state',image.ai_error==='provider_content_filtered'?'AI từ chối':'AI lỗi');error.title=analysisError(image.ai_error);tags.append(error);}
+    else if(image.ai_status==='failed'){const error=element('span','ai-state',image.ai_error==='provider_content_filtered'?'AI từ chối':image.ai_error==='classification_unresolved'?'Thiếu phân loại':'AI lỗi');error.title=analysisError(image.ai_error);tags.append(error);}
     card.append(thumb,title,tags);state.cards.delete(image.id);state.cards.set(image.id,card);desired.push(card);
   }
   // Keep unchanged cards connected: selection, progress and pagination no longer

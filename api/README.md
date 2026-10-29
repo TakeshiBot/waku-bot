@@ -139,7 +139,7 @@ ai_model = YOUR_VISION_MODEL
 
 Chạy lại deploy. Có thể dùng lại URL/key/model vision trong `settings.toml` của Waku; prefix provider trong Waku không thuộc model ID gửi đến API. Ví dụ `9router/ag/example-model` có model ID là `ag/example-model`, provider lấy từ `[agent_providers.9router]`. Cấu hình đã lưu trong `.secrets.json` được tái sử dụng ở các lần deploy tiếp theo; thay đổi Waku không tự đồng bộ sang đây.
 
-Model nhận URL ảnh đã lưu và metadata thủ công. Tag tự sinh dùng tiếng Anh, chữ thường và dấu `_` cho dễ tìm (`cat_ears`, `maid`, `blue_hair`, `cosplay`…). Chỉ tự gán `safe` khi độ chắc chắn cao; ảnh chưa xác định không bị trộn vào random an toàn. Giao diện và API vẫn cho bạn sửa lại.
+Model nhận dữ liệu ảnh đã lưu và metadata thủ công. Tag tự sinh dùng tiếng Anh, chữ thường và dấu `_` cho dễ tìm (`cat_ears`, `maid`, `blue_hair`, `cosplay`…). Một kết quả AI thành công phải có đủ tên, tag, phân loại `safe`/`r18` và kiểu `anime`/`real`. Phân loại dựa trên nội dung model nhìn thấy; backend không tự gán theo tag hoặc đổi kết luận của model thành `unknown` bằng ngưỡng confidence. Nếu model không thể xác định, tác vụ báo `classification_unresolved`; thiếu trường bắt buộc báo `incomplete_response`, không lưu kết quả AI dở dang hoặc tính là thành công. Ảnh và metadata cũ vẫn giữ nguyên, không lọt vào tab đã phân loại/random khi còn thiếu thông tin. Giao diện và API vẫn cho bạn sửa thủ công.
 
 Ảnh luôn lưu trước; lỗi AI không làm mất ảnh hay báo upload thất bại. Tác vụ phân tích lưu trong D1. Mọi lỗi AI đều kết thúc lượt xử lý, không tự thử lại; cần sửa cấu hình nếu có lỗi key/model rồi bấm Chạy lại lỗi. Upload trùng ảnh đã có tác vụ không tự gọi AI thêm lần nữa. Nhấn **AI gắn tag** sẽ chủ động gọi lại.
 

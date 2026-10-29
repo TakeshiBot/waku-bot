@@ -75,7 +75,8 @@ async function receiptText(env:Env,id:string,base:string,duplicate=false) {
   const data = await present(env,row,base);
   const rating = row.rating === 'unknown' ? 'Chưa phân loại — chọn nút bên dưới.' : row.rating === 'safe' ? 'An toàn' : 'R18';
   const ai=data.ai_status==='pending' || data.ai_status==='running'?'AI đang xem ảnh…'
-    :data.ai_status==='done'?'AI đã gắn tag':data.ai_status==='failed'?'AI chưa phân tích được; bạn có thể thử lại hoặc nhập tay.':'';
+    :data.ai_status==='done'?'AI đã gắn tag và phân loại':data.ai_status==='failed'
+      ?(data.ai_error==='classification_unresolved'?'AI chưa xác định được Safe/R18; bạn có thể thử lại hoặc chọn thủ công.':'AI chưa phân tích đủ thông tin; bạn có thể thử lại hoặc nhập tay.') :'';
   const text = `${duplicate ? 'Ảnh đã có trong kho' : 'Đã lưu ảnh'}\n${escape(row.title || row.filename)}\n`
     + `${rating}\n${data.tags.length ? escape(data.tags.map(t=>'#'+t).join(' ').slice(0,160))+'\n' : ''}`
     + (ai?`${ai}\n`:'')

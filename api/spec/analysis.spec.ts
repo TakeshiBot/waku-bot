@@ -11,6 +11,7 @@ let expectedKey='vision-key',expectedModel='vision-model',expectedPath='/v1/chat
 const sent:Array<{method:string;body:any}>=[];
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
 const predicted={title:'Ảnh anime',tags:['anime','blue_hair','cat_ears'],rating:'safe',rating_confidence:0.99,image_type:'anime'};
+let output:Record<string,unknown>=predicted;
 
 test('vision distinguishes provider content filters from malformed data and accepts native Gemini envelopes',()=>{
   for(const response of [
@@ -48,7 +49,8 @@ before(async()=>{
         if(fail) return new MockResponse('{}',{status:401});
         if(blockedMode==='gemini')return MockResponse.json({response:{promptFeedback:{blockReason:'PROHIBITED_CONTENT'}}});
         if(blockedMode==='openai')return MockResponse.json({choices:[{finish_reason:'content_filter',message:{content:''}}]});
-        return MockResponse.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(predicted)}}]});
+        assert.match(body.messages[0].content,/complete all four fields together/);
+        return MockResponse.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(output)}}]});
         } finally {active--;}
       }
       assert.equal(url.hostname,'api.telegram.org');
@@ -58,12 +60,12 @@ before(async()=>{
     },
   }));
   const db=await mf.getD1Database('DB');
-  for(const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql','0004_analysis_batches.sql','0005_library_filters.sql','0006_ai_providers.sql','0007_parallel_ai.sql','0008_analysis_controls.sql','0009_catalog_keys.sql']) {
+  for(const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql','0004_analysis_batches.sql','0005_library_filters.sql','0006_ai_providers.sql','0007_parallel_ai.sql','0008_analysis_controls.sql','0009_catalog_keys.sql','0010_complete_analysis.sql']) {
     const sql=await readFile('migrations/'+name,'utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));
   }
 });
 after(async()=>{release?.();await mf?.dispose();});
-beforeEach(async()=>{await(await mf.getD1Database('DB')).prepare('UPDATE ai_providers SET cooldown_until=0,last_error=NULL').run();});
+beforeEach(async()=>{output=predicted;await(await mf.getD1Database('DB')).prepare('UPDATE ai_providers SET cooldown_until=0,last_error=NULL').run();});
 async function api(path:string,method='GET',body?:any) {
   const req=new Request('https://images.example.com'+path,{method,headers:{authorization:'Bearer key',...(body && !(body instanceof FormData)?{'content-type':'application/json'}:{})},...(body?{body:body instanceof FormData?body:JSON.stringify(body)}:{})});
   const res=await mf.dispatchFetch(req.url,{method,headers:Object.fromEntries(req.headers),...(body?{body:Buffer.from(await req.arrayBuffer())}:{})});
@@ -104,13 +106,54 @@ test('AI adds tags, preserves manual title/rating, duplicate is not analyzed aga
   assert.equal(manual.ai_status,'skipped');assert.deepEqual(manual.tags,['only_manual']);assert.equal(calls,before);
 });
 
-test('provider errors do not lose the image; conservative rating and invalid output validation',async()=>{
+test('provider errors do not lose the image; explicit model decisions are preserved and incomplete output is rejected',async()=>{
   fail=true;const file=await upload(3);const result=await finished(file.id);fail=false;
   assert.equal(result.ai_status,'failed');assert.equal(result.rating,'unknown');
   const media=await mf.dispatchFetch(result.url);assert.equal(media.status,200);await media.arrayBuffer();
-  assert.equal(parseAnalysis(JSON.stringify({...predicted,rating_confidence:0.5})).rating,'unknown');
+  assert.equal(parseAnalysis(JSON.stringify({...predicted,rating_confidence:0.85})).rating,'safe');
+  assert.equal(parseAnalysis(JSON.stringify({...predicted,rating:'r18',rating_confidence:0.65})).rating,'r18');
+  const {rating_confidence,...complete}=predicted;assert.equal(parseAnalysis(JSON.stringify(complete)).rating,'safe');
+  for(const field of ['title','tags','rating','image_type']){const incomplete={...complete};delete incomplete[field as keyof typeof complete];assert.throws(()=>parseAnalysis(JSON.stringify(incomplete)),/incomplete_response/);}
+  assert.throws(()=>parseAnalysis(JSON.stringify({...complete,title:'  '})),/incomplete_response/);
+  assert.throws(()=>parseAnalysis(JSON.stringify({...complete,rating:'unknown'})),/classification_unresolved/);
+  assert.throws(()=>parseAnalysis(JSON.stringify({error:'classification_unresolved'})),/classification_unresolved/);
   assert.throws(()=>parseAnalysis('I cannot inspect this image.'));
   assert.throws(()=>parseAnalysis(JSON.stringify({...predicted,tags:['https://malicious.com']})));
+});
+
+test('unresolved or missing classification fails without saving partial tags, counts as failed and never retries automatically',async()=>{
+  try{for(const [index,response]of [
+    {...predicted,rating:'unknown'}, {...predicted,rating:null}, {error:'classification_unresolved'}, {...predicted,image_type:null},
+  ].entries()){
+    output=response;const before=calls,batch=await api('/v1/analysis-batches','POST',{});
+    const file=await upload(220+index,{title:'Kept title',tags:'kept_tag',batch_id:batch.id}),result=await finished(file.id);
+    assert.equal(result.ai_status,'failed');assert.equal(result.ai_error,index===0||index===2?'classification_unresolved':'incomplete_response');
+    assert.equal(result.rating,'unknown');assert.equal(result.title,'Kept title');assert.deepEqual(result.tags,['kept_tag']);assert.equal(result.classified,false);
+    const progress=await api('/v1/analysis-batches/'+batch.id);assert.equal(progress.failed,1);assert.equal(progress.done,0);
+    await api('/v1/jobs/drain','POST',{});assert.equal(calls,before+1);
+    if(index===0){
+      output={...predicted,rating:'r18',rating_confidence:0.65};await api('/v1/images/'+file.id+'/analyze','POST',{});
+      const retried=await finished(file.id);assert.equal(retried.ai_status,'done');assert.equal(retried.rating,'r18');assert.equal(retried.image_type,'anime');assert.equal(retried.classified,true);assert.ok(retried.tags.includes('kept_tag'));
+    }
+  }}finally{output=predicted;}
+});
+
+test('legacy incomplete successes become retryable failures without changing photos or metadata',async()=>{
+  const pending=await upload(228,{manual:'true',title:'Old tagged image',tags:'old_tag',image_type:'anime'});
+  const noTitle=await upload(229,{manual:'true',tags:'old_tag',rating:'safe',image_type:'anime'});
+  const complete=await upload(230,{manual:'true',title:'Complete image',tags:'old_tag',rating:'r18',image_type:'real'});
+  const manual=await upload(231,{manual:'true',tags:'manual_tag'}),db=await mf.getD1Database('DB'),batch=await api('/v1/analysis-batches','POST',{});
+  for(const image of [pending,noTitle,complete]){
+    await db.prepare("UPDATE image_analysis SET status='done' WHERE image_id=?").bind(image.id).run();
+    await db.prepare("INSERT INTO analysis_batch_items(batch_id,image_id,status) VALUES (?,?,'done')").bind(batch.id,image.id).run();
+  }
+  const sql=await readFile('migrations/0010_complete_analysis.sql','utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));
+  const unresolved=(await api('/v1/images/'+pending.id)).image,missing=(await api('/v1/images/'+noTitle.id)).image;
+  assert.equal(unresolved.ai_status,'failed');assert.equal(unresolved.ai_error,'classification_unresolved');
+  assert.equal(unresolved.title,pending.title);assert.deepEqual(unresolved.tags,pending.tags);assert.equal(unresolved.rating,'unknown');assert.equal(unresolved.image_type,'anime');assert.equal(unresolved.sha256,pending.sha256);
+  assert.equal(missing.ai_status,'failed');assert.equal(missing.ai_error,'incomplete_response');
+  assert.equal((await api('/v1/images/'+complete.id)).image.ai_status,'done');assert.equal((await api('/v1/images/'+manual.id)).image.ai_status,'skipped');
+  const progress=await api('/v1/analysis-batches/'+batch.id);assert.equal(progress.failed,2);assert.equal(progress.done,1);
 });
 
 test('blocked images expose a safe error code, retain the file and remain failed without retry',async()=>{

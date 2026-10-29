@@ -54,7 +54,7 @@ export async function presentMany(env:Env, rows:ImageRow[], base:string) {
 }
 
 function safeAnalysisError(code:unknown):string {
-  return typeof code==='string'&&/^(provider_http_\d{3}|provider_content_filtered|provider_timeout|provider_unavailable|invalid_provider|invalid_response|incomplete_response|image_missing|worker_timeout|analysis_failed|key_decryption_failed)$/.test(code)?code:'analysis_failed';
+  return typeof code==='string'&&/^(provider_http_\d{3}|provider_content_filtered|provider_timeout|provider_unavailable|invalid_provider|invalid_response|incomplete_response|classification_unresolved|image_missing|worker_timeout|analysis_failed|key_decryption_failed)$/.test(code)?code:'analysis_failed';
 }
 
 async function importedSource(env:Env,row:ImageRow,source:string|null,importUrl:string|null) {
