@@ -27,5 +27,5 @@ export interface TelegramJob {
   id: string; payload: string; attempts: number; image_id: string | null; notified: number;
 }
 export class HttpError extends Error {
-  constructor(public status: number, public code: string, message: string) { super(message); }
+  constructor(public status: number, public code: string, message: string,public retryAfter?:number) { super(message); }
 }

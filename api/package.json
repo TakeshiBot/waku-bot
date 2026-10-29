@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "check": "tsc --noEmit",
-    "build": "esbuild src/index.ts --bundle --format=esm --platform=browser --outfile=.test/worker.mjs",
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=browser --loader:.sql=text --outfile=.test/worker.mjs",
     "test": "npm run build && tsx --test spec/*.spec.ts",
     "deploy": "node scripts/deploy.mjs",
     "webhook": "node scripts/webhook.mjs",

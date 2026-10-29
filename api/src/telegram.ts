@@ -4,6 +4,8 @@ import {aiEnabled,enqueueAnalysis,processAnalysis,type AnalysisJob} from './anal
 import { HttpError, type Env, type TelegramJob } from './types';
 import {acquireSlot,releaseSlot,continueWork} from './queue';
 import {stopPendingAnalysis} from './batches';
+import {protectD1} from './d1-quota';
+import {ensureReadEfficiency} from './read-efficiency';
 
 interface TgFile {file_id:string; file_size?:number; file_name?:string;}
 interface TgMessage {message_id:number; chat:{id:number;type:string}; from?:{id:number}; text?:string; caption?:string; photo?:TgFile[]; document?:TgFile & {mime_type?:string};reply_to_message?:TgMessage;}
@@ -57,7 +59,7 @@ export async function webhook(request:Request, env:Env, ctx:ExecutionContext) {
     .bind(id,JSON.stringify({update,base:baseUrl(env,new URL(request.url).origin)}),Date.now()).run();
   // D1 is the durable outbox. Cron retries jobs if this background execution
   // is interrupted; never ACK a webhook before its job has been persisted.
-  ctx.waitUntil(processJobs(env,1,id));
+  ctx.waitUntil(protectD1(env,async()=>{await ensureReadEfficiency(env);await processJobs(env,1,id);}));
   return Response.json({ok:true});
 }
 
@@ -208,6 +210,10 @@ async function handle(env:Env, job:TelegramJob,analyze:boolean,hop=0) {
 // budget even when an image has the maximum number of tags. Normal webhooks
 // each process their own job immediately and do not wait for this recovery.
 export async function processJobs(env:Env, limit=1, only?:string,analyze=true,hop=0) {
+  if(!only&&!await env.DB.prepare(`SELECT 1 FROM telegram_jobs WHERE
+    (status='pending' AND next_attempt<=?) OR (status='running' AND lease_until<?) LIMIT 1`).bind(Date.now(),Date.now()).first()){
+    await cleanupHistory(env);return;
+  }
   const slot=await acquireSlot(env,'upload');
   if (!slot) return;
   try {await runJobs(env,limit,only,analyze,hop);}
@@ -247,8 +253,11 @@ async function runJobs(env:Env, limit=1, only?:string,analyze=true,hop=0) {
     }
   }
   if (!only) {
-    await cleanupObjects(env);
-    await env.DB.prepare("DELETE FROM telegram_jobs WHERE status IN ('done','failed','uncertain') AND created_at<?").bind(Date.now()-7*86400000).run();
-    await env.DB.prepare('DELETE FROM analysis_batches WHERE created_at<?').bind(Date.now()-7*86400000).run();
+    await cleanupHistory(env);
   }
+}
+async function cleanupHistory(env:Env){
+  await cleanupObjects(env);
+  await env.DB.prepare("DELETE FROM telegram_jobs WHERE status IN ('done','failed','uncertain') AND created_at<?").bind(Date.now()-7*86400000).run();
+  await env.DB.prepare('DELETE FROM analysis_batches WHERE created_at<?').bind(Date.now()-7*86400000).run();
 }

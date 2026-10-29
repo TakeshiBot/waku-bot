@@ -1,9 +1,13 @@
 import {HttpError,type Env} from './types';
 import {libraryChanged} from './store';
 
-export async function batchProgress(env:Env,id:string) {
+export async function getBatch(env:Env,id:string) {
   const batch=await env.DB.prepare('SELECT id,control FROM analysis_batches WHERE id=?').bind(id).first<{id:string;control:string}>();
   if (!batch) throw new HttpError(404,'batch_not_found','Không tìm thấy đợt xử lý AI.');
+  return batch;
+}
+export async function batchProgress(env:Env,id:string) {
+  const batch=await getBatch(env,id);
   const counts=await env.DB.prepare(`SELECT COUNT(*) total,
     COALESCE(SUM(b.status='pending'),0) pending,COALESCE(SUM(b.status='running'),0) running,
     COALESCE(SUM(b.status='done'),0) done,COALESCE(SUM(b.status='failed'),0) failed,
@@ -20,7 +24,7 @@ export async function createBatch(env:Env) {
   return id;
 }
 export async function attachBatch(env:Env,batchId:string,ids:string[],force=false) {
-  await batchProgress(env,batchId);
+  await getBatch(env,batchId);
   if (!ids.length) return 0;
   const encoded=JSON.stringify([...new Set(ids)]);
   const rows=await env.DB.prepare('SELECT id FROM images WHERE id IN (SELECT value FROM json_each(?))').bind(encoded).all<{id:string}>();
@@ -45,13 +49,16 @@ export async function attachBatch(env:Env,batchId:string,ids:string[],force=fals
 }
 
 export async function queueProgress(env:Env) {
-  const counts=await env.DB.prepare(`SELECT COUNT(*) total,
-    COALESCE(SUM(status='pending'),0) pending,COALESCE(SUM(status='running'),0) running,
-    COALESCE(SUM(status='done'),0) done,COALESCE(SUM(status='failed'),0) failed,
-    COALESCE(SUM(status='skipped' AND COALESCE(last_error,'')!='cancelled'),0) skipped,
-    COALESCE(SUM(control='cancelled'),0) cancelled,
-    COALESCE(SUM(status='pending' AND control='paused'),0) paused,
-    MIN(CASE WHEN status='pending' AND control='active' THEN next_attempt END) next_attempt FROM image_analysis`)
+  const counts=await env.DB.prepare(`SELECT COALESCE(SUM(n),0) total,
+    COALESCE(SUM(CASE WHEN status='pending' THEN n ELSE 0 END),0) pending,
+    COALESCE(SUM(CASE WHEN status='running' THEN n ELSE 0 END),0) running,
+    COALESCE(SUM(CASE WHEN status='done' THEN n ELSE 0 END),0) done,
+    COALESCE(SUM(CASE WHEN status='failed' THEN n ELSE 0 END),0) failed,
+    COALESCE(SUM(CASE WHEN status='skipped' AND cancelled=0 THEN n ELSE 0 END),0) skipped,
+    COALESCE(SUM(CASE WHEN control='cancelled' THEN n ELSE 0 END),0) cancelled,
+    COALESCE(SUM(CASE WHEN status='pending' AND control='paused' THEN n ELSE 0 END),0) paused,
+    (SELECT MIN(next_attempt) FROM image_analysis WHERE status='pending' AND control='active') next_attempt
+    FROM analysis_status_counts`)
     .first<{total:number;pending:number;running:number;done:number;failed:number;skipped:number;cancelled:number;paused:number;next_attempt:number|null}>();
   const settings=await env.DB.prepare('SELECT paused FROM analysis_queue_settings WHERE id=1').first<{paused:number}>();
   const provider=await env.DB.prepare(`SELECT MIN(p.cooldown_until) ready_at FROM ai_providers p JOIN ai_models m

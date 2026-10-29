@@ -2,6 +2,7 @@ import {after,before,test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
 import {Miniflare,convertV4MiniflareOptions,Response as MockResponse} from 'miniflare';
+import {migrationStatements} from '../src/sql.ts';
 
 let mf:Miniflare,gate:Promise<void>|undefined,release:()=>void=()=>{},dropDispatch=false,stallBody=false;
 let peak=0,active=0;
@@ -35,7 +36,7 @@ before(async()=>{
     },
   }));
   const db=await mf.getD1Database('DB');for(const name of (await readdir('migrations')).filter(n=>n.endsWith('.sql')).sort()){
-    const sql=await readFile('migrations/'+name,'utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));
+    const sql=await readFile('migrations/'+name,'utf8');await db.batch(migrationStatements(sql).map(s=>db.prepare(s)));
   }
 });
 after(async()=>{release();await mf?.dispose();});

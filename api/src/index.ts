@@ -5,10 +5,13 @@ import {aiEnabled,enqueueAnalysis,processAnalysis} from './analysis';
 import { HttpError, type Env, type ImageRow } from './types';
 import {authorize,sessionCookie,clearSession} from './auth';
 import {acquireSlot,releaseSlot,continueWork} from './queue';
-import {attachBatch,batchProgress,createBatch,stopPendingAnalysis,controlAnalysis,queueProgress} from './batches';
+import {attachBatch,batchProgress,getBatch,createBatch,stopPendingAnalysis,controlAnalysis,queueProgress} from './batches';
 import {manageProviders} from './providers';
 import {imageSourcePlan} from './image-sources';
 import {manageCatalogKeys} from './keys';
+import {libraryState} from './library-state';
+import {assertD1Available,protectD1,recordD1Limit,quotaError} from './d1-quota';
+import {ensureReadEfficiency} from './read-efficiency';
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 function integer(value:string|null, fallback:number, max:number) {
@@ -27,6 +30,9 @@ async function json(request:Request) {
 function response(data:unknown, status=200) {
   return Response.json(data,{status,headers:{'cache-control':'no-store','x-content-type-options':'nosniff'}});
 }
+function background(ctx:ExecutionContext,env:Env,work:()=>Promise<unknown>){
+  ctx.waitUntil(protectD1(env,async()=>{await ensureReadEfficiency(env);await work();}));
+}
 async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Response> {
   const url=new URL(request.url), path=url.pathname;
   const base=(env.PUBLIC_BASE_URL || url.origin).replace(/\/$/,'');
@@ -43,7 +49,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     const task=await json(request),hop=Number(task.hop);
     if (!['ai','upload'].includes(String(task.kind)) || !Number.isInteger(hop) || hop<1 || hop>8) throw new HttpError(400,'invalid_job','Tác vụ không hợp lệ.');
     if(task.token!==undefined&&(task.kind!=='ai'||typeof task.token!=='string'||!/^[a-f0-9]{32}$/.test(task.token)))throw new HttpError(400,'invalid_job','Tác vụ không hợp lệ.');
-    ctx.waitUntil(task.kind==='ai'?processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job),hop,task.token as string|undefined):processJobs(env,1,undefined,true,hop));
+    background(ctx,env,()=>task.kind==='ai'?processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job),hop,task.token as string|undefined):processJobs(env,1,undefined,true,hop));
     return response({accepted:true});
   }
   if (path==='/health' && request.method==='GET') return response({ok:true,service:'waku-api'});
@@ -71,10 +77,11 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
   }
   if (!path.startsWith('/v1/')) throw new HttpError(404,'not_found','Không tìm thấy đường dẫn.');
   await authorize(request,env);
+  await ensureReadEfficiency(env);
   if(path==='/v1/keys'||path.startsWith('/v1/keys/'))return response(await manageCatalogKeys(request,env,['POST','PATCH'].includes(request.method)?await json(request):{}),request.method==='POST'?201:200);
   if(path.startsWith('/v1/ai/')){
     const settings=await manageProviders(request,env,['POST','PATCH','PUT'].includes(request.method)?await json(request):{});
-    if(request.method!=='GET')ctx.waitUntil(processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job)));
+    if(request.method!=='GET')background(ctx,env,()=>processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job)));
     return response(settings);
   }
   if (path==='/v1/session') {
@@ -92,7 +99,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     if(!['pause','resume','cancel','retry'].includes(String(body.action)))throw new HttpError(400,'invalid_action','Thao tác AI không hợp lệ.');
     if(['resume','retry'].includes(String(body.action))&&!await aiEnabled(env))throw new HttpError(503,'ai_not_configured','Bật ít nhất một API và chọn model vision trước khi chạy.');
     const progress=await controlAnalysis(env,String(body.action),body.batch_id as string|undefined);
-    if(['resume','retry'].includes(String(body.action)))ctx.waitUntil(processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job)));
+    if(['resume','retry'].includes(String(body.action)))background(ctx,env,()=>processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job)));
     return response({progress});
   }
   const batchMatch=path.match(/^\/v1\/analysis-batches\/([a-f0-9-]{36})$/);
@@ -105,30 +112,24 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
       if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length>100 || body.ids.some(id=>typeof id!=='string' || !uuid.test(id)))
         throw new HttpError(400,'invalid_ids','Mỗi lượt nhận 1–100 ID ảnh.');
       const added=await attachBatch(env,id,body.ids as string[],true);
-      ctx.waitUntil(processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job)));
+      background(ctx,env,()=>processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job)));
       return response({added});
     }
   }
   if (path==='/v1/jobs/drain' && request.method==='POST') {
-    ctx.waitUntil(Promise.all([continueWork(env,'upload',0),continueWork(env,'ai',0)]));
+    background(ctx,env,()=>Promise.all([continueWork(env,'upload',0),continueWork(env,'ai',0)]));
     return response({accepted:true});
   }
   if ((path==='/v1/stats' || path==='/v1/state') && request.method==='GET') {
-    const counts=await env.DB.prepare(`WITH catalog AS (SELECT i.rating,i.size,${CLASSIFIED_IMAGE_SQL} classified FROM images i)
-      SELECT COUNT(*) total,COALESCE(SUM(size),0) bytes,
-      COALESCE(SUM(rating='safe'),0) safe,COALESCE(SUM(rating='r18'),0) r18,COALESCE(SUM(rating='unknown'),0) unknown,
-      COALESCE(SUM(rating='safe' AND classified),0) classified_safe,
-      COALESCE(SUM(rating='r18' AND classified),0) classified_r18,
-      COALESCE(SUM(NOT classified),0) pending FROM catalog`)
-      .first<{total:number;bytes:number;safe:number;r18:number;unknown:number;classified_safe:number;classified_r18:number;pending:number}>();
+    const {counts,revision,cacheHit}=await libraryState(env);
     const {classified_safe,classified_r18,pending:pendingCount,...images}=counts!;
     const tabs={all:images.total,safe:classified_safe,r18:classified_r18,pending:pendingCount};
     const ai=await queueProgress(env);
     const uploads=await env.DB.prepare("SELECT COUNT(*) pending FROM telegram_jobs WHERE status IN ('pending','running')").first();
-    const revision=await env.DB.prepare('SELECT version FROM library_revision WHERE id=1').first<{version:number}>();
     let batch=null;const batchId=url.searchParams.get('batch');
     if(batchId && uuid.test(batchId))try{batch=await batchProgress(env,batchId);}catch(error){if(!(error instanceof HttpError && error.status===404))throw error;}
-    return response({images,tabs,ai_pending:Number(ai.pending)+Number(ai.running),uploads_pending:uploads?.pending || 0,revision:revision?.version || 0,batch,ai_queue:ai});
+    const result=response({images,tabs,ai_pending:Number(ai.pending)+Number(ai.running),uploads_pending:uploads?.pending || 0,revision,batch,ai_queue:ai});
+    result.headers.set('x-waku-stats-cache',cacheHit?'hit':'miss');return result;
   }
   if(path==='/v1/filters' && request.method==='GET') {
     const query=(url.searchParams.get('q') || '').slice(0,64).toLowerCase();
@@ -235,15 +236,15 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     }
     if (batchId) {
       if (typeof batchId!=='string' || !uuid.test(batchId)) throw new HttpError(400,'invalid_batch','Đợt AI không hợp lệ.');
-      await batchProgress(env,batchId);
+      await getBatch(env,batchId);
     }
     const result=await save(env,bytes,info,null,originalName,importUrl);
     if(download)await recordImportAliases(env,result.row.id,[download.input,download.url,...(download.used_original?[download.identity]:[])]);
     await enqueueAnalysis(env,result.row.id,manual);
     if (batchId && typeof batchId==='string') await attachBatch(env,batchId,[result.row.id]);
-    ctx.waitUntil(processAnalysis(env,result.row.id,job=>refreshAnalysisReceipt(env,job)));
+    background(ctx,env,()=>processAnalysis(env,result.row.id,job=>refreshAnalysisReceipt(env,job)));
     return response({image:await present(env,result.row,base),duplicate:result.duplicate,...(download?{import:{source:download.source,preferred_url:download.preferred_url,fetched_url:download.url,used_original:download.used_original,fallback_reason:download.fallback_reason}}:{})},result.duplicate?200:201);
-    } finally {await releaseSlot(env,slot);ctx.waitUntil(continueWork(env,'upload'));}
+    } finally {await releaseSlot(env,slot);background(ctx,env,()=>continueWork(env,'upload'));}
   }
   const match=path.match(/^\/v1\/images\/([^/]+)$/);
   if (match && uuid.test(match[1])) {
@@ -263,7 +264,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     await image(env,analyze[1]);
     if (!await aiEnabled(env)) throw new HttpError(503,'ai_not_configured','Chưa cấu hình API AI.');
     const batchId=await createBatch(env);await attachBatch(env,batchId,[analyze[1]],true);
-    ctx.waitUntil(processAnalysis(env,analyze[1],job=>refreshAnalysisReceipt(env,job)));
+    background(ctx,env,()=>processAnalysis(env,analyze[1],job=>refreshAnalysisReceipt(env,job)));
     return response({queued:true,batch_id:batchId});
   }
   throw new HttpError(404,'not_found','Không tìm thấy đường dẫn.');
@@ -271,18 +272,23 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
 
 export default {
   async fetch(request:Request,env:Env,ctx:ExecutionContext) {
-    try {return await route(request,env,ctx);}
+    try {
+      const path=new URL(request.url).pathname;
+      if(path.startsWith('/v1/')||path.startsWith('/media/')||path==='/internal/jobs'||path==='/telegram/webhook')await assertD1Available(env);
+      return await route(request,env,ctx);
+    }
     catch(error) {
-      if (error instanceof HttpError) return response({error:{code:error.code,message:error.message}},error.status);
+      if(await recordD1Limit(env,error))error=quotaError();
+      if (error instanceof HttpError){const result=response({error:{code:error.code,message:error.message}},error.status);if(error.retryAfter)result.headers.set('retry-after',String(error.retryAfter));return result;}
       // Never log exception text: upstream URLs can contain credentials.
       console.error('API request failed',{path:new URL(request.url).pathname,method:request.method});
       return response({error:{code:'internal_error',message:'Chưa hoàn tất xử lý. Hãy thử lại sau.'}},500);
     }
   },
   scheduled(_event:ScheduledController,env:Env,ctx:ExecutionContext) {
-    ctx.waitUntil((async()=>{
+    background(ctx,env,async()=>{
       await processJobs(env,1,undefined,false);
       await processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job));
-    })());
+    });
   },
 } satisfies ExportedHandler<Env>;

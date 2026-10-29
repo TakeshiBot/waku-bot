@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {Miniflare,convertV4MiniflareOptions,Response as MockResponse} from 'miniflare';
 import {captionMetadata,publicUrl} from '../src/input.ts';
 import {acquireSlot,releaseSlot} from '../src/queue.ts';
+import {migrationStatements} from '../src/sql.ts';
 
 // Real D1/R2 bindings and the bundled Worker; no production credentials/network.
 let mf:Miniflare;
@@ -37,9 +38,9 @@ before(async()=>{
     },
   }));
   const db=await mf.getD1Database('DB');
-  for (const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql','0004_analysis_batches.sql','0005_library_filters.sql','0006_ai_providers.sql','0007_parallel_ai.sql','0008_analysis_controls.sql','0009_catalog_keys.sql','0010_complete_analysis.sql']) {
+  for (const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql','0004_analysis_batches.sql','0005_library_filters.sql','0006_ai_providers.sql','0007_parallel_ai.sql','0008_analysis_controls.sql','0009_catalog_keys.sql','0010_complete_analysis.sql','0011_read_efficiency.sql']) {
     const migration=await readFile(`migrations/${name}`,'utf8');
-    await db.batch(migration.split(';').map(s=>s.trim()).filter(Boolean).map(sql=>db.prepare(sql)));
+    await db.batch(migrationStatements(migration).map(sql=>db.prepare(sql)));
   }
 });
 after(async()=>{await mf?.dispose();});
@@ -51,6 +52,7 @@ test('sidebar tab counts match classified and pending lists while tagged images 
   await db.batch([
     db.prepare("UPDATE image_analysis SET status='pending' WHERE image_id=?").bind(a.id),
     db.prepare("UPDATE image_analysis SET status='running',lease_until=? WHERE image_id=?").bind(Date.now()+120000,b.id),
+    db.prepare('UPDATE library_revision SET version=version+1 WHERE id=1'),
   ]);
   try{
     const data=await(await call('/v1/state')).json() as any;
@@ -70,6 +72,7 @@ test('only images with all four metadata fields enter classified tabs; source UR
       const r=await call('/v1/images/'+saved.id,'PATCH',{title:'qa_metadata '+index,tags:['qa_metadata'],rating:'safe',image_type:'real',source_url:null,...patch});assert.equal(r.status,200);
     }
     await db.prepare("UPDATE image_analysis SET status='pending' WHERE image_id=?").bind(ids[6]).run();
+    await db.prepare('UPDATE library_revision SET version=version+1 WHERE id=1').run();
     const ready=await(await call('/v1/images?view=classified&q=qa_metadata&limit=100')).json() as any;
     const waiting=await(await call('/v1/images?view=pending&q=qa_metadata&limit=100')).json() as any;
     assert.deepEqual(new Set(ready.images.map((image:any)=>image.id)),new Set([ids[0],ids[5]]));assert.equal(waiting.images.length,5);

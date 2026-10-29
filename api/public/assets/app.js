@@ -4,13 +4,20 @@ import {GalleryThumbnails} from './gallery-cache.js?v=17';
 const $=id=>document.getElementById(id);
 const state={authenticated:false,maxMb:10,images:new Map(),cursor:null,query:'',rating:'',queue:[],pumping:false,paused:true,editing:null,listVersion:0,statsBusy:false,
   selected:new Set(),allSelected:false,selectionBusy:false,bulkBusy:false,deleteTargets:[],editTargets:[],loadedLimit:0,uploadIds:new Set(),starting:false,aiBatchId:null,aiProgress:null,aiPending:0,aiEnqueueing:false,
-  revision:null,lastStats:0,galleryDirty:false,gallerySignature:'',galleryScope:null,galleryViews:new Map(),cards:new Map(),listController:null,filterTags:new Set(),filterTypes:new Set(),tagOptions:[],tagPage:0,tagsLoaded:0,checking:0,aiAvailable:false,aiQueue:null,aiControlBusy:false,aiRunActive:false,aiResult:null,aiBaseline:null};
+  revision:null,lastStats:0,galleryDirty:false,gallerySignature:'',galleryScope:null,galleryViews:new Map(),cards:new Map(),listController:null,quotaUntil:0,filterTags:new Set(),filterTypes:new Set(),tagOptions:[],tagPage:0,tagsLoaded:0,checking:0,aiAvailable:false,aiQueue:null,aiControlBusy:false,aiRunActive:false,aiResult:null,aiBaseline:null};
 const thumbnails=new GalleryThumbnails($('library-results'));
 const number=n=>new Intl.NumberFormat('vi-VN').format(n || 0);
 const bytes=n=>n>=1073741824?(n/1073741824).toFixed(1)+' GB':n>=1048576?(n/1048576).toFixed(1)+' MB':(n/1024).toFixed(0)+' KB';
 const tagList=value=>value.trim().split(/[,\n]|\s+(?=#)/).map(x=>x.trim().replace(/^#/, '')).filter(Boolean);
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 let toastTimer,filterTimer,pollTimer;
+try{state.quotaUntil=Number(localStorage.getItem('waku-d1-pause-until'))||0;}catch{}
+function pauseForQuota(error){
+  if(error.code!=='d1_daily_limit')return;
+  state.quotaUntil=Date.now()+Math.max(60,error.retryAfter||60)*1000;state.paused=true;
+  try{localStorage.setItem('waku-d1-pause-until',String(state.quotaUntil));}catch{}
+  clearTimeout(pollTimer);$('list-status').textContent=error.message;toast(error.message);renderQueue();schedulePoll();
+}
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4000);}
 function element(tag,className,text){const el=document.createElement(tag);if(className)el.className=className;if(text!==undefined)el.textContent=text;return el;}
 function icon(name){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');const use=document.createElementNS(svg.namespaceURI,'use');use.setAttribute('href','#i-'+name);svg.append(use);return svg;}
@@ -29,7 +36,7 @@ function showLogin(message=''){
 async function api(path,options={}){
   const response=await fetch(path,{credentials:'same-origin',...options,headers:{...(options.body && !(options.body instanceof FormData)?{'content-type':'application/json'}:{}),...options.headers},signal:options.signal || AbortSignal.timeout(30000)});
   let data;try{data=await response.json();}catch{throw new Error('Máy chủ chưa phản hồi đúng. Hãy thử lại sau.');}
-  if(!response.ok){if(response.status===401 && state.authenticated)showLogin('Phiên đăng nhập đã hết hạn. Vui lòng nhập lại key.');const error=new Error(data.error?.message || 'Chưa thực hiện được thao tác.');error.status=response.status;error.retryAfter=Number(response.headers.get('retry-after')) || 2;throw error;}
+  if(!response.ok){if(response.status===401 && state.authenticated)showLogin('Phiên đăng nhập đã hết hạn. Vui lòng nhập lại key.');const error=new Error(data.error?.message || 'Chưa thực hiện được thao tác.');error.status=response.status;error.code=data.error?.code;error.retryAfter=Number(response.headers.get('retry-after')) || 2;pauseForQuota(error);throw error;}
   return data;
 }
 async function enter(session){
@@ -44,6 +51,7 @@ async function enter(session){
 }
 function schedulePoll(){
   clearTimeout(pollTimer);if(!state.authenticated||document.hidden)return;
+  if(state.quotaUntil>Date.now()){pollTimer=setTimeout(()=>{state.quotaUntil=0;refreshStats(true,true);},state.quotaUntil-Date.now()+1000);return;}
   const q=state.aiQueue,active=state.pumping||state.starting||state.aiEnqueueing||Boolean(q?.running)||Boolean(q?.control!=='paused'&&q?.pending>q?.paused);
   pollTimer=setTimeout(()=>refreshStats(true),active?8000:60000);
 }
@@ -60,7 +68,7 @@ $('logout').addEventListener('click',async()=>{
 });
 
 async function refreshStats(updateGallery=false,force=false){
-  if(state.statsBusy || !state.authenticated)return;state.statsBusy=true;
+  if(state.statsBusy || !state.authenticated || state.quotaUntil>Date.now())return;state.statsBusy=true;
   try{
     if(!force&&Date.now()-state.lastStats<2000)return;
     const batchId=state.aiBatchId,stats=await api('/v1/state'+(batchId?'?batch='+encodeURIComponent(batchId):''));state.lastStats=Date.now();
@@ -427,7 +435,7 @@ function fileUpload(item){
   return new Promise((resolve,reject)=>{
     const xhr=new XMLHttpRequest();xhr.open('POST','/v1/images');xhr.responseType='json';xhr.timeout=90000;
     xhr.upload.onprogress=event=>{if(event.lengthComputable){item.progress=Math.round(event.loaded/event.total*100);const row=$('queue-list').querySelector(`[data-id="${item.id}"]`);if(row){row.querySelector('small').textContent=item.progress===100?'Đang lưu trên máy chủ…':`Đang gửi… ${item.progress}%`;row.querySelector('progress').value=item.progress;}const preview=$('gallery').querySelector(`[data-upload-id="${item.id}"] .rating-label`);if(preview)preview.textContent=item.progress===100?'Đang lưu…':`Đang tải ${item.progress}%`;}};
-    xhr.onload=()=>{if(xhr.status>=200&&xhr.status<300)resolve(xhr.response);else{const error=new Error(xhr.response?.error?.message || 'Tải ảnh chưa thành công.');error.status=xhr.status;error.retryAfter=Number(xhr.getResponseHeader('retry-after')) || 2;if(xhr.status===401)showLogin('Phiên đã hết hạn. Vui lòng đăng nhập lại.');reject(error);}};
+    xhr.onload=()=>{if(xhr.status>=200&&xhr.status<300)resolve(xhr.response);else{const error=new Error(xhr.response?.error?.message || 'Tải ảnh chưa thành công.');error.status=xhr.status;error.code=xhr.response?.error?.code;error.retryAfter=Number(xhr.getResponseHeader('retry-after')) || 2;if(xhr.status===401)showLogin('Phiên đã hết hạn. Vui lòng đăng nhập lại.');pauseForQuota(error);reject(error);}};
     xhr.onerror=()=>reject(new Error('Mất kết nối. Bấm thử lại khi mạng ổn định.'));xhr.ontimeout=()=>reject(new Error('Quá thời gian chờ. Bạn có thể thử lại file này.'));
     const form=new FormData();form.set('file',item.file,item.file.name);form.set('tags',item.options.tags.join(','));form.set('rating',item.options.rating);if(item.options.image_type)form.set('image_type',item.options.image_type);form.set('manual',String(item.options.manual));if(item.options.batch_id)form.set('batch_id',item.options.batch_id);if(item.options.source_url)form.set('source_url',item.options.source_url);xhr.send(form);
   });
@@ -505,6 +513,6 @@ setupProviders({api,toast,onChange:enabled=>{
   if(!enabled)$('use-ai').checked=false;else if(!before)$('use-ai').checked=true;
   renderQueue();renderSelection();
 }});
-api('/v1/session').then(enter).catch(()=>showLogin());
+api('/v1/session').then(enter).catch(error=>showLogin(error.code==='d1_daily_limit'?error.message:''));
 
 setupKeys({api,toast});

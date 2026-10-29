@@ -147,6 +147,14 @@ API phân biệt model từ chối nội dung (`ai_error=provider_content_filter
 
 API upload trả ảnh ngay, có thêm `ai_status`: `pending`, `running`, `done`, `failed`, `skipped` hoặc `off` (ảnh cũ chưa có tác vụ). Khi cần chờ tag, đọc lại `/v1/images/ID`. Thêm `manual=true` vào multipart, hoặc `"manual":true` vào JSON upload để bỏ qua AI. Phí phân tích tính theo provider AI bạn chọn, tách khỏi hạn mức miễn phí của Cloudflare.
 
+### Hạn mức D1
+
+Hạn mức đọc tính theo số dòng SQLite quét, không phải số request hay dung lượng ảnh. Upload chỉ kiểm tra ID đợt, không đếm lại toàn bộ đợt mỗi ảnh. Hàng đợi dùng index cho task có thể chạy, bộ đếm trạng thái cập nhật trong cùng transaction và cache thống kê theo revision. Cron không chiếm/nhả slot upload khi không có việc.
+
+Migration `0011_read_efficiency.sql` bổ sung index và bộ đếm mà không sửa/xoá ảnh. Worker cũng có thể tự cài migration này trong một transaction khi gặp database cũ: nếu quota hôm nay đã chặn migration, lần truy cập/cron đầu tiên sau reset sẽ cài, không cần giữ terminal local mở.
+
+Khi D1 báo hết quota ngày, API trả `503` với mã `d1_daily_limit` và `Retry-After`. Web dừng polling và tạm dừng upload, giữ các file còn chờ để thử lại sau; tác vụ đã lưu trong D1 vẫn còn. Cờ tạm dừng lưu trên R2 để các Worker khác không tiếp tục gọi D1 liên tục; server tạm ngừng truy vấn 15 phút mỗi lần xác nhận hết quota để giảm các lần thăm dò. Hạn mức miễn phí reset lúc 00:00 UTC (07:00 Việt Nam), theo [Cloudflare](https://developers.cloudflare.com/d1/platform/pricing/).
+
 ## REST API
 
 Các đường dẫn `/v1/*` cần header `Authorization: Bearer API_KEY`. Lấy key từ `.secrets.json`. Không truyền key qua query URL. Ví dụ dưới dùng biến `$WAKU_API_KEY` đã được đặt trên shell.
