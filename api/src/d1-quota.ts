@@ -11,6 +11,7 @@ export function quotaError(){
   return new HttpError(503,'d1_daily_limit','D1 đã hết hạn mức trong ngày. Tạm dừng truy cập dữ liệu đến kỳ reset lúc 07:00 (giờ Việt Nam). Ảnh đã lưu vẫn được giữ nguyên.',Math.max(1,Math.ceil((resetAt()-Date.now())/1000)));
 }
 export async function assertD1Available(env:Env){
+  if(env.LIBSQL_URL)return;
   let state=states.get(env.DB);
   if(!state||Date.now()-state.checked>60000){
     try{
@@ -21,6 +22,7 @@ export async function assertD1Available(env:Env){
   if(state.until>Date.now())throw quotaError();
 }
 export async function recordD1Limit(env:Env,error:unknown){
+  if(env.LIBSQL_URL)return false;
   if(!isD1DailyLimit(error))return false;
   const state=states.get(env.DB);if(state&&state.until>Date.now())return true;
   // Brief server-side probes allow recovery after a plan change too. Browsers

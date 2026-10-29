@@ -7,3 +7,7 @@ node_modules/
 api.txt
 wrangler.local.json
 *.log
+/vps/data/
+/vps/backups/
+/vps/*.pem
+/vps/tunnel-token

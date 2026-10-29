@@ -1,0 +1,6 @@
+[Unit]
+Description=Back up the Waku image library database
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /home/ubuntu/waku-api-db/backup.py

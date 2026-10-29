@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "wrangler dev",
     "check": "tsc --noEmit",
@@ -23,5 +25,8 @@
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
     "wrangler": "4.154.0"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.18.0"
   }
 }

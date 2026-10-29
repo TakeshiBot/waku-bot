@@ -1,5 +1,8 @@
 export interface Env {
   DB: D1Database;
+  LIBSQL_URL?: string;
+  LIBSQL_AUTH_TOKEN?: string;
+  MIGRATION_MAINTENANCE?: string;
   IMAGES: R2Bucket;
   ASSETS?: Fetcher;
   API_KEY: string;

@@ -12,6 +12,7 @@ import {manageCatalogKeys} from './keys';
 import {libraryState} from './library-state';
 import {assertD1Available,protectD1,recordD1Limit,quotaError} from './d1-quota';
 import {ensureReadEfficiency} from './read-efficiency';
+import {withDatabase} from './libsql';
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 function integer(value:string|null, fallback:number, max:number) {
@@ -86,7 +87,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
   }
   if (path==='/v1/session') {
     if (request.method==='POST') return Response.json({ok:true},{headers:{'set-cookie':await sessionCookie(env),'cache-control':'no-store'}});
-    if (request.method==='GET') return response({ok:true,max_image_mb:maxBytes(env)/1024/1024,concurrency:2,ai_enabled:await aiEnabled(env)});
+    if (request.method==='GET') return response({ok:true,max_image_mb:maxBytes(env)/1024/1024,concurrency:2,ai_enabled:await aiEnabled(env),database:env.LIBSQL_URL?'libsql':'d1'});
     if (request.method==='DELETE') return Response.json({ok:true},{headers:{'set-cookie':clearSession(),'cache-control':'no-store'}});
   }
   if (path==='/v1/analysis-batches' && request.method==='POST') {
@@ -273,6 +274,14 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
 export default {
   async fetch(request:Request,env:Env,ctx:ExecutionContext) {
     try {
+      if(env.MIGRATION_MAINTENANCE==='1'){
+        const path=new URL(request.url).pathname;
+        if(path==='/health')return response({ok:true,service:'waku-api',maintenance:true});
+        if(path.startsWith('/v1/')||path.startsWith('/media/')||path==='/internal/jobs'||path==='/telegram/webhook'){
+          return Response.json({error:{code:'maintenance',message:'Kho ảnh đang chuyển dữ liệu, vui lòng thử lại sau.'}},{status:503,headers:{'retry-after':'60','cache-control':'no-store'}});
+        }
+      }
+      env=withDatabase(env);
       const path=new URL(request.url).pathname;
       if(path.startsWith('/v1/')||path.startsWith('/media/')||path==='/internal/jobs'||path==='/telegram/webhook')await assertD1Available(env);
       return await route(request,env,ctx);
@@ -286,6 +295,8 @@ export default {
     }
   },
   scheduled(_event:ScheduledController,env:Env,ctx:ExecutionContext) {
+    if(env.MIGRATION_MAINTENANCE==='1')return;
+    env=withDatabase(env);
     background(ctx,env,async()=>{
       await processJobs(env,1,undefined,false);
       await processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job));

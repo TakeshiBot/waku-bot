@@ -2,6 +2,24 @@
 
 Kho ảnh riêng chạy trên Cloudflare Workers + R2 + D1. Bot Telegram nhận ảnh hoặc link ảnh, lưu vào R2, trả link trực tiếp. Source nằm trong thư mục `api/` trên nhánh chính `v2` của repo Waku. API ảnh deploy độc lập lên Cloudflare, không chạy trong container bot; không cần VPS. Có thể thêm API vision để tự gắn tag, hoặc dùng hoàn toàn thủ công.
 
+## LibSQL trên VPS
+
+Bản đang chạy dùng một bộ Compose riêng trong `/home/ubuntu/waku-api-db`: `libsql` lưu dữ liệu và `tunnel` nối Worker đến database qua Cloudflare Tunnel. Cổng database chỉ lắng nghe ở `127.0.0.1:18783`; kết nối qua Tunnel cần JWT. Hai container có giới hạn tài nguyên riêng, không thuộc Compose của bot Waku. Không cần sửa hoặc restart bot, Nginx hay các dịch vụ khác khi quản lý bộ này.
+
+```bash
+cd /home/ubuntu/waku-api-db
+docker compose -p waku-api-db ps
+docker compose -p waku-api-db logs --tail 100
+systemctl status waku-api-db-backup.timer
+sudo ls -lh /home/ubuntu/waku-api-db/backups
+```
+
+Timer tạo bản sao SQLite nhất quán mỗi ngày, kiểm tra tính toàn vẹn và giữ 14 bản tại `backups/`. Bản sao này nằm cùng VPS, nên cần sao chép định kỳ sang nơi khác nếu muốn bảo vệ khi VPS hoặc ổ đĩa hỏng. Ảnh gốc vẫn ở R2 và không nằm trong bản sao database. D1 cũ không đồng bộ thay đổi phát sinh sau khi chuyển.
+
+`api/.secrets.json` chứa `LIBSQL_URL`, `LIBSQL_AUTH_TOKEN` và `API_KEY`; giữ bí mật và sao lưu an toàn, vì `API_KEY` còn dùng để giải mã key AI đã lưu. `private.pem` và `tunnel-token` trên VPS cũng là thông tin nhạy cảm. Không mở cổng database ra Internet và không lưu các file này trong Git.
+
+Khi cần khôi phục, trước tiên tạm dừng ghi và giữ nguyên bản hiện tại. Giải nén bản sao vào một nơi riêng, kiểm tra SQLite, rồi dùng `sqlite3` xuất SQL hoặc Python `sqlite3.Connection.iterdump()`. Script `scripts/import-libsql.mjs` chỉ nhập SQL vào một libSQL **trống**, yêu cầu `LIBSQL_URL` và `LIBSQL_AUTH_TOKEN` qua biến môi trường, và kiểm tra khóa ngoại. Đối chiếu nội dung trước khi chuyển Worker sang server khôi phục; không ghi đè trực tiếp file `data` đang chạy hoặc quay về D1 cũ mà không đồng bộ dữ liệu.
+
 ## Dùng bot
 
 Mở DM của bot upload bằng tài khoản đã cấp quyền. Gửi một hoặc nhiều ảnh; mỗi ảnh được xử lý riêng. Gửi dạng **file ảnh** nếu muốn giữ nguyên chất lượng; ảnh gửi dạng Photo được lưu theo bản Telegram đã nén.

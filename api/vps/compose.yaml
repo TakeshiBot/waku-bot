@@ -1,0 +1,24 @@
+services:
+  libsql:
+    image: ghcr.io/tursodatabase/libsql-server@sha256:6dd3eb276d9d3604e4a48ac4a999a2e267814732d57d7e94c04ba71482333a67
+    restart: unless-stopped
+    mem_limit: 192m
+    cpus: 0.5
+    ports:
+      - "127.0.0.1:18783:8080"
+    environment:
+      SQLD_NODE: standalone
+      SQLD_HTTP_LISTEN_ADDR: 0.0.0.0:8080
+      SQLD_AUTH_JWT_KEY_FILE: /run/secrets/libsql-public.pem
+    volumes:
+      - ./data:/var/lib/sqld
+      - ./public.pem:/run/secrets/libsql-public.pem:ro
+  tunnel:
+    image: cloudflare/cloudflared@sha256:004d843fa5fdc3103983fd580ee19fab4a8fa98add31f87249c1659e848c98e0
+    restart: unless-stopped
+    network_mode: host
+    mem_limit: 64m
+    cpus: 0.25
+    command: tunnel --no-autoupdate --metrics 127.0.0.1:0 run --token-file /run/secrets/tunnel-token
+    volumes:
+      - ./tunnel-token:/run/secrets/tunnel-token:ro

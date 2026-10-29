@@ -41,6 +41,7 @@ async function api(path,options={}){
 }
 async function enter(session){
   session ||= await api('/v1/session');state.authenticated=true;state.maxMb=session.max_image_mb || 10;
+  if(session.database==='libsql'){state.quotaUntil=0;try{localStorage.removeItem('waku-d1-pause-until');}catch{}}
   state.lastStats=0;state.aiQueue=null;state.aiProgress=null;state.aiRunActive=false;state.aiResult=null;state.aiBaseline=null;
   $('ai-progress').hidden=true;$('ai-result').hidden=true;
   state.aiAvailable=Boolean(session.ai_enabled);$('use-ai').checked=state.aiAvailable;$('use-ai').disabled=!state.aiAvailable;
@@ -469,7 +470,14 @@ async function start(){
     state.activeOptions=selected;for(const item of state.queue)if(item.status==='queued')item.options=structuredClone(selected);
     state.paused=false;state.starting=false;if(state.pumping){renderQueue();return;}state.pumping=true;ownsWorkers=true;renderQueue();renderAiProgress();schedulePoll();
     await Promise.all([worker(),worker()]);
-  }catch(error){toast(error.message);}finally{state.starting=false;if(ownsWorkers)state.pumping=false;renderQueue();renderGallery();refreshStats(true,true);}
+  }catch(error){
+    // Batch creation can fail before the workers start. Keep each file and show
+    // the actual failure so Retry can restart it once the service is available.
+    for(const item of state.queue)if(state.uploadIds.has(item.id)&&item.status==='queued'){
+      item.status='error';item.error=error.message || 'Chưa thể chuẩn bị tải ảnh.';
+    }
+    state.paused=true;toast(error.message);
+  }finally{state.starting=false;if(ownsWorkers)state.pumping=false;renderQueue();renderGallery();refreshStats(true,true);}
 }
 $('start-upload').addEventListener('click',start);$('pause-upload').addEventListener('click',()=>{state.paused=true;renderQueue();toast('Đã tạm dừng. Các file đang tải sẽ hoàn tất trước.');});
 $('retry-errors').addEventListener('click',async()=>{const checking=[];for(const item of state.queue)if(item.status==='error'){item.status=item.needsCheck?'checking':'queued';item.error='';item.progress=0;if(item.needsCheck)checking.push(item);}if(checking.length)await checkUploads(checking);start();});
@@ -513,6 +521,6 @@ setupProviders({api,toast,onChange:enabled=>{
   if(!enabled)$('use-ai').checked=false;else if(!before)$('use-ai').checked=true;
   renderQueue();renderSelection();
 }});
-api('/v1/session').then(enter).catch(error=>showLogin(error.code==='d1_daily_limit'?error.message:''));
+api('/v1/session').then(enter).catch(error=>showLogin(['d1_daily_limit','database_unavailable','maintenance'].includes(error.code)?error.message:''));
 
 setupKeys({api,toast});

@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Waku image library database backup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target
