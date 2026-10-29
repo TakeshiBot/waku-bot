@@ -85,13 +85,18 @@ _CORE_FIELDS = (
     "webapp_short_name",
     "discord_token",
     "discord_admin_users",
+    "manyacg_enabled",
     "manyacg_api_url",
     "manyacg_api_key",
+    "waku_api_enabled",
+    "waku_api_url",
+    "waku_api_key",
     "mirror_group_id",
     "mirror_bot_username",
     "agent_providers",
 )
 _PROVIDER_FIELDS = ("url", "key", "type")
+_IMAGE_SERVICE_SWITCHES = {"manyacg_enabled": "ManyACG", "waku_api_enabled": "Waku API"}
 _SESSIONS: dict[str, ConfigSession] = {}
 
 
@@ -218,10 +223,18 @@ def _label(key: str, value, session: ConfigSession) -> str:
     )
     changed = "📝 " if key in session.changes else "🔄 " if key in session.dirty else ""
     name = key.rsplit(".", 1)[-1] if key.startswith("agent_providers.") else key
+    if key in _IMAGE_SERVICE_SWITCHES:
+        name = _IMAGE_SERVICE_SWITCHES[key]
+    elif key in {"manyacg_api_url", "waku_api_url"}:
+        name = "URL"
+    elif key in {"manyacg_api_key", "waku_api_key"}:
+        name = "Key"
     return changed + status + name
 
 
 def _is_configured(key: str, session: ConfigSession) -> bool:
+    if key in _IMAGE_SERVICE_SWITCHES:
+        return True
     if key in session.changes:
         return session.changes[key].strip().lower() not in {"null", "none"}
     return _declared_key(key, session)
@@ -289,7 +302,7 @@ def _group(key: str) -> str:
         return "cache"
     if key.startswith(("coin", "cost")):
         return "economy"
-    if key.startswith(("redis", "btts", "manyacg", "aniobjcut", "infographic", "mirror_")):
+    if key.startswith(("redis", "btts", "manyacg", "waku_api_", "aniobjcut", "infographic", "mirror_")):
         return "services"
     return "base"
 
@@ -765,7 +778,20 @@ def _menu(token: str, session: ConfigSession, action: str = "home"):
                     ),
                 ]
             )
-        rows.extend(_rows(buttons))
+        if group == "services":
+            by_key = dict(zip(page_keys, buttons))
+            for group_keys in (
+                ("manyacg_enabled",),
+                ("manyacg_api_url", "manyacg_api_key"),
+                ("waku_api_enabled",),
+                ("waku_api_url", "waku_api_key"),
+                ("mirror_group_id", "mirror_bot_username"),
+            ):
+                row = [by_key[key] for key in group_keys if key in by_key]
+                if row:
+                    rows.append(row)
+        else:
+            rows.extend(_rows(buttons))
         previous = f"group:{group}:{page - 1}" if page else None
         following = f"group:{group}:{page + 1}" if page + 1 < pages else None
     elif action == "providers" or action.startswith("providers:"):

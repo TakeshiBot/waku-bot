@@ -129,6 +129,8 @@ class _ManyacgClient:
         )
 
     async def fetch_artwork(self, artwork_url: str) -> FetchArtworkResponse:
+        if not app_config.manyacg_enabled:
+            return FetchArtworkResponse(status=503, message="Image source disabled", data=None)
         if not self.api_key:
             raise ValueError("API key is not set")
         params = {"url": artwork_url}
@@ -148,6 +150,8 @@ class _ManyacgClient:
         limit: int = 1,
         r18: int = 2,
     ) -> RandomArtworkResponse:
+        if not app_config.manyacg_enabled:
+            return RandomArtworkResponse(status=503, message="Image source disabled", data=None)
         params = {"limit": limit, "r18": r18}
         resp = await self.client.get("/artwork/random", params=params)
         resp_model = RandomArtworkResponse.model_validate(resp.json())

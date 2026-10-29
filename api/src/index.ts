@@ -1,5 +1,5 @@
 import { boundedBody, equalSecret, downloadImage, metadata, tags,publicUrl,type ImageDownload } from './input';
-import { choose, image, maxBytes, present, presentMany, remove, save, update,recordImportAliases,libraryChanged } from './store';
+import { choose, image, maxBytes, present, presentMany, remove, save, update,recordImportAliases,libraryChanged,CLASSIFIED_IMAGE_SQL } from './store';
 import { processJobs, refreshAnalysisReceipt, webhook } from './telegram';
 import {aiEnabled,enqueueAnalysis,processAnalysis} from './analysis';
 import { HttpError, type Env, type ImageRow } from './types';
@@ -8,6 +8,7 @@ import {acquireSlot,releaseSlot,continueWork} from './queue';
 import {attachBatch,batchProgress,createBatch,stopPendingAnalysis,controlAnalysis,queueProgress} from './batches';
 import {manageProviders} from './providers';
 import {imageSourcePlan} from './image-sources';
+import {manageCatalogKeys} from './keys';
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 function integer(value:string|null, fallback:number, max:number) {
@@ -68,6 +69,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
   }
   if (!path.startsWith('/v1/')) throw new HttpError(404,'not_found','Không tìm thấy đường dẫn.');
   await authorize(request,env);
+  if(path==='/v1/keys'||path.startsWith('/v1/keys/'))return response(await manageCatalogKeys(request,env,['POST','PATCH'].includes(request.method)?await json(request):{}),request.method==='POST'?201:200);
   if(path.startsWith('/v1/ai/')){
     const settings=await manageProviders(request,env,['POST','PATCH','PUT'].includes(request.method)?await json(request):{});
     if(request.method!=='GET')ctx.waitUntil(processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job)));
@@ -110,12 +112,12 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     return response({accepted:true});
   }
   if ((path==='/v1/stats' || path==='/v1/state') && request.method==='GET') {
-    const counts=await env.DB.prepare(`SELECT COUNT(*) total,COALESCE(SUM(i.size),0) bytes,
-      COALESCE(SUM(i.rating='safe'),0) safe,COALESCE(SUM(i.rating='r18'),0) r18,COALESCE(SUM(i.rating='unknown'),0) unknown,
-      COALESCE(SUM(i.rating='safe' AND COALESCE(a.status,'') NOT IN ('pending','running')),0) classified_safe,
-      COALESCE(SUM(i.rating='r18' AND COALESCE(a.status,'') NOT IN ('pending','running')),0) classified_r18,
-      COALESCE(SUM(i.rating='unknown' OR a.status IN ('pending','running')),0) pending
-      FROM images i LEFT JOIN image_analysis a ON a.image_id=i.id`)
+    const counts=await env.DB.prepare(`WITH catalog AS (SELECT i.rating,i.size,${CLASSIFIED_IMAGE_SQL} classified FROM images i)
+      SELECT COUNT(*) total,COALESCE(SUM(size),0) bytes,
+      COALESCE(SUM(rating='safe'),0) safe,COALESCE(SUM(rating='r18'),0) r18,COALESCE(SUM(rating='unknown'),0) unknown,
+      COALESCE(SUM(rating='safe' AND classified),0) classified_safe,
+      COALESCE(SUM(rating='r18' AND classified),0) classified_r18,
+      COALESCE(SUM(NOT classified),0) pending FROM catalog`)
       .first<{total:number;bytes:number;safe:number;r18:number;unknown:number;classified_safe:number;classified_r18:number;pending:number}>();
     const {classified_safe,classified_r18,pending:pendingCount,...images}=counts!;
     const tabs={all:images.total,safe:classified_safe,r18:classified_r18,pending:pendingCount};
@@ -179,8 +181,8 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     const filters:string[]=[],params:(string|number)[]=[];
     const view=url.searchParams.get('view');
     if (view && !['pending','classified'].includes(view)) throw new HttpError(400,'invalid_view','Mục ảnh không hợp lệ.');
-    if (view==='pending') filters.push("(i.rating='unknown' OR EXISTS (SELECT 1 FROM image_analysis a WHERE a.image_id=i.id AND a.status IN ('pending','running')))");
-    if (view==='classified') filters.push("NOT EXISTS (SELECT 1 FROM image_analysis a WHERE a.image_id=i.id AND a.status IN ('pending','running'))");
+    if (view==='pending') filters.push(`NOT ${CLASSIFIED_IMAGE_SQL}`);
+    if (view==='classified') filters.push(CLASSIFIED_IMAGE_SQL);
     const rating=url.searchParams.get('rating');
     if (rating) {
       if (!['safe','r18','unknown'].includes(rating)) throw new HttpError(400,'invalid_rating','Phân loại không hợp lệ.');

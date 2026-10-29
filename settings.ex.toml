@@ -40,9 +40,13 @@ webapp_short_name = ""
 discord_token = ""
 discord_admin_users = []
 
-# Dịch vụ ảnh: để key trống nếu không dùng.
+# Dịch vụ ảnh: bật nguồn muốn dùng. Key Waku lấy trong web kho ảnh → API Keys.
+manyacg_enabled = true
 manyacg_api_url = "https://api.manyacg.top/v1"
 manyacg_api_key = ""
+waku_api_enabled = false
+waku_api_url = "https://waku-api.takeshi.dev/v1"
+waku_api_key = ""
 
 # Mirror: chỉ admin bot được nhờ AI tải; 0/trống để tắt.
 # ID nhóm có cả hai bot và username bot Mirror (không phải tên Waku).

@@ -19,7 +19,9 @@ from waku.logger import logger
 from waku.services import manyacg as manyacg_service
 from waku.services.anime_images import (
     NoFreshImageError,
+    enabled_image_sources,
     fetch_anime_artwork,
+    image_services_notice,
     manyacg_candidates,
     release_anime_image,
     remember_anime_image,
@@ -192,7 +194,7 @@ def _discord_artwork_embed(
         color=0xFF8AC5 if not r18 else 0xFF5C8A,
     )
     embed.set_image(url=image_url)
-    embed.set_footer(text="nekos.best" if source_type == "nekos.best" else "ManyACG / Pixiv")
+    embed.set_footer(text="Waku API" if source_type == "waku-api" else "nekos.best" if source_type == "nekos.best" else "ManyACG / Pixiv")
     return embed
 
 async def _fetch_manyacg_discord_artwork(
@@ -447,6 +449,9 @@ async def _send_discord_seg(message: discord.Message, keyword: str = "", count: 
             message, i18n.t("bot.msg.manyacg.chat_setu_disabled", locale=settings.lang)
         )
         return True
+    if not enabled_image_sources():
+        await _send_discord_media_notice(message, image_services_notice(settings.lang))
+        return True
     ratekey = f"discord_seg_cd:{message.channel.id}:{message.author.id}"
     if await common.memttlcache.get(ratekey, False):
         await _send_discord_media_notice(message, "Please wait a moment before requesting another image.")
@@ -533,6 +538,9 @@ async def _send_discord_seg_interaction(
         )
         return
 
+    if not enabled_image_sources():
+        await _respond_to_discord_seg_interaction(interaction, image_services_notice(settings.lang))
+        return
     ratekey = f"discord_seg_cd:{channel.id}:{interaction.user.id}"
     if await common.memttlcache.get(ratekey, False):
         await _respond_to_discord_seg_interaction(

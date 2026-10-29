@@ -36,6 +36,85 @@ class NoFreshImageError(Exception):
     """Results contain only the last delivered image or images still being sent."""
 
 
+class ImageServicesNotConfiguredError(Exception):
+    """No enabled, configured image catalog. Never use an undeclared fallback."""
+
+
+def enabled_image_sources():
+    sources = []
+    if app_config.manyacg_enabled and app_config.manyacg_api_url.strip():
+        sources.append("manyacg")
+    if (
+        app_config.waku_api_enabled
+        and app_config.waku_api_url.strip()
+        and (app_config.waku_api_key or "").strip()
+    ):
+        sources.append("waku")
+    return sources
+
+
+def image_services_notice(lang="vi"):
+    return (
+        "No image service is configured for this bot."
+        if lang == "en" else "Bot chưa được cấu hình dịch vụ ảnh."
+    )
+
+
+IMAGE_SERVICES_UNAVAILABLE = (
+    "No image API service is enabled/configured. Explain this naturally to the user in your own words. "
+    "No image was sent. Do not claim success, generate an image or switch to web search unless requested."
+)
+
+
+async def waku_candidates(keyword, mode):
+    base = app_config.waku_api_url.strip().rstrip("/")
+    endpoint = base + ("/images/random" if base.endswith("/v1") else "/v1/images/random")
+    client = _clients.get("waku-images")
+    if client is None or client.is_closed:
+        client = httpx.AsyncClient(
+            timeout=httpx.Timeout(15, connect=5), follow_redirects=False
+        )
+        _clients["waku-images"] = client
+    params = {"rating": {0: "safe", 1: "r18", 2: "mixed"}[mode], "count": 10}
+    if keyword.strip():
+        aliases = {"nekomimi": "cat_ears", "cat ears": "cat_ears", "tai mèo": "cat_ears", "hầu gái": "maid"}
+        params["tags"] = ",".join(
+            aliases.get(part.strip().casefold(), part.strip().replace(" ", "_").lower())
+            for part in keyword.split(",") if part.strip()
+        )
+    response = await client.get(
+        endpoint, params=params,
+        headers={"Authorization": "Bearer " + app_config.waku_api_key.strip()},
+    )
+    if response.status_code != 200:
+        logger.warning("Waku image API returned HTTP {}", response.status_code)
+        return []
+    payload = response.json()
+    rows = payload.get("images", []) if isinstance(payload, dict) else []
+    items = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict) or row.get("rating") not in {"safe", "r18"}:
+            continue
+        url = _web_url(row.get("url"))
+        if not url or not row.get("id"):
+            continue
+        identity = "waku-" + str(row["id"])
+        picture = Picture(
+            id=identity, width=0, height=0, index=0,
+            hash=str(row.get("sha256") or identity), thumb_hash="",
+            file_name=row.get("filename"), thumbnail=url, regular=url,
+        )
+        items.append(Artwork(
+            id=identity, created_at=str(row.get("created_at") or ""),
+            title=str(row.get("title") or "Waku Image"), description="",
+            tags=row.get("tags") or [], source_url=_web_url(row.get("source_url")) or url,
+            source_type="waku-api", r18=row["rating"] == "r18",
+            artist=Artist(id="", name="", username="", uid="", type="waku-api"),
+            pictures=[picture],
+        ))
+    return items
+
+
 _RATING_MARKER = re.compile(r"\b(?:r[ -]?18|nsfw|sfw)\b|18\+|🔞", re.IGNORECASE)
 _SAFE_MARKER = re.compile(r"\bsfw\b|\ban toàn\b|\ban toan\b", re.IGNORECASE)
 _SAFE_NEGATION = re.compile(
@@ -72,6 +151,7 @@ def resolve_image_search(keyword, mode, *, request_text=""):
 async def manyacg_candidates(client, keyword, mode):
     """Search by tag/theme like the legacy base; use random only without a query."""
     keyword = keyword.strip()
+    headers = {"X-API-KEY": app_config.manyacg_api_key} if app_config.manyacg_api_key else {}
     if keyword:
         response = await client.get(
             "/artwork/list",
@@ -81,9 +161,10 @@ async def manyacg_candidates(client, keyword, mode):
                 "keyword": keyword,
                 "page_size": 30,
             },
+            headers=headers,
         )
     else:
-        response = await client.get("/artwork/random", params={"r18": mode, "limit": 10})
+        response = await client.get("/artwork/random", params={"r18": mode, "limit": 10}, headers=headers)
     if response.status_code != 200:
         return []
     payload = response.json()
@@ -252,7 +333,7 @@ def _value(obj, key, default=None):
 
 
 def original_image_url(artwork, picture) -> str:
-    if _value(artwork, "source_type") == "nekos.best":
+    if _value(artwork, "source_type") in {"nekos.best", "waku-api"}:
         return _value(picture, "regular")
     picture_id = _value(picture, "id")
     return (
@@ -260,6 +341,11 @@ def original_image_url(artwork, picture) -> str:
         if picture_id
         else _value(artwork, "source_url")
     )
+
+
+def image_source_enabled(artwork):
+    provider = "waku" if _value(artwork, "source_type") == "waku-api" else "manyacg"
+    return provider in enabled_image_sources()
 
 
 def _identity_keys(artwork, picture):
@@ -400,12 +486,17 @@ async def release_anime_image(scope, artwork, picture):
 async def fetch_anime_artwork(
     keyword, r18_mode, manyacg_fetch, *, as_dict=False, scope=None
 ):
+    sources = enabled_image_sources()
+    if not sources:
+        raise ImageServicesNotConfiguredError()
     request = resolve_image_search(keyword, r18_mode)
     if request is None:
         return None
     keyword, mode = request
     forced_nekos = keyword.lower().startswith(("nekos:", "nekos.best:"))
     if forced_nekos:
+        if "manyacg" not in sources:
+            raise ImageServicesNotConfiguredError()
         if mode == 1:
             return None
         keyword = keyword.partition(":")[2].strip()
@@ -415,7 +506,8 @@ async def fetch_anime_artwork(
     else:
         # nekos.best cannot search arbitrary tags. Do not silently replace a
         # failed tag search with an unrelated random image from another source.
-        providers = ["manyacg"] if keyword or mode == 1 else ["manyacg", "nekos"]
+        providers = list(sources)
+        random.shuffle(providers)
     repeated = False
     attempts = [
         provider
@@ -424,12 +516,15 @@ async def fetch_anime_artwork(
     ]
     for provider in attempts:
         try:
-            item = (
-                await _fetch_nekos_artwork(keyword)
-                if provider == "nekos"
-                else await manyacg_fetch(keyword, mode)
-            )
+            if provider == "nekos":
+                item = await _fetch_nekos_artwork(keyword)
+            elif provider == "waku":
+                item = await waku_candidates(keyword, mode)
+            else:
+                item = await manyacg_fetch(keyword, mode)
             if not item:
+                continue
+            if ("manyacg" if provider == "nekos" else provider) not in enabled_image_sources():
                 continue
             if isinstance(item, list):
                 choices = [(artwork, None) for artwork in item]

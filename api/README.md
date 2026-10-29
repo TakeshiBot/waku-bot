@@ -14,6 +14,12 @@ Mở URL gốc của Worker, ví dụ `https://waku-api.your-account.workers.dev
 
 Đăng nhập bằng `API_KEY` trong file local `api/.secrets.json` (không phải key AI hoặc token Telegram). Key không được ghi vào HTML, URL hoặc localStorage. Sau khi xác thực, trình duyệt dùng cookie HttpOnly/Secure, hiệu lực 8 giờ. Đăng xuất để xóa phiên trên trình duyệt.
 
+**API Keys** ở sidebar tạo key dịch vụ để nối bot hoặc ứng dụng lấy ảnh. Key đầy đủ chỉ hiện lúc tạo; lưu lại trước khi đóng bảng. Có thể đặt tên, đổi tên, bật/tắt và xóa để thu hồi. D1 chỉ lưu SHA-256 của key, không lưu lại key gốc. Key dịch vụ chỉ được GET `/v1/images/random`, không đăng nhập quản trị, đọc cấu hình AI, upload hoặc xóa dữ liệu. URL `/media/UUID` vẫn là link chia sẻ ảnh để Telegram/Discord tải được file.
+
+Gọi ảnh: `GET https://waku-api.takeshi.dev/v1/images/random?rating=safe&count=3&tags=maid` với header `Authorization: Bearer <key dịch vụ>`. Hỗ trợ `rating=safe|r18|mixed`, `count=1..10`, nhiều tag ngăn bằng dấu phẩy (khớp tất cả), `exclude` chứa ID cần tránh. Chỉ ảnh đủ tên, tag, phân loại và kiểu ảnh mới vào API random.
+
+Trong bot Waku, điền `waku_api_url = "https://waku-api.takeshi.dev/v1"`, `waku_api_key` bằng key dịch vụ, bật `waku_api_enabled`. `/config → Service` có công tắc riêng ManyACG/Waku API, mỗi công tắc nằm trên hàng URL/Key tương ứng. Bật cả hai để chọn nguồn ngẫu nhiên, bật nguồn nào chỉ dùng nguồn đó; tắt cả hai không gọi nguồn dự phòng ngầm. Lệnh ảnh báo chưa cấu hình dịch vụ; tool AI trả trạng thái cho model tự diễn đạt. Telegram và Discord cùng dùng bộ chọn nguồn, bộ lọc Safe/R18, metadata caption và chống lặp hiện có.
+
 - Chọn/kéo thả nhiều ảnh, hoặc dán nhiều URL ảnh trực tiếp (mỗi dòng một link).
 - Chọn tag chung, phân loại và bật/tắt AI cho đợt upload; mặc định dùng AI. Các lựa chọn này được chốt khi bấm bắt đầu.
 - Trình duyệt tải tối đa **2 file mỗi lượt**. Có tiến độ từng file, tạm dừng sau các file đang chạy, bỏ file chờ và thử lại mục lỗi. Khi máy chủ bận, file sẽ chờ rồi thử lại.
@@ -29,6 +35,8 @@ Nút **Sửa** cạnh Xóa mở popup sửa hàng loạt **Phân loại** và **
 
 **Lọc** nằm cùng hàng với Chọn tất cả. Trên máy tính rê chuột vào để mở, giữ bảng khi di chuyển bên trong và thu lại khi rời ra; trên điện thoại bấm để mở/đóng. Có thể dùng bàn phím và Escape. Logo Waku được dùng ở sidebar, trang đăng nhập và biểu tượng tab.
 
+Nút **Hiện R18 / Ẩn R18** nằm ngay cạnh Lọc, thay cho checkbox ở tiêu đề thư viện. Khung lọc cố định 252 × 336 px, giãn dòng gọn và không cuộn; tag chia thành trang 5 mục, có ô tìm kiếm. Chuyển trang tag không gọi API thêm và giữ các tag đã tích chọn. Khi thiếu chỗ ở dưới, bảng lọc mở lên trên.
+
 **API & Model** nằm trên nút Đăng xuất ở sidebar (biểu tượng bánh răng trên điện thoại). Thêm/sửa/xóa kết nối bằng tên, Base URL OpenAI-compatible và key; mỗi API lưu được nhiều Model ID. Checkbox bật/tắt từng API độc lập; bấm tên API để xem model mà không đổi trạng thái bật. Mỗi API có một model vision được chọn bằng radio và được ghi nhớ riêng, kể cả khi tắt. Có thể bật nhiều API để chia hàng đợi song song; chọn model của API đang tắt không tự bật API đó. Thêm tối đa 30 API và 100 model/API. Cấu hình hiện có được nhập thành **API Waku** lần đầu mở mục này.
 
 Bảng API/Model giữ chiều cao cố định theo màn hình; danh sách model cuộn khi dài hơn 4 dòng. Bấm nền ngoài bảng hoặc Escape để đóng. Trên điện thoại, nội dung bên trong có thể cuộn để vẫn dùng được các form ở màn hình thấp.
@@ -41,11 +49,13 @@ Hàng đợi đặt chỗ API và ảnh trong cùng transaction D1 để tránh 
 
 Key nhà cung cấp được mã hóa AES-GCM trước khi lưu D1, không trả lại qua API và không lưu ở localStorage. Khi sửa API, để trống key để giữ key cũ. Khóa mã hóa được dẫn xuất từ `API_KEY` quản trị: nếu thay `API_KEY`, cần nhập lại các key nhà cung cấp đã lưu. Sau khi quản lý API trên web, danh sách D1 là nguồn cấu hình chính; deploy lại secret AI không ghi đè lựa chọn này.
 
-Khi bắt đầu upload, web chuyển sang **Chờ phân loại** và hiện trước các file đang chờ/gửi, sau đó thay bằng ảnh đã lưu. Tab này gồm ảnh `unknown` và ảnh còn chờ/chạy AI, kể cả ảnh đã được nhập phân loại thủ công. Khi AI xong, ảnh đã có phân loại chuyển sang tab tương ứng; ảnh vẫn chưa rõ phân loại ở lại. Có thể chọn ảnh trong tab này rồi bấm **AI gắn tag** để xử lý hàng loạt.
+Khi bắt đầu upload, web chuyển sang **Chờ phân loại** và hiện trước các file đang chờ/gửi, sau đó thay bằng ảnh đã lưu. Chỉ vào An toàn/R18 khi ảnh có đủ **tên không trống, ít nhất một tag, phân loại safe/r18, kiểu anime/real** và không còn lượt AI đang chờ/chạy. Thiếu bất kỳ mục nào thì vẫn ở Chờ phân loại, kể cả đã chọn sẵn safe/r18. Link nguồn không bắt buộc. Nhập tay đủ bốn mục cũng được chấp nhận. Danh sách, số đếm tab và trường `classified` trong API dùng cùng điều kiện. Có thể mở ảnh thiếu thông tin để chạy AI hoặc chọn nhiều ảnh ở tab này rồi bấm **AI gắn tag**.
 
 Thanh upload đếm **ảnh được API xác nhận đã lưu / tổng ảnh của đợt**, không cộng file lỗi vào số đã lưu. Thanh AI phía trên danh sách dùng bộ đếm D1 riêng theo đợt: đang chờ, đang chạy, thành công, lỗi, bỏ qua. Đây là hai tiến trình khác nhau; upload xong không đồng nghĩa AI đã hoàn tất. ID đợt AI được giữ trong sessionStorage để tiếp tục theo dõi sau khi tải lại trang; API key không được lưu ở đó.
 
 Thanh AI có **Tạm dừng / Tiếp tục**, **Huỷ**, **Chạy lại lỗi**. Chạy lại lỗi chỉ xuất hiện khi không còn ảnh chờ/chạy trong đợt hoặc sau khi Huỷ; API cũng từ chối chạy lại khi đợt chưa kết thúc. Khi đang xem một đợt, nút tác động vào đợt đó; nếu không theo dõi đợt riêng thì tác động toàn hàng đợi. Tạm dừng được lưu ở D1, không mất khi tải lại trang; ảnh đang gọi API có thể hoàn tất nhưng không nhận ảnh tiếp theo. Huỷ không xoá ảnh/tag đã lưu, vô hiệu hoá kết quả đến muộn. Chạy lại chỉ lấy ảnh lỗi/đã huỷ, không chạy lại ảnh thành công. Tạm dừng toàn hàng đợi còn giữ cả ảnh mới tải lên, đến khi bấm Tiếp tục.
+
+Thanh tiến trình chỉ hiện khi còn ảnh chờ/chạy hoặc đang chuẩn bị/xếp hàng AI. Đợt tạm dừng còn ảnh chưa xử lý vẫn giữ nút Tiếp tục/Huỷ. Khi hoàn tất hoặc huỷ, thanh tự ẩn; nếu đợt vừa chạy có lỗi/ảnh bị huỷ thì hiện thông báo gọn cùng nút Chạy lại lỗi, giữ đúng ID đợt đó. Thông báo này không được khôi phục khi tải lại trang. ID đợt đã kết thúc được xoá khỏi sessionStorage; mở web lúc rảnh không hiện lịch sử AI cũ. Khi theo dõi hàng đợi chung, số thành công/lỗi chỉ tính từ lúc quan sát lượt đang hoạt động, không lấy tổng cả kho. Thanh upload cũng chỉ hiện khi thực sự đang chuẩn bị/gửi file.
 
 Mỗi ảnh có timeout **10 giây**, gồm đọc ảnh từ R2, gọi API và đọc nội dung trả về. Ảnh được gửi trực tiếp dạng data URI để hỗ trợ gateway không nhận URL ảnh từ xa, không phụ thuộc gateway tải được CDN hay không. Mỗi ảnh chỉ gọi API một lần: lỗi/timeout chuyển sang failed, không tự thử lại. Worker mất phản hồi được Cron đánh dấu lỗi sau khi lease 20 giây hết hạn, không phát lại tác vụ. Chỉ bấm Chạy lại lỗi mới tạo lượt mới. Không đặt timeout cứng cho toàn đợt vì đợt lớn cần được xếp hàng tuần tự.
 
@@ -147,6 +157,8 @@ Các đường dẫn `/v1/*` cần header `Authorization: Bearer API_KEY`. Lấy
 | POST/GET/DELETE | `/v1/session` | Đăng nhập, kiểm tra hoặc xóa cookie phiên web |
 | GET | `/v1/stats` | Dung lượng, số ảnh và tác vụ đang chờ |
 | GET | `/v1/state?batch=ID` | Gộp thống kê, phiên bản thư viện và tiến trình AI trong một request |
+| GET / POST | `/v1/keys` | Quản trị: danh sách key (không có key gốc) / tạo key dịch vụ và trả key một lần |
+| PATCH / DELETE | `/v1/keys/ID` | Quản trị: đổi tên, bật/tắt / thu hồi key dịch vụ |
 | GET | `/v1/ai/settings` | Danh sách API/model và lựa chọn đang dùng, không trả key |
 | POST | `/v1/ai/providers` | Lưu API: `name`, `base_url`, `api_key` |
 | PATCH/DELETE | `/v1/ai/providers/ID` | Sửa/xóa API; key trống giữ nguyên |

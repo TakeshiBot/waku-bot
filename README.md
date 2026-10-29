@@ -89,6 +89,21 @@ AI; settings và quyền quản trị Discord được lưu riêng với Telegra
 Bot có thể trả lời tin nhắn thay mặt tài khoản đã kết nối qua Telegram Business.
 Xem [cách bật Business và công tắc trong /config](docs/docs/telegram-business.md).
 
+## Dịch vụ ảnh
+
+`/config` trong DM của quản trị bot → Cấu hình → Service có công tắc ManyACG và
+Waku API độc lập. Mỗi công tắc có hàng URL/Key ngay bên dưới; hai mục Mirror ở
+cuối. Lưu để áp dụng. Bật cả hai nguồn để bot chọn ngẫu nhiên giữa chúng, bật
+một nguồn thì chỉ gọi nguồn đó; tắt hết thì lệnh ảnh báo chưa cấu hình, còn
+yêu cầu qua chat để AI tự diễn đạt thông báo từ tool. Cả Telegram và Discord
+dùng chung cơ chế chọn nguồn, chế độ Safe/R18 và chống lặp ảnh.
+
+Với kho Waku riêng, mở web → **API Keys** để tạo key dịch vụ rồi điền
+`waku_api_url`, `waku_api_key` và bật `waku_api_enabled`. Key chỉ được lấy ảnh,
+không được upload, xoá dữ liệu hay quản trị AI. ManyACG dùng `manyacg_enabled`,
+`manyacg_api_url`, `manyacg_api_key`. Xem [API kho ảnh](api/README.md) để biết
+cách gọi API, cấp và thu hồi key.
+
 ## Giấy phép và nguồn gốc
 
 Source được phát hành theo [GNU AGPL v3](LICENSE). Dự án phát triển từ

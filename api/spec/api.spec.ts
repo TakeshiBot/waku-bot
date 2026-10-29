@@ -37,7 +37,7 @@ before(async()=>{
     },
   }));
   const db=await mf.getD1Database('DB');
-  for (const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql','0004_analysis_batches.sql','0005_library_filters.sql','0006_ai_providers.sql','0007_parallel_ai.sql','0008_analysis_controls.sql']) {
+  for (const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql','0004_analysis_batches.sql','0005_library_filters.sql','0006_ai_providers.sql','0007_parallel_ai.sql','0008_analysis_controls.sql','0009_catalog_keys.sql']) {
     const migration=await readFile(`migrations/${name}`,'utf8');
     await db.batch(migration.split(';').map(s=>s.trim()).filter(Boolean).map(sql=>db.prepare(sql)));
   }
@@ -46,6 +46,7 @@ after(async()=>{await mf?.dispose();});
 
 test('sidebar tab counts match classified and pending lists while tagged images are queued again',async()=>{
   const a=(await upload(175,'safe')).image,b=(await upload(176,'r18')).image;
+  for(const id of [a.id,b.id])await call('/v1/images/'+id,'PATCH',{image_type:'anime'});
   const before=await(await call('/v1/state')).json() as any,db=await mf.getD1Database('DB');
   await db.batch([
     db.prepare("UPDATE image_analysis SET status='pending' WHERE image_id=?").bind(a.id),
@@ -58,6 +59,28 @@ test('sidebar tab counts match classified and pending lists while tagged images 
       const list=await(await call('/v1/images?limit=100&'+query)).json() as any;assert.equal(data.tabs[key],list.images.length);
     }
   }finally{await db.prepare("UPDATE image_analysis SET status='skipped',lease_until=0 WHERE image_id IN (?,?)").bind(a.id,b.id).run();await call('/v1/images/'+a.id,'DELETE');await call('/v1/images/'+b.id,'DELETE');}
+});
+
+test('only images with all four metadata fields enter classified tabs; source URL is optional',async()=>{
+  const ids:string[]=[],patches=[{}, {title:'   '}, {tags:[]}, {rating:'unknown'}, {image_type:null}, {rating:'r18'}, {}];
+  const db=await mf.getD1Database('DB');
+  try{
+    for(const [index,patch]of patches.entries()){
+      const saved=(await upload(180+index)).image;ids.push(saved.id);
+      const r=await call('/v1/images/'+saved.id,'PATCH',{title:'qa_metadata '+index,tags:['qa_metadata'],rating:'safe',image_type:'real',source_url:null,...patch});assert.equal(r.status,200);
+    }
+    await db.prepare("UPDATE image_analysis SET status='pending' WHERE image_id=?").bind(ids[6]).run();
+    const ready=await(await call('/v1/images?view=classified&q=qa_metadata&limit=100')).json() as any;
+    const waiting=await(await call('/v1/images?view=pending&q=qa_metadata&limit=100')).json() as any;
+    assert.deepEqual(new Set(ready.images.map((image:any)=>image.id)),new Set([ids[0],ids[5]]));assert.equal(waiting.images.length,5);
+    assert.ok(ready.images.every((image:any)=>image.classified&&image.source_url===null));assert.ok(waiting.images.every((image:any)=>!image.classified));
+    const stats=await(await call('/v1/state')).json() as any;assert.equal(stats.tabs.safe+stats.tabs.r18+stats.tabs.pending,stats.tabs.all);
+    for(const [key,query]of Object.entries({safe:'view=classified&rating=safe',r18:'view=classified&rating=r18',pending:'view=pending'})){
+      const list=await(await call('/v1/images?limit=100&'+query)).json() as any;assert.equal(stats.tabs[key],list.images.length);
+    }
+    await call('/v1/images/'+ids[4],'PATCH',{image_type:'anime'});
+    const completed=await(await call('/v1/images/'+ids[4])).json() as any;assert.equal(completed.image.classified,true);
+  }finally{for(const id of ids)await call('/v1/images/'+id,'DELETE');}
 });
 
 async function call(path:string,method='GET',body?:unknown) {
@@ -75,7 +98,7 @@ async function upload(seed:number,rating='safe',tags='cat,cute') {
   const form=new FormData();
   // Distinct content hashes; image sniffing does not decode raster payloads.
   form.set('file',new Blob([png,new Uint8Array([seed])],{type:'image/png'}),'test.png');
-  form.set('rating',rating);form.set('tags',tags);form.set('title',`Image ${seed}`);
+  form.set('rating',rating);form.set('image_type','anime');form.set('tags',tags);form.set('title',`Image ${seed}`);
   const result=await call('/v1/images','POST',form);
   assert.ok([200,201].includes(result.status),await result.clone().text());
   return await result.json() as any;
@@ -94,6 +117,21 @@ async function finished(id:string) {
   }
   assert.fail('Webhook job did not finish');
 }
+
+test('catalog keys are hashed, read-only, revocable, and return only complete image metadata',async()=>{
+  const sample=(await upload(177)).image;
+  const created=await call('/v1/keys','POST',{name:'Bot test'});assert.equal(created.status,201);const data=await created.json() as any;assert.match(data.key,/^wku_[a-f0-9]{64}$/);
+  const catalog=(path:string,method='GET')=>mf.dispatchFetch('https://images.example.com'+path,{method,headers:{authorization:'Bearer '+data.key}});
+  try{
+    const db=await mf.getD1Database('DB'),record=await db.prepare('SELECT * FROM catalog_keys WHERE id=?').bind(data.record.id).first();assert.notEqual(record!.key_hash,data.key);assert.equal(String(record!.key_hash).length,64);
+    const list=await call('/v1/keys');assert.ok(!(await list.text()).includes(data.key));
+    const images=await catalog('/v1/images/random?count=10&rating=mixed');assert.equal(images.status,200);const payload=await images.json() as any;assert.ok(payload.images.every((image:any)=>image.classified));assert.ok(payload.images.some((image:any)=>image.id===sample.id));
+    for(const [path,method]of [['/v1/session','POST'],['/v1/keys','GET'],['/v1/images','GET'],['/v1/images','POST'],['/v1/analysis/control','POST'],['/v1/ai/settings','GET']])assert.equal((await catalog(path,method)).status,403);
+    assert.equal((await call('/v1/keys/'+data.record.id,'PATCH',{enabled:false})).status,200);assert.equal((await catalog('/v1/images/random')).status,401);
+    await call('/v1/keys/'+data.record.id,'PATCH',{enabled:true,name:'Renamed'});assert.equal((await catalog('/v1/images/random')).status,200);
+    await call('/v1/keys/'+data.record.id,'DELETE');assert.equal((await catalog('/v1/images/random')).status,401);
+  }finally{await call('/v1/keys/'+data.record.id,'DELETE');await call('/v1/images/'+sample.id,'DELETE');}
+});
 
 test('private API, webhook secret, owner and DM boundaries',async()=>{
   assert.equal((await mf.dispatchFetch('https://images.example.com/v1/images')).status,401);

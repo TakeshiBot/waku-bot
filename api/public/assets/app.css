@@ -92,8 +92,8 @@ img.brand-mark { object-fit: cover; padding: 0; flex-shrink: 0; }
 #refresh { font-size: 22px; }
 .library h2 { font-size: 19px; font-weight: 600; letter-spacing: -.4px; }
 .library h2>span { font-size: 13px; color: #a3b5a8; margin-left: 4px; font-weight: 400; }
-.reveal-option { font-size: 12px; color: #acbeb2; display: flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
-.reveal-option input { width: 14px; height: 14px; }
+.reveal-option { font-size: 12px; white-space: nowrap; }
+.reveal-option[aria-pressed=true] { background: #52332d; border-color: #9a6555; color: #f0c2b0; }
 .search { display: flex; flex-shrink: 0; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; background: var(--surface); }
 .search svg { width: 17px; color: #9eb1a6; }
 .search input { border: 0; background: none; padding: 11px 0; font-size: 14px; }
@@ -101,15 +101,25 @@ img.brand-mark { object-fit: cover; padding: 0; flex-shrink: 0; }
 .search:focus-within { outline: 2px solid #d47d5d88; }
 .filter-anchor { flex-shrink: 0; }
 .filter-anchor>button { padding: 6px 12px; min-height: 32px; }
-.filter-panel { position: absolute; top: calc(100% - 1px); left: 0; width: min(252px,100%); max-height: min(336px,55dvh); overflow: auto; z-index: 5; padding: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 12px 30px #0006; }
+.filter-panel { position: absolute; top: calc(100% - 1px); left: 0; width: min(252px,100%); height: 336px; overflow: hidden; display: grid; grid-template-rows: 24px 65px minmax(0,1fr); gap: 8px; z-index: 5; padding: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 12px 30px #0006; }
+.filter-panel.above { top: auto; bottom: calc(100% - 1px); }
 .filter-heading { display: flex; justify-content: space-between; align-items: center; }
-.filter-panel fieldset { border: 0; margin: 12px 0 0; padding: 0; min-width: 0; }
-.filter-panel legend { margin-bottom: 8px; font-weight: 600; }
-.filter-panel legend small { font-size: 11px; color: var(--muted); font-weight: 400; }
-.filter-panel label { display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; overflow-wrap: anywhere; }
+.filter-panel fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.filter-panel legend { margin-bottom: 4px; font-weight: 600; line-height: 18px; }
+.filter-panel label { display: flex; align-items: center; gap: 7px; padding: 2px 0; cursor: pointer; line-height: 18px; min-width: 0; }
 .filter-panel label input { flex-shrink: 0; }
-.filter-tags { max-height: 147px; overflow: auto; margin-top: 6px; }
+.filter-tag-section { min-height: 0; display: grid; grid-template-rows: 18px 32px minmax(0,1fr) 24px; gap: 4px; }
+.filter-panel .filter-tag-label { padding: 0; font-weight: 600; }
+.filter-tag-label small { font-size: 11px; color: var(--muted); font-weight: 400; }
+#filter-tag-search { padding: 5px 7px; height: 32px; margin: 0; }
+.filter-tags { min-height: 0; overflow: hidden; }
+.filter-tags label { height: 23px; }
+.filter-tags label>span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .filter-tags small { margin-left: auto; color: var(--muted); }
+.filter-tags p { color: var(--muted); margin-top: 5px; line-height: 1.5; }
+.filter-tag-pages { display: flex; justify-content: space-between; align-items: center; }
+.filter-tag-pages button { padding: 0 10px; min-width: 32px; font-size: 18px; line-height: 24px; }
+.filter-tag-pages small { color: var(--muted); }
 .upload-type { margin: 0; }
 .upload-type select { padding: 7px 9px; }
 .duplicate-summary { margin: 0; color: #e6bd8c; font-size: 12px; line-height: 1.5; }
@@ -139,6 +149,10 @@ img.brand-mark { object-fit: cover; padding: 0; flex-shrink: 0; }
 .ai-controls small { color: #a8b7ae; font-size: 11px; }
 .ai-controls button { min-height: 32px; padding: 5px 10px; }
 .ai-controls .danger-text { color: #f0a39b; }
+.ai-result { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #66543e; border-radius: 8px; background: #29271f; color: #dfc9a6; font-size: 12px; flex-shrink: 0; }
+.ai-result>span { flex: 1; }
+.ai-result .secondary { min-height: 30px; padding: 5px 9px; font-size: 12px; }
+.ai-result .text-button { padding: 3px 6px; font-size: 18px; }
 .thumb { display: block; position: relative; border: 0; padding: 0; width: 100%; aspect-ratio: 3/4; background: #273438; overflow: hidden; border-radius: 10px; text-align: left; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .3s,filter .25s; }
 .thumb:hover img { transform: scale(1.035); }
@@ -295,6 +309,19 @@ progress::-webkit-progress-value { background: #9cba7b; border-radius: 10px; }
 .confirm-dialog h2 { font-size: 22px; }
 .confirm-dialog p { font-size: 14px; color: #afc3a8; margin: 12px 0 24px; line-height: 1.7; }
 .confirm-dialog>div { display: flex; gap: 10px; justify-content: flex-end; }
+.service-keys-dialog { width: min(640px,calc(100% - 32px)); max-width: 640px; max-height: calc(100dvh - 32px); overflow: auto; }
+.service-keys-dialog .service-keys-heading { justify-content: space-between; align-items: center; }
+#create-service-key { display: flex; gap: 8px; margin-bottom: 14px; }
+#create-service-key input { flex: 1; }
+#create-service-key button { white-space: nowrap; }
+#service-key-created { background: #24382b; padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; }
+#created-service-key { margin: 8px 0; font: 12px monospace; }
+.service-keys-dialog .service-key-list { display: flex; flex-direction: column; gap: 9px; }
+.service-key-row { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.service-key-row>div { flex: 1; min-width: 0; }
+.service-key-row strong { display: block; overflow-wrap: anywhere; font-size: 13px; }
+.service-key-row small { display: block; color: var(--muted); font-size: 11px; margin-top: 5px; }
+.service-key-row .secondary { min-height: 30px; padding: 4px 8px; font-size: 12px; }
 .bulk-edit-dialog { width: calc(100% - 32px); max-width: 420px; }
 .bulk-edit-dialog p { margin: 12px 0 18px; }
 .bulk-edit-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }

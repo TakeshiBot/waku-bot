@@ -22,8 +22,11 @@ from waku.plugins.agent.localization import tr
 from waku.plugins.agent.output import record_tool_reply, text_already_sent
 from waku.plugins.manyacg import manyacg
 from waku.services.anime_images import (
+    IMAGE_SERVICES_UNAVAILABLE,
     NoFreshImageError,
+    enabled_image_sources,
     fetch_anime_artwork,
+    image_source_enabled,
     manyacg_candidates,
     original_image_url,
     release_anime_image,
@@ -501,16 +504,16 @@ async def _fetch_anime_artwork(keyword: str = "", r18_mode: int = 0, *, scope=No
 async def send_anime_photo(
     ctx: RunContext[datatype.ContextDeps], keyword: str = "", count: int = 1
 ) -> AnimePhotoResult:
-    """Send random anime illustrations from the built-in ManyACG/nekos catalogs.
+    """Send images from the configured ManyACG/Waku API catalogs.
 
-    This tool DOES NOT browse websites or retrieve real-person/cosplayer photos.
+    Waku API may include anime, cosplay and real photographs. This tool does not browse websites.
     Never use it for a user-specified website, URL, photographer or cosplayer.
     Use websearch/read to find the requested site's actual image URLs, then
     tg('sendPhoto', ...) or tg('sendMediaGroup', ...) to upload them. 'Random'
     does not permit substituting this catalog for the user's requested source.
 
     Args:
-        keyword: Optional tag/theme to search in ManyACG, e.g. "nekomimi" or
+        keyword: Optional tag/theme to search in enabled image APIs, e.g. "nekomimi" or
             "cat ears" for tai mèo, "maid" for hầu gái. Empty means random.
             Use a concise tag rather than the entire user's sentence.
             Results are randomly selected within the API search results.
@@ -533,6 +536,8 @@ async def send_anime_photo(
         return AnimePhotoResult(
             success=False, message=tr("current_context_unavailable")
         )
+    if not enabled_image_sources():
+        return AnimePhotoResult(success=False, message=IMAGE_SERVICES_UNAVAILABLE)
     enabled, image_mode = await telegram_image_settings(ctx.deps.chat_id)
     if not enabled:
         return AnimePhotoResult(success=False, message=tr("anime_chat_disabled"))
@@ -620,6 +625,8 @@ async def _prepare_anime_uploads(fetched) -> list[BytesIO]:
 
 
 async def _deliver_anime_photos(ctx, fetched, prepared):
+    if any(not image_source_enabled(artwork) for artwork, _ in fetched):
+        return AnimePhotoResult(success=False, message="The prepared image source was disabled before delivery. No image was sent; explain naturally to the user.")
     enabled, mode = await telegram_image_settings(ctx.deps.chat_id)
     if not enabled or any(not image_allowed(artwork["r18"], mode) for artwork, _ in fetched):
         return AnimePhotoResult(success=False, message="Image settings changed before delivery; the prepared images are no longer permitted.")

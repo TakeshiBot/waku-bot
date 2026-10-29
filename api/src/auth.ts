@@ -1,5 +1,6 @@
 import {equalSecret} from './input';
 import {HttpError,type Env} from './types';
+import {authorizeCatalogKey} from './keys';
 
 const COOKIE='__Host-waku_session';
 const TTL=8*60*60;
@@ -22,6 +23,7 @@ export async function authorize(request:Request,env:Env) {
       return;
     }
   }
+  if(await authorizeCatalogKey(request,env))return;
   throw new HttpError(401,'unauthorized','API key không hợp lệ hoặc phiên đăng nhập đã hết hạn.');
 }
 export async function sessionCookie(env:Env) {

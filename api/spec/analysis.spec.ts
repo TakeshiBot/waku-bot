@@ -58,7 +58,7 @@ before(async()=>{
     },
   }));
   const db=await mf.getD1Database('DB');
-  for(const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql','0004_analysis_batches.sql','0005_library_filters.sql','0006_ai_providers.sql','0007_parallel_ai.sql','0008_analysis_controls.sql']) {
+  for(const name of ['0001_initial.sql','0002_ai_tags.sql','0003_worker_slots.sql','0004_analysis_batches.sql','0005_library_filters.sql','0006_ai_providers.sql','0007_parallel_ai.sql','0008_analysis_controls.sql','0009_catalog_keys.sql']) {
     const sql=await readFile('migrations/'+name,'utf8');await db.batch(sql.split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));
   }
 });

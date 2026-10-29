@@ -190,8 +190,12 @@ class _AppConfig(pydantic.BaseModel):
     cachettl_sync_members: int = 86400
 
     # manyacg https://github.com/krau/manyacg
+    manyacg_enabled: bool = True
     manyacg_api_url: str = "https://api.manyacg.top/v1"
     manyacg_api_key: str | None = None
+    waku_api_enabled: bool = False
+    waku_api_url: str = "https://waku-api.takeshi.dev/v1"
+    waku_api_key: str | None = None
     manyacg_channel: str = "MoreACG"
     manyacg_bot: str = "kirakabot"
     manyacg_setu_cd: int = 1

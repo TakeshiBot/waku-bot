@@ -8,7 +8,10 @@ from pydantic_ai import RunContext
 
 from waku.logger import logger
 from waku.services.anime_images import (
+    IMAGE_SERVICES_UNAVAILABLE,
     NoFreshImageError,
+    enabled_image_sources,
+    image_source_enabled,
     release_anime_image,
     resolve_image_search,
 )
@@ -71,10 +74,10 @@ async def send_discord_anime_photo(
     allow_everyone: bool = False,
     count: int = 1,
 ) -> DiscordAnimePhotoResult:
-    """Get and send an anime/Pixiv image to the current Discord chat.
+    """Get and send images from configured catalogs to the current Discord chat.
 
-    This is the built-in anime illustration catalog, not a website scraper or a
-    real-person/cosplay library. For a named website/gallery/cosplayer, research
+    This uses configured ManyACG/Waku API catalogs, including cosplay/photos if
+    present in Waku API. For a named website/gallery/cosplayer, research
     that actual source and use send_discord_web_media with its real photo URLs.
 
     Call this tool when the user naturally asks Waku to send/show/give an
@@ -84,7 +87,7 @@ async def send_discord_anime_photo(
     sent instead of claiming that an image was sent.
 
     Args:
-        keyword: Optional tag/theme to search in ManyACG, e.g. "nekomimi" or
+        keyword: Optional tag/theme to search in enabled image APIs, e.g. "nekomimi" or
             "cat ears" for tai mèo, "maid" for hầu gái. Empty means random.
             Use a concise tag rather than the entire user's sentence.
             Results are randomly selected within the API search results.
@@ -108,6 +111,8 @@ async def send_discord_anime_photo(
             10 images per album. One image keeps its embed; multiple images use
             native attachments in the same message, split only for upload size limits.
     """
+    if not enabled_image_sources():
+        return DiscordAnimePhotoResult(success=False, message=IMAGE_SERVICES_UNAVAILABLE)
     message = ctx.deps.message
     settings = await _discord_guild_settings(message.guild) if message.guild is not None else await _discord_dm_settings(message.author)
     if not settings.setu_enabled:
@@ -207,6 +212,8 @@ async def send_discord_anime_photo(
             await release_anime_image(scope, artwork, picture)
 
     async def deliver():
+        if any(not image_source_enabled(artwork) for artwork, _ in prepared):
+            return DiscordAnimePhotoResult(success=False, message="The prepared image source was disabled before delivery. No image was sent; explain naturally to the user.")
         current = await _discord_guild_settings(message.guild) if message.guild is not None else await _discord_dm_settings(message.author)
         mode = current.r18_mode if message.guild is not None else 0
         if not current.setu_enabled or any(not image_allowed(artwork.r18, mode) for artwork, _ in prepared):

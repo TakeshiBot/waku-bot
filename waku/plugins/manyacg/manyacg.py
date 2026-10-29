@@ -15,7 +15,9 @@ from waku.services import aniobjcut
 from waku.services import manyacg as manyacg_service
 from waku.services.anime_images import (
     NoFreshImageError,
+    enabled_image_sources,
     fetch_anime_artwork,
+    image_services_notice,
     manyacg_candidates,
     original_image_url,
     release_anime_image,
@@ -43,7 +45,7 @@ httpx_client = httpx.AsyncClient(
     group=0,
 )
 async def parse_artwork(client: PyrogramClient, message: pyrogram.types.Message):
-    if not app_config.manyacg_api_key or not manyacg_client:
+    if not app_config.manyacg_enabled or not app_config.manyacg_api_key or not manyacg_client:
         return
     chat = message.chat
     user = message.from_user or message.sender_chat
@@ -186,6 +188,9 @@ async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
         user_config = await database.get_user_config(user.id)
         lang = user_config.lang
     _, image_mode = await telegram_image_settings(chat.id)
+    if not enabled_image_sources():
+        await message.reply(image_services_notice(lang))
+        return
     if await common.memttlcache.get(
         f"setu_cd:{user.id}",
         default=False,

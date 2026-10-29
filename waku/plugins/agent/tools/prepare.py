@@ -16,7 +16,7 @@ async def prepare_manyacg_tools(
 ) -> ToolDefinition | None:
     """Keep public image fetching available; keyed tools need a ManyACG key."""
     # Anime images have public API fallbacks even without a ManyACG key.
-    if tool_def.name == "send_anime_photo" or app_config.manyacg_api_key:
+    if tool_def.name == "send_anime_photo" or app_config.manyacg_enabled and app_config.manyacg_api_key:
         return tool_def
     return None
 

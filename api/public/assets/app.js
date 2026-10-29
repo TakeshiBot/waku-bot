@@ -1,8 +1,9 @@
-import {setupProviders} from './providers.js?v=13';
+import {setupProviders} from './providers.js?v=16';
+import {setupKeys} from './keys.js?v=16';
 const $=id=>document.getElementById(id);
 const state={authenticated:false,maxMb:10,images:new Map(),cursor:null,query:'',rating:'',queue:[],pumping:false,paused:true,editing:null,listVersion:0,statsBusy:false,
   selected:new Set(),allSelected:false,selectionBusy:false,bulkBusy:false,deleteTargets:[],editTargets:[],loadedLimit:0,uploadIds:new Set(),starting:false,aiBatchId:null,aiProgress:null,aiPending:0,aiEnqueueing:false,
-  revision:null,lastStats:0,galleryDirty:false,gallerySignature:'',filterTags:new Set(),filterTypes:new Set(),tagsLoaded:0,checking:0,aiAvailable:false,aiQueue:null,aiControlBusy:false,aiDismissed:false};
+  revision:null,lastStats:0,galleryDirty:false,gallerySignature:'',filterTags:new Set(),filterTypes:new Set(),tagOptions:[],tagPage:0,tagsLoaded:0,checking:0,aiAvailable:false,aiQueue:null,aiControlBusy:false,aiRunActive:false,aiResult:null,aiBaseline:null};
 const number=n=>new Intl.NumberFormat('vi-VN').format(n || 0);
 const bytes=n=>n>=1073741824?(n/1073741824).toFixed(1)+' GB':n>=1048576?(n/1048576).toFixed(1)+' MB':(n/1024).toFixed(0)+' KB';
 const tagList=value=>value.trim().split(/[,\n]|\s+(?=#)/).map(x=>x.trim().replace(/^#/, '')).filter(Boolean);
@@ -11,6 +12,7 @@ let toastTimer,filterTimer,pollTimer;
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4000);}
 function element(tag,className,text){const el=document.createElement(tag);if(className)el.className=className;if(text!==undefined)el.textContent=text;return el;}
 function icon(name){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');const use=document.createElementNS(svg.namespaceURI,'use');use.setAttribute('href','#i-'+name);svg.append(use);return svg;}
+function isClassified(image){return image.classified??Boolean(image.title?.trim()&&image.tags?.some(tag=>tag.trim())&&['safe','r18'].includes(image.rating)&&['anime','real'].includes(image.image_type)&&!['pending','running'].includes(image.ai_status));}
 function analysisError(code){
   const messages={provider_content_filtered:'Model từ chối phân tích ảnh do bộ lọc nội dung của nhà cung cấp. Đây không phải lỗi file. Bạn có thể gắn tag thủ công hoặc chọn một model vision khác.',provider_timeout:'Model không trả xong kết quả trong 10 giây. Ảnh không tự chạy lại.',worker_timeout:'Lượt xử lý bị gián đoạn. Ảnh không tự chạy lại.',invalid_response:'API trả kết quả không đúng định dạng gắn tag.',incomplete_response:'Model trả kết quả chưa đầy đủ.',provider_unavailable:'Không kết nối được API vision.',image_missing:'Không đọc được ảnh đã lưu.',key_decryption_failed:'Cần nhập lại key của API vision.'};
   return messages[code]||(/^provider_http_\d{3}$/.test(code||'')?`API vision trả lỗi HTTP ${code.slice(-3)}. Kiểm tra API, key và model đang chọn.`:'Chưa phân tích được ảnh. Kiểm tra API/model rồi chủ động chạy lại.');
@@ -18,6 +20,7 @@ function analysisError(code){
 function showLogin(message=''){
   state.authenticated=false;state.paused=true;clearTimeout(pollTimer);$('app').hidden=true;$('login').hidden=false;$('login-error').textContent=message;
   $('editor').close();$('confirm-delete').close();$('bulk-edit').close();$('api-settings').close();
+  $('service-keys').close();
 }
 async function api(path,options={}){
   const response=await fetch(path,{credentials:'same-origin',...options,headers:{...(options.body && !(options.body instanceof FormData)?{'content-type':'application/json'}:{}),...options.headers},signal:options.signal || AbortSignal.timeout(30000)});
@@ -27,6 +30,8 @@ async function api(path,options={}){
 }
 async function enter(session){
   session ||= await api('/v1/session');state.authenticated=true;state.maxMb=session.max_image_mb || 10;
+  state.lastStats=0;state.aiQueue=null;state.aiProgress=null;state.aiRunActive=false;state.aiResult=null;state.aiBaseline=null;
+  $('ai-progress').hidden=true;$('ai-result').hidden=true;
   state.aiAvailable=Boolean(session.ai_enabled);$('use-ai').checked=state.aiAvailable;$('use-ai').disabled=!state.aiAvailable;
   try{state.aiBatchId=sessionStorage.getItem('waku-ai-batch');}catch{}
   $('api-key').value='';$('login').hidden=true;$('app').hidden=false;$('upload-limits').textContent=`JPG, PNG, WebP, GIF, AVIF · tối đa ${state.maxMb} MB/ảnh`;
@@ -115,7 +120,7 @@ function renderGallery(){
     const checkLabel=element('label','image-select'),check=element('input');check.type='checkbox';check.checked=state.selected.has(image.id);check.disabled=state.bulkBusy||state.selectionBusy;check.setAttribute('aria-label','Chọn '+(image.title || 'ảnh'));
     check.addEventListener('change',()=>{if(check.checked)state.selected.add(image.id);else state.selected.delete(image.id);state.allSelected=false;card.classList.toggle('selected',check.checked);renderSelection();});checkLabel.append(check);card.append(checkLabel);
     const img=old?.querySelector('.thumb img') || element('img');if(!img.src)img.src=new URL('/media/'+encodeURIComponent(image.id),location.origin).href;img.alt=image.title || 'Ảnh trong thư viện';img.loading='lazy';img.decoding='async';thumb.append(img);
-    thumb.append(element('span','rating-label '+image.rating,image.rating==='safe'?'An toàn':image.rating==='r18'?'R18':'Chờ phân loại'));
+    const classified=isClassified(image);thumb.append(element('span','rating-label '+(classified?image.rating:'unknown'),classified?(image.rating==='safe'?'An toàn':'R18'):'Chờ phân loại'));
     const copy=element('span','copy-mini');copy.append(icon('link'));copy.title='Mở chi tiết để sao chép link';thumb.append(copy);thumb.addEventListener('click',()=>openEditor(image.id));
     const title=element('button','card-title',image.title || (['pending','running'].includes(image.ai_status)?'AI đang đặt tên…':'Ảnh chưa có tên'));title.type='button';title.title=image.title || '';title.addEventListener('click',()=>openEditor(image.id));
     const tags=element('div','card-tags');for(const tag of image.tags.slice(0,2))tags.append(element('span','',tag));
@@ -128,29 +133,37 @@ function renderGallery(){
 }
 $('search').addEventListener('input',()=>{clearTimeout(filterTimer);filterTimer=setTimeout(()=>{state.query=$('search').value.trim();state.selected.clear();state.allSelected=false;loadImages(true);},300);});
 document.querySelectorAll('[data-rating]').forEach(button=>button.addEventListener('click',()=>changeFilter(button.dataset.rating)));
-$('reveal-r18').addEventListener('change',()=>{$('gallery').classList.toggle('reveal',$('reveal-r18').checked);});
+$('reveal-r18').addEventListener('click',()=>{const reveal=$('gallery').classList.toggle('reveal');$('reveal-r18').setAttribute('aria-pressed',String(reveal));$('reveal-r18').textContent=reveal?'Ẩn R18':'Hiện R18';});
 $('load-more').addEventListener('click',()=>loadImages(false,true));$('refresh').addEventListener('click',()=>{loadImages(true);refreshStats(false,true);});
 function applyFilters(){
   state.selected.clear();state.allSelected=false;$('filter-count').textContent=state.filterTags.size+state.filterTypes.size || '';loadImages(true);
 }
 async function loadTags(){
-  const data=await api('/v1/filters?q='+encodeURIComponent($('filter-tag-search').value.trim()));state.tagsLoaded=Date.now();
-  const list=$('filter-tags');list.replaceChildren();
-  for(const item of data.tags){const label=element('label'),check=element('input');check.type='checkbox';check.value=item.tag;check.checked=state.filterTags.has(item.tag);
-    check.addEventListener('change',()=>{if(check.checked&&state.filterTags.size>=30){check.checked=false;toast('Chọn tối đa 30 tag.');return;}if(check.checked)state.filterTags.add(item.tag);else state.filterTags.delete(item.tag);applyFilters();});
-    label.append(check,document.createTextNode(item.tag),element('small','',number(item.count)));list.append(label);
-  }
-  if(!data.tags.length)list.append(element('p','', 'Chưa có tag phù hợp.'));
+  const query=$('filter-tag-search').value.trim(),data=await api('/v1/filters?q='+encodeURIComponent(query));if(query!==$('filter-tag-search').value.trim())return;
+  state.tagsLoaded=Date.now();state.tagOptions=data.tags;state.tagPage=0;renderTagOptions();
 }
+function renderTagOptions(){
+  const pages=Math.max(1,Math.ceil(state.tagOptions.length/5));state.tagPage=Math.min(state.tagPage,pages-1);
+  const list=$('filter-tags');list.replaceChildren();
+  for(const item of state.tagOptions.slice(state.tagPage*5,state.tagPage*5+5)){const label=element('label'),check=element('input'),name=element('span','',item.tag);name.title=item.tag;check.type='checkbox';check.value=item.tag;check.checked=state.filterTags.has(item.tag);
+    check.addEventListener('change',()=>{if(check.checked&&state.filterTags.size>=30){check.checked=false;toast('Chọn tối đa 30 tag.');return;}if(check.checked)state.filterTags.add(item.tag);else state.filterTags.delete(item.tag);applyFilters();});
+    label.append(check,name,element('small','',number(item.count)));list.append(label);
+  }
+  if(!state.tagOptions.length)list.append(element('p','', 'Chưa có tag phù hợp.'));
+  $('filter-tag-page').textContent=`${state.tagPage+1}/${pages}`;$('filter-tags-prev').disabled=state.tagPage===0;$('filter-tags-next').disabled=state.tagPage===pages-1;
+}
+$('filter-tags-prev').addEventListener('click',()=>{state.tagPage=Math.max(0,state.tagPage-1);renderTagOptions();});
+$('filter-tags-next').addEventListener('click',()=>{state.tagPage++;renderTagOptions();});
 let tagSearchTimer,filterCloseTimer,tagsBusy=false;
 function openFilter(open){
   clearTimeout(filterCloseTimer);$('filter-panel').hidden=!open;$('filter-toggle').setAttribute('aria-expanded',String(open));
+  if(open){const box=$('filter-toggle').closest('.bulk-tools').getBoundingClientRect(),height=$('filter-panel').getBoundingClientRect().height;$('filter-panel').classList.toggle('above',box.bottom+height>innerHeight-12&&box.top>height+12);}
   if(open&&!tagsBusy&&Date.now()-state.tagsLoaded>60000){tagsBusy=true;loadTags().catch(error=>toast(error.message)).finally(()=>tagsBusy=false);}
 }
 const filterAnchor=$('filter-toggle').closest('.filter-anchor');
 filterAnchor.addEventListener('pointerenter',event=>{if(event.pointerType==='mouse')openFilter(true);});
 filterAnchor.addEventListener('pointerleave',event=>{if(event.pointerType==='mouse')filterCloseTimer=setTimeout(()=>openFilter(false),120);});
-filterAnchor.addEventListener('focusout',event=>{if(!filterAnchor.contains(event.relatedTarget))openFilter(false);});
+filterAnchor.addEventListener('focusout',event=>{if(!filterAnchor.contains(event.relatedTarget)&&!filterAnchor.matches(':hover'))openFilter(false);});
 filterAnchor.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();openFilter(false);$('filter-toggle').focus();}});
 $('filter-toggle').addEventListener('click',event=>openFilter(event.detail>0&&matchMedia('(hover:hover)').matches?true:$('filter-panel').hidden));
 $('filter-tag-search').addEventListener('input',()=>{clearTimeout(tagSearchTimer);tagSearchTimer=setTimeout(()=>loadTags().catch(error=>toast(error.message)),400);});
@@ -184,21 +197,51 @@ $('select-all').addEventListener('change',async()=>{
 });
 $('clear-selection').addEventListener('click',()=>{state.selected.clear();state.allSelected=false;renderGallery();});
 function setAiBatch(id){
-  state.aiBatchId=id;state.aiProgress=null;state.aiDismissed=false;
+  state.aiBatchId=id;state.aiProgress=null;state.aiRunActive=Boolean(id);state.aiResult=null;state.aiBaseline=null;
   try{if(id)sessionStorage.setItem('waku-ai-batch',id);else sessionStorage.removeItem('waku-ai-batch');}catch{}
 }
 async function refreshAiProgress(){
   await refreshStats(true,true);
 }
 function renderAiProgress(){
-  const p=state.aiProgress||state.aiQueue,active=state.aiPending>0||state.aiEnqueueing||state.pumping&&Boolean(state.aiBatchId),paused=p?.control==='paused'||!state.aiProgress&&p?.paused>0||state.aiQueue?.control==='paused';
-  $('ai-progress').hidden=!active&&!(state.aiProgress?.total)&&(!(p?.failed||p?.cancelled)||state.aiDismissed);
-  $('dismiss-ai').disabled=active||Boolean(p?.pending||p?.running)||state.aiControlBusy;
+  const uploading=Boolean(state.aiBatchId)&&(state.pumping||state.starting);
+  const q=state.aiQueue;
+  let p=state.aiBatchId?state.aiProgress:null;
+  // A restored finished batch is history, not a task that just completed here.
+  if(p&&!p.pending&&!p.running&&!state.aiRunActive&&!state.aiEnqueueing&&!uploading){
+    state.aiBatchId=null;state.aiProgress=null;p=null;
+    try{sessionStorage.removeItem('waku-ai-batch');}catch{}
+  }
+  if(!state.aiBatchId&&q){
+    if((q.pending||q.running)&&!state.aiBaseline){
+      state.aiBaseline={done:q.done,failed:q.failed,skipped:q.skipped,cancelled:q.cancelled||0};state.aiResult=null;
+    }
+    if(state.aiBaseline){
+      p={...q};for(const key of ['done','failed','skipped','cancelled'])p[key]=Math.max(0,(q[key]||0)-state.aiBaseline[key]);
+      p.total=p.pending+p.running+p.done+p.failed+p.skipped+p.cancelled;
+    }
+  }
+  const active=Boolean(p?.pending||p?.running||state.aiEnqueueing||uploading);
+  if(active){state.aiRunActive=true;state.aiResult=null;}
+  else if(state.aiRunActive&&!state.aiControlBusy){
+    if(p?.total){
+      state.aiResult=p.failed||p.cancelled?{batchId:state.aiBatchId,progress:{...p}}:null;
+      if(!state.aiResult)toast(`AI đã xử lý xong ${number(p.total)} ảnh.`);
+    }
+    state.aiRunActive=false;state.aiBatchId=null;state.aiProgress=null;state.aiBaseline=null;
+    try{sessionStorage.removeItem('waku-ai-batch');}catch{}
+  }
+  const paused=p?.control==='paused'||!state.aiBatchId&&p?.paused>0||q?.control==='paused';
+  $('ai-progress').hidden=!active;
+  const result=state.aiResult?.progress;
+  $('ai-result').hidden=active||!result;
+  $('ai-result-summary').textContent=result?`Đợt AI đã kết thúc · ${number(result.done)} thành công${result.failed?' · '+number(result.failed)+' lỗi':''}${result.cancelled?' · '+number(result.cancelled)+' đã huỷ':''}`:'';
+  $('dismiss-ai').disabled=state.aiControlBusy;
   $('pause-ai').textContent=paused?'Tiếp tục':'Tạm dừng';$('pause-ai').disabled=state.aiControlBusy||!p?.pending&&!p?.running;
   $('cancel-ai').disabled=state.aiControlBusy||!p?.pending&&!p?.running;
-  $('retry-ai').hidden=!(p?.failed||p?.cancelled)||Boolean(p?.pending||p?.running)||state.aiEnqueueing;$('retry-ai').textContent='Chạy lại lỗi';$('retry-ai').disabled=state.aiControlBusy||!state.aiAvailable;
-  $('ai-control-note').textContent=state.aiControlBusy?'Đang cập nhật…':(state.aiProgress?'Đợt đang xem.':'Toàn bộ hàng đợi.')+(paused?' Đã tạm dừng; ảnh đang chạy có thể hoàn tất.':' Mỗi ảnh tối đa 10 giây. Ảnh lỗi không tự thử lại.');
-  const q=state.aiQueue;
+  $('retry-ai').hidden=active||!result;$('retry-ai').textContent='Chạy lại lỗi';$('retry-ai').disabled=state.aiControlBusy||!state.aiAvailable;
+  $('retry-ai').title=state.aiResult?.batchId?'Chạy lại ảnh lỗi hoặc đã huỷ của đợt này':'Chạy lại toàn bộ ảnh lỗi hoặc đã huỷ trong hàng đợi';
+  $('ai-control-note').textContent=state.aiControlBusy?'Đang cập nhật…':(state.aiBatchId?'Đợt đang xem.':'Hàng đợi đang xử lý.')+(paused?' Đã tạm dừng; ảnh đang chạy có thể hoàn tất.':' Mỗi ảnh tối đa 10 giây. Ảnh lỗi không tự thử lại.');
   if(!paused&&!state.aiControlBusy&&p?.pending&&!p?.running){
     const ready=Math.max(q?.next_attempt||0,q?.provider_ready_at||0);
     if(q?.provider_ready_at===null)$('ai-control-note').textContent+=' Cần bật API và chọn model vision để tiếp tục.';
@@ -214,19 +257,23 @@ function renderAiProgress(){
   }else{
     progress.removeAttribute('value');progress.max=1;$('ai-progress').classList.remove('has-errors');
     $('ai-summary').textContent=state.aiEnqueueing?'Đang đưa ảnh vào hàng đợi AI…':'AI đang gắn tag…';
-    $('ai-detail').textContent=state.aiPending?`${state.aiPending} ảnh đang chờ hoặc xử lý`:'Đợi ảnh tải lên để bắt đầu.';
+    $('ai-detail').textContent=state.aiEnqueueing?'Đang xếp ảnh đã chọn vào hàng đợi.':uploading?'Ảnh đã lưu sẽ được AI xử lý. Đang lấy tiến trình từ máy chủ.':'Đang lấy tiến trình xử lý…';
   }
 }
-$('dismiss-ai').addEventListener('click',()=>{setAiBatch(null);state.aiDismissed=true;renderAiProgress();});
+$('dismiss-ai').addEventListener('click',()=>{state.aiResult=null;renderAiProgress();});
 async function controlAi(action){
   if(state.aiControlBusy)return;
-  const batchId=state.aiQueue?.control==='paused'&&action==='resume'?null:state.aiBatchId;
+  const batchId=state.aiQueue?.control==='paused'&&action==='resume'?null:action==='retry'?state.aiResult?.batchId||null:state.aiBatchId;
   if(action==='cancel'&&!confirm('Huỷ các ảnh chưa xử lý xong '+(batchId?'trong đợt này':'trong hàng đợi')+'? Ảnh và tag đã lưu vẫn được giữ nguyên.'))return;
   state.aiControlBusy=true;renderAiProgress();
   try{
     const data=await api('/v1/analysis/control',{method:'POST',body:JSON.stringify({action,...(batchId?{batch_id:batchId}:{})})});
-    if(batchId===state.aiBatchId&&batchId)state.aiProgress=data.progress;else state.aiQueue=data.progress;
-    state.aiDismissed=false;state.galleryDirty=true;await refreshAiProgress();
+    if(action==='retry'){
+      if(batchId)setAiBatch(batchId);
+      else{const old=state.aiQueue;state.aiBaseline={done:old?.done||0,failed:0,skipped:old?.skipped||0,cancelled:0};state.aiResult=null;state.aiRunActive=true;}
+    }
+    if(batchId)state.aiProgress=data.progress;else state.aiQueue=data.progress;
+    state.galleryDirty=true;await refreshAiProgress();
   }catch(error){toast(error.message);}finally{state.aiControlBusy=false;renderAiProgress();schedulePoll();}
 }
 $('pause-ai').addEventListener('click',()=>controlAi($('pause-ai').dataset.action));
@@ -340,7 +387,7 @@ function renderQueue(){
   }
   const batch=state.uploadIds.size?state.queue.filter(item=>state.uploadIds.has(item.id)):state.queue;
   const saved=batch.filter(item=>item.status==='done').length,failed=batch.filter(item=>item.status==='error').length,total=batch.filter(item=>item.status!=='duplicate').length,duplicates=state.queue.filter(item=>item.status==='duplicate').length;
-  $('queue-progress').hidden=!total;$('queue-summary').textContent=`${saved}/${total} đã lưu${failed?' · '+failed+' lỗi':''}${active?' · '+active+' đang tải':''}`;$('batch-progress').max=Math.max(1,total);$('batch-progress').value=saved;
+  $('queue-progress').hidden=!total||!state.pumping&&!state.starting;$('queue-summary').textContent=`${saved}/${total} đã lưu${failed?' · '+failed+' lỗi':''}${active?' · '+active+' đang tải':''}`;$('batch-progress').max=Math.max(1,total);$('batch-progress').value=saved;
   $('duplicate-summary').hidden=!duplicates&&!state.checking;$('duplicate-summary').textContent=`${duplicates?`${duplicates} ảnh trùng đã bỏ qua. `:''}${state.checking?'Đang kiểm tra ảnh…':''}`;
   $('start-upload').disabled=!pending||state.starting||state.checking>0;$('start-upload').textContent=state.checking?'Đang kiểm tra ảnh…':state.starting?'Đang chuẩn bị…':state.pumping&&!state.paused?'Đang tải lên…':state.paused && active?'Tiếp tục tải lên':`Tải ${pending || ''} ảnh lên`.replace('  ',' ');
   $('pause-upload').hidden=!state.pumping || state.paused;$('retry-errors').hidden=!errors;
@@ -364,7 +411,7 @@ async function worker(){
         catch(error){if(error.status!==429 || attempt===7)throw error;await sleep(Math.min(10000,Math.max(2,error.retryAfter || 2)*1000));}
       }
       item.status=data.duplicate?'duplicate':'done';item.progress=100;item.duplicate=data.duplicate;item.imageId=data.image.id;item.importInfo=data.import;
-      if(state.rating==='' || state.rating==='unknown'&&(data.image.rating==='unknown'||['pending','running'].includes(data.image.ai_status)) || state.rating===data.image.rating)state.images.set(data.image.id,data.image);
+      if(state.rating==='' || state.rating==='unknown'&&!isClassified(data.image) || state.rating===data.image.rating&&isClassified(data.image))state.images.set(data.image.id,data.image);
     }catch(error){item.status='error';item.error=error.message || 'Tải ảnh chưa thành công.';}
     renderQueue();renderGallery();
   }
@@ -392,7 +439,7 @@ $('clear-done').addEventListener('click',()=>{for(const item of state.queue)if([
 window.addEventListener('beforeunload',event=>{if(state.pumping || state.queue.some(x=>x.status==='queued')){event.preventDefault();event.returnValue='';}});
 
 async function openEditor(id){
-  try{const image=state.images.get(id) || (await api('/v1/images/'+id)).image;state.editing=image;state.images.set(id,image);$('edit-preview').src='/media/'+encodeURIComponent(id);$('edit-title').value=image.title;$('edit-tags').value=image.tags.join(', ');$('edit-rating').value=image.rating;$('edit-type').value=image.image_type || '';$('edit-source').value=image.source_url || '';$('analyze-image').hidden=image.rating!=='unknown'&&!['pending','running'].includes(image.ai_status);$('analyze-image').disabled=['pending','running'].includes(image.ai_status);$('edit-meta').textContent=`${bytes(image.size)} · ${image.mime_type.replace('image/','').toUpperCase()} · ${new Date(image.created_at).toLocaleDateString('vi-VN')}${image.original_name?' · '+image.original_name:''}`;$('edit-ai-error').hidden=image.ai_status!=='failed';$('edit-ai-error').textContent=image.ai_status==='failed'?analysisError(image.ai_error):'';$('editor').showModal();}
+  try{const image=state.images.get(id) || (await api('/v1/images/'+id)).image;state.editing=image;state.images.set(id,image);$('edit-preview').src='/media/'+encodeURIComponent(id);$('edit-title').value=image.title;$('edit-tags').value=image.tags.join(', ');$('edit-rating').value=image.rating;$('edit-type').value=image.image_type || '';$('edit-source').value=image.source_url || '';$('analyze-image').hidden=isClassified(image);$('analyze-image').disabled=['pending','running'].includes(image.ai_status);$('edit-meta').textContent=`${bytes(image.size)} · ${image.mime_type.replace('image/','').toUpperCase()} · ${new Date(image.created_at).toLocaleDateString('vi-VN')}${image.original_name?' · '+image.original_name:''}`;$('edit-ai-error').hidden=image.ai_status!=='failed';$('edit-ai-error').textContent=image.ai_status==='failed'?analysisError(image.ai_error):'';$('editor').showModal();}
   catch(error){toast(error.message);}
 }
 $('editor-close').addEventListener('click',()=>$('editor').close());
@@ -402,7 +449,7 @@ $('editor').addEventListener('pointerdown',event=>outsideEditor=event.target===$
 $('editor').addEventListener('click',event=>{if(outsideEditor&&event.target===$('editor')&&editorOutside(event))$('editor').close();outsideEditor=false;});
 $('edit-form').addEventListener('submit',async event=>{
   event.preventDefault();const image=state.editing;if(!image)return;$('save-image').disabled=true;
-  try{const {image:updated}=await api('/v1/images/'+image.id,{method:'PATCH',body:JSON.stringify({title:$('edit-title').value,tags:tagList($('edit-tags').value),rating:$('edit-rating').value,image_type:$('edit-type').value || null,source_url:$('edit-source').value.trim() || null})});state.images.set(image.id,updated);state.editing=updated;state.selected.delete(image.id);renderGallery();$('editor').close();toast('Đã lưu thay đổi.');loadImages(false);refreshStats();}
+  try{const {image:updated}=await api('/v1/images/'+image.id,{method:'PATCH',body:JSON.stringify({title:$('edit-title').value,tags:tagList($('edit-tags').value),rating:$('edit-rating').value,image_type:$('edit-type').value || null,source_url:$('edit-source').value.trim() || null})});state.images.set(image.id,updated);state.editing=updated;state.selected.delete(image.id);renderGallery();$('editor').close();toast('Đã lưu thay đổi.');loadImages(false);refreshStats(false,true);}
   catch(error){toast(error.message);}finally{$('save-image').disabled=false;}
 });
 $('analyze-image').addEventListener('click',async()=>{
@@ -427,3 +474,5 @@ setupProviders({api,toast,onChange:enabled=>{
   renderQueue();renderSelection();
 }});
 api('/v1/session').then(enter).catch(()=>showLogin());
+
+setupKeys({api,toast});
