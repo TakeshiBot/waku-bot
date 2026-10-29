@@ -1,9 +1,11 @@
 import {setupProviders} from './providers.js?v=16';
 import {setupKeys} from './keys.js?v=16';
+import {GalleryThumbnails} from './gallery-cache.js?v=17';
 const $=id=>document.getElementById(id);
 const state={authenticated:false,maxMb:10,images:new Map(),cursor:null,query:'',rating:'',queue:[],pumping:false,paused:true,editing:null,listVersion:0,statsBusy:false,
   selected:new Set(),allSelected:false,selectionBusy:false,bulkBusy:false,deleteTargets:[],editTargets:[],loadedLimit:0,uploadIds:new Set(),starting:false,aiBatchId:null,aiProgress:null,aiPending:0,aiEnqueueing:false,
-  revision:null,lastStats:0,galleryDirty:false,gallerySignature:'',filterTags:new Set(),filterTypes:new Set(),tagOptions:[],tagPage:0,tagsLoaded:0,checking:0,aiAvailable:false,aiQueue:null,aiControlBusy:false,aiRunActive:false,aiResult:null,aiBaseline:null};
+  revision:null,lastStats:0,galleryDirty:false,gallerySignature:'',galleryScope:null,galleryViews:new Map(),cards:new Map(),listController:null,filterTags:new Set(),filterTypes:new Set(),tagOptions:[],tagPage:0,tagsLoaded:0,checking:0,aiAvailable:false,aiQueue:null,aiControlBusy:false,aiRunActive:false,aiResult:null,aiBaseline:null};
+const thumbnails=new GalleryThumbnails($('library-results'));
 const number=n=>new Intl.NumberFormat('vi-VN').format(n || 0);
 const bytes=n=>n>=1073741824?(n/1073741824).toFixed(1)+' GB':n>=1048576?(n/1048576).toFixed(1)+' MB':(n/1024).toFixed(0)+' KB';
 const tagList=value=>value.trim().split(/[,\n]|\s+(?=#)/).map(x=>x.trim().replace(/^#/, '')).filter(Boolean);
@@ -18,6 +20,8 @@ function analysisError(code){
   return messages[code]||(/^provider_http_\d{3}$/.test(code||'')?`API vision trả lỗi HTTP ${code.slice(-3)}. Kiểm tra API, key và model đang chọn.`:'Chưa phân tích được ảnh. Kiểm tra API/model rồi chủ động chạy lại.');
 }
 function showLogin(message=''){
+  state.listVersion++;state.listController?.abort();state.galleryViews.clear();state.galleryScope=null;
+  for(const card of state.cards.values()){const img=card.querySelector('.thumb img');if(img)thumbnails.release(img);}state.cards.clear();thumbnails.clear();$('gallery').replaceChildren();state.gallerySignature='';
   state.authenticated=false;state.paused=true;clearTimeout(pollTimer);$('app').hidden=true;$('login').hidden=false;$('login-error').textContent=message;
   $('editor').close();$('confirm-delete').close();$('bulk-edit').close();$('api-settings').close();
   $('service-keys').close();
@@ -64,44 +68,64 @@ async function refreshStats(updateGallery=false,force=false){
     for(const count of document.querySelectorAll('[data-tab-count]'))count.textContent=`(${number(stats.tabs?.[count.dataset.tabCount])})`;
     const pending=Number(stats.ai_pending)+Number(stats.uploads_pending);$('stat-pending').textContent=number(pending);$('stat-pending-note').textContent=pending?`${number(stats.ai_pending)} AI · ${number(stats.uploads_pending)} upload`:'Mọi thứ đã sẵn sàng';
     state.aiPending=Number(stats.ai_pending);state.aiQueue=stats.ai_queue;if(batchId&&batchId===state.aiBatchId){if(stats.batch)state.aiProgress=stats.batch;else setAiBatch(null);}renderAiProgress();
-    const changed=state.revision!==null&&state.revision!==stats.revision;state.revision=stats.revision;state.galleryDirty ||= changed;
+    const changed=state.revision!==null&&state.revision!==stats.revision;state.revision=stats.revision;state.galleryDirty ||= changed;if(changed)state.galleryViews.clear();
     if(updateGallery&&state.galleryDirty){await loadImages(false);state.galleryDirty=false;}
   }catch(error){if(state.authenticated)$('list-status').textContent=error.message;}
   finally{state.statsBusy=false;schedulePoll();}
 }
-async function loadImages(reset=false,more=false){
+function rememberGalleryView(){
+  if(state.galleryScope===null)return;
+  const previous=state.galleryViews.get(state.galleryScope);
+  state.galleryViews.delete(state.galleryScope);
+  state.galleryViews.set(state.galleryScope,{images:new Map(state.images),cursor:state.cursor,limit:state.loadedLimit,scroll:$('library-results').scrollTop,at:previous?.at || Date.now()});
+  while(state.galleryViews.size>8)state.galleryViews.delete(state.galleryViews.keys().next().value);
+}
+async function loadImages(reset=false,more=false,useCache=false){
   const pageSize=5*(parseInt(getComputedStyle($('gallery')).getPropertyValue('--gallery-columns'),10)||6);
-  const version=++state.listVersion,wanted=reset?pageSize:(state.loadedLimit||pageSize)+(more?pageSize:0),base=listParameters();
+  rememberGalleryView();
+  const base=listParameters(),scope=base.toString(),sameScope=scope===state.galleryScope,version=++state.listVersion;
+  state.listController?.abort();state.listController=null;
+  const cached=useCache&&!state.galleryDirty?state.galleryViews.get(scope):null;
+  if(cached&&Date.now()-cached.at<60000){
+    state.images=new Map(cached.images);state.cursor=cached.cursor;state.loadedLimit=cached.limit;state.galleryScope=scope;
+    $('list-status').textContent='';renderGallery();$('library-results').scrollTop=cached.scroll;return;
+  }
+  if(!useCache&&!more)state.galleryViews.clear();
+  const wanted=reset||!sameScope?pageSize:(state.loadedLimit||pageSize)+(more?pageSize:0),controller=new AbortController();state.listController=controller;
+  const scroll=sameScope?$('library-results').scrollTop:0;
+  if(!sameScope){state.images=new Map();state.cursor=null;state.galleryScope=null;renderGallery();}
   if(reset)$('list-status').textContent='Đang mở thư viện…';
   try{
-    const images=new Map();let cursor=null;
+    const images=more&&sameScope?new Map(state.images):new Map();let cursor=more&&sameScope?state.cursor:null;
     do{
       const params=new URLSearchParams(base);params.set('limit',String(Math.min(100,wanted-images.size)));if(cursor)params.set('before',cursor);
-      const data=await api('/v1/images?'+params);if(version!==state.listVersion)return;
+      const data=await api('/v1/images?'+params,{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(30000)])});if(version!==state.listVersion)return;
       for(const image of data.images)images.set(image.id,image);cursor=data.next;
     }while(cursor && images.size<wanted);
-    state.images=images;state.cursor=cursor;state.loadedLimit=wanted;$('list-status').textContent='';renderGallery();
-  }catch(error){if(version===state.listVersion)$('list-status').textContent=error.message;}
+    state.images=images;state.cursor=cursor;state.loadedLimit=wanted;state.galleryScope=scope;$('list-status').textContent='';renderGallery();$('library-results').scrollTop=scroll;
+    state.galleryViews.delete(scope);rememberGalleryView();
+  }catch(error){if(version===state.listVersion&&!controller.signal.aborted)$('list-status').textContent=error.message;}
+  finally{if(state.listController===controller)state.listController=null;}
 }
 function listParameters(){
   const params=new URLSearchParams();
   if(state.rating==='unknown')params.set('view','pending');
   else if(state.rating){params.set('rating',state.rating);params.set('view','classified');}
   if(state.query)params.set('q',state.query);
-  if(state.filterTags.size)params.set('tags',[...state.filterTags].join(','));
-  if(state.filterTypes.size)params.set('types',[...state.filterTypes].join(','));return params;
+  if(state.filterTags.size)params.set('tags',[...state.filterTags].sort().join(','));
+  if(state.filterTypes.size)params.set('types',[...state.filterTypes].sort().join(','));return params;
 }
 function changeFilter(rating,clearSearch=false){
   state.rating=rating;state.selected.clear();state.allSelected=false;
   if(clearSearch){state.query='';$('search').value='';clearTimeout(filterTimer);}
   document.querySelectorAll('[data-rating]').forEach(button=>{const active=button.dataset.rating===rating;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});
   setView('library');
-  loadImages(true);renderSelection();renderAiProgress();
+  loadImages(true,false,true);renderSelection();renderAiProgress();
 }
 function renderGallery(){
   const signature=JSON.stringify([[...state.images.values()],[...state.selected],state.bulkBusy,state.selectionBusy,state.cursor,state.rating,state.query,[...state.uploadIds],state.queue.map(x=>[x.id,x.status]),[...state.filterTags],[...state.filterTypes]]);
   if(signature===state.gallerySignature){renderSelection();return;}state.gallerySignature=signature;
-  const gallery=$('gallery'),previous=new Map([...gallery.querySelectorAll('.card[data-id]')].map(card=>[card.dataset.id,card]));gallery.replaceChildren();
+  const gallery=$('gallery'),desired=[];
   const incoming=state.rating==='unknown'&&!state.query&&!state.filterTags.size&&!state.filterTypes.size?state.queue.filter(item=>state.uploadIds.has(item.id) && ['queued','uploading'].includes(item.status)):[];
   const count=state.images.size+incoming.length;$('empty').hidden=count>0;
   if(!count){$('empty').querySelector('h3').textContent=state.query || state.rating?'Chưa có ảnh phù hợp.':'Một khởi đầu mới.';$('empty').querySelector('p').textContent=state.query || state.rating?'Thử từ khóa hoặc bộ lọc khác nhé.':'Thêm những tấm ảnh đầu tiên. Phần sắp xếp, cứ để Waku lo.';}
@@ -110,16 +134,16 @@ function renderGallery(){
     const card=element('article','card pending-upload');card.dataset.uploadId=item.id;const thumb=element('div','thumb');
     if(item.preview){const img=element('img');img.src=item.preview;img.alt=item.name;img.loading='lazy';thumb.append(img);}
     const label=element('span','rating-label',item.status==='uploading'?(item.progress===100?'Đang lưu…':`Đang tải ${item.progress}%`):'Chờ tải');thumb.append(label);
-    card.append(thumb,element('div','card-title',item.name),element('div','card-tags','Chưa lưu lên máy chủ'));gallery.append(card);
+    card.append(thumb,element('div','card-title',item.name),element('div','card-tags','Chưa lưu lên máy chủ'));desired.push(card);
   }
   for(const image of [...state.images.values()].sort((a,b)=>b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))){
-    const content=JSON.stringify([image,state.selected.has(image.id),state.bulkBusy,state.selectionBusy]),old=previous.get(image.id);
-    if(old?.dataset.content===content){gallery.append(old);continue;}
+    const content=JSON.stringify(image),old=state.cards.get(image.id);
+    if(old?.dataset.content===content){state.cards.delete(image.id);state.cards.set(image.id,old);desired.push(old);continue;}
     const card=element('article','card '+image.rating+(state.selected.has(image.id)?' selected':'')),thumb=element('button','thumb');card.dataset.id=image.id;thumb.type='button';thumb.setAttribute('aria-label','Xem chi tiết '+(image.title || 'ảnh'));
     card.dataset.content=content;
     const checkLabel=element('label','image-select'),check=element('input');check.type='checkbox';check.checked=state.selected.has(image.id);check.disabled=state.bulkBusy||state.selectionBusy;check.setAttribute('aria-label','Chọn '+(image.title || 'ảnh'));
     check.addEventListener('change',()=>{if(check.checked)state.selected.add(image.id);else state.selected.delete(image.id);state.allSelected=false;card.classList.toggle('selected',check.checked);renderSelection();});checkLabel.append(check);card.append(checkLabel);
-    const img=old?.querySelector('.thumb img') || element('img');if(!img.src)img.src=new URL('/media/'+encodeURIComponent(image.id),location.origin).href;img.alt=image.title || 'Ảnh trong thư viện';img.loading='lazy';img.decoding='async';thumb.append(img);
+    const img=old?.querySelector('.thumb img') || element('img');img.alt=image.title || 'Ảnh trong thư viện';img.decoding='async';img.width=384;img.height=512;thumb.append(img);thumbnails.observe(img,image);
     const classified=isClassified(image);thumb.append(element('span','rating-label '+(classified?image.rating:'unknown'),classified?(image.rating==='safe'?'An toàn':'R18'):'Chờ phân loại'));
     const copy=element('span','copy-mini');copy.append(icon('link'));copy.title='Mở chi tiết để sao chép link';thumb.append(copy);thumb.addEventListener('click',()=>openEditor(image.id));
     const title=element('button','card-title',image.title || (['pending','running'].includes(image.ai_status)?'AI đang đặt tên…':'Ảnh chưa có tên'));title.type='button';title.title=image.title || '';title.addEventListener('click',()=>openEditor(image.id));
@@ -127,16 +151,22 @@ function renderGallery(){
     if(image.tags.length>2)tags.append(element('span','',`+${image.tags.length-2}`));
     if(['pending','running'].includes(image.ai_status))tags.append(element('span','ai-state busy','✦ AI'));
     else if(image.ai_status==='failed'){const error=element('span','ai-state',image.ai_error==='provider_content_filtered'?'AI từ chối':'AI lỗi');error.title=analysisError(image.ai_error);tags.append(error);}
-    card.append(thumb,title,tags);gallery.append(card);
+    card.append(thumb,title,tags);state.cards.delete(image.id);state.cards.set(image.id,card);desired.push(card);
   }
+  // Keep unchanged cards connected: selection, progress and pagination no longer
+  // detach every image and force the browser to decode/paint the grid again.
+  const keep=new Set(desired);for(const child of [...gallery.children])if(!keep.has(child))child.remove();
+  let position=gallery.firstChild;for(const card of desired){if(card===position)position=position.nextSibling;else gallery.insertBefore(card,position);}
+  for(const card of desired){const check=card.querySelector('.image-select input');if(check){check.checked=state.selected.has(card.dataset.id);check.disabled=state.bulkBusy||state.selectionBusy;card.classList.toggle('selected',check.checked);}}
+  for(const [id,card]of state.cards){if(state.cards.size<=120)break;if(!card.isConnected){const img=card.querySelector('.thumb img');if(img)thumbnails.release(img);state.cards.delete(id);}}
   renderSelection();
 }
-$('search').addEventListener('input',()=>{clearTimeout(filterTimer);filterTimer=setTimeout(()=>{state.query=$('search').value.trim();state.selected.clear();state.allSelected=false;loadImages(true);},300);});
+$('search').addEventListener('input',()=>{clearTimeout(filterTimer);filterTimer=setTimeout(()=>{state.query=$('search').value.trim();state.selected.clear();state.allSelected=false;loadImages(true,false,true);},300);});
 document.querySelectorAll('[data-rating]').forEach(button=>button.addEventListener('click',()=>changeFilter(button.dataset.rating)));
 $('reveal-r18').addEventListener('click',()=>{const reveal=$('gallery').classList.toggle('reveal');$('reveal-r18').setAttribute('aria-pressed',String(reveal));$('reveal-r18').textContent=reveal?'Ẩn R18':'Hiện R18';});
 $('load-more').addEventListener('click',()=>loadImages(false,true));$('refresh').addEventListener('click',()=>{loadImages(true);refreshStats(false,true);});
 function applyFilters(){
-  state.selected.clear();state.allSelected=false;$('filter-count').textContent=state.filterTags.size+state.filterTypes.size || '';loadImages(true);
+  state.selected.clear();state.allSelected=false;$('filter-count').textContent=state.filterTags.size+state.filterTypes.size || '';loadImages(true,false,true);
 }
 async function loadTags(){
   const query=$('filter-tag-search').value.trim(),data=await api('/v1/filters?q='+encodeURIComponent(query));if(query!==$('filter-tag-search').value.trim())return;
@@ -462,6 +492,8 @@ $('confirm-delete-button').addEventListener('click',async()=>{
   state.bulkBusy=true;$('confirm-delete-button').disabled=true;let next=0,done=0,failed=0;
   const remove=async()=>{while(next<ids.length){const id=ids[next++];try{
     try{await api('/v1/images/'+id,{method:'DELETE'});}catch(error){if(error.status!==404)throw error;}
+    const image=state.images.get(id);if(image)thumbnails.forget(image);
+    const card=state.cards.get(id);if(card){const img=card.querySelector('.thumb img');if(img)thumbnails.release(img);card.remove();state.cards.delete(id);}
     state.images.delete(id);state.selected.delete(id);done++;
   }catch{failed++;}state.bulkLabel=`Đã xóa ${done}/${ids.length}${failed?' · '+failed+' lỗi':''}`;$('confirm-delete-button').textContent=`Đang xóa ${done}/${ids.length}`;renderSelection();}};
   try{await Promise.all([remove(),remove()]);$('confirm-delete').close();if(state.editing&&ids.includes(state.editing.id)){$('editor').close();state.editing=null;}state.allSelected=false;await loadImages(false);refreshStats();toast(`Đã xóa ${done} ảnh${failed?'; '+failed+' ảnh lỗi, hãy thử lại.':'.'}`);}

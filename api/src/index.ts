@@ -57,7 +57,9 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     const headers=new Headers({
       'content-type':row.mime_type,'content-length':String(row.size),
       'content-disposition':`inline; filename="${row.filename}"`,
-      'etag':object.httpEtag,'cache-control':'public, max-age=3600',
+      // IDs never reuse image bytes, so previews/editor can reuse the original
+      // browser response while metadata continues to refresh independently.
+      'etag':object.httpEtag,'cache-control':'public, max-age=86400',
       'x-content-type-options':'nosniff',
     });
     if (request.headers.get('if-none-match')===object.httpEtag) {

@@ -172,6 +172,7 @@ test('upload, duplicate metadata, MIME, conditional GET, PATCH and delete',async
   assert.deepEqual(again.image.tags,['cat','cute']);
   const media=await mf.dispatchFetch(first.image.url);
   assert.equal(media.status,200);assert.equal(media.headers.get('content-type'),'image/png');
+  assert.equal(media.headers.get('cache-control'),'public, max-age=86400');
   assert.equal((await media.arrayBuffer()).byteLength,png.length+1);
   const unchanged=await mf.dispatchFetch(first.image.url,{headers:{'if-none-match':media.headers.get('etag')!}});
   assert.equal(unchanged.status,304);

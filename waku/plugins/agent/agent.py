@@ -24,6 +24,7 @@ from waku.logger import logger
 from waku.plugins.agent.localization import localized_message, tr
 from waku.services import link_parse, manyacg
 from waku.services.personality import instructions as personality_instructions
+from waku.services.telegram_images import telegram_image_context
 from waku.services.web_research import (
     prepare_search_web,
     research_instructions,
@@ -347,7 +348,13 @@ if app_config.agent and app_config.agent_chat_model:
             + "\n\n"
             + tr("output_language", locale=ctx.deps.locale or None)
             + "\n\n"
-            + group_moderation_instructions(ctx.deps.locale or app_config.lang)
+            + (
+                group_moderation_instructions(ctx.deps.locale or app_config.lang)
+                if ctx.deps.chat_id < 0
+                else ""
+            )
+            + "\n\n"
+            + await telegram_image_context(ctx.deps.chat_id)
             + "\n\n"
             + await moderation.group_moderation_context(ctx)
             + "\n\n"
