@@ -24,6 +24,7 @@ from waku.services.anime_images import (
     fetch_anime_artwork,
     image_services_notice,
     manyacg_candidates,
+    original_image_url,
     release_anime_image,
     remember_anime_image,
 )
@@ -170,7 +171,9 @@ async def _discord_sticker_contents(
         contents.append(BinaryContent(data=data, media_type=content_type))
     return summaries, contents
 
-def _discord_artwork_view(source_url: str) -> discord.ui.View:
+def _discord_artwork_view(source_url: str | None) -> discord.ui.View | None:
+    if not source_url:
+        return None
     view = discord.ui.View()
     view.add_item(discord.ui.Button(label="Chi tiết", url=source_url))
     return view
@@ -289,7 +292,7 @@ async def _send_discord_anime_photo_card(
             message,
             embed,
             picture.regular,
-            _discord_artwork_view(artwork.source_url),
+            _discord_artwork_view(original_image_url(artwork, picture)),
             spoiler=artwork.r18,
             channel=channel,
             content=None,
@@ -335,16 +338,18 @@ async def _send_discord_anime_photos(
         nonlocal sent_count
         view = discord.ui.View()
         titles = []
-        for index, (artwork, _) in enumerate(batch):
+        for index, (artwork, picture) in enumerate(batch):
             number = sent_count + index + 1
             title = discord.utils.escape_markdown(artwork.title[:70]).replace("\n", " ")
             titles.append(f"{number}. {title}")
-            view.add_item(discord.ui.Button(
-                label=f"{number}. Chi tiết", url=artwork.source_url, row=index // 5,
-            ))
+            detail_url = original_image_url(artwork, picture)
+            if detail_url:
+                view.add_item(discord.ui.Button(
+                    label=f"{number}. Chi tiết", url=detail_url, row=index // 5,
+                ))
         try:
             await destination.send(
-                content="\n".join(titles), files=files, view=view,
+                content="\n".join(titles), files=files, view=view if view.children else None,
                 reference=reference if sent_count == 0 else None,
                 allowed_mentions=discord.AllowedMentions.none(), mention_author=False,
             )

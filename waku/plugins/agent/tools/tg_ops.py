@@ -18,6 +18,7 @@ import pyrogram.errors
 from pydantic_ai import RunContext
 
 from waku.common.safe_http import DEFAULT_MAX_BYTES, UnsafeUrlError, safe_download_bytes
+from waku.common.rich_message import message_plain_text
 from waku.common.image_caption import short_image_caption
 from waku.common.telegram_photo import prepare_photo_upload
 from waku.common.telegram_runtime import prepare_telegram_output
@@ -26,6 +27,7 @@ from waku.plugins.agent.expression_policy import expression_settings
 from waku.plugins.agent.localization import tr
 from waku.plugins.agent.output import record_tool_reply, text_already_sent
 from waku.services.mirror_policy import is_raw_mirror_command
+from waku.services.image_requests import contains_r18_request
 
 from .. import datatype
 from . import block, io, send_ops, workspace
@@ -446,6 +448,14 @@ async def tg(
         return await _call_waku_extension(ctx, method, params)
     if method not in _METHODS:
         return tr("method_unknown_supported", p0=method, p1=_method_list())
+
+    # A direct R18 request must not depend on the model remembering spoiler.
+    if method in {"sendPhoto", "sendMediaGroup"} and contains_r18_request(message_plain_text(ctx.deps.message) or ""):
+        params = dict(params)
+        if method == "sendPhoto":
+            params["has_spoiler"] = True
+        elif isinstance(params.get("media"), list):
+            params["media"] = [dict(item, has_spoiler=True) if isinstance(item, dict) else item for item in params["media"]]
 
     if method == "sendReaction":
         _, enabled = await expression_settings(ctx.deps.message, ctx.deps.chat_id)

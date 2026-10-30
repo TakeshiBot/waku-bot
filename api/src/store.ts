@@ -43,6 +43,8 @@ export async function presentMany(env:Env, rows:ImageRow[], base:string) {
   const states=new Map(analysis.results.map(item=>[item.image_id,item]));
   return rows.map(row=>({
     id:row.id, url:`${base}/media/${row.id}`, filename:row.filename,
+    telegram_file_url:env.TELEGRAM_BOT_USERNAME && /^[A-Za-z0-9_]{5,32}$/.test(env.TELEGRAM_BOT_USERNAME)
+      ? `https://t.me/${env.TELEGRAM_BOT_USERNAME}?start=file_${row.id.replaceAll('-','')}` : null,
     mime_type:row.mime_type, size:row.size, sha256:row.sha256, title:row.title,
     source_url:row.source_url, rating:row.rating, image_type:row.image_type, original_name:row.original_name, tags:allTags.get(row.id) || [],
     created_at:new Date(row.created_at).toISOString(),

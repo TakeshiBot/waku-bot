@@ -17,7 +17,7 @@ before(async()=>{
   mf=new Miniflare(convertV4MiniflareOptions({
     modules:true,scriptPath:'.test/worker.mjs',compatibilityDate:'2026-07-01',
     d1Databases:['DB'],r2Buckets:['IMAGES'],
-    bindings:{API_KEY:key,TELEGRAM_WEBHOOK_SECRET:secret,TELEGRAM_BOT_TOKEN:'123456789:test',OWNER_IDS:'101',PUBLIC_BASE_URL:'https://images.example.com',MAX_IMAGE_MB:'1'},
+    bindings:{API_KEY:key,TELEGRAM_WEBHOOK_SECRET:secret,TELEGRAM_BOT_TOKEN:'123456789:test',TELEGRAM_BOT_USERNAME:'upload_test_bot',OWNER_IDS:'101',PUBLIC_BASE_URL:'https://images.example.com',MAX_IMAGE_MB:'1'},
     outboundService:async(request:Request)=>{
       const url=new URL(request.url);
       if (url.hostname==='images.example.com' && url.pathname==='/internal/jobs') return mf.dispatchFetch(url.href,{method:'POST',headers:Object.fromEntries(request.headers),body:await request.text()});
@@ -33,7 +33,7 @@ before(async()=>{
       assert.equal(url.hostname,'api.telegram.org','No external requests allowed in tests');
       if (url.pathname.includes('/file/bot')) return new MockResponse(url.pathname.includes('/bulk-')?Buffer.concat([png,Buffer.from(url.pathname)]):png);
       const method=url.pathname.split('/').at(-1)!;
-      const body=await request.json();sent.push({method,body});
+      const body=method==='sendDocument'?Object.fromEntries(await request.formData()):await request.json();sent.push({method,body});
       return MockResponse.json({ok:true,result:method==='getFile'?{file_path:`photos/${String(body.file_id).startsWith('bulk-')?body.file_id:'test'}.png`}:{message_id:100}});
     },
   }));
@@ -169,6 +169,22 @@ test('global upload semaphore admits two jobs, rejects excess and can recover an
   for(const token of claims.filter(Boolean))await releaseSlot(env,token!);
   await db.prepare("UPDATE worker_slots SET lease_until=?,token='dead' WHERE kind='upload' AND slot=1").bind(Date.now()-1).run();
   const recovered=await acquireSlot(env,'upload');assert.ok(recovered);await releaseSlot(env,recovered!);
+});
+
+test('public private deep links return the original document without granting upload access',async()=>{
+  const created=(await upload(169,'r18')).image;
+  assert.equal(created.telegram_file_url,`https://t.me/upload_test_bot?start=file_${created.id.replaceAll('-','')}`);
+  const start=sent.length,id=created.id.replaceAll('-','');
+  try{
+    const update={update_id:9917001,message:{message_id:1,chat:{id:202,type:'private'},from:{id:202},text:'/start file_'+id}};
+    assert.equal((await webhook(update)).status,200);await finished('tg:9917001');
+    const delivered=sent.slice(start).find(item=>item.method==='sendDocument');assert.ok(delivered);
+    assert.equal(Number(delivered.body.chat_id),202);assert.equal(delivered.body.disable_content_type_detection,'true');
+    assert.equal((delivered.body.document as File).size,png.length+1);
+    await webhook({update_id:9917002,message:{message_id:2,chat:{id:202,type:'private'},from:{id:202},text:'/stats'}});
+    await webhook({update_id:9917003,message:{message_id:3,chat:{id:-123,type:'supergroup'},from:{id:202},text:'/start file_'+id}});
+    const db=await mf.getD1Database('DB');assert.equal((await db.prepare("SELECT COUNT(*) n FROM telegram_jobs WHERE id IN ('tg:9917002','tg:9917003')").first())?.n,0);
+  }finally{await call('/v1/images/'+created.id,'DELETE');}
 });
 
 test('upload, duplicate metadata, MIME, conditional GET, PATCH and delete',async()=>{

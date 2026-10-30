@@ -1,6 +1,6 @@
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
-import {cf,configureWebhook,credentials,failed,root,secrets,writeSecrets,wrangler,writeConfig,localConfig} from './common.mjs';
+import {cf,configureWebhook,credentials,failed,root,secrets,writeSecrets,wrangler,writeConfig,localConfig,telegram} from './common.mjs';
 
 try {
   const creds=await credentials();
@@ -35,6 +35,7 @@ try {
   if(previous?.vars?.D1_QUOTA_SCOPE)config.vars.D1_QUOTA_SCOPE=previous.vars.D1_QUOTA_SCOPE;
   if(previous?.vars?.MIGRATION_MAINTENANCE)config.vars.MIGRATION_MAINTENANCE=previous.vars.MIGRATION_MAINTENANCE;
   config.vars.OWNER_IDS=creds.owners;
+  config.vars.TELEGRAM_BOT_USERNAME=(await telegram(creds,'getMe')).username;
   config.vars.PUBLIC_BASE_URL=`https://${config.name}.${subdomain}.workers.dev`;
   await writeConfig(config);
   if (creds.aiUrl) {

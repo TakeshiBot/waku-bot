@@ -695,30 +695,22 @@ async def _send_anime_photo_single(
 ) -> AnimePhotoResult:
     user_config = await database.get_user_config(ctx.deps.user_id)
     lang = user_config.lang
-    detail_link = (
-        f"https://t.me/{app_config.manyacg_channel}/{picture['message_id']}"
-        if picture.get("message_id")
-        else artwork["source_url"]
-    )
+    detail_link = original_image_url(artwork, picture)
+    buttons = []
+    if artwork.get("source_available", True):
+        buttons.append(pyrogram.types.InlineKeyboardButton(
+            text=i18n.t("bot.button.manyacg.original", locale=lang), url=artwork["source_url"],
+        ))
+    if detail_link:
+        buttons.append(pyrogram.types.InlineKeyboardButton(
+            text=i18n.t("bot.button.manyacg.detail", locale=lang), url=detail_link,
+        ))
     await ctx.deps.client.send_photo(
         chat_id=ctx.deps.chat_id,
         photo=photo,
         caption=f"<a href='{html.escape(artwork['source_url'], quote=True)}'>{html.escape(short_image_caption(artwork['title']))}</a>",
         parse_mode=pyrogram.enums.ParseMode.HTML,
-        reply_markup=pyrogram.types.InlineKeyboardMarkup(
-            [
-                [
-                    pyrogram.types.InlineKeyboardButton(
-                        text=i18n.t("bot.button.manyacg.detail", locale=lang),
-                        url=detail_link,
-                    ),
-                    pyrogram.types.InlineKeyboardButton(
-                        text=i18n.t("bot.button.manyacg.original", locale=lang),
-                        url=original_image_url(artwork, picture),
-                    ),
-                ]
-            ]
-        ),
+        reply_markup=pyrogram.types.InlineKeyboardMarkup([buttons]) if buttons else None,
         has_spoiler=artwork["r18"],
         reply_parameters=pyrogram.types.ReplyParameters(
             message_id=ctx.deps.message.id,

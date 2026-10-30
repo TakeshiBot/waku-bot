@@ -15,8 +15,8 @@ class TelegramError extends Error {
 }
 
 async function tg<T>(env:Env, method:string, payload:unknown):Promise<T> {
-  if (['sendPhoto','sendMessage'].includes(method)) {
-    const chat=(payload as {chat_id?:number}).chat_id;
+  if (['sendPhoto','sendMessage','sendDocument'].includes(method)) {
+    const chat=payload instanceof FormData?Number(payload.get('chat_id')):(payload as {chat_id?:number}).chat_id;
     if (chat) {
       const now=Date.now();
       const reserved=await env.DB.prepare(`INSERT INTO telegram_send_times(chat_id,next_send) VALUES (?,?)
@@ -28,7 +28,7 @@ async function tg<T>(env:Env, method:string, payload:unknown):Promise<T> {
     }
   }
   const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, {
-    method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(payload), signal:AbortSignal.timeout(15000),
+    method:'POST', ...(payload instanceof FormData?{body:payload}:{headers:{'content-type':'application/json'},body:JSON.stringify(payload)}), signal:AbortSignal.timeout(30000),
   });
   const result = await response.json<{ok:boolean;result:T;error_code?:number;parameters?:{retry_after?:number}}>();
   if (!response.ok || !result.ok) throw new TelegramError(result.error_code ?? response.status,result.parameters?.retry_after ?? 0);
@@ -45,6 +45,11 @@ const HELP = 'Gửi ảnh hoặc file ảnh gốc, hoặc dán link ảnh trực
   + 'Mỗi ảnh tối đa 10 MB mặc định. Gửi dạng file để giữ chất lượng gốc.\n'
   + '/stats — thống kê kho; /help — hướng dẫn. Chỉ tài khoản được cấp quyền dùng được bot.';
 
+function requestedFile(message:TgMessage|undefined):string|null {
+  const value=message?.text?.match(/^\/start(?:@[A-Za-z0-9_]+)?\s+file_([a-f0-9]{32})\s*$/i)?.[1];
+  return value?`${value.slice(0,8)}-${value.slice(8,12)}-${value.slice(12,16)}-${value.slice(16,20)}-${value.slice(20)}`.toLowerCase():null;
+}
+
 export async function webhook(request:Request, env:Env, ctx:ExecutionContext) {
   if (!equalSecret(request.headers.get('x-telegram-bot-api-secret-token') || '',env.TELEGRAM_WEBHOOK_SECRET)) return new Response('Forbidden',{status:403});
   const body = await boundedBody(request,1024*1024);
@@ -53,7 +58,8 @@ export async function webhook(request:Request, env:Env, ctx:ExecutionContext) {
   if (!Number.isSafeInteger(update.update_id)) throw new HttpError(400,'invalid_update','Update không hợp lệ.');
   const actor = update.callback_query?.from ?? update.message?.from;
   const message = update.callback_query?.message ?? update.message;
-  if (!actor || !owner(actor.id,env.OWNER_IDS) || !message || message.chat.type !== 'private' || message.chat.id !== actor.id) return Response.json({ok:true});
+  if (!actor || !message || message.chat.type !== 'private' || message.chat.id !== actor.id) return Response.json({ok:true});
+  if (!owner(actor.id,env.OWNER_IDS) && (update.callback_query || !requestedFile(message))) return Response.json({ok:true});
   const id = `tg:${update.update_id}`;
   await env.DB.prepare('INSERT OR IGNORE INTO telegram_jobs(id,payload,created_at) VALUES (?,?,?)')
     .bind(id,JSON.stringify({update,base:baseUrl(env,new URL(request.url).origin)}),Date.now()).run();
@@ -105,7 +111,7 @@ async function receipt(env:Env, job:TelegramJob, message:TgMessage, id:string, b
   const file = message.photo?.at(-1)?.file_id;
   let result:{message_id:number}|undefined,photo=false;
   if (file) {
-    try {result=await tg(env,'sendPhoto',{chat_id:message.chat.id,photo:file,caption:text,parse_mode:'HTML',reply_markup:controls(id,data.url,row.rating)});photo=true;}
+    try {result=await tg(env,'sendPhoto',{chat_id:message.chat.id,photo:file,caption:text,parse_mode:'HTML',has_spoiler:row.rating==='r18',reply_markup:controls(id,data.url,row.rating)});photo=true;}
     catch(error) {if (!(error instanceof TelegramError && error.status===400)) throw error;}
   }
   const sent=result ?? await tg<{message_id:number}>(env,'sendMessage',{chat_id:message.chat.id,text,parse_mode:'HTML',link_preview_options:{is_disabled:true},reply_markup:controls(id,data.url,row.rating)});
@@ -120,6 +126,20 @@ async function handle(env:Env, job:TelegramJob,analyze:boolean,hop=0) {
   const {update,base} = JSON.parse(job.payload) as {update:Update;base:string};
   const callback = update.callback_query;
   const message = callback?.message ?? update.message!;
+  const fileId=!callback&&requestedFile(message);
+  if(fileId){
+    const row=await image(env,fileId),data=await present(env,row,base);
+    if(!data.classified)throw new HttpError(404,'not_found','Ảnh không còn khả dụng.');
+    const object=await env.IMAGES.get(row.object_key);
+    if(!object)throw new HttpError(404,'not_found','Ảnh không còn khả dụng.');
+    const form=new FormData();form.set('chat_id',String(message.chat.id));
+    form.set('document',new Blob([await object.arrayBuffer()],{type:row.mime_type}),row.original_name || row.filename);
+    // Force file presentation instead of displaying the original as a photo.
+    form.set('disable_content_type_detection','true');
+    await env.DB.prepare('UPDATE telegram_jobs SET notified=1 WHERE id=?').bind(job.id).run();
+    await tg(env,'sendDocument',form);return;
+  }
+  if(!owner((callback?.from ?? message.from)?.id,env.OWNER_IDS))return;
   if (callback) {
     const match = callback.data?.match(/^(rating:(safe|r18)|delete|tags|analyze):([a-f0-9-]{36})$/);
     if (!match) return;

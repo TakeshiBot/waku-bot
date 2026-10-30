@@ -221,25 +221,21 @@ async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
         if not image_allowed(artwork.r18, image_mode):
             await message.reply(i18n.t("bot.msg.manyacg.setu_error", locale=lang))
             return
-        detail_link = artwork.source_url
+        detail_link = original_image_url(artwork, picture)
+        buttons = []
+        if artwork.source_available:
+            buttons.append(pyrogram.types.InlineKeyboardButton(
+                text=i18n.t("bot.button.manyacg.original", locale=lang), url=artwork.source_url,
+            ))
+        if detail_link:
+            buttons.append(pyrogram.types.InlineKeyboardButton(
+                text=i18n.t("bot.button.manyacg.detail", locale=lang), url=detail_link,
+            ))
         await message.reply_photo(
             photo=picture.regular,
             caption=f"<a href='{html.escape(artwork.source_url, quote=True)}'>{html.escape(short_image_caption(artwork.title))}</a>",
             parse_mode=pyrogram.enums.ParseMode.HTML,
-            reply_markup=pyrogram.types.InlineKeyboardMarkup(
-                [
-                    [
-                        pyrogram.types.InlineKeyboardButton(
-                            text=i18n.t("bot.button.manyacg.detail", locale=lang),
-                            url=detail_link,
-                        ),
-                        pyrogram.types.InlineKeyboardButton(
-                            text=i18n.t("bot.button.manyacg.original", locale=lang),
-                            url=original_image_url(artwork, picture),
-                        ),
-                    ]
-                ]
-            ),
+            reply_markup=pyrogram.types.InlineKeyboardMarkup([buttons]) if buttons else None,
             has_spoiler=artwork.r18,
         )
         await remember_anime_image(f"telegram:{chat.id}", artwork, picture)

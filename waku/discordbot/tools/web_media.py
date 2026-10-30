@@ -141,8 +141,10 @@ async def _prepare(
         data, name = photo.getvalue(), photo.name
     if len(data) > _file_limit(message):
         raise ValueError("The file exceeds this Discord server's upload limit.")
+    evidence = " ".join([item.url, item.source_url or "", item.caption, item.filename or "", getattr(message, "content", "") or ""])
     return _PreparedMedia(
-        data, name, item.caption.strip(), item.source_url, item.spoiler, item.url
+        data, name, item.caption.strip(), item.source_url,
+        item.spoiler or _contains_r18_keyword(evidence), item.url
     )
 
 
@@ -215,7 +217,9 @@ async def _send_prepared(ctx, items, as_documents: bool, requested_count: int):
             )
         if view.children:
             kwargs["view"] = view
-        if len(items) == 1 and not as_documents:
+        # An embed can expose its image independently of the attachment's
+        # spoiler, so R18 photos must remain spoiler attachments only.
+        if len(items) == 1 and not as_documents and not batch[0].spoiler:
             embed = discord.Embed(description=short_image_caption(batch[0].caption) or None, color=0x8AC5FF)
             embed.set_image(url=f"attachment://{files[0].filename}")
             kwargs["embed"] = embed

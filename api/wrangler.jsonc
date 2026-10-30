@@ -9,6 +9,7 @@
   "rules": [{"type":"Text","globs":["**/*.sql"],"fallthrough":true}],
   "vars": {
     "OWNER_IDS": "YOUR_TELEGRAM_ID",
+    "TELEGRAM_BOT_USERNAME": "",
     "PUBLIC_BASE_URL": "",
     "MAX_IMAGE_MB": "10"
   },

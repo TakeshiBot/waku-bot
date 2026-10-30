@@ -9,6 +9,7 @@ export interface Env {
   ASSETS?: Fetcher;
   API_KEY: string;
   TELEGRAM_BOT_TOKEN: string;
+  TELEGRAM_BOT_USERNAME?: string;
   TELEGRAM_WEBHOOK_SECRET: string;
   OWNER_IDS: string;
   PUBLIC_BASE_URL: string;

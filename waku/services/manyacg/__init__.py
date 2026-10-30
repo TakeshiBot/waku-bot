@@ -90,6 +90,7 @@ class Picture(BaseModel):
     file_name: str | None
     thumbnail: str
     regular: str
+    delivery_url: str | None = None
 
 
 class Artwork(BaseModel):
@@ -100,6 +101,7 @@ class Artwork(BaseModel):
     tags: list[str]
     source_url: str
     source_type: str
+    source_available: bool = True
     r18: bool
     artist: Artist
     pictures: list[Picture]

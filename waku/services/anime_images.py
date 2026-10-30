@@ -103,12 +103,13 @@ async def waku_candidates(keyword, mode):
             id=identity, width=0, height=0, index=0,
             hash=str(row.get("sha256") or identity), thumb_hash="",
             file_name=row.get("filename"), thumbnail=url, regular=url,
+            delivery_url=_web_url(row.get("telegram_file_url")),
         )
         items.append(Artwork(
             id=identity, created_at=str(row.get("created_at") or ""),
             title=str(row.get("title") or "Waku Image"), description="",
             tags=row.get("tags") or [], source_url=_web_url(row.get("source_url")) or url,
-            source_type="waku-api", r18=row["rating"] == "r18",
+            source_type="waku-api", source_available=bool(_web_url(row.get("source_url"))), r18=row["rating"] == "r18",
             artist=Artist(id="", name="", username="", uid="", type="waku-api"),
             pictures=[picture],
         ))
@@ -332,8 +333,10 @@ def _value(obj, key, default=None):
     )
 
 
-def original_image_url(artwork, picture) -> str:
-    if _value(artwork, "source_type") in {"nekos.best", "waku-api"}:
+def original_image_url(artwork, picture) -> str | None:
+    if _value(artwork, "source_type") == "waku-api":
+        return _value(picture, "delivery_url")
+    if _value(artwork, "source_type") == "nekos.best":
         return _value(picture, "regular")
     picture_id = _value(picture, "id")
     return (
