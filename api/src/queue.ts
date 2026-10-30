@@ -22,11 +22,11 @@ export async function recoverAnalysis(env:Env) {
 }
 
 export type WorkKind='upload'|'ai';
-export async function acquireSlot(env:Env,kind:WorkKind):Promise<string|null> {
+export async function acquireSlot(env:Env,kind:WorkKind,leaseMs=120000):Promise<string|null> {
   const now=Date.now(), token=crypto.randomUUID();
   const claimed=await env.DB.prepare(`UPDATE worker_slots SET token=?,lease_until=?
     WHERE kind=? AND slot=(SELECT slot FROM worker_slots WHERE kind=? AND lease_until<? ORDER BY slot LIMIT 1)
-    RETURNING token`).bind(token,now+120000,kind,kind,now).first<{token:string}>();
+    RETURNING token`).bind(token,now+leaseMs,kind,kind,now).first<{token:string}>();
   return claimed?.token || null;
 }
 export async function releaseSlot(env:Env,token:string) {

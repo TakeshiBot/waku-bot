@@ -426,18 +426,26 @@ $('add-urls').addEventListener('click',()=>{
   $('image-urls').value='';renderQueue();if(added.length)checkUploads(added);
 });
 function options(){return {tags:tagList($('upload-tags').value),rating:$('upload-rating').value,image_type:$('upload-type').value || null,manual:!$('use-ai').checked,source_url:$('upload-source').value.trim() || null};}
+const queueRows=new Map();
 function renderQueue(){
-  const list=$('queue-list');list.replaceChildren();const visible=state.queue.filter(x=>x.status!=='duplicate');$('queue-count').textContent=number(visible.length);
+  const list=$('queue-list');const visible=state.queue.filter(x=>x.status!=='duplicate');$('queue-count').textContent=number(visible.length);
   const errors=state.queue.filter(x=>x.status==='error').length,pending=state.queue.filter(x=>x.status==='queued').length,active=state.queue.filter(x=>x.status==='uploading').length;
-  if(!visible.length)list.append(element('p','queue-empty','Ảnh bạn chọn sẽ xuất hiện ở đây.'));
+  const ids=new Set(visible.map(item=>item.id));
+  for(const [id,row] of queueRows)if(!ids.has(id)){row.remove();queueRows.delete(id);}
+  const empty=list.querySelector('.queue-empty');
+  if(!visible.length){if(!empty)list.append(element('p','queue-empty','Ảnh bạn chọn sẽ xuất hiện ở đây.'));}
+  else empty?.remove();
   for(const item of visible){
-    const row=element('div','queue-item '+item.status);row.dataset.id=item.id;
-    if(item.preview){const img=element('img');img.src=item.preview;img.alt='';img.loading='lazy';row.append(img);}else{const mark=element('span','queue-file-icon');mark.append(icon('link'));row.append(mark);}
-    const text=element('div');text.append(element('strong','',item.name));
-    const description=item.status==='checking'?'Đang kiểm tra ảnh trùng…':item.status==='error'?item.error:item.status==='uploading'?(item.progress===100?'Đang lưu trên máy chủ…':`Đang tải… ${item.progress}%`):(item.file?bytes(item.file.size)+' · Chờ tải':item.link?.source?'Link '+item.link.source+' · Ưu tiên ảnh gốc':'Link ảnh · Chờ tải');
-    text.append(element('small','',description));
-    if(item.status==='uploading'){const progress=element('progress');progress.max=100;progress.value=item.progress;text.append(progress);}
-    const remove=element('button','','×');remove.type='button';remove.setAttribute('aria-label','Bỏ '+item.name+' khỏi hàng đợi');remove.disabled=item.status==='uploading';remove.addEventListener('click',()=>{state.queue=state.queue.filter(x=>x!==item);if(item.preview)URL.revokeObjectURL(item.preview);renderQueue();});row.append(text,remove);list.append(row);
+    let row=queueRows.get(item.id);
+    if(!row){
+      row=element('div');row.dataset.id=item.id;
+      if(item.preview){const img=element('img');img.src=item.preview;img.alt='';img.loading='lazy';row.append(img);}else{const mark=element('span','queue-file-icon');mark.append(icon('link'));row.append(mark);}
+      const text=element('div');text.append(element('strong','',item.name),element('small'));const progress=element('progress');progress.max=100;text.append(progress);
+      const remove=element('button','','×');remove.type='button';remove.setAttribute('aria-label','Bỏ '+item.name+' khỏi hàng đợi');remove.addEventListener('click',()=>{state.queue=state.queue.filter(x=>x!==item);if(item.preview)URL.revokeObjectURL(item.preview);renderQueue();});row.append(text,remove);queueRows.set(item.id,row);list.append(row);
+    }
+    const className='queue-item '+item.status;if(row.className!==className)row.className=className;
+    const description=item.status==='checking'?'Đang kiểm tra ảnh trùng…':item.status==='error'?item.error:item.status==='uploading'?(item.waiting?'Đang chờ lượt tải…':item.progress===100?'Đang lưu trên máy chủ…':`Đang tải… ${item.progress}%`):(item.file?bytes(item.file.size)+' · Chờ tải':item.link?.source?'Link '+item.link.source+' · Ưu tiên ảnh gốc':'Link ảnh · Chờ tải');
+    const label=row.querySelector('small');if(label.textContent!==description)label.textContent=description;const progress=row.querySelector('progress');progress.hidden=item.status!=='uploading'||Boolean(item.waiting);progress.value=item.progress;row.querySelector('button').disabled=item.status==='uploading';
   }
   const queued=new Map(state.queue.map(item=>[item.id,item.status]));
   const batch=state.uploadIds.size?[...state.uploadIds].map(id=>state.uploadResults.get(id)||queued.get(id)).filter(Boolean):[...queued.values()];
@@ -452,9 +460,10 @@ function fileUpload(item){
   return new Promise((resolve,reject)=>{
     const xhr=new XMLHttpRequest();xhr.open('POST','/v1/images');xhr.responseType='json';xhr.timeout=90000;
     xhr.upload.onprogress=event=>{if(event.lengthComputable){item.progress=Math.round(event.loaded/event.total*100);const row=$('queue-list').querySelector(`[data-id="${item.id}"]`);if(row){row.querySelector('small').textContent=item.progress===100?'Đang lưu trên máy chủ…':`Đang gửi… ${item.progress}%`;row.querySelector('progress').value=item.progress;}}};
-    xhr.onload=()=>{if(xhr.status>=200&&xhr.status<300)resolve(xhr.response);else{const error=new Error(xhr.response?.error?.message || 'Tải ảnh chưa thành công.');error.status=xhr.status;error.code=xhr.response?.error?.code;error.retryAfter=Number(xhr.getResponseHeader('retry-after')) || 2;if(xhr.status===401)showLogin('Phiên đã hết hạn. Vui lòng đăng nhập lại.');pauseForQuota(error);reject(error);}};
+    xhr.onload=()=>{if(xhr.status>=200&&xhr.status<300)resolve(xhr.response);else{const error=new Error(xhr.response?.error?.message || (xhr.status?`Tải ảnh chưa thành công (HTTP ${xhr.status}).`:'Không nhận được phản hồi từ máy chủ.'));error.status=xhr.status;error.code=xhr.response?.error?.code;error.retryAfter=Number(xhr.getResponseHeader('retry-after')) || 2;if(xhr.status===401)showLogin('Phiên đã hết hạn. Vui lòng đăng nhập lại.');pauseForQuota(error);reject(error);}};
     xhr.onerror=()=>reject(new Error('Mất kết nối. Bấm thử lại khi mạng ổn định.'));xhr.ontimeout=()=>reject(new Error('Quá thời gian chờ. Bạn có thể thử lại file này.'));
-    const form=new FormData();form.set('file',item.file,item.file.name);form.set('tags',item.options.tags.join(','));form.set('rating',item.options.rating);if(item.options.image_type)form.set('image_type',item.options.image_type);form.set('manual',String(item.options.manual));if(item.options.batch_id)form.set('batch_id',item.options.batch_id);if(item.options.source_url)form.set('source_url',item.options.source_url);xhr.send(form);
+    const metadata={...item.options,tags:item.options.tags.join(','),filename:item.file.name};
+    xhr.setRequestHeader('content-type','application/octet-stream');xhr.setRequestHeader('x-waku-upload-metadata',encodeURIComponent(JSON.stringify(metadata)));xhr.send(item.file);
   });
 }
 async function worker(){
@@ -462,12 +471,26 @@ async function worker(){
     const item=state.queue.find(x=>x.status==='queued');if(!item)return;item.options??=structuredClone(state.activeOptions || options());state.uploadIds.add(item.id);item.status='uploading';item.progress=0;renderQueue();renderGallery();
     try{
       if(item.retryAfter){await sleep(Math.min(30000,Math.max(2,item.retryAfter)*1000));item.retryAfter=0;if(state.paused||!state.authenticated){item.status='queued';renderQueue();return;}}
-      const data=item.file?await fileUpload(item):await api('/v1/images',{method:'POST',body:JSON.stringify({url:item.url,...item.options,source_url:item.options.source_url || item.url})});
+      let data,busySince=0,busyAttempts=0;
+      while(true){
+        try{data=item.file?await fileUpload(item):await api('/v1/images',{method:'POST',body:JSON.stringify({url:item.url,...item.options,source_url:item.options.source_url || item.url})});break;}
+        catch(error){
+          // The API has not accepted the file when its upload slots are busy.
+          // Waiting for a slot is not a failed upload attempt.
+          if(error.status!==429||error.code!=='busy'||state.paused||!state.authenticated)throw error;
+          busySince ||= Date.now();if(Date.now()-busySince>=150000)throw error;
+          const delay=Math.min(10000,Math.max(2,error.retryAfter||2)*1000*2**Math.min(busyAttempts++,2))+Math.random()*500;
+          item.waiting=true;renderQueue();
+          for(let waited=0;waited<delay&&!state.paused&&state.authenticated;waited+=1000)await sleep(Math.min(1000,delay-waited));
+          item.waiting=false;if(state.paused||!state.authenticated){item.status='queued';renderQueue();return;}renderQueue();
+        }
+      }
       state.uploadResults.set(item.id,data.duplicate?'duplicate':'done');
       state.queue=state.queue.filter(queued=>queued!==item);if(item.preview)URL.revokeObjectURL(item.preview);
       if(state.rating==='' || state.rating==='unknown'&&!isClassified(data.image) || state.rating===data.image.rating&&isClassified(data.image))state.images.set(data.image.id,data.image);
     }catch(error){item.status='error';item.error=error.message || 'Tải ảnh chưa thành công.';item.retryAfter=error.status===429?error.retryAfter:0;}
     renderQueue();renderGallery();
+    if(!state.paused&&state.authenticated)await sleep(400);
   }
 }
 async function start(){

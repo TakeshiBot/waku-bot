@@ -162,6 +162,9 @@ test('global upload semaphore admits two jobs, rejects excess and can recover an
   const db=await mf.getD1Database('DB'),env={DB:db} as any;
   const claims=await Promise.all([acquireSlot(env,'upload'),acquireSlot(env,'upload'),acquireSlot(env,'upload')]);
   assert.equal(claims.filter(Boolean).length,2);
+  // Body validation happens before reserving a slot, so an interrupted or
+  // invalid request cannot strand a lease and block other uploaders.
+  const invalid=await call('/v1/images','POST',{});assert.equal(invalid.status,400);
   const blocked=await call('/v1/images','POST',{url:'https://cdn.example.com/a.png'});assert.equal(blocked.status,429);assert.equal(blocked.headers.get('retry-after'),'2');
   for(const token of claims.filter(Boolean))await releaseSlot(env,token!);
   await db.prepare("UPDATE worker_slots SET lease_until=?,token='dead' WHERE kind='upload' AND slot=1").bind(Date.now()-1).run();
@@ -186,6 +189,20 @@ test('upload, duplicate metadata, MIME, conditional GET, PATCH and delete',async
   assert.equal((await mf.dispatchFetch(first.image.url)).status,404);
   const bucket=await mf.getR2Bucket('IMAGES');
   assert.equal((await bucket.list()).objects.length,0);
+});
+
+test('raw browser upload preserves metadata, deduplicates and validates input',async()=>{
+  const file=Buffer.concat([png,Buffer.from('raw-browser-test')]);
+  const fields={filename:'ảnh-thử.png',manual:true,rating:'r18',image_type:'real',tags:'cosplay,cat',source_url:'https://cdn.example.com/source'};
+  const send=(bytes:Buffer,metadata:string)=>mf.dispatchFetch('https://images.example.com/v1/images',{method:'POST',headers:{authorization:`Bearer ${key}`,'content-type':'application/octet-stream','x-waku-upload-metadata':metadata},body:bytes});
+  const saved=await send(file,encodeURIComponent(JSON.stringify(fields)));assert.equal(saved.status,201);
+  const image=(await saved.json() as any).image;
+  try{
+    assert.equal(image.original_name,fields.filename);assert.equal(image.rating,'r18');assert.equal(image.image_type,'real');assert.deepEqual(image.tags,['cat','cosplay']);
+    const duplicate=await send(file,encodeURIComponent(JSON.stringify(fields)));assert.equal(duplicate.status,200);assert.equal((await duplicate.json() as any).duplicate,true);
+    assert.equal((await send(file,'%not-json')).status,400);
+    assert.equal((await send(Buffer.alloc(1048577),encodeURIComponent(JSON.stringify(fields)))).status,413);
+  }finally{await call('/v1/images/'+image.id,'DELETE');}
 });
 
 test('random albums: count 10, AND tag filtering, ratings, exclusions and pagination',async()=>{

@@ -58,6 +58,10 @@ test('large upload batches validate in one indexed lookup; queue indexes, counte
     await call('/v1/images/'+ids[0],'PATCH',{title:'Classified',tags:['anime'],rating:'safe',image_type:'anime'});
     const changed=await call('/v1/state');assert.equal((await changed.json() as any).tabs.safe,1);
     assert.equal((await call('/v1/state')).headers.get('x-waku-stats-source'),'counters');
+    const pendingPlan=(await db.prepare('EXPLAIN QUERY PLAN SELECT image_id FROM image_catalog_state WHERE classified=0').all()).results.map(row=>String(row.detail)).join(' ');
+    assert.ok(pendingPlan.includes('catalog_classified_image'),pendingPlan);
+    const pendingResponse=await call('/v1/images?view=pending&limit=100');assert.equal(pendingResponse.status,200);
+    const pendingImages=(await pendingResponse.json() as any).images;assert.ok(pendingImages.length);assert.ok(pendingImages.every((image:any)=>!image.classified));
   }finally{await mf.dispose();}
 });
 

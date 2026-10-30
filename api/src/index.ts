@@ -186,7 +186,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     const filters:string[]=[],params:(string|number)[]=[];
     const view=url.searchParams.get('view');
     if (view && !['pending','classified'].includes(view)) throw new HttpError(400,'invalid_view','Mục ảnh không hợp lệ.');
-    if (view==='pending') filters.push(`NOT ${CLASSIFIED_IMAGE_SQL}`);
+    if (view==='pending') filters.push('i.id IN (SELECT image_id FROM image_catalog_state WHERE classified=0)');
     if (view==='classified') filters.push(CLASSIFIED_IMAGE_SQL);
     const rating=url.searchParams.get('rating');
     if (rating) {
@@ -211,11 +211,25 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     return response({images:await presentMany(env,page,base),next:rows.results.length>limit && last?btoa(JSON.stringify({time:last.created_at,id:last.id})):null});
   }
   if (path==='/v1/images' && request.method==='POST') {
-    const slot=await acquireSlot(env,'upload');
-    if (!slot) return Response.json({error:{code:'busy',message:'Đang xử lý 2 ảnh. File này sẽ được thử lại sau.'}},{status:429,headers:{'retry-after':'2','cache-control':'no-store'}});
+    // Keep the operation and its slot cleanup alive if the browser disconnects
+    // mid-upload. Duplicate hashes make a later retry safe.
+    const upload=(async()=>{
+    let slot:string|null=null;
     try {
     let bytes:ArrayBuffer, info, manual=false,batchId:unknown,originalName:string|null=null,importUrl:string|null=null,download:ImageDownload|undefined;
-    if (request.headers.get('content-type')?.startsWith('multipart/form-data')) {
+    if (request.headers.get('content-type')?.startsWith('application/octet-stream')) {
+      // The web client sends image bytes directly to avoid parsing a second
+      // multipart copy on CPU-limited Workers. Legacy multipart remains valid.
+      const raw=request.headers.get('x-waku-upload-metadata') || '';
+      if(raw.length>16384)throw new HttpError(400,'invalid_metadata','Thông tin ảnh quá dài.');
+      let fields:Record<string,unknown>;
+      try{const data=JSON.parse(decodeURIComponent(raw));if(!data||typeof data!=='object'||Array.isArray(data))throw new Error();fields=data;}
+      catch{throw new HttpError(400,'invalid_metadata','Thông tin ảnh không hợp lệ.');}
+      bytes=await boundedBody(request,maxBytes(env));
+      originalName=typeof fields.filename==='string'?fields.filename:null;
+      manual=fields.manual===true;batchId=fields.batch_id;
+      info=metadata(fields);
+    } else if (request.headers.get('content-type')?.startsWith('multipart/form-data')) {
       const body=await boundedBody(request,maxBytes(env)+65536);
       let form:FormData;
       try {form=await new Response(body,{headers:{'content-type':request.headers.get('content-type')!}}).formData();}
@@ -240,13 +254,21 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
       if (typeof batchId!=='string' || !uuid.test(batchId)) throw new HttpError(400,'invalid_batch','Đợt AI không hợp lệ.');
       await getBatch(env,batchId);
     }
+    // Receiving and decoding a multipart image may exceed the Worker's CPU
+    // budget. Do that before reserving a scarce database write slot so an
+    // interrupted request cannot leave other uploads waiting on its lease.
+    slot=await acquireSlot(env,'upload',45000);
+    if (!slot) return Response.json({error:{code:'busy',message:'Đang xử lý 2 ảnh. File này sẽ được thử lại sau.'}},{status:429,headers:{'retry-after':'2','cache-control':'no-store'}});
     const result=await save(env,bytes,info,null,originalName,importUrl);
     if(download)await recordImportAliases(env,result.row.id,[download.input,download.url,...(download.used_original?[download.identity]:[])]);
     await enqueueAnalysis(env,result.row.id,manual);
     if (batchId && typeof batchId==='string') await attachBatch(env,batchId,[result.row.id]);
     background(ctx,env,()=>processAnalysis(env,result.row.id,job=>refreshAnalysisReceipt(env,job)));
     return response({image:await present(env,result.row,base),duplicate:result.duplicate,...(download?{import:{source:download.source,preferred_url:download.preferred_url,fetched_url:download.url,used_original:download.used_original,fallback_reason:download.fallback_reason}}:{})},result.duplicate?200:201);
-    } finally {await releaseSlot(env,slot);background(ctx,env,()=>continueWork(env,'upload'));}
+    } finally {if(slot){try{await releaseSlot(env,slot);}catch{console.warn('Upload slot release failed; lease will expire');}background(ctx,env,()=>continueWork(env,'upload'));}}
+    })();
+    ctx.waitUntil(upload.then(()=>undefined,()=>undefined));
+    return await upload;
   }
   const match=path.match(/^\/v1\/images\/([^/]+)$/);
   if (match && uuid.test(match[1])) {
