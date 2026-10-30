@@ -11,6 +11,7 @@ from waku.logger import logger
 from waku.plugins.agent import provider
 from waku.plugins.agent.admin_dm_context import AdminDMContextLayer
 from waku.services.personality import instructions as personality_instructions
+from waku.services.genshin_enka import genshin_instructions, get_genshin_player
 from waku.services.web_research import (
     prepare_search_web,
     research_instructions,
@@ -105,6 +106,7 @@ async def _start_discord_bot() -> None:
         capabilities=[AdminDMContextLayer()],
         tools=[
             Tool(search_web, prepare=prepare_search_web),
+            Tool(get_genshin_player, sequential=True),
             Tool(react_to_disrespect, sequential=True, prepare=prepare_personality),
             Tool(mirror_discord, sequential=True, prepare=prepare_discord_mirror),
             Tool(cancel_discord_mirror, sequential=True, prepare=prepare_discord_mirror),
@@ -275,6 +277,7 @@ async def _start_discord_bot() -> None:
             "If a Discord permission is missing, explain that briefly.\n\n"
             f"{lang_instruction}\n\n{mirror_instructions()}\n\n"
             + research_instructions("search_web") + "\n\n"
+            + genshin_instructions() + "\n\n"
             + personality_instructions(
                 "react_to_disrespect(reason=your own brief judgment)", platform="discord"
             )

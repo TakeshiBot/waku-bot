@@ -23,6 +23,7 @@ from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.agent.localization import localized_message, tr
 from waku.services import link_parse, manyacg
+from waku.services.genshin_enka import genshin_instructions, get_genshin_player
 from waku.services.personality import instructions as personality_instructions
 from waku.services.telegram_images import telegram_image_context
 from waku.services.web_research import (
@@ -265,6 +266,7 @@ if app_config.agent and app_config.agent_chat_model:
             ],
             Tool(tools.delete_chat_messages, sequential=True),
             Tool(search_web, name="websearch", prepare=prepare_search_web, sequential=True),
+            Tool(get_genshin_player, sequential=True),
             Tool(
                 tools.image_ops,
                 prepare=tools.prepare_image_tools,
@@ -367,6 +369,8 @@ if app_config.agent and app_config.agent_chat_model:
             + tools.credit_instructions()
             + "\n\n"
             + research_instructions()
+            + "\n\n"
+            + genshin_instructions()
             + "\n\n"
             + tools.message_deletion_instructions()
             + "\n\n"
