@@ -15,6 +15,7 @@
     "webhook": "node scripts/webhook.mjs",
     "db:local": "wrangler d1 migrations apply DB --local",
     "db:remote": "wrangler d1 migrations apply DB --remote",
+    "db:d1": "node scripts/return-d1.mjs",
     "logs": "wrangler tail"
   },
   "devDependencies": {

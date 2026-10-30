@@ -20,6 +20,28 @@ Timer tạo bản sao SQLite nhất quán mỗi ngày, kiểm tra tính toàn v�
 
 Khi cần khôi phục, trước tiên tạm dừng ghi và giữ nguyên bản hiện tại. Giải nén bản sao vào một nơi riêng, kiểm tra SQLite, rồi dùng `sqlite3` xuất SQL hoặc Python `sqlite3.Connection.iterdump()`. Script `scripts/import-libsql.mjs` chỉ nhập SQL vào một libSQL **trống**, yêu cầu `LIBSQL_URL` và `LIBSQL_AUTH_TOKEN` qua biến môi trường, và kiểm tra khóa ngoại. Đối chiếu nội dung trước khi chuyển Worker sang server khôi phục; không ghi đè trực tiếp file `data` đang chạy hoặc quay về D1 cũ mà không đồng bộ dữ liệu.
 
+### Chuẩn bị hoặc chuyển về D1
+
+Chạy trong thư mục `api`. Lệnh mặc định chỉ xuất một bản chụp nhất quán từ libSQL và lập danh sách kiểm tra nội dung; không đổi Worker và không tạo hay ghi vào D1:
+
+```bash
+npm run db:d1 -- --credentials ../api.txt
+```
+
+Khi thực sự muốn chuyển về D1:
+
+```bash
+npm run db:d1 -- --credentials ../api.txt --apply
+```
+
+Chế độ `--apply` kiểm tra hạn mức đọc/ghi D1 trước, tạo một database D1 mới, đưa riêng kho ảnh vào bảo trì và đợi các tác vụ đang chạy hoàn tất. Sau đó công cụ xuất bản chụp mới, nhập dữ liệu, đối chiếu SHA-256 nội dung từng bảng cùng khóa ngoại, rồi kiểm tra API D1 trong lúc vẫn khóa ghi. Chỉ khi các bước đạt mới mở API với D1. URL ảnh, R2, API key, key AI đã mã hóa và UUID được giữ nguyên. Bot Waku và các dịch vụ khác trên VPS không bị khởi động lại.
+
+D1 cũ không tự đồng bộ với VPS. Công cụ không chuyển về một bản D1 cũ khi libSQL mất kết nối. Hạn mức D1 Free áp dụng cho cả account, nên tạo database mới không vượt qua được quota; import cũng dùng rows written và đối chiếu dùng rows read. Nếu hết quota trước khi kích hoạt, công cụ dừng và mở lại backend VPS. Nếu kết nối bị gián đoạn ngay lúc kích hoạt, cấu hình local giữ D1 đã đối chiếu và công cụ yêu cầu kiểm tra/triển khai lại cấu hình đó, thay vì quay lại dữ liệu VPS có thể đã cũ.
+
+Bản SQL, manifest, cấu hình cũ và secrets được lưu riêng trong `api/.backups/` và bị Git bỏ qua. Các file này chứa dữ liệu riêng và cần bảo quản an toàn. File `.db-move.lock` ngăn hai lần chuyển chạy cùng lúc; chỉ xóa lock còn sót sau khi xác nhận tiến trình chuyển trước đã dừng.
+
+`DATABASE_BACKEND` trong cấu hình triển khai xác định backend đang dùng. Khi chọn D1, credentials libSQL được giữ để phục hồi có kiểm soát và không được gọi trong luồng bình thường. Script deploy luôn giữ đúng database D1 đã chọn, không tự nối lại database tên `waku-api` cũ. Thay đổi riêng biến backend không phải quy trình đồng bộ dữ liệu; hãy dùng công cụ chuyển ở trên.
+
 ## Dùng bot
 
 Mở DM của bot upload bằng tài khoản đã cấp quyền. Gửi một hoặc nhiều ảnh; mỗi ảnh được xử lý riêng. Gửi dạng **file ảnh** nếu muốn giữ nguyên chất lượng; ảnh gửi dạng Photo được lưu theo bản Telegram đã nén.
@@ -167,7 +189,7 @@ API upload trả ảnh ngay, có thêm `ai_status`: `pending`, `running`, `done`
 
 ### Hạn mức D1
 
-Hạn mức đọc tính theo số dòng SQLite quét, không phải số request hay dung lượng ảnh. Upload chỉ kiểm tra ID đợt, không đếm lại toàn bộ đợt mỗi ảnh. Hàng đợi dùng index cho task có thể chạy, bộ đếm trạng thái cập nhật trong cùng transaction và cache thống kê theo revision. Cron không chiếm/nhả slot upload khi không có việc.
+Hạn mức đọc tính theo số dòng SQLite quét, không phải số request hay dung lượng ảnh. Upload chỉ kiểm tra ID đợt, không đếm lại toàn bộ đợt mỗi ảnh. Migration `0012_incremental_counts.sql` giữ sẵn thống kê thư viện, tiến trình từng đợt và số lượng từng tag bằng trigger trong cùng transaction với dữ liệu nguồn. Thống kê thư viện đọc hai dòng, đếm tiến trình đợt đọc một dòng; bộ lọc tag đọc danh sách tag riêng thay vì tất cả tag gắn trên từng ảnh. Bộ đếm tăng thêm một số rows written khi dữ liệu thay đổi, đổi lại tránh quét lại cả thư viện ở mỗi lần cập nhật giao diện. Cron không chiếm/nhả slot upload khi không có việc.
 
 Migration `0011_read_efficiency.sql` bổ sung index và bộ đếm mà không sửa/xoá ảnh. Worker cũng có thể tự cài migration này trong một transaction khi gặp database cũ: nếu quota hôm nay đã chặn migration, lần truy cập/cron đầu tiên sau reset sẽ cài, không cần giữ terminal local mở.
 

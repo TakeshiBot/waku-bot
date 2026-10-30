@@ -2,6 +2,8 @@ export interface Env {
   DB: D1Database;
   LIBSQL_URL?: string;
   LIBSQL_AUTH_TOKEN?: string;
+  DATABASE_BACKEND?: 'libsql'|'d1';
+  D1_QUOTA_SCOPE?: string;
   MIGRATION_MAINTENANCE?: string;
   IMAGES: R2Bucket;
   ASSETS?: Fetcher;
@@ -31,4 +33,8 @@ export interface TelegramJob {
 }
 export class HttpError extends Error {
   constructor(public status: number, public code: string, message: string,public retryAfter?:number) { super(message); }
+}
+
+export function usesLibsql(env:Env){
+  return env.DATABASE_BACKEND==='libsql'||env.DATABASE_BACKEND!=='d1'&&Boolean(env.LIBSQL_URL);
 }

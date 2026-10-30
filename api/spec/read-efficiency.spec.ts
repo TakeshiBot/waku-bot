@@ -53,11 +53,11 @@ test('large upload batches validate in one indexed lookup; queue indexes, counte
     await db.prepare("UPDATE image_analysis SET status='pending',control='active',last_error=NULL WHERE image_id=?").bind(ids[500]).run();
     await db.prepare('DELETE FROM images WHERE id=?').bind(ids[503]).run();await compare();
     const schema=await readFile('migrations/0011_read_efficiency.sql','utf8');await db.batch(migrationStatements(schema).map(sql=>db.prepare(sql)));await compare();
-    const cold=await call('/v1/state');assert.equal(cold.status,200);assert.equal(cold.headers.get('x-waku-stats-cache'),'miss');
-    const hot=await call('/v1/state');assert.equal(hot.headers.get('x-waku-stats-cache'),'hit');
+    const cold=await call('/v1/state');assert.equal(cold.status,200);assert.equal(cold.headers.get('x-waku-stats-source'),'counters');
+    const hot=await call('/v1/state');assert.equal(hot.headers.get('x-waku-stats-source'),'counters');
     await call('/v1/images/'+ids[0],'PATCH',{title:'Classified',tags:['anime'],rating:'safe',image_type:'anime'});
-    const changed=await call('/v1/state');assert.equal(changed.headers.get('x-waku-stats-cache'),'miss');assert.equal((await changed.json() as any).tabs.safe,1);
-    assert.equal((await call('/v1/state')).headers.get('x-waku-stats-cache'),'hit');
+    const changed=await call('/v1/state');assert.equal((await changed.json() as any).tabs.safe,1);
+    assert.equal((await call('/v1/state')).headers.get('x-waku-stats-source'),'counters');
   }finally{await mf.dispose();}
 });
 

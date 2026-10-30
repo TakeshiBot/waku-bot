@@ -11,3 +11,6 @@ wrangler.local.json
 /vps/backups/
 /vps/*.pem
 /vps/tunnel-token
+/.backups/
+/wrangler.db-move.json
+/.db-move.lock

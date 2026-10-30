@@ -5,13 +5,19 @@ import {cf,configureWebhook,credentials,failed,root,secrets,writeSecrets,wrangle
 try {
   const creds=await credentials();
   const values=await secrets();
-  const libsql=Boolean(values.LIBSQL_URL && values.LIBSQL_AUTH_TOKEN);
-  if(Boolean(values.LIBSQL_URL)!==Boolean(values.LIBSQL_AUTH_TOKEN)) throw new Error('Thiếu URL hoặc token libSQL.');
+  let previous;
+  try{previous=JSON.parse(await readFile(localConfig,'utf8'));}catch(error){if(error.code!=='ENOENT')throw error;}
+  const backend=previous?.vars?.DATABASE_BACKEND || (values.LIBSQL_URL?'libsql':'d1');
+  if(!['libsql','d1'].includes(backend))throw new Error('Không nhận diện được database đang dùng.');
+  const libsql=backend==='libsql';
+  if(libsql&&(!values.LIBSQL_URL||!values.LIBSQL_AUTH_TOKEN)) throw new Error('Thiếu URL hoặc token libSQL.');
   console.log('Kiểm tra Cloudflare và tạo tài nguyên nếu chưa có...');
   let db;
   if(!libsql){
     const databases=await cf(creds,'/d1/database?per_page=100');
-    db=databases.find(db=>db.name==='waku-api');
+    const current=previous?.d1_databases?.find(db=>db.binding==='DB')?.database_id;
+    db=current?databases.find(db=>db.uuid===current):databases.find(db=>db.name==='waku-api');
+    if(current&&!db)throw new Error('Không tìm thấy D1 đang cấu hình; dừng để tránh nối nhầm bản dữ liệu cũ.');
     if (!db) db=await cf(creds,'/d1/database','POST',{name:'waku-api'});
   }
   const result=await cf(creds,'/r2/buckets?per_page=1000');
@@ -23,14 +29,11 @@ try {
   if(db)config.d1_databases[0].database_id=db.uuid;
   else {
     // Keep the existing D1 binding available for rollback without querying it.
-    try {
-      const previous=JSON.parse(await readFile(localConfig,'utf8'));
-      config.d1_databases=previous.d1_databases;
-    } catch(error) {
-      if(error.code!=='ENOENT')throw error;
-      config.d1_databases=[];
-    }
+    config.d1_databases=previous?.d1_databases || [];
   }
+  config.vars.DATABASE_BACKEND=backend;
+  if(previous?.vars?.D1_QUOTA_SCOPE)config.vars.D1_QUOTA_SCOPE=previous.vars.D1_QUOTA_SCOPE;
+  if(previous?.vars?.MIGRATION_MAINTENANCE)config.vars.MIGRATION_MAINTENANCE=previous.vars.MIGRATION_MAINTENANCE;
   config.vars.OWNER_IDS=creds.owners;
   config.vars.PUBLIC_BASE_URL=`https://${config.name}.${subdomain}.workers.dev`;
   await writeConfig(config);

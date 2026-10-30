@@ -2,7 +2,7 @@ import { boundedBody, equalSecret, downloadImage, metadata, tags,publicUrl,type 
 import { choose, image, maxBytes, present, presentMany, remove, save, update,recordImportAliases,libraryChanged,CLASSIFIED_IMAGE_SQL } from './store';
 import { processJobs, refreshAnalysisReceipt, webhook } from './telegram';
 import {aiEnabled,enqueueAnalysis,processAnalysis} from './analysis';
-import { HttpError, type Env, type ImageRow } from './types';
+import { HttpError, usesLibsql, type Env, type ImageRow } from './types';
 import {authorize,sessionCookie,clearSession} from './auth';
 import {acquireSlot,releaseSlot,continueWork} from './queue';
 import {attachBatch,batchProgress,getBatch,createBatch,stopPendingAnalysis,controlAnalysis,queueProgress} from './batches';
@@ -32,6 +32,7 @@ function response(data:unknown, status=200) {
   return Response.json(data,{status,headers:{'cache-control':'no-store','x-content-type-options':'nosniff'}});
 }
 function background(ctx:ExecutionContext,env:Env,work:()=>Promise<unknown>){
+  if(env.MIGRATION_MAINTENANCE==='1')return;
   ctx.waitUntil(protectD1(env,async()=>{await ensureReadEfficiency(env);await work();}));
 }
 async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Response> {
@@ -87,7 +88,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
   }
   if (path==='/v1/session') {
     if (request.method==='POST') return Response.json({ok:true},{headers:{'set-cookie':await sessionCookie(env),'cache-control':'no-store'}});
-    if (request.method==='GET') return response({ok:true,max_image_mb:maxBytes(env)/1024/1024,concurrency:2,ai_enabled:await aiEnabled(env),database:env.LIBSQL_URL?'libsql':'d1'});
+    if (request.method==='GET') return response({ok:true,max_image_mb:maxBytes(env)/1024/1024,concurrency:2,ai_enabled:await aiEnabled(env),database:usesLibsql(env)?'libsql':'d1'});
     if (request.method==='DELETE') return Response.json({ok:true},{headers:{'set-cookie':clearSession(),'cache-control':'no-store'}});
   }
   if (path==='/v1/analysis-batches' && request.method==='POST') {
@@ -122,7 +123,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     return response({accepted:true});
   }
   if ((path==='/v1/stats' || path==='/v1/state') && request.method==='GET') {
-    const {counts,revision,cacheHit}=await libraryState(env);
+    const {counts,revision}=await libraryState(env);
     const {classified_safe,classified_r18,pending:pendingCount,...images}=counts!;
     const tabs={all:images.total,safe:classified_safe,r18:classified_r18,pending:pendingCount};
     const ai=await queueProgress(env);
@@ -130,11 +131,11 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     let batch=null;const batchId=url.searchParams.get('batch');
     if(batchId && uuid.test(batchId))try{batch=await batchProgress(env,batchId);}catch(error){if(!(error instanceof HttpError && error.status===404))throw error;}
     const result=response({images,tabs,ai_pending:Number(ai.pending)+Number(ai.running),uploads_pending:uploads?.pending || 0,revision,batch,ai_queue:ai});
-    result.headers.set('x-waku-stats-cache',cacheHit?'hit':'miss');return result;
+    result.headers.set('x-waku-stats-source','counters');return result;
   }
   if(path==='/v1/filters' && request.method==='GET') {
     const query=(url.searchParams.get('q') || '').slice(0,64).toLowerCase();
-    const rows=await env.DB.prepare("SELECT tag,COUNT(*) count FROM image_tags WHERE instr(tag,?)>0 GROUP BY tag ORDER BY tag LIMIT 1000").bind(query).all();
+    const rows=await env.DB.prepare("SELECT tag,n count FROM tag_totals WHERE n>0 AND instr(tag,?)>0 ORDER BY tag LIMIT 1000").bind(query).all();
     return response({tags:rows.results});
   }
   if(path==='/v1/images/duplicates' && request.method==='POST') {
@@ -277,7 +278,8 @@ export default {
       if(env.MIGRATION_MAINTENANCE==='1'){
         const path=new URL(request.url).pathname;
         if(path==='/health')return response({ok:true,service:'waku-api',maintenance:true});
-        if(path.startsWith('/v1/')||path.startsWith('/media/')||path==='/internal/jobs'||path==='/telegram/webhook'){
+        const probe=['GET','HEAD'].includes(request.method)&&Boolean(env.API_KEY)&&equalSecret(request.headers.get('x-waku-maintenance-probe')||'',env.API_KEY);
+        if(!probe&&(path.startsWith('/v1/')||path.startsWith('/media/')||path==='/internal/jobs'||path==='/telegram/webhook')){
           return Response.json({error:{code:'maintenance',message:'Kho ảnh đang chuyển dữ liệu, vui lòng thử lại sau.'}},{status:503,headers:{'retry-after':'60','cache-control':'no-store'}});
         }
       }

@@ -8,13 +8,8 @@ export async function getBatch(env:Env,id:string) {
 }
 export async function batchProgress(env:Env,id:string) {
   const batch=await getBatch(env,id);
-  const counts=await env.DB.prepare(`SELECT COUNT(*) total,
-    COALESCE(SUM(b.status='pending'),0) pending,COALESCE(SUM(b.status='running'),0) running,
-    COALESCE(SUM(b.status='done'),0) done,COALESCE(SUM(b.status='failed'),0) failed,
-    COALESCE(SUM(b.status='skipped' AND COALESCE(a.last_error,'')!='cancelled'),0) skipped,
-    COALESCE(SUM(b.status='skipped' AND a.last_error='cancelled'),0) cancelled,
-    COALESCE(SUM(b.status='pending' AND a.control='paused'),0) paused
-    FROM analysis_batch_items b LEFT JOIN image_analysis a ON a.image_id=b.image_id WHERE batch_id=?`)
+  const counts=await env.DB.prepare(`SELECT total,pending,running,done,failed,skipped,cancelled,paused
+    FROM analysis_batch_counts WHERE batch_id=?`)
     .bind(id).first<{total:number;pending:number;running:number;done:number;failed:number;skipped:number;cancelled:number;paused:number}>();
   return {id,control:batch.control,...counts!};
 }

@@ -61,7 +61,7 @@ export async function secrets() {
 }
 export async function writeSecrets(values) {await writeFile(secretPath,JSON.stringify(values,null,2)+'\n',{mode:0o600});}
 
-export async function wrangler(creds,args,input) {
+export async function wrangler(creds,args,input,options={}) {
   // Secrets are passed through stdin/env, never command arguments or log text.
   const child=spawn(process.execPath,[path.join(root,'node_modules/wrangler/bin/wrangler.js'),...args],{
     cwd:root,env:{...process.env,CLOUDFLARE_API_TOKEN:creds.token,CLOUDFLARE_ACCOUNT_ID:creds.account,CI:'true',WRANGLER_SEND_METRICS:'false'},
@@ -73,8 +73,8 @@ export async function wrangler(creds,args,input) {
     for (const value of [creds.token,creds.bot,creds.aiKey,input,...inputValues]) if (value) message=message.split(value).join('[REDACTED]');
     return message.replace(/\b\d{8,12}:[A-Za-z0-9_-]{30,}/g,'[BOT_TOKEN]');
   };
-  child.stdout.on('data',data=>process.stdout.write(redact(data)));
-  child.stderr.on('data',data=>process.stderr.write(redact(data)));
+  child.stdout.on('data',data=>{if(!options.quiet)process.stdout.write(redact(data));});
+  child.stderr.on('data',data=>{if(!options.quiet)process.stderr.write(redact(data));});
   child.stdin.end(input);
   await new Promise((resolve,reject)=>{child.on('error',()=>reject(new Error('Không khởi chạy được Wrangler.')));child.on('exit',code=>code===0?resolve():reject(new Error(`Wrangler thất bại (exit ${code}).`)));});
 }

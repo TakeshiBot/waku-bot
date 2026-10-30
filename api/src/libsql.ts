@@ -1,5 +1,5 @@
 import {createClient, type Client, type InValue, type ResultSet} from '@libsql/client/web';
-import {HttpError, type Env} from './types';
+import {HttpError, usesLibsql, type Env} from './types';
 
 function databaseError(error:unknown):never {
   const e=error as {code?:string;name?:string;message?:string};
@@ -39,8 +39,8 @@ export class LibsqlDatabase {
   }
 }
 export function withDatabase(env:Env):Env{
-  if(!env.LIBSQL_URL)return env;
-  if(!env.LIBSQL_AUTH_TOKEN)throw new Error('LibSQL authentication is not configured');
+  if(!usesLibsql(env))return env;
+  if(!env.LIBSQL_URL||!env.LIBSQL_AUTH_TOKEN)throw new Error('LibSQL authentication is not configured');
   const client=createClient({url:env.LIBSQL_URL,authToken:env.LIBSQL_AUTH_TOKEN,
     fetch:(input:RequestInfo|URL,init?:RequestInit)=>fetch(input,{...init,signal:init?.signal?AbortSignal.any([init.signal,AbortSignal.timeout(15000)]):AbortSignal.timeout(15000)})});
   return {...env,DB:new LibsqlDatabase(client) as unknown as D1Database};
