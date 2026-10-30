@@ -38,7 +38,7 @@ function pauseForQuota(error){
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4000);}
 function element(tag,className,text){const el=document.createElement(tag);if(className)el.className=className;if(text!==undefined)el.textContent=text;return el;}
 function icon(name){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');const use=document.createElementNS(svg.namespaceURI,'use');use.setAttribute('href','#i-'+name);svg.append(use);return svg;}
-function isClassified(image){return image.classified??Boolean(image.title?.trim()&&image.tags?.some(tag=>tag.trim())&&['safe','r18'].includes(image.rating)&&['anime','real'].includes(image.image_type)&&!['pending','running'].includes(image.ai_status));}
+function isClassified(image){return image.classified??Boolean(image.title?.trim()&&image.tags?.some(tag=>tag.trim())&&['safe','r18'].includes(image.rating)&&['anime','real'].includes(image.image_type));}
 function analysisError(code){
   const messages={provider_content_filtered:'Model từ chối phân tích ảnh do bộ lọc nội dung của nhà cung cấp. Đây không phải lỗi file. Bạn có thể gắn tag thủ công hoặc chọn một model vision khác.',provider_timeout:'Model không trả xong kết quả trong 10 giây. Ảnh không tự chạy lại.',worker_timeout:'Lượt xử lý bị gián đoạn. Ảnh không tự chạy lại.',invalid_response:'API trả kết quả không đúng định dạng gắn tag.',incomplete_response:'Model trả thiếu tên, tag, phân loại Safe/R18 hoặc kiểu ảnh. Lượt này chưa hoàn tất; bạn có thể chạy lại hoặc sửa thủ công.',classification_unresolved:'AI chưa xác định được Safe/R18 từ ảnh. Lượt này chưa hoàn tất; bạn có thể chạy lại hoặc chọn phân loại thủ công. Hệ thống không tự đoán.',provider_unavailable:'Không kết nối được API vision.',image_missing:'Không đọc được ảnh đã lưu.',key_decryption_failed:'Cần nhập lại key của API vision.'};
   return messages[code]||(/^provider_http_\d{3}$/.test(code||'')?`API vision trả lỗi HTTP ${code.slice(-3)}. Kiểm tra API, key và model đang chọn.`:'Chưa phân tích được ảnh. Kiểm tra API/model rồi chủ động chạy lại.');
@@ -53,7 +53,7 @@ function showLogin(message=''){
 }
 async function api(path,options={}){
   const response=await fetch(path,{credentials:'same-origin',...options,headers:{...(options.body && !(options.body instanceof FormData)?{'content-type':'application/json'}:{}),...options.headers},signal:options.signal || AbortSignal.timeout(30000)});
-  let data;try{data=await response.json();}catch{throw new Error('Máy chủ chưa phản hồi đúng. Hãy thử lại sau.');}
+  let data;try{data=await response.json();}catch{data={};}
   if(!response.ok){if(response.status===401 && state.authenticated)showLogin('Phiên đăng nhập đã hết hạn. Vui lòng nhập lại key.');const error=new Error(data.error?.message || 'Chưa thực hiện được thao tác.');error.status=response.status;error.code=data.error?.code;error.retryAfter=Number(response.headers.get('retry-after')) || 2;pauseForQuota(error);throw error;}
   return data;
 }
@@ -450,7 +450,7 @@ function renderQueue(){
   const queued=new Map(state.queue.map(item=>[item.id,item.status]));
   const batch=state.uploadIds.size?[...state.uploadIds].map(id=>state.uploadResults.get(id)||queued.get(id)).filter(Boolean):[...queued.values()];
   const saved=batch.filter(status=>status==='done').length,failed=batch.filter(status=>status==='error').length,total=batch.filter(status=>status!=='duplicate').length,duplicates=state.queue.filter(item=>item.status==='duplicate').length+[...state.uploadResults.values()].filter(status=>status==='duplicate').length;
-  $('queue-progress').hidden=!total||!state.pumping&&!state.starting;$('queue-summary').textContent=`${saved}/${total} đã lưu${failed?' · '+failed+' lỗi':''}${active?' · '+active+' đang tải':''}`;$('batch-progress').max=Math.max(1,total);$('batch-progress').value=saved;
+  $('queue-progress').hidden=!total||!state.pumping&&!state.starting;$('queue-summary').textContent=`${saved}/${total} đã lưu${failed?' · '+failed+' lỗi':''}${active?' · '+active+' đang tải':''}${state.uploadRecovery?.failures?' · Đang chờ dịch vụ phục hồi':''}`;$('batch-progress').max=Math.max(1,total);$('batch-progress').value=saved;
   $('duplicate-summary').hidden=!duplicates&&!state.checking;$('duplicate-summary').textContent=`${duplicates?`${duplicates} ảnh trùng đã bỏ qua. `:''}${state.checking?'Đang kiểm tra ảnh…':''}`;
   $('start-upload').disabled=!pending||state.starting||state.checking>0;$('start-upload').textContent=state.checking?'Đang kiểm tra ảnh…':state.starting?'Đang chuẩn bị…':state.pumping&&!state.paused?'Đang tải lên…':state.paused && active?'Tiếp tục tải lên':`Tải ${pending || ''} ảnh lên`.replace('  ',' ');
   $('pause-upload').hidden=!state.pumping || state.paused;$('retry-errors').hidden=!errors||state.pumping;
@@ -467,14 +467,43 @@ function fileUpload(item){
   });
 }
 async function worker(){
+  // A service outage affects the whole queue, not each individual image.
+  // Share one recovery gate between both workers and allow only one probe.
+  const recovery=state.uploadRecovery ||= {failures:0,nextAt:0,probing:false};
   while(!state.paused && state.authenticated){
     const item=state.queue.find(x=>x.status==='queued');if(!item)return;item.options??=structuredClone(state.activeOptions || options());state.uploadIds.add(item.id);item.status='uploading';item.progress=0;renderQueue();renderGallery();
     try{
       if(item.retryAfter){await sleep(Math.min(30000,Math.max(2,item.retryAfter)*1000));item.retryAfter=0;if(state.paused||!state.authenticated){item.status='queued';renderQueue();return;}}
       let data,busySince=0,busyAttempts=0;
       while(true){
-        try{data=item.file?await fileUpload(item):await api('/v1/images',{method:'POST',body:JSON.stringify({url:item.url,...item.options,source_url:item.options.source_url || item.url})});break;}
+        let probe=false;
+        while(recovery.failures&&!state.paused&&state.authenticated){
+          item.waiting=true;renderQueue();
+          const remaining=recovery.nextAt-Date.now();
+          if(remaining>0){await sleep(Math.min(1000,remaining));continue;}
+          if(recovery.probing){await sleep(500);continue;}
+          recovery.probing=true;probe=true;break;
+        }
+        if(state.paused||!state.authenticated){item.status='queued';item.waiting=false;renderQueue();return;}
+        item.waiting=false;
+        try{
+          data=item.file?await fileUpload(item):await api('/v1/images',{method:'POST',body:JSON.stringify({url:item.url,...item.options,source_url:item.options.source_url || item.url})});
+          if(probe){recovery.failures=0;recovery.nextAt=0;recovery.probing=false;}
+          break;
+        }
         catch(error){
+          if(probe)recovery.probing=false;
+          const transient=error.code!=='d1_daily_limit'&&(error.status===429&&error.code!=='busy'||[500,502,503,504,520,521,522,523,524].includes(error.status));
+          if(transient&&(state.paused||!state.authenticated)){item.status='queued';item.waiting=false;renderQueue();return;}
+          if(transient&&!state.paused&&state.authenticated){
+            recovery.failures++;
+            if(recovery.failures>=6){
+              state.paused=true;item.status='queued';item.waiting=false;
+              toast('Dịch vụ vẫn chưa phục hồi. Đã tạm dừng và giữ ảnh chờ; bấm tiếp tục để thử lại.');renderQueue();return;
+            }
+            const delay=Math.max((error.retryAfter||0)*1000,Math.min(120000,5000*2**(recovery.failures-1)))+Math.random()*1000;
+            recovery.nextAt=Math.max(recovery.nextAt,Date.now()+delay);item.waiting=true;renderQueue();continue;
+          }
           // The API has not accepted the file when its upload slots are busy.
           // Waiting for a slot is not a failed upload attempt.
           if(error.status!==429||error.code!=='busy'||state.paused||!state.authenticated)throw error;
@@ -506,6 +535,7 @@ async function start(){
       selected.batch_id=state.aiBatchId;
     }else if(!resume)setAiBatch(null);
     state.activeOptions=selected;for(const item of state.queue)if(item.status==='queued')item.options=structuredClone(selected);
+    if(state.uploadRecovery?.failures>=6)state.uploadRecovery={failures:0,nextAt:0,probing:false};
     state.paused=false;state.starting=false;if(state.pumping){renderQueue();return;}state.pumping=true;ownsWorkers=true;renderQueue();renderAiProgress();schedulePoll();
     await Promise.all([worker(),worker()]);
     // Retry only failures from this batch, once, after every original upload

@@ -57,6 +57,14 @@ test('large upload batches validate in one indexed lookup; queue indexes, counte
     const hot=await call('/v1/state');assert.equal(hot.headers.get('x-waku-stats-source'),'counters');
     await call('/v1/images/'+ids[0],'PATCH',{title:'Classified',tags:['anime'],rating:'safe',image_type:'anime'});
     const changed=await call('/v1/state');assert.equal((await changed.json() as any).tabs.safe,1);
+    await db.prepare("UPDATE image_analysis SET status='pending' WHERE image_id=?").bind(ids[0]).run();
+    const reanalysing=await call('/v1/images?view=classified&rating=safe');
+    const saved=(await reanalysing.json() as any).images.find((image:any)=>image.id===ids[0]);
+    assert.equal(saved?.classified,true);assert.equal(saved?.ai_status,'pending');
+    const inPending=(await (await call('/v1/images?view=pending&limit=100')).json() as any).images;
+    assert.ok(!inPending.some((image:any)=>image.id===ids[0]));
+    const counts=await db.prepare('SELECT classified_safe,pending FROM library_counts WHERE id=1').first();
+    assert.equal(counts?.classified_safe,1);assert.equal(counts?.pending,1998);
     assert.equal((await call('/v1/state')).headers.get('x-waku-stats-source'),'counters');
     const pendingPlan=(await db.prepare('EXPLAIN QUERY PLAN SELECT image_id FROM image_catalog_state WHERE classified=0').all()).results.map(row=>String(row.detail)).join(' ');
     assert.ok(pendingPlan.includes('catalog_classified_image'),pendingPlan);

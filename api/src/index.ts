@@ -208,7 +208,12 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     const rows=await env.DB.prepare(`SELECT i.* FROM images i ${filters.length?'WHERE '+filters.join(' AND '):''} ORDER BY i.created_at DESC,i.id DESC LIMIT ?`)
       .bind(...params,limit+1).all<ImageRow>();
     const page=rows.results.slice(0,limit), last=page.at(-1);
-    return response({images:await presentMany(env,page,base),next:rows.results.length>limit && last?btoa(JSON.stringify({time:last.created_at,id:last.id})):null});
+    // Analysis may finish between selecting IDs and fetching their metadata.
+    // Recheck the final state to avoid showing a newly classified image in the
+    // pending view during that race; pagination still advances over the IDs.
+    const presented=await presentMany(env,page,base);
+    const visible=view==='pending'?presented.filter(image=>!image.classified):view==='classified'?presented.filter(image=>image.classified):presented;
+    return response({images:visible,next:rows.results.length>limit && last?btoa(JSON.stringify({time:last.created_at,id:last.id})):null});
   }
   if (path==='/v1/images' && request.method==='POST') {
     // Keep the operation and its slot cleanup alive if the browser disconnects

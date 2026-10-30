@@ -1,12 +1,10 @@
 import { imageType } from './input';
 import { HttpError, type Env, type ImageRow, type Metadata } from './types';
 
-// Shared by tab lists and counts. Manual metadata is sufficient too, but an
-// unfinished AI pass stays in Pending until it releases the image.
+// Classification follows saved metadata, including when AI is reanalysing it.
 export const CLASSIFIED_IMAGE_SQL=`(length(trim(i.title))>0 AND i.rating IN ('safe','r18')
   AND COALESCE(i.image_type,'') IN ('anime','real')
-  AND EXISTS(SELECT 1 FROM image_tags ct WHERE ct.image_id=i.id AND length(trim(ct.tag))>0)
-  AND NOT EXISTS(SELECT 1 FROM image_analysis ca WHERE ca.image_id=i.id AND ca.status IN ('pending','running')))`;
+  AND EXISTS(SELECT 1 FROM image_tags ct WHERE ct.image_id=i.id AND length(trim(ct.tag))>0))`;
 
 export function maxBytes(env: Env): number {
   return Math.min(20, Math.max(1, Number(env.MAX_IMAGE_MB) || 10)) * 1024 * 1024;
@@ -51,7 +49,7 @@ export async function presentMany(env:Env, rows:ImageRow[], base:string) {
     ai_status:states.get(row.id)?.status || 'off',
     ai_error:states.get(row.id)?.status==='failed'?safeAnalysisError(states.get(row.id)?.last_error):null,
     classified:Boolean(row.title.trim()&&['safe','r18'].includes(row.rating)&&['anime','real'].includes(row.image_type||'')
-      &&(allTags.get(row.id)||[]).some(tag=>tag.trim())&&!['pending','running'].includes(states.get(row.id)?.status||'')),
+      &&(allTags.get(row.id)||[]).some(tag=>tag.trim())),
   }));
 }
 
