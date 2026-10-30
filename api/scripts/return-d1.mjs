@@ -2,9 +2,10 @@ import {createClient} from '@libsql/client/web';
 import {copyFile,mkdir,open,readFile,unlink,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {credentials,cf,wrangler,localConfig,root,secrets} from './common.mjs';
-import {exportDatabase,verifyDatabase} from './db-transfer.mjs';
+import {exportDatabase,verifyDatabase,buildIncrementalDump} from './db-transfer.mjs';
 
 const apply=process.argv.includes('--apply');
+const reuse=process.argv.includes('--reuse-existing');
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const scratch=path.join(root,'wrangler.db-move.json');
 const lockPath=path.join(root,'.db-move.lock');
@@ -65,7 +66,12 @@ try{
     await probe(base,values.API_KEY,'libsql',false);
     const oldD1=original.d1_databases?.find(db=>db.binding==='DB');
     if(oldD1?.database_id)await cf(creds,'/d1/database/'+oldD1.database_id+'/query','POST',{sql:'SELECT name FROM sqlite_master LIMIT 1'});
-    target=await cf(creds,'/d1/database','POST',{name:'waku-api-restore-'+stamp.slice(0,19).toLowerCase()});
+    if(reuse){
+      if(!oldD1?.database_id||!oldD1.database_name)throw new Error('Missing existing D1 destination');
+      target={uuid:oldD1.database_id,name:oldD1.database_name};
+      console.log('Backing up the inactive D1 database...');
+      await wrangler(creds,['d1','export','DB','--remote','--output',path.join(directory,'previous-d1.sql'),'--config',localConfig],undefined,{quiet:true});
+    }else target=await cf(creds,'/d1/database','POST',{name:'waku-api-restore-'+stamp.slice(0,19).toLowerCase()});
     // Test both read and write availability BEFORE putting the live API in maintenance.
     await d1Execute('CREATE TABLE _waku_transfer_probe(id INTEGER PRIMARY KEY)');
     await d1Execute('INSERT INTO _waku_transfer_probe VALUES (1)');
@@ -90,8 +96,18 @@ try{
     const staged=structuredClone(held);
     staged.d1_databases=[{binding:'DB',database_name:target.name,database_id:target.uuid,migrations_dir:'migrations'}];
     await writeFile(scratch,JSON.stringify(staged,null,2)+'\n',{mode:0o600});
-    console.log('Importing into a new D1 database; source data is retained...');
-    await wrangler(creds,['d1','execute','DB','--remote','--file',snapshot.dumpPath,'--config',scratch],undefined,{quiet:true});
+    let dumpPath=snapshot.dumpPath;
+    if(reuse){
+      console.log('Comparing the source with the inactive D1 snapshot...');
+      const delta=await buildIncrementalDump(client,d1Execute,snapshot.manifest,directory);
+      dumpPath=delta.dumpPath;
+      console.log('Changed rows:',JSON.stringify(delta.changes));
+    }
+    console.log('Importing into D1; source data is retained...');
+    await wrangler(creds,['d1','execute','DB','--remote','--file',dumpPath,'--config',scratch],undefined,{quiet:true});
+    await d1Execute('CREATE TABLE _waku_transfer_probe(id INTEGER PRIMARY KEY)');
+    await d1Execute('INSERT INTO _waku_transfer_probe VALUES (1)');
+    await d1Execute('DROP TABLE _waku_transfer_probe');
     const verified=await verifyDatabase(d1Execute,snapshot.manifest);await checkpoint('data-verified');
     console.log('Verified tables:',verified.tables,'Images:',verified.images);
     staged.vars.DATABASE_BACKEND='d1';staged.vars.D1_QUOTA_SCOPE=target.uuid;

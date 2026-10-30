@@ -36,7 +36,11 @@ npm run db:d1 -- --credentials ../api.txt --apply
 
 Chế độ `--apply` kiểm tra hạn mức đọc/ghi D1 trước, tạo một database D1 mới, đưa riêng kho ảnh vào bảo trì và đợi các tác vụ đang chạy hoàn tất. Sau đó công cụ xuất bản chụp mới, nhập dữ liệu, đối chiếu SHA-256 nội dung từng bảng cùng khóa ngoại, rồi kiểm tra API D1 trong lúc vẫn khóa ghi. Chỉ khi các bước đạt mới mở API với D1. URL ảnh, R2, API key, key AI đã mã hóa và UUID được giữ nguyên. Bot Waku và các dịch vụ khác trên VPS không bị khởi động lại.
 
+Nếu D1 đang được cấu hình là bản cũ không có ứng dụng nào khác ghi vào, có thể thêm `--reuse-existing` để sao lưu D1 đó rồi đồng bộ các dòng thay đổi, giảm lượt ghi. Tùy chọn này sửa database D1 cũ; không dùng khi database đó còn phục vụ ứng dụng khác. Cả bản chụp libSQL và bản sao D1 được lưu riêng trong `api/.backups` và chứa dữ liệu nhạy cảm.
+
 D1 cũ không tự đồng bộ với VPS. Công cụ không chuyển về một bản D1 cũ khi libSQL mất kết nối. Hạn mức D1 Free áp dụng cho cả account, nên tạo database mới không vượt qua được quota; import cũng dùng rows written và đối chiếu dùng rows read. Nếu hết quota trước khi kích hoạt, công cụ dừng và mở lại backend VPS. Nếu kết nối bị gián đoạn ngay lúc kích hoạt, cấu hình local giữ D1 đã đối chiếu và công cụ yêu cầu kiểm tra/triển khai lại cấu hình đó, thay vì quay lại dữ liệu VPS có thể đã cũ.
+
+Khi đang dùng D1 và muốn chuyển lại libSQL trên VPS đã cấu hình, khởi động database và Tunnel riêng trước, rồi chạy `npm run db:vps -- --credentials ../api.txt --apply`. Công cụ sao lưu bản VPS cũ, tạm ngừng ghi, sao lưu và đồng bộ D1, đối chiếu các bảng trước khi kích hoạt VPS. D1 được giữ lại nhưng sau khi chuyển sẽ không còn đồng bộ; không đổi backend thủ công để quay lại D1.
 
 Bản SQL, manifest, cấu hình cũ và secrets được lưu riêng trong `api/.backups/` và bị Git bỏ qua. Các file này chứa dữ liệu riêng và cần bảo quản an toàn. File `.db-move.lock` ngăn hai lần chuyển chạy cùng lúc; chỉ xóa lock còn sót sau khi xác nhận tiến trình chuyển trước đã dừng.
 

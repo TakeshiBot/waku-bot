@@ -6,7 +6,7 @@ import path from 'node:path';
 import {createClient} from '@libsql/client';
 import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
 import {migrationStatements} from '../src/sql.ts';
-import {exportDatabase,verifyDatabase} from '../scripts/db-transfer.mjs';
+import {exportDatabase,verifyDatabase,buildIncrementalDump} from '../scripts/db-transfer.mjs';
 
 test('libSQL snapshot restores into D1 with exact metadata, keys, counters and active triggers',async()=>{
   const source=createClient({url:'file::memory:',intMode:'bigint'});
@@ -33,4 +33,58 @@ test('libSQL snapshot restores into D1 with exact metadata, keys, counters and a
     await assert.rejects(verifyDatabase(execute,manifest),/verification failed/);
     assert.equal((await source.execute("SELECT rating FROM images WHERE id='img'")).rows[0].rating,'safe');
   }finally{source.close();await mf.dispose();await rm(dir,{recursive:true,force:true});}
+});
+
+test('incremental transfer preserves an inactive D1 and restores exact data and triggers',async()=>{
+  const source=createClient({url:'file::memory:',intMode:'bigint'});
+  const dir=await mkdtemp(path.join(tmpdir(),'waku-delta-'));
+  const mf=new Miniflare(convertV4MiniflareOptions({modules:true,scriptPath:'.test/worker.mjs',compatibilityDate:'2026-07-01',d1Databases:['DB']}));
+  try{
+    await source.execute('PRAGMA foreign_keys=ON');
+    for(const file of(await readdir('migrations')).filter(n=>n.endsWith('.sql')).sort())
+      await source.batch(migrationStatements(await readFile('migrations/'+file,'utf8')).map(sql=>({sql})));
+    await source.execute("INSERT INTO images(id,sha256,object_key,filename,mime_type,size,title,rating,random_key,created_at,image_type) VALUES ('old','hash1','obj1','a.jpg','image/jpeg',42,'old','safe',0.25,123,'anime')");
+    await source.execute("INSERT INTO image_tags VALUES ('old','anime')");
+    await source.execute("INSERT INTO image_analysis(image_id,status) VALUES ('old','done')");
+    const first:string[]=[];
+    await exportDatabase(source,path.join(dir,'before'),{onStatement:(sql:string)=>first.push(sql)});
+    const db=await mf.getD1Database('DB');
+    await db.batch(first.map(sql=>db.prepare(sql)));
+    const execute=async(stmt:any)=>{const r=await db.prepare(typeof stmt==='string'?stmt:stmt.sql).bind(...(typeof stmt==='string'?[]:stmt.args||[])).all();return {rows:r.results};};
+    await source.execute("UPDATE images SET title='new title',rating='r18' WHERE id='old'");
+    await source.execute("INSERT INTO images(id,sha256,object_key,filename,mime_type,size,title,rating,random_key,created_at,image_type) VALUES ('new','hash2','obj2','b.jpg','image/jpeg',43,'new','safe',0.5,124,'anime')");
+    await source.execute("INSERT INTO image_tags VALUES ('new','cat')");
+    await source.execute("INSERT INTO image_analysis(image_id,status) VALUES ('new','done')");
+    const {manifest}=await exportDatabase(source,path.join(dir,'after'));
+    const statements:string[]=[];
+    const delta=await buildIncrementalDump(source,execute,manifest,path.join(dir,'after'),{onStatement:(sql:string)=>statements.push(sql)});
+    assert.ok(delta.changes.inserted>0);assert.ok(delta.changes.updated>0);
+    await db.batch(statements.map(sql=>db.prepare(sql)));
+    assert.equal((await verifyDatabase(execute,manifest)).images,2);
+    await db.prepare("UPDATE images SET rating='r18' WHERE id='new'").run();
+    assert.equal((await db.prepare('SELECT classified_r18 FROM library_counts WHERE id=1').first())?.classified_r18,2);
+  }finally{source.close();await mf.dispose();await rm(dir,{recursive:true,force:true});}
+});
+
+test('D1 changes are copied back to an older libSQL database transactionally',async()=>{
+  const target=createClient({url:'file::memory:',intMode:'bigint'}),dir=await mkdtemp(path.join(tmpdir(),'waku-reverse-'));
+  const mf=new Miniflare(convertV4MiniflareOptions({modules:true,scriptPath:'.test/worker.mjs',compatibilityDate:'2026-07-01',d1Databases:['DB']}));
+  try{
+    for(const file of(await readdir('migrations')).filter(n=>n.endsWith('.sql')).sort())await target.batch(migrationStatements(await readFile('migrations/'+file,'utf8')).map(sql=>({sql})));
+    await target.execute("INSERT INTO images(id,sha256,object_key,filename,mime_type,size,title,rating,random_key,created_at,image_type) VALUES ('old','hash1','obj1','a.jpg','image/jpeg',42,'old','safe',0.25,123,'anime')");
+    const first:string[]=[];await exportDatabase(target,path.join(dir,'before'),{onStatement:(sql:string)=>first.push(sql)});
+    const db=await mf.getD1Database('DB');await db.batch(first.map(sql=>db.prepare(sql)));
+    await db.prepare("UPDATE images SET title='updated' WHERE id='old'").run();
+    await db.prepare("INSERT INTO images(id,sha256,object_key,filename,mime_type,size,title,rating,random_key,created_at,image_type) VALUES ('new','hash2','obj2','b.jpg','image/jpeg',43,'new','safe',0.5,124,'anime')").run();
+    await db.prepare("INSERT INTO image_tags VALUES ('new','anime')").run();
+    await db.prepare("INSERT INTO image_analysis(image_id,status) VALUES ('new','done')").run();
+    const execute=async(stmt:any)=>{const r=await db.prepare(typeof stmt==='string'?stmt:stmt.sql).bind(...(typeof stmt==='string'?[]:stmt.args||[])).all();return {rows:r.results};};
+    const source={transaction:async()=>({execute,commit:async()=>{},rollback:async()=>{},close:()=>{}})};
+    const {manifest}=await exportDatabase(source,path.join(dir,'d1'));
+    const delta=await buildIncrementalDump(source,(stmt:any)=>target.execute(stmt),manifest,path.join(dir,'d1'));
+    await target.executeMultiple('BEGIN IMMEDIATE;\n'+await readFile(delta.dumpPath,'utf8')+'\nCOMMIT;');
+    assert.equal((await verifyDatabase((stmt:any)=>target.execute(stmt),manifest)).images,2);
+    await target.execute("UPDATE images SET rating='r18' WHERE id='new'");
+    assert.equal(Number((await target.execute('SELECT classified_r18 FROM library_counts WHERE id=1')).rows[0].classified_r18),1);
+  }finally{target.close();await mf.dispose();await rm(dir,{recursive:true,force:true});}
 });

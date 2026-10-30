@@ -13,6 +13,7 @@ import discord
 from pydantic_ai import RunContext
 
 from waku.common.safe_http import safe_download
+from waku.common.image_caption import short_image_caption
 from waku.common.telegram_photo import prepare_photo_upload
 from waku.common.web_content import web_page_text
 from waku.config import app_config
@@ -215,7 +216,7 @@ async def _send_prepared(ctx, items, as_documents: bool, requested_count: int):
         if view.children:
             kwargs["view"] = view
         if len(items) == 1 and not as_documents:
-            embed = discord.Embed(description=batch[0].caption or None, color=0x8AC5FF)
+            embed = discord.Embed(description=short_image_caption(batch[0].caption) or None, color=0x8AC5FF)
             embed.set_image(url=f"attachment://{files[0].filename}")
             kwargs["embed"] = embed
         else:

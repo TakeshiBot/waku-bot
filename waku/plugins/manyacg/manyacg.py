@@ -9,6 +9,7 @@ from pyrogram.client import Client as PyrogramClient
 
 from waku import common, database, i18n
 from waku.common.utils import GROUP_CHAT_TYPES
+from waku.common.image_caption import short_image_caption
 from waku.config import app_config
 from waku.logger import logger
 from waku.services import aniobjcut
@@ -223,7 +224,7 @@ async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
         detail_link = artwork.source_url
         await message.reply_photo(
             photo=picture.regular,
-            caption=f"<a href='{html.escape(artwork.source_url, quote=True)}'>{html.escape(artwork.title)}</a>",
+            caption=f"<a href='{html.escape(artwork.source_url, quote=True)}'>{html.escape(short_image_caption(artwork.title))}</a>",
             parse_mode=pyrogram.enums.ParseMode.HTML,
             reply_markup=pyrogram.types.InlineKeyboardMarkup(
                 [

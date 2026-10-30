@@ -11,11 +11,13 @@ async function page(execute,table,last){
   const keys=table.keys,where=last?' WHERE ('+keys.map(quote).join(',')+')>('+keys.map(()=>'?').join(',')+')':'';
   // Serialize cells in SQLite so binary data, embedded NUL and 64-bit integers
   // survive drivers whose JS value conversion would otherwise lose precision.
-  const values=table.columns.map((name,n)=>{const c=quote(name);return `CASE WHEN typeof(${c})='text' AND instr(${c},char(0))>0 THEN 'CAST(X'''||hex(${c})||''' AS TEXT)' ELSE quote(${c}) END AS __value${n}`;});
+  // SQLite versions differ even in printf rounding; transfer real values as
+  // numbers and let the JS runtime serialize the identical IEEE value.
+  const values=table.columns.map((name,n)=>{const c=quote(name);return `CASE WHEN typeof(${c})='text' AND instr(${c},char(0))>0 THEN 'CAST(X'''||hex(${c})||''' AS TEXT)' WHEN typeof(${c})='real' THEN ${c} ELSE quote(${c}) END AS __value${n}`;});
   const sql='SELECT '+[...values,...keys.map((k,n)=>quote(k)+' AS __key'+n)].join(',')+' FROM '+quote(table.name)+where+' ORDER BY '+keys.map(quote).join(',')+' LIMIT 500';
   return (await execute({sql,args:last?last.map(argsValue):[]})).rows;
 }
-function rowText(table,row){return table.columns.map((c,n)=>row['__value'+n]).join(',');}
+function rowText(table,row){return table.columns.map((c,n)=>{const value=row['__value'+n];if(typeof value!=='number')return value;if(!Number.isFinite(value))throw new Error('Non-finite database real cannot be transferred');const text=String(value);return /[.e]/i.test(text)?text:text+'.0';}).join(',');}
 export async function exportDatabase(client,directory,{onStatement}={}){
   await mkdir(directory,{recursive:true,mode:0o700});
   const dumpPath=path.join(directory,'database.sql'),handle=await open(dumpPath,'wx',0o600);
@@ -81,4 +83,63 @@ export async function verifyDatabase(execute,manifest){
   if(mismatches.length)throw new Error('Database verification failed for '+mismatches.length+' tables');
   if((await execute('PRAGMA foreign_key_check')).rows.length)throw new Error('Destination has foreign key errors');
   return {tables:manifest.tables.length,images:manifest.tables.find(t=>t.name==='images')?.rows||0};
+}
+
+// Build an exact delta against an inactive D1 snapshot. No target writes occur
+// here; callers must back up D1 and put the live source in maintenance first.
+export async function buildIncrementalDump(client,executeTarget,manifest,directory,{onStatement}={}){
+  if(manifest.format!==1)throw new Error('Unknown database snapshot format');
+  const source=await client.transaction('read');let handle,complete=false;
+  try{
+    const schema=(await source.execute("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL AND type IN ('table','index','trigger') ORDER BY type,name")).rows;
+    const target=(await executeTarget("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL AND type IN ('table','index','trigger') ORDER BY type,name")).rows;
+    const names=new Set(manifest.tables.map(t=>t.name)),sourceTriggers=new Set(schema.filter(x=>x.type==='trigger'&&names.has(x.tbl_name)).map(x=>x.name));
+    const targetTables=new Set(target.filter(x=>x.type==='table').map(x=>x.name));
+    for(const row of target)if(row.type==='trigger'&&names.has(row.tbl_name)&&!sourceTriggers.has(row.name))throw new Error('Destination has an unexpected trigger');
+    const unknownTables=[...targetTables].filter(name=>!names.has(name)&&!/^(sqlite_|_cf_|libsql_|__)/i.test(name));
+    if(unknownTables.length)throw new Error('Destination has unexpected tables');
+    const changes=[],totals={inserted:0,updated:0,deleted:0};
+    for(const table of manifest.tables){
+      if(targetTables.has(table.name)){
+        const cols=(await executeTarget('PRAGMA table_info('+quote(table.name)+')')).rows;
+        const keys=cols.filter(c=>Number(c.pk)>0).sort((a,b)=>Number(a.pk)-Number(b.pk)).map(c=>c.name);
+        if(JSON.stringify(cols.map(c=>c.name))!==JSON.stringify(table.columns)||JSON.stringify(keys)!==JSON.stringify(table.keys))throw new Error('Destination table structure differs');
+      }
+      const readRows=async execute=>{
+        const map=new Map(),hash=createHash('sha256');let last,count=0;
+        while(true){const rows=await page(execute,table,last);if(!rows.length)break;
+          for(const row of rows){const value=rowText(table,row),key=JSON.stringify(table.keys.map(k=>row['__value'+table.columns.indexOf(k)]));
+            if(map.has(key))throw new Error('Duplicate primary key in snapshot');map.set(key,value);hash.update(value+'\n');count++;}
+          last=table.keys.map((k,n)=>rows.at(-1)['__key'+n]);
+        }
+        return {map,count,sha256:hash.digest('hex')};
+      };
+      const src=await readRows(stmt=>source.execute(stmt));
+      if(src.count!==table.rows||src.sha256!==table.sha256)throw new Error('Source changed after the snapshot');
+      const dst=targetTables.has(table.name)?await readRows(executeTarget):{map:new Map()};
+      const deleted=[...dst.map.keys()].filter(k=>!src.map.has(k)).map(k=>JSON.parse(k));
+      const upsert=[];
+      for(const [key,value] of src.map){if(dst.map.get(key)===value)continue;totals[dst.map.has(key)?'updated':'inserted']++;upsert.push(value);}
+      totals.deleted+=deleted.length;changes.push({table,deleted,upsert});
+    }
+    await source.commit();complete=true;
+    const dumpPath=path.join(directory,'database-delta.sql');handle=await open(dumpPath,'wx',0o600);
+    const emit=async sql=>{const statement=sql.replace(/;\s*$/,'');if(Buffer.byteLength(statement)>100000)throw new Error('A database row exceeds the D1 SQL statement limit');await handle.writeFile(statement+';\n');if(onStatement)onStatement(statement);};
+    await emit('PRAGMA defer_foreign_keys=ON');
+    for(const trigger of target.filter(x=>x.type==='trigger'&&names.has(x.tbl_name)))await emit('DROP TRIGGER '+quote(trigger.name));
+    for(const table of manifest.tables)if(!targetTables.has(table.name)){
+      const definition=schema.find(x=>x.type==='table'&&x.name===table.name);if(!definition)throw new Error('Missing source schema');await emit(definition.sql);
+    }
+    for(const {table,deleted} of [...changes].reverse())for(const keys of deleted)
+      await emit('DELETE FROM '+quote(table.name)+' WHERE '+table.keys.map((k,n)=>quote(k)+' IS '+keys[n]).join(' AND '));
+    for(const {table,upsert} of changes){
+      const fields=table.columns.filter(k=>!table.keys.includes(k));
+      const conflict=fields.length?'DO UPDATE SET '+fields.map(k=>quote(k)+'=excluded.'+quote(k)).join(','):'DO NOTHING';
+      for(const value of upsert)await emit('INSERT INTO '+quote(table.name)+'('+table.columns.map(quote).join(',')+') VALUES ('+value+') ON CONFLICT('+table.keys.map(quote).join(',')+') '+conflict);
+    }
+    const targetIndexes=new Set(target.filter(x=>x.type==='index').map(x=>x.name));
+    for(const index of schema.filter(x=>x.type==='index'&&names.has(x.tbl_name)&&!targetIndexes.has(x.name)))await emit(index.sql);
+    for(const trigger of schema.filter(x=>x.type==='trigger'&&names.has(x.tbl_name)))await emit(trigger.sql);
+    return {dumpPath,changes:totals};
+  }finally{if(!complete)try{await source.rollback();}catch{}source.close();await handle?.close();}
 }

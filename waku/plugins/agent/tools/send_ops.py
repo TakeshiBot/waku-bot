@@ -13,6 +13,7 @@ from pydantic_ai import ModelRetry, RunContext
 from waku import common, database, i18n
 from waku.bot.client import client
 from waku.common.rich_message import message_plain_text
+from waku.common.image_caption import short_image_caption
 from waku.common.safe_http import safe_download_bytes
 from waku.common.telegram_photo import prepare_photo_upload
 from waku.common.telegram_runtime import telegram_chat_allowed
@@ -702,7 +703,7 @@ async def _send_anime_photo_single(
     await ctx.deps.client.send_photo(
         chat_id=ctx.deps.chat_id,
         photo=photo,
-        caption=f"<a href='{html.escape(artwork['source_url'], quote=True)}'>{html.escape(artwork['title'][:200])}</a>",
+        caption=f"<a href='{html.escape(artwork['source_url'], quote=True)}'>{html.escape(short_image_caption(artwork['title']))}</a>",
         parse_mode=pyrogram.enums.ParseMode.HTML,
         reply_markup=pyrogram.types.InlineKeyboardMarkup(
             [

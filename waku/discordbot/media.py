@@ -12,6 +12,7 @@ from pydantic_ai import BinaryContent, UserContent
 
 from waku import common
 from waku.common.http import get_agent_http_client
+from waku.common.image_caption import short_image_caption
 from waku.common.safe_http import MAX_REDIRECTS, is_safe_web_url
 from waku.config import app_config
 from waku.i18n import i18n
@@ -184,6 +185,7 @@ def _discord_artwork_embed(
     index: int | None = None,
     source_type: str = "",
 ) -> discord.Embed:
+    title = short_image_caption(title)
     display_title = f"🔞 {title}" if r18 else title
     if index is not None:
         display_title = f"{display_title} ({index})"

@@ -26,7 +26,7 @@ try {
   if (!subdomain) throw new Error('Không có workers.dev subdomain. Mở Workers & Pages trong Cloudflare để thiết lập tên subdomain trước.');
   const config=JSON.parse(await readFile(path.join(root,'wrangler.jsonc'),'utf8'));
   config.account_id=creds.account;
-  if(db)config.d1_databases[0].database_id=db.uuid;
+  if(db){config.d1_databases[0].database_id=db.uuid;config.d1_databases[0].database_name=db.name;}
   else {
     // Keep the existing D1 binding available for rollback without querying it.
     config.d1_databases=previous?.d1_databases || [];

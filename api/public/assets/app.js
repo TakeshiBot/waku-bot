@@ -445,7 +445,7 @@ function renderQueue(){
   $('queue-progress').hidden=!total||!state.pumping&&!state.starting;$('queue-summary').textContent=`${saved}/${total} đã lưu${failed?' · '+failed+' lỗi':''}${active?' · '+active+' đang tải':''}`;$('batch-progress').max=Math.max(1,total);$('batch-progress').value=saved;
   $('duplicate-summary').hidden=!duplicates&&!state.checking;$('duplicate-summary').textContent=`${duplicates?`${duplicates} ảnh trùng đã bỏ qua. `:''}${state.checking?'Đang kiểm tra ảnh…':''}`;
   $('start-upload').disabled=!pending||state.starting||state.checking>0;$('start-upload').textContent=state.checking?'Đang kiểm tra ảnh…':state.starting?'Đang chuẩn bị…':state.pumping&&!state.paused?'Đang tải lên…':state.paused && active?'Tiếp tục tải lên':`Tải ${pending || ''} ảnh lên`.replace('  ',' ');
-  $('pause-upload').hidden=!state.pumping || state.paused;$('retry-errors').hidden=!errors;
+  $('pause-upload').hidden=!state.pumping || state.paused;$('retry-errors').hidden=!errors||state.pumping;
   for(const id of ['use-ai','upload-rating','upload-type','upload-tags','upload-source'])$(id).disabled=state.pumping&&!state.paused||id==='use-ai'&&!state.aiAvailable;
 }
 function fileUpload(item){
@@ -461,14 +461,12 @@ async function worker(){
   while(!state.paused && state.authenticated){
     const item=state.queue.find(x=>x.status==='queued');if(!item)return;item.options??=structuredClone(state.activeOptions || options());state.uploadIds.add(item.id);item.status='uploading';item.progress=0;renderQueue();renderGallery();
     try{
-      let data;for(let attempt=0;attempt<8;attempt++){
-        try{data=item.file?await fileUpload(item):await api('/v1/images',{method:'POST',body:JSON.stringify({url:item.url,...item.options,source_url:item.options.source_url || item.url})});break;}
-        catch(error){if(error.status!==429 || attempt===7)throw error;await sleep(Math.min(10000,Math.max(2,error.retryAfter || 2)*1000));}
-      }
+      if(item.retryAfter){await sleep(Math.min(30000,Math.max(2,item.retryAfter)*1000));item.retryAfter=0;if(state.paused||!state.authenticated){item.status='queued';renderQueue();return;}}
+      const data=item.file?await fileUpload(item):await api('/v1/images',{method:'POST',body:JSON.stringify({url:item.url,...item.options,source_url:item.options.source_url || item.url})});
       state.uploadResults.set(item.id,data.duplicate?'duplicate':'done');
       state.queue=state.queue.filter(queued=>queued!==item);if(item.preview)URL.revokeObjectURL(item.preview);
       if(state.rating==='' || state.rating==='unknown'&&!isClassified(data.image) || state.rating===data.image.rating&&isClassified(data.image))state.images.set(data.image.id,data.image);
-    }catch(error){item.status='error';item.error=error.message || 'Tải ảnh chưa thành công.';}
+    }catch(error){item.status='error';item.error=error.message || 'Tải ảnh chưa thành công.';item.retryAfter=error.status===429?error.retryAfter:0;}
     renderQueue();renderGallery();
   }
 }
@@ -487,6 +485,13 @@ async function start(){
     state.activeOptions=selected;for(const item of state.queue)if(item.status==='queued')item.options=structuredClone(selected);
     state.paused=false;state.starting=false;if(state.pumping){renderQueue();return;}state.pumping=true;ownsWorkers=true;renderQueue();renderAiProgress();schedulePoll();
     await Promise.all([worker(),worker()]);
+    // Retry only failures from this batch, once, after every original upload
+    // has finished. Validation errors and an explicitly paused queue stay put.
+    if(!state.paused&&state.authenticated){
+      const retry=state.queue.filter(item=>state.uploadIds.has(item.id)&&item.status==='error'&&!item.autoRetried&&!item.needsCheck);
+      for(const item of retry){item.autoRetried=true;item.status='queued';item.error='';item.progress=0;}
+      if(retry.length){renderQueue();await Promise.all([worker(),worker()]);}
+    }
   }catch(error){
     // Batch creation can fail before the workers start. Keep each file and show
     // the actual failure so Retry can restart it once the service is available.
@@ -497,7 +502,7 @@ async function start(){
   }finally{state.starting=false;if(ownsWorkers)state.pumping=false;renderQueue();renderGallery();refreshStats(true,true);}
 }
 $('start-upload').addEventListener('click',start);$('pause-upload').addEventListener('click',()=>{state.paused=true;renderQueue();toast('Đã tạm dừng. Các file đang tải sẽ hoàn tất trước.');});
-$('retry-errors').addEventListener('click',async()=>{const checking=[];for(const item of state.queue)if(item.status==='error'){item.status=item.needsCheck?'checking':'queued';item.error='';item.progress=0;if(item.needsCheck)checking.push(item);}if(checking.length)await checkUploads(checking);start();});
+$('retry-errors').addEventListener('click',async()=>{const checking=[];for(const item of state.queue)if(item.status==='error'){item.status=item.needsCheck?'checking':'queued';item.error='';item.progress=0;item.autoRetried=false;item.retryAfter=0;if(item.needsCheck)checking.push(item);}if(checking.length)await checkUploads(checking);start();});
 window.addEventListener('beforeunload',event=>{if(state.pumping || state.queue.some(x=>x.status==='queued')){event.preventDefault();event.returnValue='';}});
 
 async function openEditor(id){

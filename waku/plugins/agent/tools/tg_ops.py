@@ -9,6 +9,7 @@ current chat and cannot be overridden.
 from __future__ import annotations
 
 import asyncio
+import re
 from io import BytesIO
 from typing import Any
 
@@ -17,6 +18,7 @@ import pyrogram.errors
 from pydantic_ai import RunContext
 
 from waku.common.safe_http import DEFAULT_MAX_BYTES, UnsafeUrlError, safe_download_bytes
+from waku.common.image_caption import short_image_caption
 from waku.common.telegram_photo import prepare_photo_upload
 from waku.common.telegram_runtime import prepare_telegram_output
 from waku.logger import logger
@@ -456,6 +458,12 @@ async def tg(
     if error:
         return error
     assert kwargs is not None
+    if method == "sendPhoto" and isinstance(kwargs.get("caption"), str):
+        caption = kwargs["caption"]
+        # Preserve rich formatting and links; plain photo metadata can be
+        # shortened without cutting a Telegram markup entity in half.
+        if not re.search(r"[<>\[\]`*_]", caption):
+            kwargs["caption"] = short_image_caption(caption)
     reply_parameters = kwargs.get("reply_parameters")
     is_current_reply = method == "sendMessage" and (
         reply_parameters is None or reply_parameters.message_id == ctx.deps.message.id
