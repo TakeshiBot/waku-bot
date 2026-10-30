@@ -128,16 +128,24 @@ async function handle(env:Env, job:TelegramJob,analyze:boolean,hop=0) {
   const message = callback?.message ?? update.message!;
   const fileId=!callback&&requestedFile(message);
   if(fileId){
+    // If a Worker was interrupted after starting sendDocument, Telegram may
+    // already have delivered it. Do not automatically send a duplicate.
+    if(job.notified)throw new Error('delivery_ack_unknown');
+    const started=Date.now();
     const row=await image(env,fileId),data=await present(env,row,base);
     if(!data.classified)throw new HttpError(404,'not_found','Ảnh không còn khả dụng.');
+    const metadataDone=Date.now();
     const object=await env.IMAGES.get(row.object_key);
     if(!object)throw new HttpError(404,'not_found','Ảnh không còn khả dụng.');
     const form=new FormData();form.set('chat_id',String(message.chat.id));
     form.set('document',new Blob([await object.arrayBuffer()],{type:row.mime_type}),row.original_name || row.filename);
+    const objectDone=Date.now();
     // Force file presentation instead of displaying the original as a photo.
     form.set('disable_content_type_detection','true');
     await env.DB.prepare('UPDATE telegram_jobs SET notified=1 WHERE id=?').bind(job.id).run();
-    await tg(env,'sendDocument',form);return;
+    await tg(env,'sendDocument',form);
+    console.info('Document delivery timing',{queue_ms:Math.max(0,started-job.created_at),metadata_ms:metadataDone-started,r2_ms:objectDone-metadataDone,telegram_ms:Date.now()-objectDone,total_ms:Date.now()-started,size_bytes:row.size});
+    return;
   }
   if(!owner((callback?.from ?? message.from)?.id,env.OWNER_IDS))return;
   if (callback) {

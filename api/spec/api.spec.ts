@@ -184,6 +184,10 @@ test('public private deep links return the original document without granting up
     await webhook({update_id:9917002,message:{message_id:2,chat:{id:202,type:'private'},from:{id:202},text:'/stats'}});
     await webhook({update_id:9917003,message:{message_id:3,chat:{id:-123,type:'supergroup'},from:{id:202},text:'/start file_'+id}});
     const db=await mf.getD1Database('DB');assert.equal((await db.prepare("SELECT COUNT(*) n FROM telegram_jobs WHERE id IN ('tg:9917002','tg:9917003')").first())?.n,0);
+    const retry={update_id:9917004,message:{message_id:4,chat:{id:202,type:'private'},from:{id:202},text:'/start file_'+id}};
+    await db.prepare('INSERT INTO telegram_jobs(id,payload,created_at,notified) VALUES (?,?,?,1)').bind('tg:9917004',JSON.stringify({update:retry,base:'https://images.example.com'}),Date.now()).run();
+    const beforeRetry=sent.length;await webhook(retry);await finished('tg:9917004');
+    assert.equal(sent.slice(beforeRetry).filter(item=>item.method==='sendDocument').length,0);
   }finally{await call('/v1/images/'+created.id,'DELETE');}
 });
 
