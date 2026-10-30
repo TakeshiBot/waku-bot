@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#111719"><meta name="color-scheme" content="dark"><meta name="description" content="Kho ảnh riêng của Waku. Tải nhiều ảnh, tự gắn tag và quản lý thư viện.">
-  <title>Kho ảnh · Waku</title><link rel="icon" type="image/jpeg" href="/assets/waku.jpg"><link rel="apple-touch-icon" href="/assets/waku.jpg"><link rel="stylesheet" href="/assets/app.css?v=17">
-  <script type="module" src="/assets/app.js?v=22"></script>
+  <title>Kho ảnh · Waku</title><link rel="icon" type="image/jpeg" href="/assets/waku.jpg"><link rel="apple-touch-icon" href="/assets/waku.jpg"><link rel="stylesheet" href="/assets/app.css?v=18">
+  <script type="module" src="/assets/app.js?v=23"></script>
 </head>
 <body data-view="library">
   <svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
@@ -53,11 +53,16 @@
         <aside class="upload-panel" id="upload-panel"><div class="panel-heading"><div><span class="eyebrow">THÊM VÀO BỘ SƯU TẬP</span><h2>Tải ảnh lên</h2></div><span class="small-mark">↗</span></div>
           <div class="dropzone" id="dropzone"><div class="upload-icon"><svg><use href="#i-upload"/></svg></div><strong>Thả ảnh vào đây</strong><span>hoặc chọn nhiều file từ máy</span><button class="secondary" id="choose-files">Chọn ảnh</button><small id="upload-limits">JPG, PNG, WebP, GIF, AVIF · tối đa 10 MB/ảnh</small><input id="file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif,.jpg,.jpeg,.png,.webp,.gif,.avif" multiple hidden></div>
           <details class="url-import"><summary><svg><use href="#i-link"/></svg>Thêm từ link ảnh <span>+</span></summary><textarea id="image-urls" placeholder="Dán link ảnh trực tiếp, mỗi link một dòng" rows="3" aria-label="Link ảnh"></textarea><button class="secondary" id="add-urls">Thêm vào hàng đợi</button></details>
-          <div class="upload-options"><label class="toggle-row" for="use-ai"><span><svg><use href="#i-spark"/></svg>AI tự gắn tag<small>Tên ảnh, tag và phân loại</small></span><input id="use-ai" type="checkbox" checked></label><details class="advanced-options"><summary>Tag, phân loại và nguồn</summary><div class="field-row"><label>Phân loại<select id="upload-rating"><option value="unknown">Để AI chọn</option><option value="safe">An toàn</option><option value="r18">R18</option></select></label></div><label class="field">Tag chung <span>tùy chọn</span><input id="upload-tags" placeholder="maid, cat_ears, anime" maxlength="2000"></label><details class="source-option"><summary>Thêm link nguồn</summary><input id="upload-source" type="url" placeholder="https://…" aria-label="Link nguồn"></details></details></div>
-          <label class="field upload-type">Kiểu ảnh<select id="upload-type"><option value="">Để AI chọn</option><option value="anime">Vẽ / Anime</option><option value="real">Người thật / Ảnh chụp</option></select></label>
-          <div class="queue-heading"><h3>Hàng đợi <span id="queue-count">0</span></h3><button class="text-button" id="clear-done">Dọn mục xong</button></div><div class="queue-list" id="queue-list"><p class="queue-empty">Ảnh bạn chọn sẽ xuất hiện ở đây.</p></div>
+          <div class="upload-options"><div class="toggle-row"><button id="upload-options-toggle" class="upload-options-toggle" type="button" popovertarget="upload-settings" aria-expanded="false" aria-controls="upload-settings"><svg><use href="#i-spark"/></svg><span>AI tự gắn tag<small>Tên ảnh, tag và phân loại</small></span><span class="upload-settings-mark" aria-hidden="true"></span></button><input id="use-ai" type="checkbox" role="switch" aria-label="AI tự gắn tag" checked></div>
+            <section class="upload-settings" id="upload-settings" popover="auto" aria-label="Tùy chọn tải ảnh">
+              <label class="field">Tag chung <span>tùy chọn</span><input id="upload-tags" placeholder="maid, cat_ears, anime" maxlength="2000"></label>
+              <label class="upload-inline">Phân loại<select id="upload-rating"><option value="unknown">Để AI chọn</option><option value="safe">An toàn</option><option value="r18">R18</option></select></label>
+              <label class="upload-inline">Kiểu ảnh<select id="upload-type"><option value="">Để AI chọn</option><option value="anime">Vẽ / Anime</option><option value="real">Người thật / Ảnh chụp</option></select></label>
+              <label class="field">Link nguồn<input id="upload-source" type="url" placeholder="https://…" aria-label="Link nguồn"></label>
+            </section></div>
+          <div class="queue-heading"><h3>Hàng đợi <span id="queue-count">0</span></h3></div><div class="queue-list" id="queue-list"><p class="queue-empty">Ảnh bạn chọn sẽ xuất hiện ở đây.</p></div>
           <div class="queue-progress" id="queue-progress" hidden><span id="queue-summary"></span><progress id="batch-progress" value="0" max="1"></progress></div>
-          <p id="duplicate-summary" class="duplicate-summary" role="status" hidden></p><div class="queue-actions"><button class="primary" id="start-upload" disabled>Bắt đầu tải lên <svg><use href="#i-arrow"/></svg></button><button class="secondary" id="pause-upload" hidden>Tạm dừng</button><button class="text-button" id="retry-errors" hidden>Thử lại mục lỗi</button></div><p class="panel-note"><i></i> 2 ảnh mỗi lượt. File lỗi không làm dừng cả đợt.</p>
+          <p id="duplicate-summary" class="duplicate-summary" role="status" hidden></p><div class="queue-actions"><button class="primary" id="start-upload" disabled>Bắt đầu tải lên <svg><use href="#i-arrow"/></svg></button><button class="secondary" id="pause-upload" hidden>Tạm dừng</button><button class="text-button" id="retry-errors" hidden>Thử lại mục lỗi</button></div>
         </aside>
       </div>
       <footer class="page-footer"><span>MỘT CHÚT NGĂN NẮP, THÊM NHIỀU CẢM HỨNG.</span><span>waku / image library</span></footer>
