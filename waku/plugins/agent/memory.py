@@ -311,8 +311,9 @@ async def record_group_memory(client: Client, message: pyrogram.types.Message):
     if not chat_config.ai_reply or not chat_config.group_memory_enabled:
         return
 
+    scope = state.conversation_scope(message, chat.id)
     group_messages: list[GroupMessage] = await memttlcache.get(
-        state.group_messages_key(chat.id), []
+        state.group_messages_key(scope), []
     )
     group_messages.append(
         GroupMessage(
@@ -327,10 +328,10 @@ async def record_group_memory(client: Client, message: pyrogram.types.Message):
     if len(group_messages) > 100:
         batch_messages = group_messages[-100:]
         # Allow at most one memory update per group per hour through this function.
-        last_update_key = state.group_memory_update_key(chat.id)
+        last_update_key = state.group_memory_update_key(scope)
         last_updated = await memttlcache.get(last_update_key)
         subject = quota.Subject(user_id=None, chat_id=chat.id, in_group=True)
-        if last_updated or chat.id in _group_memory_inflight_chats:
+        if last_updated or scope in _group_memory_inflight_chats:
             group_messages = []
         elif not await quota.can_start(subject):
             # Without group quota, silently defer the summary and retain the latest 100 messages until quota is available;
@@ -338,7 +339,7 @@ async def record_group_memory(client: Client, message: pyrogram.types.Message):
             logger.debug(f"Skip group memory update for chat {chat.id}: no quota")
             group_messages = batch_messages
         else:
-            _group_memory_inflight_chats.add(chat.id)
+            _group_memory_inflight_chats.add(scope)
             chunks = _group_memory_chunks(batch_messages)
             logger.debug(
                 f"Updating group memory for chat {chat.id} with "
@@ -350,7 +351,7 @@ async def record_group_memory(client: Client, message: pyrogram.types.Message):
                 try:
                     for index, batch_text in enumerate(chunks, start=1):
                         coro = powermemory.add(
-                            batch_text, infer=True, user_id=f"group_{chat.id}"
+                            batch_text, infer=True, user_id=f"group_{scope}"
                         )
                         if app_config.agent_model_timeout > 0:
                             result = await asyncio.wait_for(
@@ -377,10 +378,10 @@ async def record_group_memory(client: Client, message: pyrogram.types.Message):
                     await memttlcache.set(last_update_key, True, ttl=3600)
                     group_messages = []
                 finally:
-                    _group_memory_inflight_chats.discard(chat.id)
+                    _group_memory_inflight_chats.discard(scope)
             memory_usage = powermem_usage.usage_of(memory_calls)
             if memory_usage is not None:
                 await quota.settle(subject, memory_usage)
     await memttlcache.set(
-        state.group_messages_key(chat.id), group_messages, ttl=86400 * 7
+        state.group_messages_key(scope), group_messages, ttl=86400 * 7
     )

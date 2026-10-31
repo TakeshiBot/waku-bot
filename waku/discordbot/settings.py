@@ -75,8 +75,8 @@ async def _history_key(message: discord.Message) -> str:
     return f"discord_message_history:{epoch}:{message.channel.id}:{message.author.id}"
 
 
-def _waiting_key(user_id: int) -> str:
-    return f"discord_agent_waiting:{user_id}"
+def _waiting_key(user_id: int, channel_id: int | None = None) -> str:
+    return f"discord_agent_waiting:{channel_id}:{user_id}" if channel_id is not None else f"discord_agent_waiting:{user_id}"
 
 
 def _discord_dm_config_id(user_id: int) -> int:

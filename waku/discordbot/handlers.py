@@ -115,9 +115,9 @@ async def _handle_message(message: discord.Message, user_prompt: str) -> None:
     task = asyncio.current_task()
     if task is not None:
         state.discord_ai_tasks.add(task)
-    waiting_key = _waiting_key(message.author.id)
+    waiting_key = _waiting_key(message.author.id, message.channel.id)
     try:
-        async with state._discord_turn_lock(message.author.id):
+        async with state._discord_turn_lock((message.channel.id, message.author.id)):
             owner = await common.memstore.get(waiting_key)
             already_waiting = isinstance(owner, asyncio.Task) and not owner.done()
             if not already_waiting:

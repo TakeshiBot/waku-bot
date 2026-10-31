@@ -558,10 +558,10 @@ async def _reply_target_reference(ctx, reply, bot_id: int):
         return None
     from waku.common.memory_store import memttlcache
 
-    from ..state import bot_last_reply_key
+    from ..state import bot_last_reply_key, conversation_scope
 
     try:
-        last = await memttlcache.get(bot_last_reply_key(ctx.deps.chat_id))
+        last = await memttlcache.get(bot_last_reply_key(conversation_scope(ctx.deps.message, ctx.deps.chat_id)))
         if (
             isinstance(last, datatype.BotLastReply)
             and last.message_id == reply.id

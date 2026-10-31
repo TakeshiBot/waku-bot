@@ -197,9 +197,9 @@ async def forget_command(interaction: discord.Interaction) -> None:
             title="Không thể xoá ngữ cảnh",
         )
         return
-    waiting_key = _waiting_key(interaction.user.id)
+    waiting_key = _waiting_key(interaction.user.id, interaction.channel.id)
     task = asyncio.current_task()
-    async with state._discord_turn_lock(interaction.user.id):
+    async with state._discord_turn_lock((interaction.channel.id, interaction.user.id)):
         owner = await common.memstore.get(waiting_key)
         busy = isinstance(owner, asyncio.Task) and not owner.done()
         if not busy:

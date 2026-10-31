@@ -224,7 +224,11 @@ async def _should_wake(message: discord.Message, bot_user: discord.ClientUser) -
     if keyword:
         prompt = _strip_keyword(prompt)
     if not prompt:
-        prompt = "Please continue the conversation."
+        prompt = (
+            "The user sent media without text. Respond naturally to what is available; do not assume an earlier conversation."
+            if message.attachments or message.stickers
+            else "The user just called your name without another request. Respond naturally to that call; do not assume an earlier conversation."
+        )
     return True, prompt
 
 async def _resolve_discord_channel(

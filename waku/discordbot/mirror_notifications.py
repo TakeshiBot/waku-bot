@@ -59,11 +59,11 @@ async def deliver(entry):
     if _retry_after.get(key, (0, 0))[1] > time.monotonic():
         return
     # The initiating turn owns its history until it has stored the acknowledgement.
-    active = await memstore.get(_waiting_key(task["requester_id"]))
+    active = await memstore.get(_waiting_key(task["requester_id"], task["origin_chat_id"]))
     if isinstance(active, asyncio.Task) and not active.done():
         return
     async with _slots:
-        async with state._discord_turn_lock(task["requester_id"]):
+        async with state._discord_turn_lock((task["origin_chat_id"], task["requester_id"])):
             attempted_send = False
             claimed = False
             try:

@@ -102,7 +102,7 @@ async def _compose(client, task, stage, message):
         instructions=persona,
         locale=lang,
     )
-    history = await memttlcache.get(state.history_key(deps.chat_id, deps.user_id), [])
+    history = await memttlcache.get(state.history_key(state.conversation_scope(message, deps.chat_id), deps.user_id), [])
     excerpt = []
     for frame in history[-8:]:
         for part in getattr(frame, "parts", []):
@@ -175,8 +175,13 @@ async def _deliver(client, entry):
         return
     async with _slots:
         # Let the initiating AI turn finish before its asynchronous update.
+        try:
+            origin_message, _ = await _origin(client, task)
+        except Exception as error:
+            logger.warning("Mirror origin lookup failed: {}", type(error).__name__)
+            return
         async with state.get_conversation_lock(
-            task["origin_chat_id"], task["requester_id"]
+            state.conversation_scope(origin_message, task["origin_chat_id"]), task["requester_id"]
         ):
             task = await mirror_bridge.claim_notification(task["id"], stage)
             if task is None:
@@ -245,7 +250,7 @@ async def _deliver(client, entry):
                 try:
                     await record_tool_reply(deps, result, text)
                     history = await memttlcache.get(
-                        state.history_key(deps.chat_id, deps.user_id), []
+                        state.history_key(state.conversation_scope(message, deps.chat_id), deps.user_id), []
                     )
                     history.extend(
                         [
@@ -271,7 +276,7 @@ async def _deliver(client, entry):
                         ]
                     )
                     await memttlcache.set(
-                        state.history_key(deps.chat_id, deps.user_id),
+                        state.history_key(state.conversation_scope(message, deps.chat_id), deps.user_id),
                         history,
                         ttl=app_config.cachettl_agent_history,
                     )

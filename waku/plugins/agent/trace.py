@@ -590,6 +590,7 @@ async def start_trace(
     message_id: int | None = None,
     model_role: str | None = None,
     streaming: bool = False,
+    conversation_scope_id: int | str | None = None,
 ) -> TraceSession | None:
     """Open a run buffer, nested in the enclosing one when there is one.
 
@@ -609,7 +610,7 @@ async def start_trace(
     if parent is not None:
         session_id = parent.session_id
     elif chat_id is not None and user_id is not None:
-        session_id = await conversation_session(chat_id, user_id)
+        session_id = await conversation_session(conversation_scope_id if conversation_scope_id is not None else chat_id, user_id)
     else:
         session_id = None
     session = TraceSession(

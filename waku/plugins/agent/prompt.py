@@ -233,7 +233,9 @@ async def _fetch_nearby(
     message_ids.reverse()
     if not message_ids:
         return []
-    return await common.get_cached_messages_objects(message.chat.id, message_ids)
+    messages = await common.get_cached_messages_objects(message.chat.id, message_ids)
+    scope = state.conversation_scope(message)
+    return [item for item in messages if item and state.conversation_scope(item, message.chat.id) == scope]
 
 
 def collect_moderation_candidates(

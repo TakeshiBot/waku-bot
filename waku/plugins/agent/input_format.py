@@ -488,6 +488,13 @@ def _env_header(
     chat = message.chat
     title = getattr(chat, "title", None) or tr("unknown_group")
     lines = [tr("group_header", p0=title), tr("current_time", p0=_now_text())]
+    scope = state.conversation_scope(message)
+    if isinstance(scope, str) and "_topic_" in scope:
+        topic = scope.rsplit("_topic_", 1)[1]
+        name = getattr(getattr(message, "topic", None), "title", None)
+        name = " ".join(name.split())[:128] if isinstance(name, str) else None
+        label = name or ("General" if topic == "1" else f"ID {topic}")
+        lines.append(f"Telegram forum topic: {label}. This is a separate conversation from other topics; do not invent a topic name.")
     if ctx is None:
         return "\n".join(lines)
     info_lines = _chat_info_lines(chat)

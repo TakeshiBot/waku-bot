@@ -29,7 +29,7 @@ from waku.plugins.agent.output import record_tool_reply, text_already_sent
 from waku.services.mirror_policy import is_raw_mirror_command
 from waku.services.image_requests import contains_r18_request
 
-from .. import datatype
+from .. import datatype, state
 from . import block, io, send_ops, workspace
 
 # method -> (pyrogram client method, allowed params, required params)
@@ -468,6 +468,10 @@ async def tg(
     if error:
         return error
     assert kwargs is not None
+    if method in {"sendMessage", "sendPhoto", "sendMediaGroup", "sendDocument", "sendPoll", "sendAudio", "sendVideo", "sendVoice", "sendAnimation"}:
+        topic = state.forum_topic_id(ctx.deps.message, ctx.deps.chat_id)
+        if topic is not None:
+            kwargs["message_thread_id"] = topic
     if method == "sendPhoto" and isinstance(kwargs.get("caption"), str):
         caption = kwargs["caption"]
         # Preserve rich formatting and links; plain photo metadata can be

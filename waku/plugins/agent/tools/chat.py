@@ -3,6 +3,7 @@ from pydantic_ai import ModelRetry, RunContext
 from waku.logger import logger
 from waku.plugins.agent import datatype, powermem_usage, quota
 from waku.plugins.agent.localization import tr
+from waku.plugins.agent.state import conversation_scope
 
 
 async def search_group_memory(
@@ -31,7 +32,7 @@ async def search_group_memory(
         return []
     with powermem_usage.collect() as memory_calls:
         results = await ctx.deps.powermemory.search(
-            query, user_id=f"group_{ctx.deps.chat_id}", limit=10
+            query, user_id=f"group_{conversation_scope(ctx.deps.message, ctx.deps.chat_id)}", limit=10
         )
     # powermem calls the model internally; collect usage through its callback and attribute it to this run's payer,
     # just like other costs in the run.
@@ -69,7 +70,7 @@ async def update_group_memory(
             result = await ctx.deps.powermemory.add(
                 content,
                 infer=True,
-                user_id=f"group_{ctx.deps.chat_id}",
+                user_id=f"group_{conversation_scope(ctx.deps.message, ctx.deps.chat_id)}",
                 prompt=tr("memory_system"),
             )
         logger.debug(

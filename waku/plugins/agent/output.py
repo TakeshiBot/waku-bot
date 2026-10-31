@@ -115,7 +115,7 @@ async def record_tool_reply(
         timestamp=datetime.now().timestamp(),
     )
     try:
-        await memttlcache.set(state.bot_last_reply_key(chat.id), bot_reply, ttl=300)
+        await memttlcache.set(state.bot_last_reply_key(state.conversation_scope(message, chat.id)), bot_reply, ttl=300)
     except Exception as e:
         # A cache failure must not turn an already-delivered send into a retry.
         logger.debug(f"Failed to cache tool reply: {e.__class__.__name__} - {e}")
@@ -379,7 +379,7 @@ async def reply_output(
             if _chat_id:
                 try:
                     await memttlcache.set(
-                        state.bot_last_reply_key(_chat_id), bot_reply, ttl=300
+                        state.bot_last_reply_key(state.conversation_scope(message, _chat_id)), bot_reply, ttl=300
                     )
                 except Exception as error:
                     logger.warning(
@@ -697,7 +697,7 @@ class StreamingOutput:
             if self.reply_message_id and self.is_group_chat and self.user:
                 try:
                     await memttlcache.set(
-                        state.bot_last_reply_key(self.message.chat.id),
+                        state.bot_last_reply_key(state.conversation_scope(self.message, self.message.chat.id)),
                         datatype.BotLastReply(
                             message_id=self.reply_message_id,
                             reply_to_user_id=self.user.id,

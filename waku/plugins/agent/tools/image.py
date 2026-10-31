@@ -97,8 +97,8 @@ async def _find_image_in_history(
     ctx: RunContext[datatype.ContextDeps],
 ) -> tuple[bytes, str] | None:
     for cache_key in (
-        state.last_user_image_key(ctx.deps.chat_id, ctx.deps.user_id),
-        state.last_edited_image_key(ctx.deps.chat_id, ctx.deps.user_id),
+        state.last_user_image_key(state.conversation_scope(ctx.deps.message, ctx.deps.chat_id), ctx.deps.user_id),
+        state.last_edited_image_key(state.conversation_scope(ctx.deps.message, ctx.deps.chat_id), ctx.deps.user_id),
     ):
         file_id: str | None = await memttlcache.get(cache_key)
         if file_id is None:
@@ -385,7 +385,7 @@ async def _edit_image(
     _confirm_image_delivery(ctx, sent)
     try:
         await memttlcache.set(
-            state.last_edited_image_key(ctx.deps.chat_id, ctx.deps.user_id),
+            state.last_edited_image_key(state.conversation_scope(ctx.deps.message, ctx.deps.chat_id), ctx.deps.user_id),
             sent.photo.file_id,
             ttl=app_config.cachettl_agent_history,
         )

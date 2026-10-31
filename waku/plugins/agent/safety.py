@@ -47,7 +47,7 @@ from waku.logger import logger
 
 from .admin_dm_context import AdminDMContextLayer
 from .model_log import ModelActivityLog
-from .state import drain_steering
+from .state import conversation_scope, drain_steering
 from .trace import AgentTraceCapability, note_steering
 
 _scrub_text_output = for_text(redact_secrets, on_other="allow")
@@ -226,7 +226,7 @@ class SteeringInjection(AbstractCapability[Any]):
         ctx: RunContext[Any],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
-        pending = drain_steering(ctx.deps.chat_id, ctx.deps.user_id)
+        pending = drain_steering(conversation_scope(ctx.deps.message, ctx.deps.chat_id), ctx.deps.user_id)
         if not pending:
             return request_context
         for text in pending:

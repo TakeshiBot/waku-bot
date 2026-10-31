@@ -9,6 +9,36 @@ from uuid import UUID
 from waku.common.memory_store import memstore
 
 
+def conversation_scope(message: Any, chat_id: int | None = None) -> int | str:
+    """Keep Telegram forum topics isolated while preserving ordinary chat keys.
+
+    Telegram's General topic has id 1 and may omit the thread field. A reply's
+    top-message field is only a topic ID in a forum, not in arbitrary threads.
+    """
+    chat = getattr(message, "chat", None)
+    chat_id = chat_id if chat_id is not None else getattr(chat, "id", 0)
+    if not isinstance(chat_id, int) or chat_id >= 0:
+        return chat_id
+    chat_type = getattr(getattr(chat, "type", None), "value", getattr(chat, "type", None))
+    thread = getattr(message, "message_thread_id", None) or getattr(getattr(message, "topic", None), "id", None)
+    is_forum = bool(getattr(chat, "is_forum", False) or str(chat_type).lower() == "forum"
+                    or getattr(message, "topic_message", False) or getattr(message, "is_topic_message", False) or thread)
+    if not is_forum:
+        return chat_id
+    topic = thread or getattr(message, "reply_to_top_message_id", None) or 1
+    if not isinstance(topic, int) or topic <= 0:
+        topic = 1
+    return f"{chat_id}_topic_{topic}"
+
+
+def forum_topic_id(message: Any, chat_id: int | None = None) -> int | None:
+    scope = conversation_scope(message, chat_id)
+    if not isinstance(scope, str) or "_topic_" not in scope:
+        return None
+    topic = int(scope.rsplit("_topic_", 1)[1])
+    return topic if topic != 1 else None
+
+
 def history_key(chat_id: int, user_id: int) -> str:
     return f"message_history_with_agent:{chat_id}:{user_id}"
 

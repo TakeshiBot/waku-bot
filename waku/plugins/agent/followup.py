@@ -124,7 +124,7 @@ async def _follow_up_filter_func(
         )
         if has_mention:
             return False
-    if chat is not None and chat.id is not None and state.is_running(chat.id, user.id):
+    if chat is not None and chat.id is not None and state.is_running(state.conversation_scope(message, chat.id), user.id):
         # Mid-turn: the message is an interjection, not a follow-up trigger.
         # Deliver it straight into the live run (budget-checked), so the
         # running turn picks it up on its next model request.
@@ -133,7 +133,7 @@ async def _follow_up_filter_func(
             return False
         if app_config.nickname and app_config.nickname in text:
             return False
-        if not state.enqueue_interjection(chat.id, user.id, text):
+        if not state.enqueue_interjection(state.conversation_scope(message, chat.id), user.id, text):
             logger.warning(
                 f"Follow-up interjection dropped for user {user.id} in "
                 f"chat {chat.id}: interjection budget exhausted"
@@ -167,7 +167,8 @@ async def handle_follow_up_message(
     await common.memttlcache.set(
         state.message_follow_up_lock_key(chat.id, message.id), True, ttl=60
     )
-    bot_reply = await common.memttlcache.get(state.bot_last_reply_key(chat.id))
+    scope = state.conversation_scope(message, chat.id)
+    bot_reply = await common.memttlcache.get(state.bot_last_reply_key(scope))
     if not bot_reply or not isinstance(bot_reply, datatype.BotLastReply):
         return
     if not message.date:
@@ -236,6 +237,7 @@ async def handle_follow_up_message(
             user_id=user.id,
             message_id=message.id,
             model_role="small",
+            conversation_scope_id=scope,
         )
         if jev_model_spec:
             trace.mark_trace(session, model_name=jev_model_spec)
@@ -274,7 +276,7 @@ async def handle_follow_up_message(
     logger.info(
         f"Detected follow-up message {message.id} (reason: {relevance_result.output.reason})"  # type: ignore[union-attr]
     )
-    follow_lock = state.get_conversation_lock(chat.id, user.id)
+    follow_lock = state.get_conversation_lock(scope, user.id)
     if follow_lock.locked():
         await _queue_interjection(message, chat.id, user.id)
         return
@@ -290,7 +292,7 @@ async def handle_follow_up_message(
         if chat_prompt:
             instructions = chat_prompt
         history: list[ModelMessage] = await memttlcache.get(
-            state.history_key(chat.id, user.id), []
+            state.history_key(scope, user.id), []
         )
         ctx_info = await build_ctx_info(
             message=message,
@@ -315,7 +317,7 @@ async def handle_follow_up_message(
             p3=user_data.full_name,
         )
         await _run_registered(
-            chat.id,
+            scope,
             user.id,
             run_agent(
                 agi=agent,

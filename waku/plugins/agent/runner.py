@@ -90,7 +90,8 @@ async def _iter_with_spill_session(
 ):
     """Run agi.iter with the current (chat, user) bound as the spill session,
     so spilled tool outputs are scoped to this conversation."""
-    token = safety.set_spill_session(f"{chat_id}_{user_id}")
+    scope = state.conversation_scope(deps.message, chat_id)
+    token = safety.set_spill_session(f"{scope}_{user_id}")
     try:
         async with agi.iter(
             model=model,
@@ -104,10 +105,10 @@ async def _iter_with_spill_session(
             # Interjections enqueue straight into this run (see
             # state.get_active_run), so the pending-message drain delivers
             # them on the next model request without a hook round-trip.
-            state.register_active_run(chat_id, user_id, agent_run)
+            state.register_active_run(scope, user_id, agent_run)
             yield agent_run
     finally:
-        state.unregister_active_run(chat_id, user_id)
+        state.unregister_active_run(scope, user_id)
         safety.reset_spill_session(token)
 
 
@@ -191,6 +192,7 @@ async def run_agent(
         user_id=user_id,
         message_id=message.id,
         streaming=app_config.agent_streaming,
+        conversation_scope_id=state.conversation_scope(message, chat_id),
     )
     # Quota gate only checks preflight; impl charges actual usage after completion.
     if not is_chat_allowed(chat_id):
@@ -323,7 +325,7 @@ async def _run_agent_impl(
                 # otherwise the same binary would be retried on every turn.
                 try:
                     await memttlcache.set(
-                        state.history_key(chat_id, user_id),
+                        state.history_key(state.conversation_scope(message, chat_id), user_id),
                         history,
                         ttl=app_config.cachettl_agent_history,
                     )
@@ -545,25 +547,25 @@ async def _run_agent_impl(
                             and message.chat.type in GROUP_CHAT_TYPES
                         ):
                             bot_reply = await memttlcache.get(
-                                state.bot_last_reply_key(chat_id)
+                                state.bot_last_reply_key(state.conversation_scope(message, chat_id))
                             )
                             if bot_reply and isinstance(
                                 bot_reply, datatype.BotLastReply
                             ):
                                 bot_reply.full_output = full_output
                                 await memttlcache.set(
-                                    state.bot_last_reply_key(chat_id),
+                                    state.bot_last_reply_key(state.conversation_scope(message, chat_id)),
                                     bot_reply,
                                     ttl=300,
                                 )
                         await memttlcache.set(
-                            state.history_key(chat_id, user_id),
+                            state.history_key(state.conversation_scope(message, chat_id), user_id),
                             agent_run.all_messages(),
                             ttl=app_config.cachettl_agent_history,
                         )
                         if coverage_meta is not None:
                             await advance_prompt_coverage(
-                                chat_id, user_id, coverage_meta
+                                state.conversation_scope(message, chat_id), user_id, coverage_meta
                             )
                         log_run_cache_stats(use_model.model_name, agent_run.usage)
                 except BaseException:
@@ -661,22 +663,22 @@ async def _run_agent_impl(
                         and message.chat.type in GROUP_CHAT_TYPES
                     ):
                         bot_reply = await memttlcache.get(
-                            state.bot_last_reply_key(chat_id)
+                            state.bot_last_reply_key(state.conversation_scope(message, chat_id))
                         )
                         if bot_reply and isinstance(bot_reply, datatype.BotLastReply):
                             bot_reply.full_output = full_output
                             await memttlcache.set(
-                                state.bot_last_reply_key(chat_id),
+                                state.bot_last_reply_key(state.conversation_scope(message, chat_id)),
                                 bot_reply,
                                 ttl=300,
                             )
                     await memttlcache.set(
-                        state.history_key(chat_id, user_id),
+                        state.history_key(state.conversation_scope(message, chat_id), user_id),
                         agent_run.all_messages(),
                         ttl=app_config.cachettl_agent_history,
                     )
                     if coverage_meta is not None:
-                        await advance_prompt_coverage(chat_id, user_id, coverage_meta)
+                        await advance_prompt_coverage(state.conversation_scope(message, chat_id), user_id, coverage_meta)
                     log_run_cache_stats(use_model.model_name, agent_run.usage)
         finally:
             await deferred_images.discard()

@@ -38,7 +38,7 @@ from waku.services.mirror_policy import is_raw_mirror_command
 from waku.services.telegram_images import image_allowed, telegram_image_settings
 from waku.timezone import BOT_TIMEZONE
 
-from .. import datatype, quota, sticker_memory, sticker_vec
+from .. import datatype, quota, state, sticker_memory, sticker_vec
 from ..expression_policy import expression_settings
 
 
@@ -62,13 +62,13 @@ class SendResult:
 # Module-level so APScheduler can serialize jobs by reference.
 
 
-async def _scheduled_text_job(chat_id: int, text: str) -> None:
+async def _scheduled_text_job(chat_id: int, text: str, topic_id: int | None = None) -> None:
     if is_raw_mirror_command(text, chat_id):
         return
     if not await telegram_chat_allowed(chat_id):
         return
     try:
-        await client.send_message(chat_id=chat_id, text=text)
+        await client.send_message(chat_id=chat_id, text=text, **({'message_thread_id': topic_id} if topic_id else {}))
         logger.info("Scheduled text message sent successfully")
     except Exception as e:
         logger.error(f"Scheduled text message failed: {e.__class__.__name__}: {e}")
@@ -79,6 +79,7 @@ async def _scheduled_media_job(
     media_type: Literal["photo", "video", "audio", "document"],
     media_url: str,
     caption: str,
+    topic_id: int | None = None,
 ) -> None:
     if is_raw_mirror_command(caption, chat_id):
         return
@@ -90,25 +91,25 @@ async def _scheduled_media_job(
                 await client.send_photo(
                     chat_id=chat_id,
                     photo=media_url,
-                    caption=caption,
+                    caption=caption, **({'message_thread_id': topic_id} if topic_id else {}),
                 )
             case "video":
                 await client.send_video(
                     chat_id=chat_id,
                     video=media_url,
-                    caption=caption,
+                    caption=caption, **({'message_thread_id': topic_id} if topic_id else {}),
                 )
             case "audio":
                 await client.send_audio(
                     chat_id=chat_id,
                     audio=media_url,
-                    caption=caption,
+                    caption=caption, **({'message_thread_id': topic_id} if topic_id else {}),
                 )
             case "document":
                 await client.send_document(
                     chat_id=chat_id,
                     document=media_url,
-                    caption=caption,
+                    caption=caption, **({'message_thread_id': topic_id} if topic_id else {}),
                 )
         logger.info(f"Scheduled {media_type} message sent successfully")
     except Exception as e:
@@ -123,6 +124,7 @@ async def _scheduled_poll_job(
     options: list[str],
     is_anonymous: bool,
     allows_multiple_answers: bool,
+    topic_id: int | None = None,
 ) -> None:
     if not await telegram_chat_allowed(chat_id):
         return
@@ -135,6 +137,7 @@ async def _scheduled_poll_job(
             options=list(options),  # type: ignore[arg-type]
             is_anonymous=is_anonymous,
             allows_multiple_answers=allows_multiple_answers,
+            **({'message_thread_id': topic_id} if topic_id else {}),
         )
         logger.info(f"Scheduled poll sent successfully: {question[:30]}...")
     except Exception as e:
@@ -206,6 +209,8 @@ async def schedule_message(
         raise ModelRetry(tr("tool_media_url_is_required_when_providing_media_type"))
 
     chat_id = ctx.deps.chat_id
+    topic_id = state.forum_topic_id(ctx.deps.message, chat_id)
+    topic_args = {'message_thread_id': topic_id} if topic_id else {}
 
     if is_raw_mirror_command(text, chat_id) or is_raw_mirror_command(caption, chat_id):
         return SendResult(
@@ -230,7 +235,7 @@ async def schedule_message(
                 assert text is not None
                 if not text_already_sent(ctx.deps, text, markdown=False):
                     result = await ctx.deps.client.send_message(
-                        chat_id=chat_id, text=text
+                        chat_id=chat_id, text=text, **topic_args
                     )
                     await record_tool_reply(ctx.deps, result, text)
                 return SendResult(success=True, message=tr("message_sent")).text()
@@ -243,25 +248,25 @@ async def schedule_message(
                         await ctx.deps.client.send_photo(
                             chat_id=chat_id,
                             photo=media_url,
-                            caption=caption,
+                            caption=caption, **topic_args,
                         )
                     case "video":
                         await ctx.deps.client.send_video(
                             chat_id=chat_id,
                             video=media_url,
-                            caption=caption,
+                            caption=caption, **topic_args,
                         )
                     case "audio":
                         await ctx.deps.client.send_audio(
                             chat_id=chat_id,
                             audio=media_url,
-                            caption=caption,
+                            caption=caption, **topic_args,
                         )
                     case "document":
                         await ctx.deps.client.send_document(
                             chat_id=chat_id,
                             document=media_url,
-                            caption=caption,
+                            caption=caption, **topic_args,
                         )
                 return SendResult(
                     success=True, message=tr("media_sent", p0=media_type)
@@ -287,7 +292,7 @@ async def schedule_message(
                 job_key,
                 run_date=schedule_datetime,
                 func=_scheduled_text_job,
-                args=[chat_id, text_content],
+                args=[chat_id, text_content, topic_id],
             )
         else:
             assert media_type is not None
@@ -303,7 +308,7 @@ async def schedule_message(
                 job_key,
                 run_date=schedule_datetime,
                 func=_scheduled_media_job,
-                args=[chat_id, media_type, media_url, _caption],
+                args=[chat_id, media_type, media_url, _caption, topic_id],
             )
 
         return SendResult(
@@ -405,7 +410,8 @@ async def _schedule_poll(
         job_key,
         run_date=schedule_datetime,
         func=_scheduled_poll_job,
-        args=[chat_id, question, options, is_anonymous, allows_multiple_answers],
+        args=[chat_id, question, options, is_anonymous, allows_multiple_answers,
+              state.forum_topic_id(ctx.deps.message, chat_id)],
     )
 
 

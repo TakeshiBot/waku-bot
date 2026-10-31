@@ -124,7 +124,7 @@ async def _queue_interjection(
     text = message_plain_text(message).strip()
     if not text:
         return
-    if state.enqueue_interjection(chat_id, user_id, text):
+    if state.enqueue_interjection(state.conversation_scope(message, chat_id), user_id, text):
         logger.info(
             f"User {user_id} interjected in chat {chat_id}; delivered "
             f"into the running turn"
@@ -184,17 +184,18 @@ async def _clear_memttlcache_prefix(prefix: str) -> int:
     return len(keys)
 
 
-async def _clear_conversation_session(chat_id: int, user_id: int) -> None:
+async def _clear_conversation_session(chat_id: int, user_id: int, scope=None) -> None:
     """Clear one conversation's agent session: history, ask state, spills, the
     recorded session id (so the next run opens a new instance), and (private
     chats only) the session workspace files. Group sandboxes are shared by the
     whole chat and stay untouched."""
-    await common.memttlcache.delete(state.history_key(chat_id, user_id))
-    await state.clear_conversation_session(chat_id, user_id)
-    await common.memttlcache.delete(state.prompt_coverage_key(chat_id, user_id))
-    await tools.clear_ask_state(chat_id, user_id)
-    await safety.delete_spill_session(f"{chat_id}_{user_id}")
-    state.clear_steering(chat_id, user_id)
+    scope = chat_id if scope is None else scope
+    await common.memttlcache.delete(state.history_key(scope, user_id))
+    await state.clear_conversation_session(scope, user_id)
+    await common.memttlcache.delete(state.prompt_coverage_key(scope, user_id))
+    await tools.clear_ask_state(scope, user_id)
+    await safety.delete_spill_session(f"{scope}_{user_id}")
+    state.clear_steering(scope, user_id)
     if chat_id == user_id:
         from waku.plugins.agent.tools import workspace as workspace_tools
         from waku.services import sandbox
@@ -224,7 +225,7 @@ async def history_processor(
     )
 
     await common.memttlcache.set(
-        state.history_key(ctx.deps.chat_id, ctx.deps.user_id),
+        state.history_key(state.conversation_scope(ctx.deps.message, ctx.deps.chat_id), ctx.deps.user_id),
         compressed,
         ttl=app_config.cachettl_agent_history,
     )
@@ -358,6 +359,8 @@ if app_config.agent and app_config.agent_chat_model:
             + "\n\n"
             + await telegram_image_context(ctx.deps.chat_id)
             + "\n\n"
+            + "In a forum, treat each topic as a separate conversation. User profile memories are general facts, not proof of an ongoing conversation in this topic."
+            + "\n\n"
             + await moderation.group_moderation_context(ctx)
             + "\n\n"
             + media_reply_instructions(ctx)
@@ -437,7 +440,7 @@ if app_config.agent and app_config.agent_chat_model:
             )
             return
         history: list[ModelMessage] = await common.memttlcache.get(
-            state.history_key(chat_id, user_id), []
+            state.history_key(state.conversation_scope(message, chat_id), user_id), []
         )
         is_group_chat = (
             message.chat is not None and message.chat.type in GROUP_CHAT_TYPES
@@ -453,7 +456,7 @@ if app_config.agent and app_config.agent_chat_model:
         if prompt_override:
             instructions = prompt_override
 
-        ask_lock = state.get_conversation_lock(chat_id, user_id)
+        ask_lock = state.get_conversation_lock(state.conversation_scope(message, chat_id), user_id)
         if ask_lock.locked():
             logger.info(
                 f"Ask run skipped for user {user_id} in chat {chat_id}: "
@@ -468,7 +471,7 @@ if app_config.agent and app_config.agent_chat_model:
             ):
                 return
             await _run_registered(
-                chat_id,
+                state.conversation_scope(message, chat_id),
                 user_id,
                 runner.run_agent(
                     agi=agent,  # type: ignore
@@ -530,14 +533,14 @@ if app_config.agent and app_config.agent_chat_model:
         chat_id = message.chat.id if message.chat else user.id
         if not chat_id:
             return
-        if state.is_running(chat_id, user.id):
+        if state.is_running(state.conversation_scope(message, chat_id), user.id):
             await message.reply_text(
                 i18n.t("bot.msg.agent.waiting", locale=user_config.lang)
             )
             return
         if not is_chat_allowed(chat_id):
             return
-        await _clear_conversation_session(chat_id, user.id)
+        await _clear_conversation_session(chat_id, user.id, state.conversation_scope(message, chat_id))
         await message.reply_text(
             i18n.t("bot.msg.agent.forgot", locale=user_config.lang)
         )
@@ -1106,7 +1109,8 @@ async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
         await bot_user_wake_lock.acquire()
         bot_user_wake_lock_acquired = True
 
-    conv_lock = state.get_conversation_lock(chat.id, user.id)
+    scope = state.conversation_scope(message, chat.id)
+    conv_lock = state.get_conversation_lock(scope, user.id)
     if conv_lock.locked():
         if is_bot_user:
             return
@@ -1122,9 +1126,9 @@ async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
     try:
         # Check if there's a pending ask — clear it and let the normal flow handle
         # the new message (the ask context is already in history).
-        ask_state = await tools.get_ask_state(chat.id, user.id)
+        ask_state = await tools.get_ask_state(scope, user.id)
         if ask_state is not None:
-            await tools.clear_ask_state(chat.id, user.id)
+            await tools.clear_ask_state(scope, user.id)
             logger.info(
                 f"Cleared pending ask for user {user.id}, proceeding with normal agent run"
             )
@@ -1168,7 +1172,7 @@ async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
             )
         chat_id = chat.id
         history: list[ModelMessage] = await common.memttlcache.get(
-            state.history_key(chat_id, user.id), []
+            state.history_key(scope, user.id), []
         )
         is_group_chat = chat.type in GROUP_CHAT_TYPES
         instructions = (
@@ -1194,7 +1198,7 @@ async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
             app_config.agent_group_context_nearby_message_count if is_group_chat else 0
         )
         coverage: state.PromptCoverage | None = await common.memttlcache.get(
-            state.prompt_coverage_key(chat.id, user.id)
+            state.prompt_coverage_key(scope, user.id)
         )
         moderation_candidates: list[datatype.ModerationCandidate] = []
         user_prompt, _, prompt_media_meta = await get_input_prompt(
@@ -1205,7 +1209,7 @@ async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
             coverage=coverage,
             moderation_candidates=moderation_candidates,
         )
-        stale_steering = state.drain_steering(chat.id, user.id)
+        stale_steering = state.drain_steering(scope, user.id)
         if stale_steering:
             user_prompt = [*user_prompt, "\n".join(stale_steering)]
             logger.info(
@@ -1217,12 +1221,12 @@ async def wake_agent(client: PyrogramClient, message: pyrogram.types.Message):
             logger.debug(
                 f"User {user.id} wake agent in Chat {chat.id}: {user_message_text}"
             )
-        await utils.cache_user_image(message, chat_id, user.id)
+        await utils.cache_user_image(message, scope, user.id)
         # Interjections arriving mid-run are delivered by the pending-message
         # queue inside the same run (see SteeringInjection); no follow-up
         # run is spawned, so run quotas and the timeout stay continuous.
         await _run_registered(
-            chat_id,
+            scope,
             user.id,
             run_agent(
                 agi=agent,

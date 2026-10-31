@@ -12,7 +12,7 @@ from waku.logger import logger
 from waku.plugins.agent.localization import localized_message, tr
 from waku.services.mirror_policy import is_raw_mirror_command
 
-from .. import datatype
+from .. import datatype, state
 from ..whitelist import is_chat_allowed
 
 _ASK_STATE_KEY_PREFIX = "agent_ask_state:"
@@ -94,7 +94,7 @@ async def ask_user(
         raise ModelRetry(tr("question_send_failed", p0=e.__class__.__name__))
 
     await memstore.set(
-        _state_key(chat_id, user_id),
+        _state_key(state.conversation_scope(ctx.deps.message, chat_id), user_id),
         AskState(options=list(options), question=question),
     )
 
@@ -133,7 +133,11 @@ async def _on_ask_answer(client: Client, callback_query: CallbackQuery) -> None:
         await callback_query.answer(tr("question_not_yours"), show_alert=True)
         return
 
-    ask_state = await get_ask_state(expected_chat_id, expected_user_id)
+    msg = callback_query.message
+    if msg is None or not msg.chat or msg.chat.id != expected_chat_id:
+        return
+    scope = state.conversation_scope(msg, expected_chat_id)
+    ask_state = await get_ask_state(scope, expected_user_id)
     if ask_state is None:
         await callback_query.answer(tr("question_expired"), show_alert=True)
         return
@@ -145,7 +149,7 @@ async def _on_ask_answer(client: Client, callback_query: CallbackQuery) -> None:
         await callback_query.answer(tr("invalid_option"), show_alert=True)
         return
 
-    await clear_ask_state(expected_chat_id, expected_user_id)
+    await clear_ask_state(scope, expected_user_id)
     await callback_query.answer()
 
     msg = callback_query.message

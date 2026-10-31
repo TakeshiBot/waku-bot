@@ -147,6 +147,9 @@ async def _start_discord_bot() -> None:
 
         return (
             f"{_discord_persona_prompt(message)}\n\n"
+            "Treat each Discord channel or thread as a separate conversation. "
+            "Only the supplied history for this channel is a prior conversation here; "
+            "general user memories or another channel are not evidence that a conversation is in progress.\n\n"
             "Discord style: keep Waku's cute, playful chat style. "
             "Keep each chat message compact: use single line breaks, never empty "
             "lines between sentences or paragraphs. Code blocks may keep their original spacing. "
