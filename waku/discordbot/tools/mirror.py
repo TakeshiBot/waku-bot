@@ -57,6 +57,21 @@ def instructions():
     )
 
 
+def access_context(message):
+    if not _authorized(message):
+        return (
+            "Verified Mirror access for the CURRENT Discord speaker: DENIED. Only Discord bot admins "
+            "can request or cancel Mirror tasks. If asked, explain this naturally before making any "
+            "promise. Do not claim the tool is unconfigured or that a transfer was started."
+        )
+    if not app_config.telegram_enabled or not _target():
+        return "Verified Mirror access: bot admin, but Mirror transport is not configured."
+    return (
+        "Verified Mirror access: current speaker is a bot admin. Call mirror_discord with "
+        "an acknowledgement before sending any separate acceptance; the tool validates first."
+    )
+
+
 async def mirror_discord(
     ctx: RunContext[DiscordContextDeps],
     acknowledgement: str,

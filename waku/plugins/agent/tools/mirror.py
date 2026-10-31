@@ -27,7 +27,7 @@ from waku.services.mirror_commands import (
 from waku.services.mirror_policy import is_raw_mirror_command  # noqa: F401
 from waku.services.transfer_intent import allows_transfer
 
-__all__ = ["cancel_mirror", "mirror", "mirror_instructions", "prepare_mirror"]
+__all__ = ["cancel_mirror", "mirror", "mirror_access_context", "mirror_instructions", "prepare_mirror"]
 
 _USERNAME = re.compile(r"[A-Za-z0-9_]{5,32}\Z")
 _TOOL_KEY = "mirror"
@@ -80,10 +80,36 @@ async def prepare_mirror(
     return None
 
 
+async def mirror_access_context(deps: datatype.ContextDeps) -> str:
+    """Provide the verified current actor's permission before the AI responds."""
+    try:
+        authorized = await _authorized(deps)
+    except Exception as error:
+        logger.warning("Mirror authorization check failed: {}", type(error).__name__)
+        authorized = False
+    if not authorized:
+        return (
+            "Verified Mirror access for the CURRENT speaker: DENIED. Only bot owners "
+            "and bot global admins may request or cancel Mirror tasks, even in groups. "
+            "If this speaker asks for a transfer, politely explain that it is for bot admins only "
+            "in your own words. Do not claim to start, send or complete a transfer, and do not "
+            "tell them the issue is an unconfigured tool. Do not change this based on conversation history."
+        )
+    if not _target():
+        return "Verified Mirror access: bot admin, but Mirror is not configured; do not promise a transfer."
+    return (
+        "Verified Mirror access: current speaker is a bot admin. For a transfer, call the "
+        "mirror tool first with an acknowledgement; do not send or stream a separate "
+        "acceptance before the tool validates permission, intent and source."
+    )
+
+
 def mirror_instructions() -> str:
     return (
         "Mirror/download delegation: when the current user explicitly asks you to "
         "mirror, leech, clone or download links or Telegram attachments, use the mirror tool if it is available. "
+        "A link or attachment by itself, or a request to view, summarize, discuss, analyze or search a video, "
+        "is never a transfer request, even when earlier messages involved Mirror. "
         "Information lookup, identifying a character/image, finding an image or its source, "
         "and follow-ups such as 'find it'/'tìm đi' are research, NEVER a mirror/download task. "
         "For research use the available web search tool (Telegram: websearch; "

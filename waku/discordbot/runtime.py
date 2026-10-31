@@ -37,6 +37,7 @@ from .tools.mirror import (
 )
 from .tools.mirror import (
     instructions as mirror_instructions,
+    access_context as mirror_access_context,
 )
 from .tools.personality import prepare_personality, react_to_disrespect
 from .tools.reactions import send_discord_reaction
@@ -275,7 +276,7 @@ async def _start_discord_bot() -> None:
             "👍 ❤️ 😂 😭 🔥 🎉 👏 👀 🤔 🥰 😮 🙏. Do not react every turn. "
             "If send_discord_reaction fails, do not claim a reaction was added. "
             "If a Discord permission is missing, explain that briefly.\n\n"
-            f"{lang_instruction}\n\n{mirror_instructions()}\n\n"
+            f"{lang_instruction}\n\n{mirror_instructions()}\n\n{mirror_access_context(message)}\n\n"
             + research_instructions("search_web") + "\n\n"
             + genshin_instructions() + "\n\n"
             + personality_instructions(

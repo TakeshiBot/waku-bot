@@ -366,6 +366,8 @@ if app_config.agent and app_config.agent_chat_model:
             + "\n\n"
             + tools.mirror_instructions()
             + "\n\n"
+            + await tools.mirror_access_context(ctx.deps)
+            + "\n\n"
             + tools.credit_instructions()
             + "\n\n"
             + research_instructions()
