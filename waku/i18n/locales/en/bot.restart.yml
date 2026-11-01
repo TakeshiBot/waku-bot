@@ -2,18 +2,34 @@ bot:
   restart:
     denied: You do not have permission to restart the bot.
     invalid_config: The current configuration is invalid. Check settings.toml before restarting the bot.
-    restarting: The bot is restarting and will reconnect Telegram, Discord and all enabled services automatically.
+    restarting: '⌬ <b>Waku is restarting…</b>'
     menu: "<b>🔄 Restart Waku</b>\n\nRestart the bot, or pull Git updates and build/deploy both the bot and Mini App."
     restart_button: '1. Restart'
     update_button: '2. Update'
     close: Close
     expired: This menu expired or belongs to another user. Open /restart again.
     worker_unavailable: 'The VPS update bridge is unavailable. Run bash run.sh restart on the VPS to start it; Python 3 is required on the host.'
-    updating: Pulling Git updates, building and deploying the bot and Mini App. This message will show the result when finished.
+    updating: '⌬ <b>Waku is updating…</b>'
     busy: A restart or update is already pending. Wait for the result in the previous message.
     storage_error: Could not save the restart receipt. The bot remains running; check write access to data/maintenance.
-    restart_success: '✅ Bot restarted successfully.'
-    update_success: '✅ Bot and Mini App updated and deployed successfully.'
-    update_failed: '❌ Update failed. The bot is currently running the commit shown below.'
-    result_details: "Previous commit: <code>{before}</code>\nRunning commit: <code>{commit}</code>\n{subject}\nCommit date: {date}\nElapsed: {seconds} seconds"
+    restart_success: '⌬ <b>Waku restarted!</b>'
+    update_success: '⌬ <b>Waku updated and deployed successfully!</b>'
+    update_failed: '⌬ <b>Update failed</b>'
+    status_details: |-
+      │
+      ┟ <b>Date</b>: {date}
+      ┠ <b>Time</b>: {time}
+      ┠ <b>Timezone</b>: <code>{timezone}</code>
+      ┠ <b>Version</b>: <code>{version}</code>
+      ┖ <b>Commit</b>: <code>{commit}</code>
+    request_pending: |-
+      ⌬ <b>Request</b>
+      │
+      ┖ <b>User</b>: <a href="tg://user?id={user_id}">{user}</a>
+    request_completed: |-
+      ⌬ <b>Request</b>
+      │
+      ┟ <b>User</b>: <a href="tg://user?id={user_id}">{user}</a>
+      ┖ <b>Elapsed</b>: {seconds} seconds
+    result_details: "⌬ <b>Update details</b>\n│\n┟ <b>Previous commit</b>: <code>{before}</code>\n┠ <b>Running commit</b>: <code>{commit}</code>\n┠ <b>Changes</b>: {subject}\n┖ <b>Commit date</b>: {date}"
     update_log: 'VPS details: logs/maintenance-update.log'

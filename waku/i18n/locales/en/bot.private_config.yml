@@ -4,12 +4,13 @@ bot:
     title: ⌬ <b>Waku settings</b>
     runtime:
       summary: |-
-        Bot: <code>{nickname}</code> · <code>{language}</code>
-        Telegram: {telegram} · Business: {business}
-        Discord: {discord} · Mini App: {webapp}
-        AI: {agent} · <code>{model}</code>
-        Commit: <code>{commit}</code> · {commit_date}
-        {commit_subject}
+        │
+        ┟ <b>Bot</b>: <code>{nickname}</code> · <code>{language}</code>
+        ┠ <b>Telegram</b>: {telegram} · <b>Business</b>: {business}
+        ┠ <b>Discord</b>: {discord} · <b>Mini App</b>: {webapp}
+        ┠ <b>AI</b>: {agent} · <code>{model}</code>
+        ┠ <b>Commit</b>: <code>{commit}</code> · {commit_date}
+        ┖ <b>Changes</b>: {commit_subject}
       unknown: Unknown
       custom_prompt: Custom Prompt
       main_prompt: Main Prompt
@@ -38,7 +39,11 @@ bot:
     providers_summary: "│\n┟ <b>Total</b> → {count}\n┖ <b>Default</b> → {default}"
     provider_title: "⌬ <b>Provider: {name}</b>"
     entry_summary: "⌬ <b>Config variable</b>\n│\n┟ <b>Key</b> → <code>{key}</code>\n┠ <b>Type</b> → <code>{type}</code>\n┖ <b>Value</b> → <pre>{value}</pre>"
-    summary: 'File: <code>{file}</code> · Changed: {count} fields. Save to apply.'
+    summary: |-
+      ⌬ <b>Configuration file</b>
+      │
+      ┟ <b>File</b>: <code>{file}</code>
+      ┖ <b>Changed</b>: {count} fields · Save to apply.
     restart_pending: '{count} saved settings are waiting for a restart.'
     denied: Only bot owners and global administrators can use private settings.
     expired: This menu expired or belongs to another user. Open /config again.

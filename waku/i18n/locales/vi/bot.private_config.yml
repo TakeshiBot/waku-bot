@@ -4,12 +4,13 @@ bot:
     title: ⌬ <b>Cấu hình Waku</b>
     runtime:
       summary: |-
-        Bot: <code>{nickname}</code> · <code>{language}</code>
-        Telegram: {telegram} · Business: {business}
-        Discord: {discord} · Mini App: {webapp}
-        AI: {agent} · <code>{model}</code>
-        Commit: <code>{commit}</code> · {commit_date}
-        {commit_subject}
+        │
+        ┟ <b>Bot</b>: <code>{nickname}</code> · <code>{language}</code>
+        ┠ <b>Telegram</b>: {telegram} · <b>Business</b>: {business}
+        ┠ <b>Discord</b>: {discord} · <b>Mini App</b>: {webapp}
+        ┠ <b>AI</b>: {agent} · <code>{model}</code>
+        ┠ <b>Commit</b>: <code>{commit}</code> · {commit_date}
+        ┖ <b>Nội dung</b>: {commit_subject}
       unknown: Chưa xác định
       custom_prompt: Prompt Riêng
       main_prompt: Prompt Chính
@@ -38,7 +39,11 @@ bot:
     providers_summary: "│\n┟ <b>Tổng số</b> → {count}\n┖ <b>Default</b> → {default}"
     provider_title: "⌬ <b>Nhà cung cấp: {name}</b>"
     entry_summary: "⌬ <b>Biến cấu hình</b>\n│\n┟ <b>Key</b> → <code>{key}</code>\n┠ <b>Kiểu</b> → <code>{type}</code>\n┖ <b>Giá trị</b> → <pre>{value}</pre>"
-    summary: 'File: <code>{file}</code> · Đã sửa: {count} mục. Lưu để áp dụng.'
+    summary: |-
+      ⌬ <b>Tệp cấu hình</b>
+      │
+      ┟ <b>File</b>: <code>{file}</code>
+      ┖ <b>Đã sửa</b>: {count} mục · Lưu để áp dụng.
     restart_pending: '{count} cài đặt đã lưu đang chờ khởi động lại.'
     denied: Chỉ chủ bot hoặc quản trị viên toàn cục được dùng cấu hình riêng tư.
     expired: Menu đã hết hạn hoặc không thuộc về bạn. Mở lại /config.

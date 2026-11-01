@@ -1241,13 +1241,14 @@ async def private_config_callback(client: Client, query: CallbackQuery):
 
                 async with maintenance.LOCK:
                     try:
-                        await _edit(message, _tr("restarting", session))
+                        await _edit(message, maintenance.pending_text("restart", session.locale, session.user_id, user=query.from_user))
                         await asyncio.to_thread(
                             maintenance.save_request,
                             "restart",
                             message,
                             session.user_id,
                             session.locale,
+                            user=query.from_user,
                         )
                     except (OSError, ValueError) as error:
                         key = "busy" if str(error) == "busy" else "storage_error"

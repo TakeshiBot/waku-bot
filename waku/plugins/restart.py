@@ -160,11 +160,12 @@ async def restart_callback(client: Client, query: pyrogram.types.CallbackQuery):
             return
         try:
             await query.message.edit_text(
-                _text("restarting" if action == "restart" else "updating", lang),
+                maintenance.pending_text(action, lang, menu.user_id, user=query.from_user),
+                parse_mode=pyrogram.enums.ParseMode.HTML,
                 reply_markup=None,
             )
             await asyncio.to_thread(
-                maintenance.save_request, action, query.message, menu.user_id, lang
+                maintenance.save_request, action, query.message, menu.user_id, lang, user=query.from_user
             )
         except (OSError, ValueError) as error:
             key = "busy" if str(error) == "busy" else "storage_error"

@@ -13,6 +13,23 @@ from waku.timezone import BOT_TIMEZONE
 
 
 @lru_cache(maxsize=1)
+def runtime_info() -> dict[str, str]:
+    """Build identity for status messages; Docker supplies these at build time."""
+    values = {"version": os.getenv("WAKU_VERSION", "").strip()}
+    commands = {"version": ["git", "describe", "--tags", "--always", "--dirty"]}
+    for key, command in commands.items():
+        if values[key]:
+            continue
+        try:
+            result = subprocess.run(command, cwd=Path(__file__).resolve().parents[1], capture_output=True,
+                                    text=True, encoding="utf-8", errors="replace", timeout=2, check=True)
+            values[key] = result.stdout.strip()[:160]
+        except (OSError, subprocess.SubprocessError):
+            values[key] = ""
+    return values
+
+
+@lru_cache(maxsize=1)
 def _git_commit() -> tuple[str, str, str]:
     try:
         result = subprocess.run(

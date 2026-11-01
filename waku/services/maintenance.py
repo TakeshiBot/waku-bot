@@ -16,7 +16,8 @@ from pyrogram.errors import FloodWait, MessageNotModified, RPCError
 
 from waku.i18n import t
 from waku.logger import logger
-from waku.version import commit_info
+from waku.version import commit_info, runtime_info
+from waku.timezone import BOT_TIMEZONE_NAME, bot_now
 
 DIRECTORY = Path("data/maintenance")
 BOOT_ID = secrets.token_hex(16)
@@ -79,7 +80,7 @@ def worker_ready() -> bool:
         return False
 
 
-def save_request(action: str, message, user_id: int, locale: str) -> dict:
+def save_request(action: str, message, user_id: int, locale: str, *, user=None) -> dict:
     pending = _read(DIRECTORY / "request.json")
     if pending and pending.get("id") != (_read(DIRECTORY / "delivered.json") or {}).get(
         "id"
@@ -91,6 +92,7 @@ def save_request(action: str, message, user_id: int, locale: str) -> dict:
         "chat_id": message.chat.id,
         "message_id": message.id,
         "user_id": user_id,
+        "user_label": _user_label(user_id, user),
         "locale": locale,
         "created_at": time.time(),
         "boot_id": BOOT_ID,
@@ -131,6 +133,30 @@ def _tr(key: str, locale: str, **values) -> str:
     return t("bot.restart." + key, locale=locale).format(**values)
 
 
+def _user_label(user_id: int, user=None) -> str:
+    if getattr(user, "id", None) != user_id:
+        return str(user_id)
+    username = getattr(user, "username", None)
+    return ("@" + username if isinstance(username, str) and username else
+            getattr(user, "full_name", None) or str(user_id))[:160]
+
+
+def _status_details(locale: str, info=None) -> str:
+    now = bot_now()
+    build = runtime_info()
+    info = commit_info() if info is None else info
+    return _tr("status_details", locale, date=now.strftime("%d/%m/%y"),
+               time=now.strftime("%I:%M:%S %p"), timezone=BOT_TIMEZONE_NAME,
+               version=html.escape(build["version"] or "—"),
+               commit=html.escape(info.get("commit") or "—"))
+
+
+def pending_text(action: str, locale: str, user_id: int, *, user=None) -> str:
+    status = "restarting" if action == "restart" else "updating"
+    return (_tr(status, locale) + "\n" + _status_details(locale) + "\n\n" +
+            _tr("request_pending", locale, user_id=user_id, user=html.escape(_user_label(user_id, user))))
+
+
 async def complete_pending(client) -> None:
     async with LOCK:
         request = None
@@ -168,16 +194,13 @@ async def complete_pending(client) -> None:
             before = request["before"].get("commit") or "?"
             after = info["commit"] or "?"
             elapsed = max(0, int(time.time() - request["created_at"]))
-            text = _tr(status, locale)
-            text += "\n\n" + _tr(
-                "result_details",
-                locale,
-                before=html.escape(before),
-                commit=html.escape(after),
-                subject=html.escape(info["subject"] or "—"),
-                date=html.escape(info["date"] or "—"),
-                seconds=elapsed,
-            )
+            text = _tr(status, locale) + "\n" + _status_details(locale, info)
+            text += "\n\n" + _tr("request_completed", locale, user_id=request["user_id"],
+                                   user=html.escape(request.get("user_label") or str(request["user_id"])), seconds=elapsed)
+            if action == "update":
+                text += "\n\n" + _tr("result_details", locale, before=html.escape(before),
+                                     commit=html.escape(after), subject=html.escape(info["subject"] or "—"),
+                                     date=html.escape(info["date"] or "—"), seconds=elapsed)
             if result and result.get("status") == "failed":
                 text += "\n\n" + _tr("update_log", locale)
             try:
