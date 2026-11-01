@@ -12,19 +12,19 @@ from pydantic_ai import BinaryContent, UserContent
 
 from waku import common
 from waku.common.http import get_agent_http_client
-from waku.common.image_caption import short_image_caption
+from waku.common.image_caption import wrapped_image_caption
 from waku.common.safe_http import MAX_REDIRECTS, is_safe_web_url
 from waku.config import app_config
 from waku.i18n import i18n
 from waku.logger import logger
 from waku.services import manyacg as manyacg_service
+from .media_links import artwork_source, linked_title
 from waku.services.anime_images import (
     NoFreshImageError,
     enabled_image_sources,
     fetch_anime_artwork,
     image_services_notice,
     manyacg_candidates,
-    original_image_url,
     release_anime_image,
     remember_anime_image,
 )
@@ -175,7 +175,7 @@ def _discord_artwork_view(source_url: str | None) -> discord.ui.View | None:
     if not source_url:
         return None
     view = discord.ui.View()
-    view.add_item(discord.ui.Button(label="Chi tiết", url=source_url))
+    view.add_item(discord.ui.Button(label="Bản gốc", url=source_url))
     return view
 
 def _discord_artwork_embed(
@@ -188,13 +188,12 @@ def _discord_artwork_embed(
     index: int | None = None,
     source_type: str = "",
 ) -> discord.Embed:
-    title = short_image_caption(title)
+    title = wrapped_image_caption(title)
     display_title = f"🔞 {title}" if r18 else title
     if index is not None:
         display_title = f"{display_title} ({index})"
     embed = discord.Embed(
         title=display_title[:256],
-        url=source_url,
         description=(description or "")[:3500] or None,
         color=0xFF8AC5 if not r18 else 0xFF5C8A,
     )
@@ -210,8 +209,8 @@ async def _fetch_manyacg_discord_artwork(
         return None
     return await manyacg_candidates(manyacg_client.client, keyword, r18_mode)
 
-async def _fetch_discord_anime_artwork(keyword: str = "", r18_mode: int = 0, *, scope=None):
-    return await fetch_anime_artwork(keyword, r18_mode, _fetch_manyacg_discord_artwork, scope=scope)
+async def _fetch_discord_anime_artwork(keyword: str = "", r18_mode: int = 0, *, scope=None, image_type=None):
+    return await fetch_anime_artwork(keyword, r18_mode, _fetch_manyacg_discord_artwork, scope=scope, image_type=image_type)
 
 
 async def _send_discord_image_embed(
@@ -292,7 +291,7 @@ async def _send_discord_anime_photo_card(
             message,
             embed,
             picture.regular,
-            _discord_artwork_view(original_image_url(artwork, picture)),
+            _discord_artwork_view(artwork_source(artwork)),
             spoiler=artwork.r18,
             channel=channel,
             content=None,
@@ -336,20 +335,13 @@ async def _send_discord_anime_photos(
 
     async def send_batch():
         nonlocal sent_count
-        view = discord.ui.View()
         titles = []
         for index, (artwork, picture) in enumerate(batch):
             number = sent_count + index + 1
-            title = discord.utils.escape_markdown(artwork.title[:70]).replace("\n", " ")
-            titles.append(f"{number}. {title}")
-            detail_url = original_image_url(artwork, picture)
-            if detail_url:
-                view.add_item(discord.ui.Button(
-                    label=f"{number}. Chi tiết", url=detail_url, row=index // 5,
-                ))
+            titles.append(linked_title(artwork.title, artwork_source(artwork), number))
         try:
             await destination.send(
-                content="\n".join(titles), files=files, view=view if view.children else None,
+                content="\n".join(titles), files=files, suppress_embeds=True,
                 reference=reference if sent_count == 0 else None,
                 allowed_mentions=discord.AllowedMentions.none(), mention_author=False,
             )
@@ -381,13 +373,15 @@ async def _send_discord_anime_photos(
             if downloaded is None:
                 raise RuntimeError("Could not download an image for the Discord album")
             data, content_type = downloaded
-            if files and (size + len(data) > max_request_bytes or len(files) == _DISCORD_IMAGE_BATCH_MAX):
+            caption_size = sum(len(linked_title(a.title, artwork_source(a), sent_count + n + 1)) + 1 for n, (a, _) in enumerate(batch))
+            caption_size += len(linked_title(artwork.title, artwork_source(artwork), sent_count + len(batch) + 1))
+            if files and (size + len(data) > max_request_bytes or len(files) == _DISCORD_IMAGE_BATCH_MAX or caption_size > 1900):
                 await send_batch()
                 files, batch, size = [], [], 0
             filename = f"waku_{index + 1}_" + _image_filename(content_type)
             files.append(discord.File(
                 io.BytesIO(data), filename=filename, spoiler=artwork.r18,
-                description=f"{artwork.title}\n{artwork.source_url}"[:1024],
+                description=artwork.title[:1024],
             ))
             batch.append((artwork, picture))
             size += len(data)
@@ -629,8 +623,12 @@ async def _send_discord_artwork(message: discord.Message, artwork_url: str) -> b
         if not pictures:
             await _send_discord_media_notice(message, "This artwork has no image to send.")
             return True
+        if len(pictures) > 1:
+            return bool(await _send_discord_anime_photos(
+                message, [(artwork, picture) for picture in pictures[:4]], reference=message,
+            ))
         sent = False
-        view = _discord_artwork_view(artwork.source_url)
+        view = _discord_artwork_view(artwork_source(artwork)) if len(pictures) == 1 else None
         for index, picture in enumerate(pictures[:4], start=1):
             embed = _discord_artwork_embed(
                 title=artwork.title,

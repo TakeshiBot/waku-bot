@@ -13,7 +13,7 @@ from pydantic_ai import ModelRetry, RunContext
 from waku import common, database, i18n
 from waku.bot.client import client
 from waku.common.rich_message import message_plain_text
-from waku.common.image_caption import short_image_caption
+from waku.common.image_caption import wrapped_image_caption
 from waku.common.safe_http import safe_download_bytes
 from waku.common.telegram_photo import prepare_photo_upload
 from waku.common.telegram_runtime import telegram_chat_allowed
@@ -33,6 +33,7 @@ from waku.services.anime_images import (
     release_anime_image,
     remember_anime_image,
     resolve_image_search,
+    enforce_explicit_tags,
 )
 from waku.services.mirror_policy import is_raw_mirror_command
 from waku.services.telegram_images import image_allowed, telegram_image_settings
@@ -502,19 +503,21 @@ async def _fetch_manyacg_anime_artwork(
     return await manyacg_candidates(manyacg.httpx_client, keyword, r18_mode)
 
 
-async def _fetch_anime_artwork(keyword: str = "", r18_mode: int = 0, *, scope=None):
+async def _fetch_anime_artwork(keyword: str = "", r18_mode: int = 0, *, scope=None, image_type=None):
     return await fetch_anime_artwork(
-        keyword, r18_mode, _fetch_manyacg_anime_artwork, as_dict=True, scope=scope
+        keyword, r18_mode, _fetch_manyacg_anime_artwork, as_dict=True, scope=scope, image_type=image_type
     )
 
 
 async def send_anime_photo(
-    ctx: RunContext[datatype.ContextDeps], keyword: str = "", count: int = 1
+    ctx: RunContext[datatype.ContextDeps], keyword: str = "", count: int = 1,
+    image_type: Literal["anime", "real"] | None = None,
 ) -> AnimePhotoResult:
     """Send images from the configured ManyACG/Waku API catalogs.
 
     Waku API may include anime, cosplay and real photographs. This tool does not browse websites.
-    Never use it for a user-specified website, URL, photographer or cosplayer.
+    Never substitute it for a user-specified website or URL. A specifically requested
+    catalog tag, including a cosplayer's name, is an exact tag filter.
     Use websearch/read to find the requested site's actual image URLs, then
     tg('sendPhoto', ...) or tg('sendMediaGroup', ...) to upload them. 'Random'
     does not permit substituting this catalog for the user's requested source.
@@ -534,6 +537,8 @@ async def send_anime_photo(
             Preserve explicit r18/sfw instructions. Use nekos:neko, nekos:waifu,
             nekos:husbando or nekos:kitsune to select that SFW random source.
         count: How many photos to send, 1-10.
+        image_type: Only when explicitly requested: "anime" for drawn/illustrated
+            artwork, "real" for real people/photos/cosplay; otherwise omit.
     """
     if ctx.deps.message is None or ctx.deps.message.id is None:
         return AnimePhotoResult(
@@ -555,6 +560,7 @@ async def send_anime_photo(
     if request is None:
         return AnimePhotoResult(success=False, message="The requested Safe/R18 rating is not permitted by this conversation's image mode.")
     keyword, image_mode = request
+    keyword = enforce_explicit_tags(keyword, message_plain_text(ctx.deps.message))
     fetched = []
     deferred = False
     try:
@@ -570,8 +576,9 @@ async def send_anime_photo(
         count = max(1, min(10, count))
         for _ in range(count):
             try:
+                options = {"image_type": image_type} if image_type else {}
                 item = await _fetch_anime_artwork(
-                    keyword, r18_mode=image_mode, scope=f"telegram:{ctx.deps.chat_id}"
+                    keyword, r18_mode=image_mode, scope=f"telegram:{ctx.deps.chat_id}", **options
                 )
             except NoFreshImageError:
                 if fetched:
@@ -586,7 +593,7 @@ async def send_anime_photo(
                 break
             fetched.append(item)
         if not fetched:
-            return AnimePhotoResult(success=False, message=tr("anime_fetch_failed"))
+            return AnimePhotoResult(success=False, message="No image matched all requested filters, or the image service is unavailable. Explain naturally; do not substitute an unrelated random image.")
 
         # Validate and encode the actual files before telling the model that
         # delivery is pending. Telegram cannot always fetch these CDN URLs.
@@ -654,11 +661,11 @@ async def _deliver_anime_photos(ctx, fetched, prepared):
         pyrogram.types.InputMediaPhoto(
             media=prepared[i],
             caption=(
-                f"<a href='{html.escape(artwork['source_url'], quote=True)}'>{html.escape(artwork['title'][:200])}</a>"
+                wrapped_image_caption(artwork['title'])
                 if i == 0
                 else ""
             ),
-            parse_mode=pyrogram.enums.ParseMode.HTML if i == 0 else None,
+            parse_mode=pyrogram.enums.ParseMode.DISABLED if i == 0 else None,
             has_spoiler=artwork["r18"],
         )
         for i, (artwork, picture) in enumerate(fetched)
@@ -714,8 +721,8 @@ async def _send_anime_photo_single(
     await ctx.deps.client.send_photo(
         chat_id=ctx.deps.chat_id,
         photo=photo,
-        caption=f"<a href='{html.escape(artwork['source_url'], quote=True)}'>{html.escape(short_image_caption(artwork['title']))}</a>",
-        parse_mode=pyrogram.enums.ParseMode.HTML,
+        caption=wrapped_image_caption(artwork['title']),
+        parse_mode=pyrogram.enums.ParseMode.DISABLED,
         reply_markup=pyrogram.types.InlineKeyboardMarkup([buttons]) if buttons else None,
         has_spoiler=artwork["r18"],
         reply_parameters=pyrogram.types.ReplyParameters(

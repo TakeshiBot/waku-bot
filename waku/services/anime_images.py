@@ -66,7 +66,24 @@ IMAGE_SERVICES_UNAVAILABLE = (
 )
 
 
-async def waku_candidates(keyword, mode):
+def _requested_tags(keyword):
+    aliases = {"nekomimi": "cat_ears", "cat ears": "cat_ears", "tai mèo": "cat_ears", "hầu gái": "maid"}
+    return [aliases.get(part.strip().casefold(), part.strip().replace(" ", "_").lower())
+            for part in keyword.split(",") if part.strip()]
+
+
+def enforce_explicit_tags(keyword, request_text):
+    """Do not lose a tag explicitly named by the user during AI tool selection."""
+    cleaned = re.sub(r"(?<!\w)(?:tag|thẻ)\s*[:=]?\s*#?([\w()]+)", r"\1", keyword or "", flags=re.I)
+    tags = _requested_tags(cleaned)
+    for match in re.finditer(r"(?<!\w)(?:tag|thẻ)\s*[:=]?\s*#?([\w()]+)", request_text or "", re.I):
+        tag = match.group(1).casefold()
+        if tag not in tags:
+            tags.append(tag)
+    return ",".join(tags)
+
+
+async def waku_candidates(keyword, mode, image_type=None):
     base = app_config.waku_api_url.strip().rstrip("/")
     endpoint = base + ("/images/random" if base.endswith("/v1") else "/v1/images/random")
     client = _clients.get("waku-images")
@@ -77,11 +94,9 @@ async def waku_candidates(keyword, mode):
         _clients["waku-images"] = client
     params = {"rating": {0: "safe", 1: "r18", 2: "mixed"}[mode], "count": 10}
     if keyword.strip():
-        aliases = {"nekomimi": "cat_ears", "cat ears": "cat_ears", "tai mèo": "cat_ears", "hầu gái": "maid"}
-        params["tags"] = ",".join(
-            aliases.get(part.strip().casefold(), part.strip().replace(" ", "_").lower())
-            for part in keyword.split(",") if part.strip()
-        )
+        params["tags"] = ",".join(_requested_tags(keyword))
+    if image_type:
+        params["image_type"] = image_type
     response = await client.get(
         endpoint, params=params,
         headers={"Authorization": "Bearer " + app_config.waku_api_key.strip()},
@@ -94,6 +109,10 @@ async def waku_candidates(keyword, mode):
     items = []
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict) or row.get("rating") not in {"safe", "r18"}:
+            continue
+        if not image_allowed(row["rating"] == "r18", mode) or (image_type and row.get("image_type") != image_type):
+            continue
+        if any(tag not in {str(t).casefold() for t in row.get("tags", []) if isinstance(t, str)} for tag in _requested_tags(keyword)):
             continue
         url = _web_url(row.get("url"))
         if not url or not row.get("id"):
@@ -487,7 +506,7 @@ async def release_anime_image(scope, artwork, picture):
 
 
 async def fetch_anime_artwork(
-    keyword, r18_mode, manyacg_fetch, *, as_dict=False, scope=None
+    keyword, r18_mode, manyacg_fetch, *, as_dict=False, scope=None, image_type=None
 ):
     sources = enabled_image_sources()
     if not sources:
@@ -496,6 +515,8 @@ async def fetch_anime_artwork(
     if request is None:
         return None
     keyword, mode = request
+    if image_type not in (None, "anime", "real"):
+        return None
     forced_nekos = keyword.lower().startswith(("nekos:", "nekos.best:"))
     if forced_nekos:
         if "manyacg" not in sources:
@@ -509,7 +530,8 @@ async def fetch_anime_artwork(
     else:
         # nekos.best cannot search arbitrary tags. Do not silently replace a
         # failed tag search with an unrelated random image from another source.
-        providers = list(sources)
+        # Other providers do not expose Waku's verified image-type field.
+        providers = [source for source in sources if not image_type or source == "waku"]
         random.shuffle(providers)
     repeated = False
     attempts = [
@@ -522,7 +544,7 @@ async def fetch_anime_artwork(
             if provider == "nekos":
                 item = await _fetch_nekos_artwork(keyword)
             elif provider == "waku":
-                item = await waku_candidates(keyword, mode)
+                item = await waku_candidates(keyword, mode, image_type) if image_type else await waku_candidates(keyword, mode)
             else:
                 item = await manyacg_fetch(keyword, mode)
             if not item:
@@ -530,8 +552,18 @@ async def fetch_anime_artwork(
             if ("manyacg" if provider == "nekos" else provider) not in enabled_image_sources():
                 continue
             if isinstance(item, list):
+                if keyword and provider == "manyacg":
+                    required = _requested_tags(keyword)
+                    item = [art for art in item if all(
+                        tag in {str(value).casefold() for value in (_value(art, "tags") or []) if isinstance(value, str)}
+                        for tag in required
+                    )]
                 choices = [(artwork, None) for artwork in item]
-            elif image_allowed(_value(item[0], "r18"), mode):
+            elif (image_allowed(_value(item[0], "r18"), mode) and
+                  (provider != "manyacg" or not keyword or all(
+                      tag in {str(value).casefold() for value in (_value(item[0], "tags") or []) if isinstance(value, str)}
+                      for tag in _requested_tags(keyword)
+                  ))):
                 choices = [item]
             else:
                 continue

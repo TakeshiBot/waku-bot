@@ -1,6 +1,16 @@
 """Compact photo metadata for single-image messages on chat clients."""
 
 import unicodedata
+import textwrap
+
+
+def wrapped_image_caption(value: str, max_width: int = 28) -> str:
+    """Wrap metadata rather than attach a link; Telegram limits captions to 1024 characters."""
+    text = " ".join((value or "").split())
+    # Client fonts and image sizes differ, so width is deliberately approximate.
+    lines = textwrap.wrap(text, width=max_width, break_long_words=True, break_on_hyphens=False)
+    caption = "\n".join(lines)
+    return caption if len(caption) <= 1024 else caption[:1023].rstrip() + "…"
 
 
 def short_image_caption(value: str, max_width: int = 28) -> str:

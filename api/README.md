@@ -62,7 +62,7 @@ Mở URL gốc của Worker, ví dụ `https://waku-api.your-account.workers.dev
 
 Với ảnh đã phân loại, API còn trả `telegram_file_url`: mở link này trong Telegram để bot upload gửi file gốc trong DM. Người nhận không có quyền upload hay quản lý thư viện. Script deploy tự lấy username từ bot Telegram; không cần thêm config thủ công. Telegram không hỗ trợ spoiler cho `sendDocument`, vì vậy file gốc không có bảo đảm làm mờ như ảnh gửi bằng `sendPhoto`.
 
-Gọi ảnh: `GET https://waku-api.takeshi.dev/v1/images/random?rating=safe&count=3&tags=maid` với header `Authorization: Bearer <key dịch vụ>`. Hỗ trợ `rating=safe|r18|mixed`, `count=1..10`, nhiều tag ngăn bằng dấu phẩy (khớp tất cả), `exclude` chứa ID cần tránh. Chỉ ảnh đủ tên, tag, phân loại và kiểu ảnh mới vào API random.
+Gọi ảnh: `GET https://waku-api.takeshi.dev/v1/images/random?rating=safe&count=3&tags=maid` với header `Authorization: Bearer <key dịch vụ>`. Hỗ trợ `rating=safe|r18|mixed`, `image_type=anime|real` (tùy chọn), `count=1..10`, nhiều tag ngăn bằng dấu phẩy (khớp tất cả), `exclude` chứa ID cần tránh. Các bộ lọc kết hợp AND; chỉ ảnh đủ tên, tag, phân loại và kiểu ảnh mới vào API random.
 
 Trong bot Waku, điền `waku_api_url = "https://waku-api.takeshi.dev/v1"`, `waku_api_key` bằng key dịch vụ, bật `waku_api_enabled`. `/config → Service` có công tắc riêng ManyACG/Waku API, mỗi công tắc nằm trên hàng URL/Key tương ứng. Bật cả hai để chọn nguồn ngẫu nhiên, bật nguồn nào chỉ dùng nguồn đó; tắt cả hai không gọi nguồn dự phòng ngầm. Lệnh ảnh báo chưa cấu hình dịch vụ; tool AI trả trạng thái cho model tự diễn đạt. Telegram và Discord cùng dùng bộ chọn nguồn, bộ lọc Safe/R18, metadata caption và chống lặp hiện có.
 

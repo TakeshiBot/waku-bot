@@ -14,6 +14,7 @@ from waku.services.anime_images import (
     image_source_enabled,
     release_anime_image,
     resolve_image_search,
+    enforce_explicit_tags,
 )
 from waku.services.telegram_images import image_allowed
 
@@ -73,12 +74,13 @@ async def send_discord_anime_photo(
     caption: str | None = None,
     allow_everyone: bool = False,
     count: int = 1,
+    image_type: str | None = None,
 ) -> DiscordAnimePhotoResult:
     """Get and send images from configured catalogs to the current Discord chat.
 
     This uses configured ManyACG/Waku API catalogs, including cosplay/photos if
-    present in Waku API. For a named website/gallery/cosplayer, research
-    that actual source and use send_discord_web_media with its real photo URLs.
+    present in Waku API. Use a requested catalog tag, including a cosplayer name,
+    as an exact tag; for a named website/gallery research that actual source.
 
     Call this tool when the user naturally asks Waku to send/show/give an
     anime/Pixiv image, picture, photo, seg, ảnh, hình, or similar. The current
@@ -110,6 +112,8 @@ async def send_discord_anime_photo(
         count: Number of images requested for this turn. The backend caps this to
             10 images per album. One image keeps its embed; multiple images use
             native attachments in the same message, split only for upload size limits.
+        image_type: If explicitly requested, "anime" for drawings or "real" for
+            real people/photos/cosplay. Otherwise omit. Do not invent this filter.
     """
     if not enabled_image_sources():
         return DiscordAnimePhotoResult(success=False, message=IMAGE_SERVICES_UNAVAILABLE)
@@ -179,6 +183,9 @@ async def send_discord_anime_photo(
             message="The requested Safe/R18 rating is not permitted by this conversation's image mode.",
         )
     keyword, r18_mode = request
+    keyword = enforce_explicit_tags(keyword, getattr(message, "content", "") or "")
+    if image_type not in (None, "anime", "real"):
+        return DiscordAnimePhotoResult(success=False, message="Invalid image type. Use anime or real only.")
 
     requested_count = max(1, int(count or 1))
     capped_count = min(requested_count, _DISCORD_IMAGE_BATCH_MAX)
@@ -238,8 +245,9 @@ async def send_discord_anime_photo(
     try:
         for _ in range(capped_count):
             try:
+                type_options = {"image_type": image_type} if image_type else {}
                 fetched = await _fetch_discord_anime_artwork(
-                    keyword.strip(), r18_mode=r18_mode, scope=scope
+                    keyword.strip(), r18_mode=r18_mode, scope=scope, **type_options
                 )
             except NoFreshImageError:
                 if prepared:

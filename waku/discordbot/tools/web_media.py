@@ -20,6 +20,7 @@ from waku.config import app_config
 from waku.logger import logger
 
 from ..media import _search_web_images
+from ..media_links import linked_title
 from ..models import DiscordContextDeps, DiscordWebImageResult, DiscordWebMediaItem
 from ..permissions import _can_view_channel, _channel_allowed, _channel_permissions
 from ..settings import (
@@ -150,9 +151,9 @@ async def _prepare(
 
 def _caption(items, offset: int, numbered: bool) -> str:
     return "\n".join(
-        (f"{offset + index + 1}. {item.caption}" if numbered else item.caption)
+        (linked_title(item.caption or item.filename, item.source_url, offset + index + 1) if numbered else item.caption)
         for index, item in enumerate(items)
-        if item.caption
+        if item.caption or numbered
     )
 
 
@@ -189,18 +190,15 @@ async def _send_prepared(ctx, items, as_documents: bool, requested_count: int):
             for item in batch
         ]
         view = discord.ui.View()
-        for index, item in enumerate(batch):
+        for item in batch if len(items) == 1 else ():
             if item.source_url and urlparse(item.source_url).scheme in {
                 "http",
                 "https",
             }:
                 view.add_item(
                     discord.ui.Button(
-                        label="Chi tiết"
-                        if len(items) == 1
-                        else f"{sent + index + 1}. Chi tiết",
+                        label="Bản gốc",
                         url=item.source_url,
-                        row=index // 5,
                     )
                 )
         kwargs = {

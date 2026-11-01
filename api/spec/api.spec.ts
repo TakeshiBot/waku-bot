@@ -248,6 +248,22 @@ test('random albums: count 10, AND tag filtering, ratings, exclusions and pagina
   const stats=await (await call('/v1/stats')).json() as any;assert.equal(stats.images.total,15);assert.equal(stats.images.unknown,1);
 });
 
+test('random filters combine rating, exact tags and image type',async()=>{
+  const anime=(await upload(240,'r18','xidaidai,cat')).image;
+  const real=(await upload(241,'r18','xidaidai,cat')).image;
+  const safe=(await upload(242,'safe','xidaidai,cat')).image;
+  try{
+    await call('/v1/images/'+real.id,'PATCH',{image_type:'real'});
+    await call('/v1/images/'+safe.id,'PATCH',{image_type:'real'});
+    const response=await call('/v1/images/random?rating=r18&tags=xidaidai,cat&image_type=real&count=10');
+    assert.equal(response.status,200);
+    assert.deepEqual((await response.json() as any).images.map((x:any)=>x.id),[real.id]);
+    const missing=await call('/v1/images/random?rating=r18&tags=xidaidai,absent&image_type=real');
+    assert.equal((await missing.json() as any).count,0);
+    assert.equal((await call('/v1/images/random?image_type=other')).status,400);
+  }finally{for(const image of [anime,real,safe])await call('/v1/images/'+image.id,'DELETE');}
+});
+
 test('URL imports, unsupported files, unsafe redirects, size and malformed metadata',async()=>{
   const imported=await call('/v1/images','POST',{url:'https://cdn.example.com/photo.webp',rating:'safe'});
   assert.equal(imported.status,201);

@@ -134,16 +134,18 @@ export async function cleanupObjects(env: Env) {
   for (const row of rows.results) await deleteObject(env,row.object_key);
 }
 
-export async function choose(env: Env, rating: string, tags: string[], count: number, exclude: string[]) {
+export async function choose(env: Env, rating: string, tags: string[], count: number, exclude: string[], imageType: string | null = null) {
   if (!['safe','r18','mixed'].includes(rating)) throw new HttpError(400,'invalid_rating','rating: safe, r18 hoặc mixed.');
+  if (imageType !== null && !['anime','real'].includes(imageType)) throw new HttpError(400,'invalid_type','Kiểu ảnh không hợp lệ.');
   const ratings = rating === 'mixed' ? ['safe','r18'] : [rating];
   const filters = [
     CLASSIFIED_IMAGE_SQL,
     `i.rating IN (${ratings.map(()=>'?').join(',')})`,
+    ...(imageType ? ['i.image_type=?'] : []),
     ...tags.map(()=> 'EXISTS (SELECT 1 FROM image_tags t WHERE t.image_id=i.id AND t.tag=?)'),
     ...(exclude.length ? [`i.id NOT IN (${exclude.map(()=>'?').join(',')})`] : []),
   ];
-  const args = [...ratings,...tags,...exclude];
+  const args = [...ratings,...(imageType ? [imageType] : []),...tags,...exclude];
   const pivot = crypto.getRandomValues(new Uint32Array(1))[0]/2**32;
   const first = await env.DB.prepare(`SELECT i.* FROM images i WHERE ${filters.join(' AND ')}
     AND i.random_key>=? ORDER BY i.random_key LIMIT ?`).bind(...args,pivot,count).all<ImageRow>();
