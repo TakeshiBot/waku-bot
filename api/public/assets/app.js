@@ -4,7 +4,8 @@ import {GalleryThumbnails} from './gallery-cache.js?v=17';
 const $=id=>document.getElementById(id);
 const state={authenticated:false,maxMb:10,images:new Map(),cursor:null,query:'',rating:'',queue:[],pumping:false,paused:true,editing:null,listVersion:0,statsBusy:false,
   selected:new Set(),allSelected:false,selectionBusy:false,bulkBusy:false,deleteTargets:[],editTargets:[],loadedLimit:0,uploadIds:new Set(),uploadResults:new Map(),starting:false,aiBatchId:null,aiProgress:null,aiPending:0,aiEnqueueing:false,
-  revision:null,lastStats:0,galleryDirty:false,gallerySignature:'',galleryScope:null,galleryViews:new Map(),cards:new Map(),dayGroups:new Map(),listController:null,quotaUntil:0,filterTags:new Set(),filterTypes:new Set(),tagOptions:[],tagsLoaded:0,checking:0,aiAvailable:false,aiQueue:null,aiControlBusy:false,aiRunActive:false,aiResult:null,aiBaseline:null};
+  revision:null,lastStats:0,galleryDirty:false,gallerySignature:'',galleryScope:null,galleryViews:new Map(),cards:new Map(),dayGroups:new Map(),listController:null,quotaUntil:0,filterTags:new Set(),filterTypes:new Set(),tagOptions:[],tagsLoaded:0,checking:0,aiAvailable:false,aiQueue:null,aiControlBusy:false,aiRunActive:false,aiResult:null,aiBaseline:null,
+  editorIds:[],editorVersion:0,editorNavigationBusy:false,editorNavigationRun:0};
 const thumbnails=new GalleryThumbnails($('library-results'));
 const number=n=>new Intl.NumberFormat('vi-VN').format(n || 0);
 const bytes=n=>n>=1073741824?(n/1073741824).toFixed(1)+' GB':n>=1048576?(n/1048576).toFixed(1)+' MB':(n/1024).toFixed(0)+' KB';
@@ -193,6 +194,7 @@ function renderGallery(){
   for(const [id,card]of state.cards){if(state.cards.size<=120)break;if(!card.isConnected){const img=card.querySelector('.thumb img');if(img)thumbnails.release(img);state.cards.delete(id);}}
   renderSelection();
   updateScrollDate();
+  if($('editor').open)updateEditorNavigation();
 }
 const uploadDay=iso=>new Date(Date.parse(iso)+7*3600000).toISOString().slice(0,10);
 const dayLabel=day=>new Intl.DateTimeFormat('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',weekday:'long',day:'numeric',month:'long'}).format(new Date(day+'T12:00:00+07:00'));
@@ -667,25 +669,82 @@ $('start-upload').addEventListener('click',start);$('pause-upload').addEventList
 $('retry-errors').addEventListener('click',async()=>{const checking=[];for(const item of state.queue)if(item.status==='error'){item.status=item.needsCheck?'checking':'queued';item.error='';item.progress=0;item.autoRetried=false;item.retryAfter=0;if(item.needsCheck)checking.push(item);}if(checking.length)await checkUploads(checking);start();});
 window.addEventListener('beforeunload',event=>{if(state.pumping || state.queue.some(x=>x.status==='queued')){event.preventDefault();event.returnValue='';}});
 
-async function openEditor(id){
-  try{const image=state.images.get(id) || (await api('/v1/images/'+id)).image;state.editing=image;state.images.set(id,image);$('edit-preview').src='/media/'+encodeURIComponent(id);$('edit-title').value=image.title;$('edit-tags').value=image.tags.join(', ');$('edit-rating').value=image.rating;$('edit-type').value=image.image_type || '';$('edit-source').value=image.source_url || '';$('analyze-image').hidden=isClassified(image);$('analyze-image').disabled=['pending','running'].includes(image.ai_status);$('edit-meta').textContent=`${bytes(image.size)} · ${image.mime_type.replace('image/','').toUpperCase()} · ${new Date(image.created_at).toLocaleDateString('vi-VN')}${image.original_name?' · '+image.original_name:''}`;const failed=!isClassified(image)&&image.ai_status==='failed';$('edit-ai-error').hidden=!failed;$('edit-ai-error').textContent=failed?analysisError(image.ai_error):'';$('editor').showModal();}
-  catch(error){toast(error.message);}
+const galleryImageIds=()=>[...state.images.values()].sort((a,b)=>b.created_at.localeCompare(a.created_at)||b.id.localeCompare(a.id)).map(image=>image.id);
+function toggleEditorDetails(open){
+  $('editor').classList.toggle('details-open',open);$('toggle-editor-details').setAttribute('aria-expanded',String(open));
 }
+function updateEditorNavigation(){
+  const ordered=galleryImageIds(),last=ordered.indexOf(state.editorIds.at(-1));
+  if(last>=0){const known=new Set(state.editorIds);state.editorIds.push(...ordered.slice(last+1).filter(id=>!known.has(id)));}
+  const index=state.editorIds.indexOf(state.editing?.id),busy=state.editorNavigationBusy||$('save-image').disabled;
+  $('editor-prev').disabled=busy||index<=0;
+  $('editor-next').disabled=busy||index<0||index===state.editorIds.length-1&&!state.cursor;
+  $('editor').setAttribute('aria-busy',String(state.editorNavigationBusy));
+}
+async function openEditor(id,navigating=false){
+  const version=++state.editorVersion;
+  try{
+    const image=state.images.get(id)||(await api('/v1/images/'+id)).image;if(version!==state.editorVersion)return;
+    if(!navigating||!$('editor').open){state.editorIds=galleryImageIds();if(!state.editorIds.includes(id))state.editorIds.push(id);toggleEditorDetails(false);}
+    state.editing=image;state.images.set(id,image);
+    $('edit-preview').src='/media/'+encodeURIComponent(id);$('edit-preview').alt=image.title||'Ảnh đang xem';
+    $('edit-title').value=image.title;$('edit-tags').value=image.tags.join(', ');$('edit-rating').value=image.rating;$('edit-type').value=image.image_type||'';$('edit-source').value=image.source_url||'';
+    $('analyze-image').hidden=isClassified(image);$('analyze-image').disabled=['pending','running'].includes(image.ai_status);
+    $('edit-meta').textContent=`${bytes(image.size)} · ${image.mime_type.replace('image/','').toUpperCase()} · ${new Date(image.created_at).toLocaleDateString('vi-VN')}${image.original_name?' · '+image.original_name:''}`;
+    const failed=!isClassified(image)&&image.ai_status==='failed';$('edit-ai-error').hidden=!failed;$('edit-ai-error').textContent=failed?analysisError(image.ai_error):'';
+    $('edit-form').scrollTop=0;
+    if(!$('editor').open){$('editor').showModal();$('editor-close').focus({preventScroll:true});}
+    updateEditorNavigation();
+  }catch(error){if(version===state.editorVersion)toast(error.message);}
+}
+async function navigateEditor(direction){
+  if(!$('editor').open||!state.editing||state.editorNavigationBusy||$('save-image').disabled)return;
+  const current=state.editing.id,scope=listParameters().toString(),version=state.editorVersion;let index=state.editorIds.indexOf(current);
+  if(index<0||direction<0&&index===0)return;
+  const run=++state.editorNavigationRun;state.editorNavigationBusy=true;updateEditorNavigation();
+  try{
+    if(direction>0&&index===state.editorIds.length-1&&state.cursor){
+      const before=state.cursor;await loadImages(false,true);
+      if(!$('editor').open||state.editing?.id!==current||version!==state.editorVersion||scope!==listParameters().toString())return;
+      const known=new Set(state.editorIds);state.editorIds.push(...galleryImageIds().filter(id=>!known.has(id)));
+      if(state.editorIds.length===index+1&&state.cursor===before){toast($('list-status').textContent||'Chưa tải được ảnh tiếp theo.');return;}
+    }
+    const next=state.editorIds[index+direction];if(next&&$('editor').open&&state.editing?.id===current&&version===state.editorVersion)await openEditor(next,true);
+  }finally{if(run===state.editorNavigationRun){state.editorNavigationBusy=false;updateEditorNavigation();}}
+}
+$('editor-prev').addEventListener('click',()=>navigateEditor(-1));$('editor-next').addEventListener('click',()=>navigateEditor(1));
+$('toggle-editor-details').addEventListener('click',()=>toggleEditorDetails(!$('editor').classList.contains('details-open')));
+$('close-editor-details').addEventListener('click',()=>{toggleEditorDetails(false);$('toggle-editor-details').focus({preventScroll:true});});
+document.addEventListener('keydown',event=>{
+  if(!$('editor').open||document.querySelectorAll('dialog[open]').length>1||event.defaultPrevented||event.isComposing||event.altKey||event.ctrlKey||event.metaKey)return;
+  if(event.target.closest('input,textarea,select,[contenteditable=true]'))return;
+  if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();navigateEditor(event.key==='ArrowLeft'?-1:1);}
+});
+let editorSwipe=null;
+$('editor-image').addEventListener('touchstart',event=>{editorSwipe=matchMedia('(max-width:760px)').matches&&event.touches.length===1?{x:event.touches[0].clientX,y:event.touches[0].clientY,at:Date.now()}:null;},{passive:true});
+$('editor-image').addEventListener('touchcancel',()=>editorSwipe=null,{passive:true});
+$('editor-image').addEventListener('touchend',event=>{
+  const start=editorSwipe;editorSwipe=null;if(!start||event.touches.length||!event.changedTouches.length)return;
+  const dx=event.changedTouches[0].clientX-start.x,dy=event.changedTouches[0].clientY-start.y;
+  if(Date.now()-start.at<=700&&Math.abs(dx)>=60&&Math.abs(dx)>Math.abs(dy)*1.6)navigateEditor(dx<0?1:-1);
+},{passive:true});
+$('editor').addEventListener('close',()=>{if($('editor').open)return;state.editorVersion++;state.editorNavigationRun++;state.editing=null;state.editorIds=[];state.editorNavigationBusy=false;toggleEditorDetails(false);});
+$('editor').addEventListener('cancel',event=>{if(matchMedia('(max-width:760px)').matches&&$('editor').classList.contains('details-open')){event.preventDefault();toggleEditorDetails(false);$('toggle-editor-details').focus({preventScroll:true});}});
 $('editor-close').addEventListener('click',()=>$('editor').close());
 let outsideEditor=false;
-const editorOutside=event=>{const box=$('editor').getBoundingClientRect();return event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom;};
+const editorOutside=event=>{const box=$('editor-surface').getBoundingClientRect();return event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom;};
 $('editor').addEventListener('pointerdown',event=>outsideEditor=event.target===$('editor')&&editorOutside(event));
 $('editor').addEventListener('click',event=>{if(outsideEditor&&event.target===$('editor')&&editorOutside(event))$('editor').close();outsideEditor=false;});
 $('edit-form').addEventListener('submit',async event=>{
-  event.preventDefault();const image=state.editing;if(!image)return;$('save-image').disabled=true;
-  try{const {image:updated}=await api('/v1/images/'+image.id,{method:'PATCH',body:JSON.stringify({title:$('edit-title').value,tags:tagList($('edit-tags').value),rating:$('edit-rating').value,image_type:$('edit-type').value || null,source_url:$('edit-source').value.trim() || null})});state.images.set(image.id,updated);state.editing=updated;state.selected.delete(image.id);renderGallery();$('editor').close();toast('Đã lưu thay đổi.');loadImages(false);refreshStats(false,true);}
-  catch(error){toast(error.message);}finally{$('save-image').disabled=false;}
+  event.preventDefault();const image=state.editing,version=state.editorVersion;if(!image)return;$('save-image').disabled=true;updateEditorNavigation();
+  try{const {image:updated}=await api('/v1/images/'+image.id,{method:'PATCH',body:JSON.stringify({title:$('edit-title').value,tags:tagList($('edit-tags').value),rating:$('edit-rating').value,image_type:$('edit-type').value || null,source_url:$('edit-source').value.trim() || null})});state.images.set(image.id,updated);state.selected.delete(image.id);renderGallery();if(version===state.editorVersion&&state.editing?.id===image.id)$('editor').close();toast('Đã lưu thay đổi.');loadImages(false);refreshStats(false,true);}
+  catch(error){toast(error.message);}finally{$('save-image').disabled=false;updateEditorNavigation();}
 });
 $('analyze-image').addEventListener('click',async()=>{
   if(!state.editing)return;const id=state.editing.id;$('editor').close();await queueAi([id]);
 });
-$('copy-link').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(location.origin+'/media/'+state.editing.id);toast('Đã sao chép link ảnh.');}catch{toast('Trình duyệt chưa cho phép sao chép. Bạn có thể mở ảnh để lấy link.');}});
-$('delete-image').addEventListener('click',()=>{if(state.editing)confirmDelete([state.editing.id]);});$('cancel-delete').addEventListener('click',()=>$('confirm-delete').close());
+for(const id of ['copy-link','viewer-copy'])$(id).addEventListener('click',async()=>{if(!state.editing)return;try{await navigator.clipboard.writeText(location.origin+'/media/'+state.editing.id);toast('Đã sao chép link ảnh.');}catch{toast('Trình duyệt chưa cho phép sao chép. Bạn có thể mở ảnh để lấy link.');}});
+for(const id of ['delete-image','viewer-delete'])$(id).addEventListener('click',()=>{if(state.editing)confirmDelete([state.editing.id]);});$('cancel-delete').addEventListener('click',()=>$('confirm-delete').close());
 $('confirm-delete-button').addEventListener('click',async()=>{
   const ids=[...state.deleteTargets];if(!ids.length||state.bulkBusy)return;
   state.bulkBusy=true;$('confirm-delete-button').disabled=true;let next=0,done=0,failed=0;
