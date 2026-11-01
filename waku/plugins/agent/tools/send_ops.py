@@ -13,7 +13,7 @@ from pydantic_ai import ModelRetry, RunContext
 from waku import common, database, i18n
 from waku.bot.client import client
 from waku.common.rich_message import message_plain_text
-from waku.common.image_caption import wrapped_image_caption
+from waku.common.image_caption import telegram_image_caption
 from waku.common.safe_http import safe_download_bytes
 from waku.common.telegram_photo import prepare_photo_upload
 from waku.common.telegram_runtime import telegram_chat_allowed
@@ -661,7 +661,7 @@ async def _deliver_anime_photos(ctx, fetched, prepared):
         pyrogram.types.InputMediaPhoto(
             media=prepared[i],
             caption=(
-                wrapped_image_caption(artwork['title'])
+                telegram_image_caption(artwork['title'])
                 if i == 0
                 else ""
             ),
@@ -721,7 +721,7 @@ async def _send_anime_photo_single(
     await ctx.deps.client.send_photo(
         chat_id=ctx.deps.chat_id,
         photo=photo,
-        caption=wrapped_image_caption(artwork['title']),
+        caption=telegram_image_caption(artwork['title']),
         parse_mode=pyrogram.enums.ParseMode.DISABLED,
         reply_markup=pyrogram.types.InlineKeyboardMarkup([buttons]) if buttons else None,
         has_spoiler=artwork["r18"],

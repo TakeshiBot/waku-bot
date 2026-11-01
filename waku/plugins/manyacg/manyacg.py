@@ -9,7 +9,7 @@ from pyrogram.client import Client as PyrogramClient
 
 from waku import common, database, i18n
 from waku.common.utils import GROUP_CHAT_TYPES
-from waku.common.image_caption import wrapped_image_caption
+from waku.common.image_caption import telegram_image_caption
 from waku.config import app_config
 from waku.logger import logger
 from waku.services import aniobjcut
@@ -105,7 +105,7 @@ async def parse_artwork(client: PyrogramClient, message: pyrogram.types.Message)
             videos.sort(key=lambda x: x.index)
             medias += [video for video in videos]
         assert len(medias) > 0, "No media found in artwork"
-        caption = f"{html.escape(wrapped_image_caption(artwork.title))}\n<blockquote expandable=true>{html.escape(artwork.description)}</blockquote>"
+        caption = f"{html.escape(telegram_image_caption(artwork.title))}\n<blockquote expandable=true>{html.escape(artwork.description)}</blockquote>"
         if (count := len(medias)) > 10:
             caption += i18n.t(
                 "bot.msg.manyacg.artwork_pictures_count",
@@ -233,7 +233,7 @@ async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
             ))
         await message.reply_photo(
             photo=picture.regular,
-            caption=wrapped_image_caption(artwork.title),
+            caption=telegram_image_caption(artwork.title),
             parse_mode=pyrogram.enums.ParseMode.DISABLED,
             reply_markup=pyrogram.types.InlineKeyboardMarkup([buttons]) if buttons else None,
             has_spoiler=artwork.r18,
@@ -309,7 +309,7 @@ async def randavatar_command(client: PyrogramClient, message: pyrogram.types.Mes
         avatar = await aniobjcut.aniobjcut_client.cut_avatar(fileresp.content)
         await message.reply_photo(
             photo=io.BytesIO(avatar),
-            caption=wrapped_image_caption(artwork.title),
+            caption=telegram_image_caption(artwork.title),
             parse_mode=pyrogram.enums.ParseMode.DISABLED,
             reply_markup=pyrogram.types.InlineKeyboardMarkup(
                 [

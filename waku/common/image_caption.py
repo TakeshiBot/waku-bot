@@ -4,6 +4,12 @@ import unicodedata
 import textwrap
 
 
+def telegram_image_caption(value: str) -> str:
+    """Keep the title unwrapped so Telegram can lay it out for each photo or album."""
+    text = " ".join((value or "").split())
+    return text if len(text) <= 1024 else text[:1023].rstrip() + "…"
+
+
 def wrapped_image_caption(value: str, max_width: int = 28) -> str:
     """Wrap metadata rather than attach a link; Telegram limits captions to 1024 characters."""
     text = " ".join((value or "").split())
