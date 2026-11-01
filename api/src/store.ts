@@ -1,4 +1,5 @@
 import { imageType } from './input';
+import {dimensionsForRows,imageDimensions,recordDimensions} from './dimensions';
 import { HttpError, type Env, type ImageRow, type Metadata } from './types';
 
 // Classification follows saved metadata, including when AI is reanalysing it.
@@ -32,25 +33,33 @@ export async function recordImportAliases(env:Env,id:string,urls:string[]) {
 
 export async function presentMany(env:Env, rows:ImageRow[], base:string) {
   if (!rows.length) return [];
-  const list=await env.DB.prepare(`SELECT image_id,tag FROM image_tags WHERE image_id IN (${rows.map(()=>'?').join(',')}) ORDER BY tag`)
-    .bind(...rows.map(row=>row.id)).all<{image_id:string;tag:string}>();
+  const [list,analysis,sizes]=await Promise.all([
+    env.DB.prepare(`SELECT image_id,tag FROM image_tags WHERE image_id IN (${rows.map(()=>'?').join(',')}) ORDER BY tag`)
+      .bind(...rows.map(row=>row.id)).all<{image_id:string;tag:string}>(),
+    env.DB.prepare(`SELECT image_id,status,last_error FROM image_analysis WHERE image_id IN (${rows.map(()=>'?').join(',')})`)
+      .bind(...rows.map(row=>row.id)).all<{image_id:string;status:string;last_error:string|null}>(),
+    dimensionsForRows(env,rows),
+  ]);
   const allTags=new Map<string,string[]>();
   for (const item of list.results) {const values=allTags.get(item.image_id) || [];values.push(item.tag);allTags.set(item.image_id,values);}
-  const analysis=await env.DB.prepare(`SELECT image_id,status,last_error FROM image_analysis WHERE image_id IN (${rows.map(()=>'?').join(',')})`)
-    .bind(...rows.map(row=>row.id)).all<{image_id:string;status:string;last_error:string|null}>();
   const states=new Map(analysis.results.map(item=>[item.image_id,item]));
-  return rows.map(row=>({
-    id:row.id, url:`${base}/media/${row.id}`, filename:row.filename,
-    telegram_file_url:env.TELEGRAM_BOT_USERNAME && /^[A-Za-z0-9_]{5,32}$/.test(env.TELEGRAM_BOT_USERNAME)
-      ? `https://t.me/${env.TELEGRAM_BOT_USERNAME}?start=file_${row.id.replaceAll('-','')}` : null,
-    mime_type:row.mime_type, size:row.size, sha256:row.sha256, title:row.title,
-    source_url:row.source_url, rating:row.rating, image_type:row.image_type, original_name:row.original_name, tags:allTags.get(row.id) || [],
-    created_at:new Date(row.created_at).toISOString(),
-    ai_status:states.get(row.id)?.status || 'off',
-    ai_error:states.get(row.id)?.status==='failed'?safeAnalysisError(states.get(row.id)?.last_error):null,
-    classified:Boolean(row.title.trim()&&['safe','r18'].includes(row.rating)&&['anime','real'].includes(row.image_type||'')
-      &&(allTags.get(row.id)||[]).some(tag=>tag.trim())),
-  }));
+  return rows.map(row=>{
+    const classified=Boolean(row.title.trim()&&['safe','r18'].includes(row.rating)&&['anime','real'].includes(row.image_type||'')
+      &&(allTags.get(row.id)||[]).some(tag=>tag.trim()));
+    return {
+      id:row.id, url:`${base}/media/${row.id}`, filename:row.filename,
+      telegram_file_url:env.TELEGRAM_BOT_USERNAME && /^[A-Za-z0-9_]{5,32}$/.test(env.TELEGRAM_BOT_USERNAME)
+        ? `https://t.me/${env.TELEGRAM_BOT_USERNAME}?start=file_${row.id.replaceAll('-','')}` : null,
+      mime_type:row.mime_type, size:row.size, sha256:row.sha256, title:row.title,
+      width:sizes.get(row.id)?.width??null,height:sizes.get(row.id)?.height??null,
+      source_url:row.source_url, rating:row.rating, image_type:row.image_type, original_name:row.original_name, tags:allTags.get(row.id) || [],
+      created_at:new Date(row.created_at).toISOString(),
+      ai_status:states.get(row.id)?.status || 'off',
+      // A previous analysis failure does not invalidate complete saved metadata.
+      ai_error:!classified&&states.get(row.id)?.status==='failed'?safeAnalysisError(states.get(row.id)?.last_error):null,
+      classified,
+    };
+  });
 }
 
 function safeAnalysisError(code:unknown):string {
@@ -72,9 +81,11 @@ async function importedSource(env:Env,row:ImageRow,source:string|null,importUrl:
 export async function save(env: Env, bytes: ArrayBuffer, info: Metadata, uploader: string | null, originalName:string|null=null, importUrl:string|null=null) {
   if (bytes.byteLength > maxBytes(env)) throw new HttpError(413,'too_large','Ảnh vượt giới hạn dung lượng.');
   const kind = imageType(bytes);
+  const dimensions=imageDimensions(bytes);
   const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(x=>x.toString(16).padStart(2,'0')).join('');
   const existing = await env.DB.prepare('SELECT * FROM images WHERE sha256 = ?').bind(hash).first<ImageRow>();
   if (existing) {
+    if(dimensions)await recordDimensions(env,[{id:existing.id,...dimensions}]);
     if(importUrl)await env.DB.prepare('INSERT INTO image_import_urls(url,image_id) VALUES (?,?) ON CONFLICT(url) DO UPDATE SET image_id=excluded.image_id').bind(importUrl,existing.id).run();
     return {row:await importedSource(env,existing,info.source_url,importUrl), duplicate:true};
   }
@@ -89,7 +100,9 @@ export async function save(env: Env, bytes: ArrayBuffer, info: Metadata, uploade
       id,hash,key,`${id}.${kind.ext}`,kind.mime,bytes.byteLength,info.title,info.source_url,
       info.rating,uploader,crypto.getRandomValues(new Uint32Array(1))[0]/2**32,Date.now(),info.image_type || null,originalName?.slice(0,255) || null,importUrl,
     ),env.DB.prepare(`INSERT OR IGNORE INTO image_tags(image_id,tag)
-      SELECT i.id,t.value FROM images i,json_each(?) t WHERE i.id=?`).bind(JSON.stringify(info.tags),id)]);
+      SELECT i.id,t.value FROM images i,json_each(?) t WHERE i.id=?`).bind(JSON.stringify(info.tags),id),
+    ...(dimensions?[env.DB.prepare(`INSERT OR IGNORE INTO image_dimensions(image_id,width,height)
+      SELECT id,?,? FROM images WHERE id=?`).bind(dimensions.width,dimensions.height,id)]:[])]);
   const row = await env.DB.prepare('SELECT * FROM images WHERE sha256 = ?').bind(hash).first<ImageRow>();
   if (!row) throw new Error('Metadata persistence failed');
   if (row.id!==id) {

@@ -71,7 +71,9 @@ Trong bot Waku, điền `waku_api_url = "https://waku-api.takeshi.dev/v1"`, `wak
 - Trình duyệt tải tối đa **2 file mỗi lượt**. Có tiến độ từng file, tạm dừng sau các file đang chạy, bỏ file chờ và thử lại mục lỗi. Khi máy chủ bận, file sẽ chờ rồi thử lại.
 - Giữ tab mở trong lúc upload. Sau khi ảnh được lưu, AI chạy nền và tiếp tục dù đóng trang; các file vẫn còn chờ ở trình duyệt chưa được gửi lên máy chủ.
 - Thư viện có tìm theo tên/tag, lọc An toàn/R18/chưa phân loại, phân trang, sửa tên/tag/nguồn, đổi phân loại, chạy lại AI, sao chép link và xóa ảnh.
-- Các mục Tất cả / An toàn / R18 / Chờ phân loại nằm dưới Kho ảnh ở sidebar, kèm tổng số ảnh của từng mục. Số đếm dùng cùng điều kiện với danh sách, kể cả ảnh đang chạy lại AI, và được gộp trong request trạng thái sẵn có. Mỗi lần mở mục hoặc bấm Xem thêm tải 5 hàng: 30 ảnh ở bố cục 6 cột, 15 ảnh ở bố cục 3 cột, 10 ảnh ở bố cục 2 cột. Nút biểu tượng upload cạnh tiêu đề thư viện mở phần tải ảnh trên điện thoại.
+- Kho ảnh, Dung lượng và Đang xử lý nằm đầu sidebar; một đường phân cách tách chúng khỏi bốn mục phân loại kèm số ảnh. Thumbnail nhỏ, cao bằng nhau, nhóm theo ngày tải lên (UTC+7); desktop đổi chiều rộng theo tỷ lệ ảnh, mobile dùng ba cột. Giữ tên/tag dưới mỗi ảnh. Mỗi lần mở hoặc bấm Xem thêm chỉ tải một đợt nhỏ (45 ảnh desktop lớn, 30 tablet, 15 mobile).
+- Ngày tải lên hiển thị cạnh thanh cuộn gốc bên phải và cập nhật theo vị trí cuộn, không có thanh timeline riêng hay request timeline khi mở thư viện. Ảnh cuối mỗi hàng sát lề phải; khoảng cách giữa các ảnh trước đó giữ nguyên. Ba ô Kho ảnh/Dung lượng/Đang xử lý chỉ hiển thị thông tin, không có thao tác bấm. Nút upload mở bảng nổi ngay dưới nó trên cả desktop/mobile; thu bảng vẫn tiếp tục tải file.
+- API trả thêm `width`/`height`, lưu trong bảng `image_dimensions` độc lập với AI/phân loại. Ảnh mới ghi kích thước khi upload; ảnh cũ đọc header có giới hạn theo trang đang mở (tối đa hai lượt đồng thời), sau đó lưu để không đọc lại. Bố cục được tính từ metadata trước khi tải thumbnail; file thiếu/hỏng không chặn cả thư viện và dùng kích thước dự phòng nếu chưa xác định được.
 - Ảnh R18 được làm mờ trong thư viện, có tùy chọn hiện ảnh; mở chi tiết để xem và chỉnh sửa.
 - Web và bot Telegram dùng chung dữ liệu, không có hai kho ảnh riêng.
 
@@ -223,6 +225,7 @@ Các đường dẫn `/v1/*` cần header `Authorization: Bearer API_KEY`. Lấy
 | POST | `/v1/images/duplicates` | Kiểm tra trước khi upload: `{"hashes":["SHA256"],"urls":["https://…"]}`, tối đa 100 mục/lượt |
 | POST | `/v1/images` | Upload multipart `file`, hoặc JSON chứa `url` |
 | GET | `/v1/images?limit=20&before=CURSOR&q=maid&rating=safe` | Danh sách/tìm tên và tag/lọc phân loại, tối đa 100/trang; `next` là cursor trang kế |
+| GET | `/v1/images/timeline?rating=safe&view=classified` | Ngày tải lên và số ảnh theo UTC+7; nhận cùng bộ lọc danh sách, cache một phút. Danh sách nhận thêm `until=UNIX_MS` để nhảy trước mốc ngày, kết hợp được với `before` |
 | GET | `/v1/images/random?count=10&rating=safe&tags=cat,cute` | Lấy tối đa 10 ảnh, các tag kết hợp AND |
 | GET | `/v1/images/ID` | Xem metadata |
 | PATCH | `/v1/images/ID` | Sửa các trường `title`, `tags`, `rating`, `source_url`, `image_type` |

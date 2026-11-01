@@ -13,6 +13,7 @@ import {libraryState} from './library-state';
 import {assertD1Available,protectD1,recordD1Limit,quotaError} from './d1-quota';
 import {ensureReadEfficiency} from './read-efficiency';
 import {withDatabase} from './libsql';
+import {imageTimeline} from './timeline';
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 function integer(value:string|null, fallback:number, max:number) {
@@ -35,6 +36,31 @@ function background(ctx:ExecutionContext,env:Env,work:()=>Promise<unknown>){
   if(env.MIGRATION_MAINTENANCE==='1')return;
   ctx.waitUntil(protectD1(env,async()=>{await ensureReadEfficiency(env);await work();}));
 }
+function imageFilters(url:URL){
+  const filters:string[]=[],params:(string|number)[]=[];
+  const view=url.searchParams.get('view');
+  if (view && !['pending','classified'].includes(view)) throw new HttpError(400,'invalid_view','Mục ảnh không hợp lệ.');
+  if (view==='pending') filters.push('i.id IN (SELECT image_id FROM image_catalog_state WHERE classified=0)');
+  if (view==='classified') filters.push(CLASSIFIED_IMAGE_SQL);
+  const rating=url.searchParams.get('rating');
+  if (rating) {
+    if (!['safe','r18','unknown'].includes(rating)) throw new HttpError(400,'invalid_rating','Phân loại không hợp lệ.');
+    filters.push('i.rating=?');params.push(rating);
+  }
+  const filterTags=tags(url.searchParams.get('tags'));
+  if(filterTags.length){filters.push('EXISTS (SELECT 1 FROM image_tags t WHERE t.image_id=i.id AND t.tag IN (SELECT value FROM json_each(?)))');params.push(JSON.stringify(filterTags));}
+  const types=(url.searchParams.get('types') || '').split(',').filter(Boolean);
+  if(types.some(type=>!['anime','real'].includes(type)))throw new HttpError(400,'invalid_type','Kiểu ảnh không hợp lệ.');
+  if(types.length){filters.push('i.image_type IN (SELECT value FROM json_each(?))');params.push(JSON.stringify(types));}
+  const query=(url.searchParams.get('q') || '').trim();
+  if (query.length>100) throw new HttpError(400,'invalid_query','Từ khóa tối đa 100 ký tự.');
+  if (query) {
+    const escaped='%'+query.toLowerCase().replace(/[\\%_]/g,'\\$&')+'%';
+    filters.push("(LOWER(i.title) LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM image_tags t WHERE t.image_id=i.id AND t.tag LIKE ? ESCAPE '\\'))");params.push(escaped,escaped);
+  }
+  return {filters,params,view};
+}
+
 async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Response> {
   const url=new URL(request.url), path=url.pathname;
   const base=(env.PUBLIC_BASE_URL || url.origin).replace(/\/$/,'');
@@ -133,6 +159,10 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     const result=response({images,tabs,ai_pending:Number(ai.pending)+Number(ai.running),uploads_pending:uploads?.pending || 0,revision,batch,ai_queue:ai});
     result.headers.set('x-waku-stats-source','counters');return result;
   }
+  if(path==='/v1/images/timeline'&&request.method==='GET'){
+    const {filters,params}=imageFilters(url);
+    return response({days:await imageTimeline(env,filters,params),timezone:'Asia/Ho_Chi_Minh'});
+  }
   if(path==='/v1/filters' && request.method==='GET') {
     const query=(url.searchParams.get('q') || '').slice(0,64).toLowerCase();
     const rows=await env.DB.prepare("SELECT tag,n count FROM tag_totals WHERE n>0 AND instr(tag,?)>0 ORDER BY tag LIMIT 1000").bind(query).all();
@@ -183,26 +213,12 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
       try {cursor=JSON.parse(atob(before));} catch {throw new HttpError(400,'invalid_cursor','Cursor không hợp lệ.');}
       if (!cursor || !Number.isSafeInteger(cursor.time) || !uuid.test(cursor.id)) throw new HttpError(400,'invalid_cursor','Cursor không hợp lệ.');
     }
-    const filters:string[]=[],params:(string|number)[]=[];
-    const view=url.searchParams.get('view');
-    if (view && !['pending','classified'].includes(view)) throw new HttpError(400,'invalid_view','Mục ảnh không hợp lệ.');
-    if (view==='pending') filters.push('i.id IN (SELECT image_id FROM image_catalog_state WHERE classified=0)');
-    if (view==='classified') filters.push(CLASSIFIED_IMAGE_SQL);
-    const rating=url.searchParams.get('rating');
-    if (rating) {
-      if (!['safe','r18','unknown'].includes(rating)) throw new HttpError(400,'invalid_rating','Phân loại không hợp lệ.');
-      filters.push('i.rating=?');params.push(rating);
-    }
-    const filterTags=tags(url.searchParams.get('tags'));
-    if(filterTags.length){filters.push('EXISTS (SELECT 1 FROM image_tags t WHERE t.image_id=i.id AND t.tag IN (SELECT value FROM json_each(?)))');params.push(JSON.stringify(filterTags));}
-    const types=(url.searchParams.get('types') || '').split(',').filter(Boolean);
-    if(types.some(type=>!['anime','real'].includes(type)))throw new HttpError(400,'invalid_type','Kiểu ảnh không hợp lệ.');
-    if(types.length){filters.push('i.image_type IN (SELECT value FROM json_each(?))');params.push(JSON.stringify(types));}
-    const query=(url.searchParams.get('q') || '').trim();
-    if (query.length>100) throw new HttpError(400,'invalid_query','Từ khóa tối đa 100 ký tự.');
-    if (query) {
-      const escaped='%'+query.toLowerCase().replace(/[\\%_]/g,'\\$&')+'%';
-      filters.push("(LOWER(i.title) LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM image_tags t WHERE t.image_id=i.id AND t.tag LIKE ? ESCAPE '\\'))");params.push(escaped,escaped);
+    const {filters,params,view}=imageFilters(url);
+    const until=url.searchParams.get('until');
+    if(until!==null){
+      const time=Number(until);
+      if(!/^\d+$/.test(until)||!Number.isSafeInteger(time)||time<0||time>8640000000000000)throw new HttpError(400,'invalid_date','Ngày tải ảnh không hợp lệ.');
+      filters.push('i.created_at<?');params.push(time);
     }
     if (cursor) {filters.push('(i.created_at<? OR (i.created_at=? AND i.id<?))');params.push(cursor.time,cursor.time,cursor.id);}
     const rows=await env.DB.prepare(`SELECT i.* FROM images i ${filters.length?'WHERE '+filters.join(' AND '):''} ORDER BY i.created_at DESC,i.id DESC LIMIT ?`)
