@@ -188,7 +188,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     if (exclude.length>100 || exclude.some(x=>!uuid.test(x))) throw new HttpError(400,'invalid_exclude','exclude: tối đa 100 ID ảnh.');
     const filterTags=tags(url.searchParams.get('tags'));
     if (exclude.length+filterTags.length>96) throw new HttpError(400,'too_many_filters','Tổng tag và ID loại trừ tối đa 96.');
-    const rows=await choose(env,url.searchParams.get('rating') || 'safe',filterTags,integer(url.searchParams.get('count'),1,10),exclude,url.searchParams.get('image_type'));
+    const rows=await choose(env,url.searchParams.get('rating') || 'safe',filterTags,integer(url.searchParams.get('count'),1,10),exclude,url.searchParams.get('image_type'),url.searchParams.get('q')||'');
     return response({images:await presentMany(env,rows,base),count:rows.length});
   }
   if(path==='/v1/images/bulk'&&request.method==='PATCH'){

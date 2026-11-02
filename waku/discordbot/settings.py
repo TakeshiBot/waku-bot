@@ -9,7 +9,7 @@ import discord
 from waku import common
 from waku.config import app_config
 from waku.database import discord as repository
-from waku.i18n import normalize_locale
+from waku.services.response_language import normalize_response_language
 from waku.logger import logger
 from waku.services.image_requests import contains_r18_request
 
@@ -91,7 +91,9 @@ def _settings_from_config(config, *, dm: bool = False) -> DiscordGuildSettings:
         reply_to_bots=False if dm else config.discord_reply_to_bots,
         group_memory_enabled=False if dm else config.group_memory_enabled,
         setu_enabled=config.setu_enabled,
-        lang=normalize_locale(config.lang),
+        # Discord's mode is separate from Telegram's fixed UI locale. Missing
+        # values in older JSON configurations deliberately default to Auto.
+        lang=normalize_response_language(getattr(config, "discord_lang", "auto")),
     )
 
 
@@ -131,7 +133,7 @@ async def _set_discord_guild_settings_by_id(guild_id, guild_name, settings) -> N
         "discord_reply_to_bots": settings.reply_to_bots,
         "group_memory_enabled": settings.group_memory_enabled,
         "setu_enabled": settings.setu_enabled,
-        "lang": normalize_locale(settings.lang),
+        "discord_lang": normalize_response_language(settings.lang),
     }
     async with state._discord_settings_lock(guild_id):
         await repository.patch_discord_chat_config(guild_id, updates, title=guild_name)
@@ -160,7 +162,7 @@ async def _set_discord_dm_settings(user, settings) -> None:
                 "discord_r18_mode": 0,
                 "discord_ai_reply": settings.ai_reply,
                 "setu_enabled": settings.setu_enabled,
-                "lang": normalize_locale(settings.lang),
+                "discord_lang": normalize_response_language(settings.lang),
             },
             title=f"Discord DM {user}", username=str(user),
         )

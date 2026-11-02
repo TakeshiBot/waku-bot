@@ -15,7 +15,7 @@ class DiscordGuildSettings:
     ai_reply: bool = True
     group_memory_enabled: bool = True
     setu_enabled: bool = True
-    lang: str = "vi"
+    lang: str = "auto"
     reply_to_bots: bool = False
 
 @dataclass
@@ -67,6 +67,7 @@ class DiscordAnimePhotoResult:
     random_only: bool = False
     delivery_pending: bool = False
     prepared_count: int = 0
+    fallback_count: int = 0
 
 @dataclass
 class DiscordChannelInfo:

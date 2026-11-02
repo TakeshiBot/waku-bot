@@ -20,6 +20,8 @@ from waku.logger import logger
 from waku.plugins.agent import provider
 from waku.plugins.agent.safety import build_usage_limits
 from waku.services.deferred_delivery import DeferredDelivery, DeferredDeliveryError
+from waku.services.response_language import response_language_instructions
+from .settings import _discord_guild_settings, _discord_dm_settings
 
 from . import state
 from .constants import _DISCORD_TEMPORARY_ERROR_REPLIES
@@ -315,13 +317,15 @@ async def _discord_recovery_reply(
         return fallback
     try:
         status = _discord_model_status_code(error)
+        settings = await _discord_guild_settings(message.guild) if message.guild is not None else await _discord_dm_settings(message.author)
         recovery_prompt = (
             "Bạn là Waku trên Discord. Lượt xử lý chính vừa lỗi trước khi trả lời.\n"
             f"Loại lỗi: {error.__class__.__name__}; status={status or 'unknown'}.\n"
-            "Nếu có vẻ là quá tải/tạm thời, hãy trả lời tự nhiên bằng tiếng Việt rằng "
+            "Nếu có vẻ là quá tải/tạm thời, hãy trả lời tự nhiên rằng "
             "Waku đang hơi quá tải hoặc nghẽn nhẹ và xin user gọi lại sau chút. "
             "Không nhắc stack trace, provider, API nội bộ, hay tool.\n"
-            f"Tin nhắn user: {user_prompt[:1200]}"
+            f"Tin nhắn user: {user_prompt[:1200]}\n"
+            + response_language_instructions(settings.lang)
         )
         configured_timeout = app_config.agent_small_model_timeout
         timeout = configured_timeout if configured_timeout > 0 else 10

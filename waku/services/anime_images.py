@@ -83,7 +83,28 @@ def enforce_explicit_tags(keyword, request_text):
     return ",".join(tags)
 
 
-async def waku_candidates(keyword, mode, image_type=None):
+def _subject_terms(subject):
+    return re.findall(r"[^\W_]+", unicodedata.normalize("NFKC", subject or "").casefold())
+
+
+def _subject_matches(artwork, subject):
+    """Match catalog metadata, without inventing character identity or aliases."""
+    terms = _subject_terms(subject)
+    available = set(_subject_terms(" ".join([
+        str(_value(artwork, "title", "") or ""),
+        *[tag for tag in (_value(artwork, "tags", []) or []) if isinstance(tag, str)],
+    ])))
+    return bool(terms) and all(term in available for term in terms)
+
+
+def anime_search_matches(artwork, keyword, subject=""):
+    available = {str(tag).casefold() for tag in (_value(artwork, "tags", []) or []) if isinstance(tag, str)}
+    return (not subject.strip() or _subject_matches(artwork, subject)) and all(
+        tag in available for tag in _requested_tags(keyword)
+    )
+
+
+async def waku_candidates(keyword, mode, image_type=None, *, subject=""):
     base = app_config.waku_api_url.strip().rstrip("/")
     endpoint = base + ("/images/random" if base.endswith("/v1") else "/v1/images/random")
     client = _clients.get("waku-images")
@@ -97,6 +118,8 @@ async def waku_candidates(keyword, mode, image_type=None):
         params["tags"] = ",".join(_requested_tags(keyword))
     if image_type:
         params["image_type"] = image_type
+    if subject.strip():
+        params["q"] = subject.strip()
     response = await client.get(
         endpoint, params=params,
         headers={"Authorization": "Bearer " + app_config.waku_api_key.strip()},
@@ -113,6 +136,8 @@ async def waku_candidates(keyword, mode, image_type=None):
         if not image_allowed(row["rating"] == "r18", mode) or (image_type and row.get("image_type") != image_type):
             continue
         if any(tag not in {str(t).casefold() for t in row.get("tags", []) if isinstance(t, str)} for tag in _requested_tags(keyword)):
+            continue
+        if subject and not _subject_matches(row, subject):
             continue
         url = _web_url(row.get("url"))
         if not url or not row.get("id"):
@@ -168,17 +193,18 @@ def resolve_image_search(keyword, mode, *, request_text=""):
     return query, effective_mode
 
 
-async def manyacg_candidates(client, keyword, mode):
+async def manyacg_candidates(client, keyword, mode, *, subject=""):
     """Search by tag/theme like the legacy base; use random only without a query."""
     keyword = keyword.strip()
     headers = {"X-API-KEY": app_config.manyacg_api_key} if app_config.manyacg_api_key else {}
-    if keyword:
+    query = " ".join(part for part in (subject.strip(), keyword) if part)
+    if query:
         response = await client.get(
             "/artwork/list",
             params={
                 "r18": mode,
                 "hybrid": app_config.manyacg_hybrid_search,
-                "keyword": keyword,
+                "keyword": query,
                 "page_size": 30,
             },
             headers=headers,
@@ -506,7 +532,8 @@ async def release_anime_image(scope, artwork, picture):
 
 
 async def fetch_anime_artwork(
-    keyword, r18_mode, manyacg_fetch, *, as_dict=False, scope=None, image_type=None
+    keyword, r18_mode, manyacg_fetch, *, as_dict=False, scope=None, image_type=None,
+    subject="", allow_fallback=False, candidate_cache=None,
 ):
     sources = enabled_image_sources()
     if not sources:
@@ -517,7 +544,8 @@ async def fetch_anime_artwork(
     keyword, mode = request
     if image_type not in (None, "anime", "real"):
         return None
-    forced_nekos = keyword.lower().startswith(("nekos:", "nekos.best:"))
+    subject = subject.strip()
+    forced_nekos = not subject and keyword.lower().startswith(("nekos:", "nekos.best:"))
     if forced_nekos:
         if "manyacg" not in sources:
             raise ImageServicesNotConfiguredError()
@@ -528,8 +556,8 @@ async def fetch_anime_artwork(
             keyword = ""
         providers = ["nekos"]
     else:
-        # nekos.best cannot search arbitrary tags. Do not silently replace a
-        # failed tag search with an unrelated random image from another source.
+        # Strict lookup first. Optional related/random fallbacks run below and
+        # callers report mismatches to the model via fallback_count.
         # Other providers do not expose Waku's verified image-type field.
         providers = [source for source in sources if not image_type or source == "waku"]
         random.shuffle(providers)
@@ -541,17 +569,28 @@ async def fetch_anime_artwork(
     ]
     for provider in attempts:
         try:
-            if provider == "nekos":
+            cache_key = (provider, keyword, mode, image_type, subject)
+            cached = candidate_cache is not None and provider != "nekos" and bool(keyword or subject)
+            if cached and cache_key in candidate_cache:
+                item = candidate_cache[cache_key]
+            elif provider == "nekos":
                 item = await _fetch_nekos_artwork(keyword)
             elif provider == "waku":
-                item = await waku_candidates(keyword, mode, image_type) if image_type else await waku_candidates(keyword, mode)
+                options = {"image_type": image_type} if image_type else {}
+                if subject:
+                    options["subject"] = subject
+                item = await waku_candidates(keyword, mode, **options)
             else:
-                item = await manyacg_fetch(keyword, mode)
+                item = await manyacg_fetch(keyword, mode, subject=subject) if subject else await manyacg_fetch(keyword, mode)
+            if cached:
+                candidate_cache[cache_key] = item
             if not item:
                 continue
             if ("manyacg" if provider == "nekos" else provider) not in enabled_image_sources():
                 continue
             if isinstance(item, list):
+                if subject:
+                    item = [art for art in item if _subject_matches(art, subject)]
                 if keyword and provider == "manyacg":
                     required = _requested_tags(keyword)
                     item = [art for art in item if all(
@@ -560,6 +599,7 @@ async def fetch_anime_artwork(
                     )]
                 choices = [(artwork, None) for artwork in item]
             elif (image_allowed(_value(item[0], "r18"), mode) and
+                  (not subject or _subject_matches(item[0], subject)) and
                   (provider != "manyacg" or not keyword or all(
                       tag in {str(value).casefold() for value in (_value(item[0], "tags") or []) if isinstance(value, str)}
                       for tag in _requested_tags(keyword)
@@ -578,6 +618,25 @@ async def fetch_anime_artwork(
             repeated = repeated or bool(choices)
         except Exception as error:
             logger.warning("{} image fetch failed: {}", provider, type(error).__name__)
+    if allow_fallback and (keyword or subject) and not forced_nekos:
+        # Prefer a related match, then random. Never relax rating or image type.
+        # A per-turn cache avoids repeating failed searches for every album item.
+        related = []
+        if keyword and subject:
+            related = [("", subject), (keyword, "")]
+        elif len(_requested_tags(keyword)) > 1:
+            related = [(tag, "") for tag in _requested_tags(keyword)[:2]]
+        for alternative_keyword, alternative_subject in [*related, ("", "")]:
+            try:
+                alternative = await fetch_anime_artwork(
+                    alternative_keyword, mode, manyacg_fetch, as_dict=as_dict,
+                    scope=scope, image_type=image_type, subject=alternative_subject,
+                    allow_fallback=False, candidate_cache=candidate_cache,
+                )
+            except NoFreshImageError:
+                continue
+            if alternative is not None:
+                return alternative
     if repeated and scope:
         raise NoFreshImageError(
             "Only the last delivered image or images still being sent are available"

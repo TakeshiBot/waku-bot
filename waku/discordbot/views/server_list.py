@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 import discord
 
-from waku.i18n import normalize_locale
+from waku.services.response_language import response_ui_locale
 from waku.logger import logger
 
 from .. import state
@@ -39,7 +39,7 @@ async def _joined_server_rows(client):
 
 
 def _server_pages(rows, lang="vi") -> list[discord.Embed]:
-    vi = normalize_locale(lang) == "vi"
+    vi = response_ui_locale(lang) == "vi"
     header = "**# · Server ID · Thành viên**" if vi else "**# · Server ID · Members**"
     lines = []
     page_lines = []
@@ -95,7 +95,7 @@ class DiscordServerListView(discord.ui.View):
         self._sync()
 
     def _t(self, vi, en):
-        return vi if normalize_locale(self.lang) == "vi" else en
+        return vi if response_ui_locale(self.lang) == "vi" else en
 
     async def interaction_check(self, interaction):
         if (

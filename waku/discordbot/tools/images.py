@@ -15,6 +15,7 @@ from waku.services.anime_images import (
     release_anime_image,
     resolve_image_search,
     enforce_explicit_tags,
+    anime_search_matches,
 )
 from waku.services.telegram_images import image_allowed
 
@@ -75,6 +76,7 @@ async def send_discord_anime_photo(
     allow_everyone: bool = False,
     count: int = 1,
     image_type: str | None = None,
+    subject: str = "",
 ) -> DiscordAnimePhotoResult:
     """Get and send images from configured catalogs to the current Discord chat.
 
@@ -93,13 +95,15 @@ async def send_discord_anime_photo(
             "cat ears" for tai mèo, "maid" for hầu gái. Empty means random.
             Use a concise tag rather than the entire user's sentence.
             Results are randomly selected within the API search results.
-            Exact character identity is not supported: for a named character,
-            use an empty keyword and explain this limitation in your normal chat
-            reply, in the user's language and your own style. Never claim an exact
-            character match. Captions contain artwork metadata only.
+            For a named character/person, pass the name in subject to search
+            tags and image titles. Try the catalog before reporting no match.
+            Empty keyword AND empty subject means random. Captions contain
+            artwork metadata only, not your chat reply.
             A delivery_pending result means photos are prepared and will be sent
             AFTER your final chat reply. Write that reply now; do not call this
-            tool again or claim the upload has already completed.
+            tool again or claim the upload has already completed. If fallback_count
+            is positive, explain naturally that alternative/random images are
+            being sent instead of claiming all requested filters matched.
             Preserve explicit r18/sfw instructions in this argument.
         target_channel_id: Optional target channel ID for immediate cross-channel sends.
             Bot-admin-only when different from the current channel.
@@ -114,6 +118,13 @@ async def send_discord_anime_photo(
             native attachments in the same message, split only for upload size limits.
         image_type: If explicitly requested, "anime" for drawings or "real" for
             real people/photos/cosplay. Otherwise omit. Do not invent this filter.
+        subject: Requested character/person name, e.g. "Kurumi" or "Tokisaki Kurumi".
+            Searches catalog names/tags, not visual identity. Leave empty for
+            ordinary random requests. Keep additional exact tags in keyword.
+            If no exact match exists, the backend may prepare related/random
+            alternatives while retaining rating/type. If fallback_count > 0,
+            explain naturally that those images are alternatives; never claim
+            a false character/tag match or refuse merely because none matched.
     """
     if not enabled_image_sources():
         return DiscordAnimePhotoResult(success=False, message=IMAGE_SERVICES_UNAVAILABLE)
@@ -211,6 +222,8 @@ async def send_discord_anime_photo(
         )
 
     prepared = []
+    candidate_cache = {}
+    fallback_count = 0
     deferred = False
     scope = f"discord:{target_channel_actual_id}"
 
@@ -240,12 +253,17 @@ async def send_discord_anime_photo(
             sent_count=sent_count,
             requested_count=requested_count,
             capped_count=capped_count,
+            fallback_count=fallback_count,
         )
 
     try:
         for _ in range(capped_count):
             try:
-                type_options = {"image_type": image_type} if image_type else {}
+                type_options = {"allow_fallback": True, "candidate_cache": candidate_cache}
+                if image_type:
+                    type_options["image_type"] = image_type
+                if subject.strip():
+                    type_options["subject"] = subject.strip()
                 fetched = await _fetch_discord_anime_artwork(
                     keyword.strip(), r18_mode=r18_mode, scope=scope, **type_options
                 )
@@ -259,10 +277,11 @@ async def send_discord_anime_photo(
             if fetched is None:
                 break
             prepared.append(fetched)
+            fallback_count += not anime_search_matches(fetched[0], keyword, subject)
         if not prepared:
             return DiscordAnimePhotoResult(
                 success=False,
-                message="No anime image was found for this query, or the image source is unavailable. Do not claim an image was sent.",
+                message="No permitted image could be obtained, including related/random alternatives. No image was sent; explain naturally without claiming success.",
                 requested_count=requested_count,
                 capped_count=capped_count,
             )
@@ -277,6 +296,7 @@ async def send_discord_anime_photo(
             return DiscordAnimePhotoResult(
                 delivery_pending=True,
                 prepared_count=len(prepared),
+                fallback_count=fallback_count,
                 data=_anime_photo_info(prepared[0][0]),
                 requested_count=requested_count,
                 capped_count=capped_count,

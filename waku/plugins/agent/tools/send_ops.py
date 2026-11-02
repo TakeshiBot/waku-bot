@@ -34,6 +34,7 @@ from waku.services.anime_images import (
     remember_anime_image,
     resolve_image_search,
     enforce_explicit_tags,
+    anime_search_matches,
 )
 from waku.services.mirror_policy import is_raw_mirror_command
 from waku.services.telegram_images import image_allowed, telegram_image_settings
@@ -495,23 +496,26 @@ class AnimePhotoResult:
     random_only: bool = False
     delivery_pending: bool = False
     prepared_count: int = 0
+    fallback_count: int = 0
 
 
 async def _fetch_manyacg_anime_artwork(
-    keyword: str = "", r18_mode: int = 0
+    keyword: str = "", r18_mode: int = 0, *, subject: str = ""
 ):
-    return await manyacg_candidates(manyacg.httpx_client, keyword, r18_mode)
+    return await manyacg_candidates(manyacg.httpx_client, keyword, r18_mode, subject=subject)
 
 
-async def _fetch_anime_artwork(keyword: str = "", r18_mode: int = 0, *, scope=None, image_type=None):
+async def _fetch_anime_artwork(keyword: str = "", r18_mode: int = 0, *, scope=None, image_type=None, subject="", allow_fallback=False, candidate_cache=None):
     return await fetch_anime_artwork(
-        keyword, r18_mode, _fetch_manyacg_anime_artwork, as_dict=True, scope=scope, image_type=image_type
+        keyword, r18_mode, _fetch_manyacg_anime_artwork, as_dict=True, scope=scope, image_type=image_type, subject=subject,
+        allow_fallback=allow_fallback, candidate_cache=candidate_cache,
     )
 
 
 async def send_anime_photo(
     ctx: RunContext[datatype.ContextDeps], keyword: str = "", count: int = 1,
     image_type: Literal["anime", "real"] | None = None,
+    subject: str = "",
 ) -> AnimePhotoResult:
     """Send images from the configured ManyACG/Waku API catalogs.
 
@@ -527,18 +531,27 @@ async def send_anime_photo(
             "cat ears" for tai mèo, "maid" for hầu gái. Empty means random.
             Use a concise tag rather than the entire user's sentence.
             Results are randomly selected within the API search results.
-            Exact character identity is not supported: for a named character,
-            use an empty keyword and explain this limitation in your normal chat
-            reply, in the user's language and your own style. Never claim an exact
-            character match. Captions contain artwork metadata only.
+            For a named character/person, pass the name in subject to search
+            tags and image titles. Do not refuse before trying the catalog.
+            Empty keyword AND empty subject means random. Captions contain
+            artwork metadata only, not your chat reply.
             A delivery_pending result means photos are prepared and will be sent
             AFTER your final chat reply. Write that reply now; do not call this
-            tool again or claim the upload has already completed.
+            tool again or claim the upload has already completed. If fallback_count
+            is positive, naturally explain that alternative/random images are
+            being sent instead of claiming all requested filters matched.
             Preserve explicit r18/sfw instructions. Use nekos:neko, nekos:waifu,
             nekos:husbando or nekos:kitsune to select that SFW random source.
         count: How many photos to send, 1-10.
         image_type: Only when explicitly requested: "anime" for drawn/illustrated
             artwork, "real" for real people/photos/cosplay; otherwise omit.
+        subject: Requested character/person name, e.g. "Kurumi" or "Tokisaki Kurumi".
+            Searches catalog names/tags, not visual identity. Leave empty for
+            ordinary random requests. Keep additional exact tags in keyword.
+            If no exact match exists, the backend may prepare related/random
+            alternatives while retaining rating/type. If fallback_count > 0,
+            explain naturally that those are alternatives, not verified matches.
+            Do not refuse merely because the requested name/tag was absent.
     """
     if ctx.deps.message is None or ctx.deps.message.id is None:
         return AnimePhotoResult(
@@ -562,6 +575,8 @@ async def send_anime_photo(
     keyword, image_mode = request
     keyword = enforce_explicit_tags(keyword, message_plain_text(ctx.deps.message))
     fetched = []
+    candidate_cache = {}
+    fallback_count = 0
     deferred = False
     try:
         ratekey = f"anime_photo_rate_limit:{ctx.deps.chat_id}:{ctx.deps.user_id}"
@@ -576,7 +591,11 @@ async def send_anime_photo(
         count = max(1, min(10, count))
         for _ in range(count):
             try:
-                options = {"image_type": image_type} if image_type else {}
+                options = {"allow_fallback": True, "candidate_cache": candidate_cache}
+                if image_type:
+                    options["image_type"] = image_type
+                if subject.strip():
+                    options["subject"] = subject.strip()
                 item = await _fetch_anime_artwork(
                     keyword, r18_mode=image_mode, scope=f"telegram:{ctx.deps.chat_id}", **options
                 )
@@ -592,30 +611,36 @@ async def send_anime_photo(
             if not image_allowed(item[0].get("r18"), image_mode):
                 break
             fetched.append(item)
+            fallback_count += not anime_search_matches(item[0], keyword, subject)
         if not fetched:
-            return AnimePhotoResult(success=False, message="No image matched all requested filters, or the image service is unavailable. Explain naturally; do not substitute an unrelated random image.")
+            return AnimePhotoResult(success=False, message="No permitted image could be obtained, including related/random alternatives. No image was sent; explain naturally without claiming success.")
 
         # Validate and encode the actual files before telling the model that
         # delivery is pending. Telegram cannot always fetch these CDN URLs.
         prepared = await _prepare_anime_uploads(fetched)
+        async def deliver():
+            result = await _deliver_anime_photos(ctx, fetched, prepared)
+            result.fallback_count = fallback_count
+            return result
         queue = getattr(ctx.deps, "deferred_images", None)
         if queue is not None:
             async def cleanup():
                 for artwork, picture in fetched:
                     await release_anime_image(f"telegram:{ctx.deps.chat_id}", artwork, picture)
 
-            queue.add(lambda: _deliver_anime_photos(ctx, fetched, prepared), cleanup)
+            queue.add(deliver, cleanup)
             deferred = True
             artwork, _ = fetched[0]
             return AnimePhotoResult(
                 delivery_pending=True,
                 prepared_count=len(fetched),
+                fallback_count=fallback_count,
                 data=AnimePhotoInfo(
                     title=artwork["title"], source_url=artwork["source_url"],
                     r18=artwork["r18"], tags=(artwork.get("tags") or [])[:10],
                 ),
             )
-        return await _deliver_anime_photos(ctx, fetched, prepared)
+        return await deliver()
     except Exception as e:
         logger.error(f"send_anime_photo error: {e.__class__.__name__}:{e}")
         return AnimePhotoResult(

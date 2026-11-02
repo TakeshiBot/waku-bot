@@ -147,18 +147,25 @@ export async function cleanupObjects(env: Env) {
   for (const row of rows.results) await deleteObject(env,row.object_key);
 }
 
-export async function choose(env: Env, rating: string, tags: string[], count: number, exclude: string[], imageType: string | null = null) {
+export async function choose(env: Env, rating: string, tags: string[], count: number, exclude: string[], imageType: string | null = null, subject = '') {
   if (!['safe','r18','mixed'].includes(rating)) throw new HttpError(400,'invalid_rating','rating: safe, r18 hoặc mixed.');
   if (imageType !== null && !['anime','real'].includes(imageType)) throw new HttpError(400,'invalid_type','Kiểu ảnh không hợp lệ.');
   const ratings = rating === 'mixed' ? ['safe','r18'] : [rating];
+  const terms=[...new Set(subject.normalize('NFKC').toLowerCase().match(/[\p{L}\p{N}]+/gu)||[])];
+  if(subject.length>80||terms.length>6)throw new HttpError(400,'invalid_query','Tên tìm kiếm tối đa 80 ký tự và 6 từ.');
+  if(subject.trim()&&!terms.length)throw new HttpError(400,'invalid_query','Tên tìm kiếm phải có chữ hoặc số.');
+  // Metadata token matches allow Kurumi to match tokisaki_kurumi without
+  // equating it with unrelated prefixes such as kurumiko. Bound values only.
+  const words=(column:string)=>`' '||${[...'_-()[]:,.!?/'].reduce((sql,char)=>`replace(${sql},'${char}',' ')`,`lower(${column})`)}||' '`;
   const filters = [
     CLASSIFIED_IMAGE_SQL,
     `i.rating IN (${ratings.map(()=>'?').join(',')})`,
     ...(imageType ? ['i.image_type=?'] : []),
     ...tags.map(()=> 'EXISTS (SELECT 1 FROM image_tags t WHERE t.image_id=i.id AND t.tag=?)'),
+    ...terms.map(()=>`(instr(${words('i.title')},?)>0 OR EXISTS(SELECT 1 FROM image_tags nt WHERE nt.image_id=i.id AND instr(${words('nt.tag')},?)>0))`),
     ...(exclude.length ? [`i.id NOT IN (${exclude.map(()=>'?').join(',')})`] : []),
   ];
-  const args = [...ratings,...(imageType ? [imageType] : []),...tags,...exclude];
+  const args = [...ratings,...(imageType ? [imageType] : []),...tags,...terms.flatMap(term=>[' '+term+' ',' '+term+' ']),...exclude];
   const pivot = crypto.getRandomValues(new Uint32Array(1))[0]/2**32;
   const first = await env.DB.prepare(`SELECT i.* FROM images i WHERE ${filters.join(' AND ')}
     AND i.random_key>=? ORDER BY i.random_key LIMIT ?`).bind(...args,pivot,count).all<ImageRow>();

@@ -7,7 +7,7 @@ from dataclasses import replace
 
 import discord
 
-from waku.i18n import normalize_locale
+from waku.services.response_language import normalize_response_language, response_ui_locale
 from waku.logger import logger
 from waku.version import commit_info
 
@@ -71,7 +71,7 @@ class DiscordConfigView(discord.ui.View):
         self._sync_controls()
 
     def _t(self, vi: str, en: str) -> str:
-        return vi if normalize_locale(self.pending_settings.lang) == "vi" else en
+        return vi if response_ui_locale(self.pending_settings.lang) == "vi" else en
 
     def _global_access(self, user) -> bool:
         return self.pending_global_ai is not None and _is_discord_user_bot_admin(user)
@@ -215,9 +215,7 @@ class DiscordConfigView(discord.ui.View):
                 self.toggle_r18,
             )
         )
-        language = (
-            "Tiếng Việt" if normalize_locale(settings.lang) == "vi" else "English"
-        )
+        language = {"auto": self._t("Tự động", "Automatic"), "vi": "Tiếng Việt", "en": "English"}[normalize_response_language(settings.lang)]
         controls.append(
             (self._t("Ngôn ngữ: ", "Language: ") + language, True, self.toggle_lang)
         )
@@ -353,7 +351,7 @@ class DiscordConfigView(discord.ui.View):
             interaction,
             field="lang",
             value=lambda: (
-                "en" if normalize_locale(self.pending_settings.lang) == "vi" else "vi"
+                {"auto": "vi", "vi": "en", "en": "auto"}[normalize_response_language(self.pending_settings.lang)]
             ),
         )
 

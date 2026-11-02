@@ -6,7 +6,7 @@ import discord
 from pydantic_ai import Agent, RunContext, Tool
 
 from waku.config import app_config
-from waku.i18n import normalize_locale
+from waku.services.response_language import response_language_instructions
 from waku.logger import logger
 from waku.plugins.agent import provider
 from waku.plugins.agent.admin_dm_context import AdminDMContextLayer
@@ -142,8 +142,7 @@ async def _start_discord_bot() -> None:
             settings = await _discord_dm_settings(message.author)
             lang = settings.lang
 
-        lang_str = "Vietnamese (tiếng Việt)" if normalize_locale(lang) == "vi" else "English (tiếng Anh)"
-        lang_instruction = f"Default response language: {lang_str}. Always reply in {lang_str} first unless the user explicitly requests another language."
+        lang_instruction = response_language_instructions(lang)
 
         return (
             f"{_discord_persona_prompt(message)}\n\n"
@@ -180,25 +179,31 @@ async def _start_discord_bot() -> None:
             "provided media, without fetching or generating another image. "
             "For ordinary anime/Pixiv photo requests, when the user asks for "
             "a new anime/Pixiv image, photo, picture, seg, ảnh, or hình, call "
-            "send_discord_anime_photo at most once in the turn unless you "
-            "are intentionally refusing. For a normal image request use count=1. "
+            "send_discord_anime_photo at most once successfully in the turn. "
+            "After a no-match result you may try an obvious spelling/common-name "
+            "variant, keeping the requested rating/type. Pass the original name/tags "
+            "first; the backend handles permitted related/random alternatives. "
+            "For a normal image request use count=1. "
             "If the user asks for many images, use the requested count up to 10; "
             "the backend sends them as an attachment album after your reply. "
-            "A single image keeps its usual embed. Do not call image-sending tools "
-            "repeatedly in one turn. Do not call image-sending tools when the "
+            "A single image keeps its usual embed. Do not repeat a successful "
+            "or delivery_pending image send. Do not call image-sending tools when the "
             "user is asking you to inspect, describe, identify, analyze, or answer "
             "about an attached/replied image; answer from the provided media instead. "
             "Anime image search supports tags/themes: pass a concise keyword such as "
             "nekomimi or cat ears for tai mèo, or maid. Empty keyword means random. "
             "If the user explicitly requests a tag (e.g. tag xidaidai), pass that exact tag; "
             "if they request a drawing or a real photo, pass image_type anime or real respectively. "
-            "Never drop a requested filter or claim a matching result if none was found. "
-            "Exact character identity is not supported. For a named-character request, "
-            "use an empty keyword to send a random image. Explain the "
-            "limitation in your normal chat reply, in the user's language and your "
-            "usual voice; never put that reply into the image caption. "
-            "Never claim an exact character match. When a tag search fails, do not "
-            "silently send an unrelated random image. Never display internal tool status verbatim. "
+            "Try every requested filter first; never claim a matching result if none was found. "
+            "For a named character/person, pass their name as subject to search "
+            "catalog tags and titles; do not refuse before trying the tool. "
+            "Use empty keyword and subject for an unspecified random request. "
+            "A name match is based on catalog metadata, not verified visual identity. "
+            "If fallback_count is greater than zero, the backend selected "
+            "related/random alternatives because the requested filters had no fresh match. "
+            "Send those alternatives without asking permission, but explain the "
+            "substitution naturally and never pretend they match the missing name/tag. "
+            "Rating and image-type limits still apply. Never display internal tool status verbatim. "
             "Preserve explicit R18/SFW requests in the keyword. If the "
             "user asks to send/gift an image now, including to another channel, use "
             "send_discord_anime_photo with target_channel_id/target_user_ids/caption/count; "
@@ -292,8 +297,9 @@ async def _start_discord_bot() -> None:
     state.discord_recovery_agent = Agent(
         model=provider.make_chat_model(app_config.agent_chat_model),
         instructions=(
-            "Bạn là Waku trên Discord. Trả lời ngắn, tự nhiên bằng tiếng Việt. "
-            "Dùng khi lượt AI chính bị quá tải hoặc lỗi tạm thời; không nhắc API/tool/stack trace."
+            "You are Waku on Discord. Give a short, natural recovery reply in "
+            "the response language specified for this turn. Do not mention "
+            "internal API/tool/stack traces."
         ),
         output_type=str,
         capabilities=[AdminDMContextLayer()],

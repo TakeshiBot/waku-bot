@@ -8,6 +8,7 @@ from pydantic_ai import Agent, UsageLimits
 from waku.common.rich_message import message_plain_text
 from waku.config import app_config
 from waku.logger import logger
+from waku.services.response_language import response_language_instructions
 
 from . import provider, quota
 from .admin_dm_context import AdminDMContextLayer
@@ -19,7 +20,7 @@ async def compose_status_reply(model, deps, lang, facts, additional_instructions
     persona = getattr(deps, "instructions", "") or app_config.agent_prompt
     instructions = [
         persona,
-        tr("output_language", locale=lang),
+        response_language_instructions("auto") if lang == "auto" else tr("output_language", locale=lang),
     ]
     if additional_instructions:
         instructions.append(additional_instructions)

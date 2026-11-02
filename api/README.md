@@ -243,6 +243,8 @@ Các đường dẫn `/v1/*` cần header `Authorization: Bearer API_KEY`. Lấy
 
 `rating` của random: `safe` (mặc định), `r18`, `mixed`. Ảnh `unknown` không xuất hiện trong random. Kết quả ít hơn `count` nếu kho không đủ ảnh phù hợp; không lặp ID trong cùng lượt. Truyền `exclude=ID1,ID2,...` để tránh lặp giữa các lượt; tổng số tag và ID loại trừ tối đa 96. Bot gọi API cần lưu lịch sử ID đã gửi.
 
+Có thể thêm `q=Kurumi` để tìm theo từ trong tên ảnh hoặc tag, ví dụ khớp `tokisaki_kurumi` nhưng không khớp `kurumiko`. Tối đa 80 ký tự/6 từ; các từ kết hợp AND, có thể nằm ở tên hoặc tag. `tags` vẫn là tag chính xác và kết hợp AND với `q`, `rating`, `image_type`. Không có kết quả thì trả danh sách rỗng, không thay bằng ảnh ngẫu nhiên. Bỏ `q` và `tags` để lấy ảnh ngẫu nhiên bình thường. Đây là đối chiếu metadata, không xác minh danh tính nhân vật trong hình.
+
 Một POST upload chỉ nhận một file/URL. Muốn upload nhiều ảnh qua API, gọi riêng từng ảnh với tối đa 2 request đồng thời; HTTP 429 có `Retry-After` khi slot upload đang bận. Web đã tự xử lý hàng đợi và thử lại, không cần gộp cả đợt vào một request lớn.
 
 Upload có thể truyền thêm `batch_id` để gắn tác vụ AI vào đợt đã tạo. Danh sách ảnh hỗ trợ `view=pending` (chưa phân loại hoặc AI đang chờ/chạy), hoặc `view=classified` kết hợp `rating=safe|r18` để chỉ lấy ảnh đã xử lý xong.

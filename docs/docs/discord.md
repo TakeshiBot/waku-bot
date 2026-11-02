@@ -80,6 +80,12 @@ gọi lệnh trong DM không được phản hồi. `/clean` trong DM chỉ xoá
 `/config` chỉ hiển thị tên server và lưu ý ngắn; các nút ✅/❌ thể hiện trạng thái
 AI trả lời, trả lời bot khác, bộ nhớ, chế độ ảnh và ngôn ngữ.
 Nút **Ảnh** chuyển An toàn → Chỉ R18 → Cả hai → Tắt; trong DM chuyển An toàn ↔ Tắt.
+Nút **Ngôn ngữ** chuyển **Tự động → Tiếng Việt → English**. Mặc định là Tự động,
+kể cả cấu hình cũ chưa có lựa chọn ngôn ngữ riêng của Discord. Bot trả lời theo
+ngôn ngữ tin nhắn mới nhất của người đang chat, không cần yêu cầu đổi ngôn ngữ;
+tin chỉ có ảnh/sticker giữ ngôn ngữ gần nhất của người đó. Chỉ khi chưa có nội dung
+hay ngữ cảnh ngôn ngữ mới được dùng tiếng Việt. Lựa chọn cố định và Tự động đều
+cần bấm **Lưu** để áp dụng; không thay đổi ngôn ngữ Telegram.
 Cấu hình mới mặc định ảnh an toàn và **Trả lời bot khác** tắt. Các lựa chọn đã lưu
 được giữ nguyên. **Trả lời bot khác** áp dụng riêng cho server hiện tại;
 tắt mục này không tắt trò chuyện với user. Trong DM của bot admin,
@@ -122,6 +128,11 @@ Discord dùng chung dịch vụ tạo/sửa ảnh với Telegram và các model
 `agent_image_gen_model`, `agent_image_edit_model`. Yêu cầu “cho/gửi ảnh” dùng
 nguồn ảnh API; chỉ yêu cầu rõ “tạo/vẽ ảnh” mới gọi model tạo ảnh. Sửa ảnh dùng
 ảnh đính kèm, ảnh đang reply hoặc ảnh bot vừa tạo cho người gọi trong cùng kênh.
+
+Khi xin ảnh qua chat, bot thử tên/tag đã yêu cầu trước. Không có ảnh khớp hoặc
+không còn ảnh mới thì lấy ảnh liên quan, rồi ảnh ngẫu nhiên nếu cần; vẫn giữ
+phân loại An toàn/R18 và kiểu ảnh đã yêu cầu. Tool báo số ảnh thay thế cho AI
+để AI tự giải thích, không nhận nhầm ảnh thay thế là đúng tên/tag ban đầu.
 Nếu ảnh được chọn không đọc được, bot báo lỗi thay vì sửa một ảnh cũ khác.
 Ảnh tạo/sửa có caption `Tạo bởi waku meow~!` và không kèm tin nhắn hoàn tất
 riêng. Công tắc ảnh, chế độ an toàn/R18 và quyền đính kèm file vẫn được kiểm tra.

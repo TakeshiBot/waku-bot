@@ -204,13 +204,14 @@ def _discord_artwork_embed(
 async def _fetch_manyacg_discord_artwork(
     keyword: str = "",
     r18_mode: int = 0,
+    *, subject: str = "",
 ):
     if manyacg_client is None:
         return None
-    return await manyacg_candidates(manyacg_client.client, keyword, r18_mode)
+    return await manyacg_candidates(manyacg_client.client, keyword, r18_mode, subject=subject)
 
-async def _fetch_discord_anime_artwork(keyword: str = "", r18_mode: int = 0, *, scope=None, image_type=None):
-    return await fetch_anime_artwork(keyword, r18_mode, _fetch_manyacg_discord_artwork, scope=scope, image_type=image_type)
+async def _fetch_discord_anime_artwork(keyword: str = "", r18_mode: int = 0, *, scope=None, image_type=None, subject="", allow_fallback=False, candidate_cache=None):
+    return await fetch_anime_artwork(keyword, r18_mode, _fetch_manyacg_discord_artwork, scope=scope, image_type=image_type, subject=subject, allow_fallback=allow_fallback, candidate_cache=candidate_cache)
 
 
 async def _send_discord_image_embed(
