@@ -21,6 +21,7 @@ class DiscordGuildSettings:
 @dataclass
 class DiscordContextDeps:
     message: discord.Message
+    response_language: str | None = None
     side_effects_started: bool = False
     image_delivered: bool = False
     mirror_dispatched: bool = False

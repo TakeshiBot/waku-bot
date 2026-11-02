@@ -21,6 +21,7 @@ from waku.services.web_research import (
 from . import state
 from .client import _create_client
 from .models import DiscordContextDeps
+from .language import DiscordResponseLanguageLayer
 from .scheduling import (
     cancel_discord_scheduled_message,
     list_discord_scheduled_messages,
@@ -104,7 +105,7 @@ async def _start_discord_bot() -> None:
     state.discord_agent = Agent(
         model=provider.make_chat_model(app_config.agent_chat_model),
         output_type=str,
-        capabilities=[AdminDMContextLayer()],
+        capabilities=[AdminDMContextLayer(), DiscordResponseLanguageLayer()],
         tools=[
             Tool(search_web, prepare=prepare_search_web),
             Tool(get_genshin_player, sequential=True),
@@ -302,7 +303,7 @@ async def _start_discord_bot() -> None:
             "internal API/tool/stack traces."
         ),
         output_type=str,
-        capabilities=[AdminDMContextLayer()],
+        capabilities=[AdminDMContextLayer(), DiscordResponseLanguageLayer()],
         retries=1,
     )
     state.discord_client = _create_client()

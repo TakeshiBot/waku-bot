@@ -83,6 +83,9 @@ Nút **Ảnh** chuyển An toàn → Chỉ R18 → Cả hai → Tắt; trong DM 
 Nút **Ngôn ngữ** chuyển **Tự động → Tiếng Việt → English**. Mặc định là Tự động,
 kể cả cấu hình cũ chưa có lựa chọn ngôn ngữ riêng của Discord. Bot trả lời theo
 ngôn ngữ tin nhắn mới nhất của người đang chat, không cần yêu cầu đổi ngôn ngữ;
+ngôn ngữ được xác định riêng từ tin của user và giữ xuyên suốt các lần gọi tool
+trong lượt đó. Lịch sử hoặc tên ảnh từ API bằng ngôn ngữ khác không đổi ngôn ngữ
+lời chat; tên ảnh vẫn giữ metadata gốc.
 tin chỉ có ảnh/sticker giữ ngôn ngữ gần nhất của người đó. Chỉ khi chưa có nội dung
 hay ngữ cảnh ngôn ngữ mới được dùng tiếng Việt. Lựa chọn cố định và Tự động đều
 cần bấm **Lưu** để áp dụng; không thay đổi ngôn ngữ Telegram.

@@ -9,6 +9,7 @@ from waku.config import app_config
 from waku.services.response_language import response_language_instructions
 
 from .models import DiscordContextDeps
+from .language import DiscordResponseLanguageLayer
 from .settings import _discord_dm_settings, _discord_guild_settings
 
 _MEDIA_TOOLS = {
@@ -98,7 +99,7 @@ async def compose_delivery_notice(message, receipts: list[dict]) -> str:
         model=make_chat_model(app_config.agent_chat_model),
         model_settings=make_model_settings(app_config.agent_model_options),
         output_type=str,
-        capabilities=[AdminDMContextLayer()],
+        capabilities=[AdminDMContextLayer(), DiscordResponseLanguageLayer()],
         retries=1,
         instructions=(
             f"{persona or app_config.agent_prompt}\n"

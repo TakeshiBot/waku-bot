@@ -19,6 +19,7 @@ from waku.services import mirror_bridge
 
 from . import state
 from .runtime import _discord_persona_prompt
+from .language import DiscordResponseLanguageLayer
 from .settings import (
     _discord_dm_settings,
     _discord_guild_settings,
@@ -132,6 +133,7 @@ async def deliver(entry):
                     "on Telegram, not uploaded to Discord. Explain failed/cancelled/send_failed "
                     "accurately. Never expose IDs, raw commands, cancellation syntax, or invent links. "
                     "Do not promise actions; no tools are available. Keep under 1500 characters.",
+                    response_capabilities=[DiscordResponseLanguageLayer()],
                 )
                 if composed is None:
                     raise RuntimeError("AI mirror notification unavailable")

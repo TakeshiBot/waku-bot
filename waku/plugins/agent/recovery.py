@@ -16,7 +16,7 @@ from .localization import tr
 from .output import DeliveryUncertain, record_sent_text, reply_output
 
 
-async def compose_status_reply(model, deps, lang, facts, additional_instructions=None):
+async def compose_status_reply(model, deps, lang, facts, additional_instructions=None, *, response_capabilities=None):
     persona = getattr(deps, "instructions", "") or app_config.agent_prompt
     instructions = [
         persona,
@@ -52,7 +52,7 @@ async def compose_status_reply(model, deps, lang, facts, additional_instructions
             model=model,
             output_type=str,
             instructions=instructions,
-            capabilities=[AdminDMContextLayer()],
+            capabilities=[AdminDMContextLayer(), *(response_capabilities or [])],
             model_settings=provider.make_model_settings(app_config.agent_model_options),
             retries=0,
         )
