@@ -1,5 +1,6 @@
 import {publicUrl} from './input';
 import {HttpError,type Env} from './types';
+import {testVision} from './vision-test';
 
 export interface AiConnection {base_url:string;api_key:string;model:string;provider_id:string;config_version:number;}
 interface Provider {id:string;name:string;base_url:string;key_cipher:string;preferred_model_id:string|null;enabled:number;config_version:number;cooldown_until:number;last_error:string|null;}
@@ -97,7 +98,7 @@ export async function manageProviders(request:Request,env:Env,body:Record<string
       env.DB.prepare('INSERT INTO ai_provider_slots(provider_id,slot) VALUES (?,1),(?,2)').bind(id,id),
     ]);
   }else{
-    const p=path.match(/^\/v1\/ai\/providers\/([a-f0-9-]{36})(\/models)?$/),m=path.match(/^\/v1\/ai\/models\/([a-f0-9-]{36})$/);
+    const p=path.match(/^\/v1\/ai\/providers\/([a-f0-9-]{36})(\/models)?$/),m=path.match(/^\/v1\/ai\/models\/([a-f0-9-]{36})(\/test)?$/);
     if(p){const row=await provider(env,p[1]);
       if(!p[2]&&method==='PATCH'){
         const name=text(body.name ?? row.name,'Tên API',80),url=publicUrl(body.base_url ?? row.base_url);
@@ -114,6 +115,12 @@ export async function manageProviders(request:Request,env:Env,body:Record<string
       }else throw new HttpError(405,'method_not_allowed','Thao tác không hỗ trợ.');
     }else if(m){
       const model=await env.DB.prepare('SELECT * FROM ai_models WHERE id=?').bind(m[1]).first<Model>();if(!model)throw new HttpError(404,'model_not_found','Không tìm thấy model.');
+      if(m[2]){
+        if(method!=='POST')throw new HttpError(405,'method_not_allowed','Thao tác không hỗ trợ.');
+        const p=await provider(env,model.provider_id);let api_key;
+        try{api_key=await decrypt(env,p.id,p.key_cipher);}catch{return {ok:false,code:'key_decryption_failed',message:'Không đọc được key đã lưu. Hãy sửa API và nhập lại key.',elapsed_ms:0};}
+        return testVision(env,{base_url:p.base_url,api_key,model:model.model,provider_id:p.id,config_version:p.config_version});
+      }
       if(method==='PATCH'){
         const name=text(body.model,'Model ID',200),duplicate=await env.DB.prepare('SELECT id FROM ai_models WHERE provider_id=? AND model=? AND id!=?').bind(model.provider_id,name,model.id).first();
         if(duplicate)throw new HttpError(409,'duplicate_model','API này đã có model đó.');

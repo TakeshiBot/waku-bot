@@ -110,7 +110,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
   if(path==='/v1/keys'||path.startsWith('/v1/keys/'))return response(await manageCatalogKeys(request,env,['POST','PATCH'].includes(request.method)?await json(request):{}),request.method==='POST'?201:200);
   if(path.startsWith('/v1/ai/')){
     const settings=await manageProviders(request,env,['POST','PATCH','PUT'].includes(request.method)?await json(request):{});
-    if(request.method!=='GET')background(ctx,env,()=>processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job)));
+    if(request.method!=='GET'&&!path.endsWith('/test'))background(ctx,env,()=>processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job)));
     return response(settings);
   }
   if (path==='/v1/session') {

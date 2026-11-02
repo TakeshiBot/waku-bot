@@ -1,4 +1,4 @@
-import {setupProviders} from './providers.js?v=16';
+import {setupProviders} from './providers.js?v=19';
 import {setupKeys} from './keys.js?v=16';
 import {GalleryThumbnails} from './gallery-cache.js?v=17';
 const $=id=>document.getElementById(id);
