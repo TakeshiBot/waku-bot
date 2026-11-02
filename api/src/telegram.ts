@@ -287,5 +287,8 @@ async function runJobs(env:Env, limit=1, only?:string,analyze=true,hop=0) {
 async function cleanupHistory(env:Env){
   await cleanupObjects(env);
   await env.DB.prepare("DELETE FROM telegram_jobs WHERE status IN ('done','failed','uncertain') AND created_at<?").bind(Date.now()-7*86400000).run();
-  await env.DB.prepare('DELETE FROM analysis_batches WHERE created_at<?').bind(Date.now()-7*86400000).run();
+  await env.DB.prepare(`DELETE FROM analysis_sessions WHERE created_at<? AND phase IN ('done','stopped','cancelled')
+    AND id!=(SELECT id FROM analysis_sessions ORDER BY created_at DESC,id DESC LIMIT 1)`).bind(Date.now()-7*86400000).run();
+  await env.DB.prepare(`DELETE FROM analysis_batches WHERE created_at<?
+    AND NOT EXISTS(SELECT 1 FROM analysis_sessions s WHERE s.current_batch_id=analysis_batches.id)`).bind(Date.now()-7*86400000).run();
 }

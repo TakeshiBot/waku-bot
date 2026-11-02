@@ -34,7 +34,7 @@ export async function connectionForProvider(env:Env,id:string):Promise<AiConnect
   if(!row)return null;
   try{return {base_url:row.base_url,api_key:await decrypt(env,row.id,row.key_cipher),model:row.model,provider_id:row.id,config_version:row.config_version};}
   catch{
-    await env.DB.prepare("UPDATE ai_providers SET cooldown_until=?,last_error='key_decryption_failed' WHERE id=? AND config_version=?").bind(Date.now()+300000,row.id,row.config_version).run();
+    await env.DB.prepare("UPDATE ai_providers SET cooldown_until=0,last_error='key_decryption_failed' WHERE id=? AND config_version=?").bind(row.id,row.config_version).run();
     console.warn('Saved AI key could not be decrypted; update it in API settings');return null;
   }
 }

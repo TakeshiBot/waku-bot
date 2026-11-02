@@ -14,6 +14,7 @@ import {assertD1Available,protectD1,recordD1Limit,quotaError} from './d1-quota';
 import {ensureReadEfficiency} from './read-efficiency';
 import {withDatabase} from './libsql';
 import {imageTimeline} from './timeline';
+import {sharedSessionProgress} from './sessions';
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 function integer(value:string|null, fallback:number, max:number) {
@@ -154,9 +155,10 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     const tabs={all:images.total,safe:classified_safe,r18:classified_r18,pending:pendingCount};
     const ai=await queueProgress(env);
     const uploads=await env.DB.prepare("SELECT COUNT(*) pending FROM telegram_jobs WHERE status IN ('pending','running')").first();
+    const session=await sharedSessionProgress(env);
     let batch=null;const batchId=url.searchParams.get('batch');
     if(batchId && uuid.test(batchId))try{batch=await batchProgress(env,batchId);}catch(error){if(!(error instanceof HttpError && error.status===404))throw error;}
-    const result=response({images,tabs,ai_pending:Number(ai.pending)+Number(ai.running),uploads_pending:uploads?.pending || 0,revision,batch,ai_queue:ai});
+    const result=response({images,tabs,ai_pending:Number(ai.pending)+Number(ai.running),uploads_pending:uploads?.pending || 0,revision,batch,ai_queue:ai,ai_session:session});
     result.headers.set('x-waku-stats-source','counters');return result;
   }
   if(path==='/v1/images/timeline'&&request.method==='GET'){
@@ -282,7 +284,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     if (!slot) return Response.json({error:{code:'busy',message:'Đang xử lý 2 ảnh. File này sẽ được thử lại sau.'}},{status:429,headers:{'retry-after':'2','cache-control':'no-store'}});
     const result=await save(env,bytes,info,null,originalName,importUrl);
     if(download)await recordImportAliases(env,result.row.id,[download.input,download.url,...(download.used_original?[download.identity]:[])]);
-    await enqueueAnalysis(env,result.row.id,manual);
+    await enqueueAnalysis(env,result.row.id,manual,false,typeof batchId==='string'?batchId:undefined);
     if (batchId && typeof batchId==='string') await attachBatch(env,batchId,[result.row.id]);
     background(ctx,env,()=>processAnalysis(env,result.row.id,job=>refreshAnalysisReceipt(env,job)));
     return response({image:await present(env,result.row,base),duplicate:result.duplicate,...(download?{import:{source:download.source,preferred_url:download.preferred_url,fetched_url:download.url,used_original:download.used_original,fallback_reason:download.fallback_reason}}:{})},result.duplicate?200:201);
@@ -308,7 +310,8 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
   if (analyze && request.method==='POST') {
     await image(env,analyze[1]);
     if (!await aiEnabled(env)) throw new HttpError(503,'ai_not_configured','Chưa cấu hình API AI.');
-    const batchId=await createBatch(env);await attachBatch(env,batchId,[analyze[1]],true);
+    const inline=request.headers.get('content-type')?.includes('application/json')&&(await json(request)).inline===true;
+    const batchId=await createBatch(env,Boolean(inline));await attachBatch(env,batchId,[analyze[1]],true,Boolean(inline));
     background(ctx,env,()=>processAnalysis(env,analyze[1],job=>refreshAnalysisReceipt(env,job)));
     return response({queued:true,batch_id:batchId});
   }

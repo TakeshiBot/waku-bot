@@ -66,7 +66,12 @@ before(async()=>{
   }
 });
 after(async()=>{release?.();await mf?.dispose();});
-beforeEach(async()=>{output=predicted;await(await mf.getD1Database('DB')).prepare('UPDATE ai_providers SET cooldown_until=0,last_error=NULL').run();});
+beforeEach(async()=>{
+  output=predicted;
+  // Independent cases must not share a server session or its API breakers.
+  await api('/v1/analysis/control','POST',{action:'cancel'});
+  await(await mf.getD1Database('DB')).prepare('UPDATE ai_providers SET cooldown_until=0,last_error=NULL').run();
+});
 async function api(path:string,method='GET',body?:any) {
   const req=new Request('https://images.example.com'+path,{method,headers:{authorization:'Bearer key',...(body && !(body instanceof FormData)?{'content-type':'application/json'}:{})},...(body?{body:body instanceof FormData?body:JSON.stringify(body)}:{})});
   const res=await mf.dispatchFetch(req.url,{method,headers:Object.fromEntries(req.headers),...(body?{body:Buffer.from(await req.arrayBuffer())}:{})});
@@ -122,10 +127,11 @@ test('provider errors do not lose the image; explicit model decisions are preser
   assert.throws(()=>parseAnalysis(JSON.stringify({...predicted,tags:['https://malicious.com']})));
 });
 
-test('unresolved or missing classification fails without saving partial tags, counts as failed and never retries automatically',async()=>{
+test('unresolved classification saves no partial tags and is not retried within the same round',async()=>{
   try{for(const [index,response]of [
     {...predicted,rating:'unknown'}, {...predicted,rating:null}, {error:'classification_unresolved'}, {...predicted,image_type:null},
   ].entries()){
+    await api('/v1/analysis/control','POST',{action:'cancel'});
     output=response;const before=calls,batch=await api('/v1/analysis-batches','POST',{});
     const file=await upload(220+index,{title:'Kept title',tags:'kept_tag',batch_id:batch.id}),result=await finished(file.id);
     assert.equal(result.ai_status,'failed');assert.equal(result.ai_error,index===0||index===2?'classification_unresolved':'incomplete_response');
@@ -157,7 +163,7 @@ test('legacy incomplete successes become retryable failures without changing pho
   const progress=await api('/v1/analysis-batches/'+batch.id);assert.equal(progress.failed,2);assert.equal(progress.done,1);
 });
 
-test('blocked images expose a safe error code, retain the file and remain failed without retry',async()=>{
+test('blocked images expose a safe error code and remain failed until the next round',async()=>{
   try{for(const [index,mode]of ['gemini','openai'].entries()){
     blockedMode=mode;const before=calls,file=await upload(180+index),result=await finished(file.id);
     assert.equal(result.ai_status,'failed');assert.equal(result.ai_error,'provider_content_filtered');assert.equal(result.rating,'unknown');assert.deepEqual(result.tags,[]);
@@ -210,6 +216,7 @@ test('analysis batch progress and pending view follow the actual queued/running/
   release();hold=undefined;await Promise.all(images.map(image=>finished(image.id)));
   const done=await api('/v1/analysis-batches/'+id);assert.equal(done.total,3);assert.equal(done.done,3);assert.equal(done.pending+done.running+done.failed,0);
   assert.equal((await api('/v1/images?view=pending&q=batch_progress')).images.length,0);
+  await api('/v1/jobs/drain','POST',{});
   fail=true;
   const errorBatch=await api('/v1/analysis-batches','POST',{});const errorImage=await upload(63,{batch_id:errorBatch.id});await finished(errorImage.id);fail=false;
   const failed=await api('/v1/analysis-batches/'+errorBatch.id);assert.equal(failed.failed,1);assert.equal(failed.done,0);

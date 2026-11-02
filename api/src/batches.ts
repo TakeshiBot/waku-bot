@@ -1,5 +1,6 @@
 import {HttpError,type Env} from './types';
 import {libraryChanged} from './store';
+import {ensureSession,attachSessionImages,sessionForBatch,sharedSessionProgress,retrySession,openSession} from './sessions';
 
 export async function getBatch(env:Env,id:string) {
   const batch=await env.DB.prepare('SELECT id,control FROM analysis_batches WHERE id=?').bind(id).first<{id:string;control:string}>();
@@ -13,14 +14,14 @@ export async function batchProgress(env:Env,id:string) {
     .bind(id).first<{total:number;pending:number;running:number;done:number;failed:number;skipped:number;cancelled:number;paused:number}>();
   return {id,control:batch.control,...counts!};
 }
-export async function createBatch(env:Env) {
-  const id=crypto.randomUUID();
-  await env.DB.prepare('INSERT INTO analysis_batches(id,created_at) VALUES (?,?)').bind(id,Date.now()).run();
-  return id;
+export async function createBatch(env:Env,inline=false) {
+  return (await ensureSession(env,null,false,inline?'inline':'batch')).current_batch_id;
 }
-export async function attachBatch(env:Env,batchId:string,ids:string[],force=false) {
+export async function attachBatch(env:Env,batchId:string,ids:string[],force=false,inline=false) {
   await getBatch(env,batchId);
   if (!ids.length) return 0;
+  const linked=await sessionForBatch(env,batchId),session=linked?.phase==='cancelled'?linked:await ensureSession(env,null,false,inline?'inline':'batch');
+  batchId=session.current_batch_id;
   const encoded=JSON.stringify([...new Set(ids)]);
   const rows=await env.DB.prepare('SELECT id FROM images WHERE id IN (SELECT value FROM json_each(?))').bind(encoded).all<{id:string}>();
   const updates:D1PreparedStatement[]=[];
@@ -36,10 +37,8 @@ export async function attachBatch(env:Env,batchId:string,ids:string[],force=fals
     lease_token=CASE WHEN b.control='cancelled' THEN NULL ELSE lease_token END
     FROM analysis_batches b WHERE b.id=? AND b.control!='active'
     AND image_id IN (SELECT value FROM json_each(?)) AND status IN ('pending','running')`).bind(batchId,encoded));
-  updates.push(env.DB.prepare(`INSERT INTO analysis_batch_items(batch_id,image_id,status)
-    SELECT ?,image_id,status FROM image_analysis WHERE image_id IN (SELECT value FROM json_each(?))
-    ON CONFLICT(batch_id,image_id) DO UPDATE SET status=excluded.status`).bind(batchId,encoded));
-  await env.DB.batch(updates);
+  if(updates.length)await env.DB.batch(updates);
+  await attachSessionImages(env,session,ids);
   await libraryChanged(env);return rows.results.length;
 }
 
@@ -65,39 +64,29 @@ export async function queueProgress(env:Env) {
 // Invalidating the lease on cancel/retry prevents late results from being saved.
 export async function controlAnalysis(env:Env,action:string,batchId?:string) {
   if(!['pause','resume','cancel','retry'].includes(action))throw new HttpError(400,'invalid_action','Thao tác AI không hợp lệ.');
-  const progress=batchId?await batchProgress(env,batchId):await queueProgress(env);
-  if(action==='retry'&&(progress.pending||progress.running))throw new HttpError(409,'analysis_still_running','Chờ toàn bộ ảnh xử lý xong hoặc bấm Huỷ trước khi chạy lại lỗi.');
-  const scope=batchId?'image_id IN (SELECT image_id FROM analysis_batch_items WHERE batch_id=?)':'1=1';
-  const args=batchId?[batchId]:[];
+  if(action==='retry')return retrySession(env,batchId);
+  const session=batchId?await sessionForBatch(env,batchId):await openSession(env)||await env.DB.prepare("SELECT * FROM analysis_sessions WHERE phase='done' AND next_retry_at>0 ORDER BY created_at DESC,id DESC LIMIT 1").first<Awaited<ReturnType<typeof openSession>>>();
+  if(!session){
+    if(!batchId)await env.DB.prepare('UPDATE analysis_queue_settings SET paused=? WHERE id=1').bind(action==='pause'?1:0).run();
+    return sharedSessionProgress(env);
+  }
+  if(!['active','retry_wait','paused'].includes(session.phase)&&!(session.phase==='done'&&session.next_retry_at>0))return sharedSessionProgress(env);
   const control=action==='pause'?'paused':action==='cancel'?'cancelled':'active';
-  const updates:D1PreparedStatement[]=[];
-  if(batchId)updates.push(env.DB.prepare('UPDATE analysis_batches SET control=? WHERE id=?').bind(control,batchId));
-  else{
-    updates.push(env.DB.prepare('UPDATE analysis_queue_settings SET paused=? WHERE id=1').bind(action==='pause'?1:0));
-    updates.push(env.DB.prepare(`UPDATE analysis_batches SET control=? WHERE id IN
-      (SELECT b.batch_id FROM analysis_batch_items b JOIN image_analysis a ON a.image_id=b.image_id
-       WHERE a.status IN ('pending','running') ${action==='retry'?"OR a.status='failed' OR a.control='cancelled'":''})`).bind(control));
-  }
+  const phase=action==='pause'?'paused':action==='cancel'?'cancelled':session.next_retry_at?'done':'active';
+  const updates=[
+    env.DB.prepare('UPDATE analysis_queue_settings SET paused=? WHERE id=1').bind(action==='pause'?1:0),
+    env.DB.prepare('UPDATE analysis_batches SET control=? WHERE id=?').bind(control,session.current_batch_id),
+    env.DB.prepare("UPDATE analysis_sessions SET phase=?,next_retry_at=CASE WHEN ?='cancelled' THEN 0 ELSE next_retry_at END WHERE id=?").bind(phase,phase,session.id),
+  ];
   if(action==='cancel'){
-    updates.push(env.DB.prepare(`UPDATE analysis_batch_items SET status='skipped' WHERE status IN ('pending','running')
-      AND image_id IN (SELECT image_id FROM image_analysis WHERE ${scope} AND status IN ('pending','running'))`).bind(...args));
+    updates.push(env.DB.prepare("UPDATE analysis_batch_items SET status='skipped' WHERE batch_id=? AND status IN ('pending','running')").bind(session.current_batch_id));
     updates.push(env.DB.prepare(`UPDATE image_analysis SET status='skipped',control='cancelled',last_error='cancelled',lease_token=NULL,lease_until=0
-      WHERE ${scope} AND status IN ('pending','running')`).bind(...args));
-  }else if(action==='retry'){
-    updates.push(env.DB.prepare(`UPDATE analysis_batch_items SET status='pending' WHERE status!='done' AND image_id IN
-      (SELECT image_id FROM image_analysis WHERE ${scope} AND (status='failed' OR control='cancelled'))`).bind(...args));
-    updates.push(env.DB.prepare(`UPDATE image_analysis SET status='pending',control='active',attempts=0,next_attempt=0,
-      lease_until=0,lease_token=NULL,last_error=NULL WHERE ${scope} AND (status='failed' OR control='cancelled')`).bind(...args));
-    updates.push(env.DB.prepare(`UPDATE ai_providers SET cooldown_until=0 WHERE id IN
-      (SELECT provider_id FROM image_analysis WHERE ${scope} AND status='pending')`).bind(...args));
-    updates.push(env.DB.prepare(`UPDATE image_analysis SET control='active' WHERE ${scope} AND control='paused' AND status IN ('pending','running')`).bind(...args));
-  }else{
-    updates.push(env.DB.prepare(`UPDATE image_analysis SET control=? WHERE ${scope} AND status IN ('pending','running')`)
-      .bind(control,...args));
-  }
-  await env.DB.batch(updates);await libraryChanged(env);
-  return batchId?batchProgress(env,batchId):queueProgress(env);
+      WHERE status IN ('pending','running') AND image_id IN (SELECT image_id FROM analysis_job_sessions WHERE session_id=?)`).bind(session.id));
+  }else updates.push(env.DB.prepare(`UPDATE image_analysis SET control=? WHERE status IN ('pending','running')
+    AND image_id IN (SELECT image_id FROM analysis_job_sessions WHERE session_id=?)`).bind(control,session.id));
+  await env.DB.batch(updates);await libraryChanged(env);return sharedSessionProgress(env);
 }
+
 export async function stopPendingAnalysis(env:Env,id:string) {
   await env.DB.batch([
     env.DB.prepare("UPDATE image_analysis SET status='skipped',last_error='manual_edit' WHERE image_id=? AND status='pending'").bind(id),

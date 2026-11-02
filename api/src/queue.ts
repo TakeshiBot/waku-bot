@@ -1,9 +1,17 @@
 import type {Env} from './types';
 import {libraryChanged} from './store';
+import {advanceSessions,adoptUnownedAnalysis} from './sessions';
 
 export const NEXT_ANALYSIS_SQL=`SELECT image_id FROM image_analysis INDEXED BY analysis_ready
   WHERE control='active' AND attempts=0 AND status='pending' AND next_attempt<=?
   ORDER BY next_attempt,image_id LIMIT 1`;
+
+const nextForProvider=(provider:string)=>`SELECT a.image_id FROM image_analysis a INDEXED BY analysis_ready
+  JOIN analysis_job_sessions j ON j.image_id=a.image_id JOIN analysis_sessions r ON r.id=j.session_id
+  JOIN analysis_session_providers h ON h.session_id=r.id AND h.provider_id=${provider}
+  WHERE a.control='active' AND a.attempts=0 AND a.status='pending' AND a.next_attempt<=?
+    AND r.phase='active' AND h.disabled=0 AND h.cooldown_until<=?
+  ORDER BY a.next_attempt,a.image_id LIMIT 1`;
 
 // Lost invocations fail instead of starting another automatic inference.
 export async function recoverAnalysis(env:Env) {
@@ -43,13 +51,14 @@ async function reserveAnalysis(env:Env) {
   // schedulers cannot assign the same image to two APIs or exceed API limits.
   const results=await env.DB.batch([
     env.DB.prepare(`UPDATE ai_provider_slots SET token=?,lease_until=?,last_started=?,image_id=(
-      ${NEXT_ANALYSIS_SQL})
+      ${nextForProvider('ai_provider_slots.provider_id')})
       WHERE rowid=(SELECT s.rowid FROM ai_provider_slots s JOIN ai_providers p ON p.id=s.provider_id
       JOIN ai_models m ON m.id=p.preferred_model_id AND m.provider_id=p.id
       WHERE p.enabled=1 AND s.lease_until<? AND p.cooldown_until<=? AND (SELECT paused FROM analysis_queue_settings WHERE id=1)=0
+      AND EXISTS(${nextForProvider('s.provider_id')})
       ORDER BY s.last_started,s.slot,s.provider_id LIMIT 1)
       AND EXISTS(SELECT 1 FROM image_analysis INDEXED BY analysis_ready WHERE control='active' AND attempts=0 AND status='pending' AND next_attempt<=?)
-      RETURNING token`).bind(token,now+20000,now,now,now,now,now),
+      RETURNING token`).bind(token,now+20000,now,now,now,now,now,now,now,now),
     env.DB.prepare(`UPDATE image_analysis SET status='running',attempts=attempts+1,lease_until=?,lease_token=?,
       provider_id=(SELECT provider_id FROM ai_provider_slots WHERE token=?)
       WHERE image_id=(SELECT image_id FROM ai_provider_slots WHERE token=?)
@@ -74,8 +83,12 @@ async function invoke(env:Env,body:Record<string,unknown>) {
 }
 
 export async function dispatchAnalysis(env:Env,hop=0,limit=8):Promise<number> {
-  if(!env.PUBLIC_BASE_URL||!env.API_KEY||hop>=8)return 0;
+  if(!env.PUBLIC_BASE_URL||!env.API_KEY)return 0;
+  await adoptUnownedAnalysis(env);
   await recoverAnalysis(env);
+  // Persist a finished round's retry deadline even at the end of a chain.
+  await advanceSessions(env,false);
+  if(hop>=8)return 0;
   const due=await env.DB.prepare(`SELECT 1 FROM image_analysis INDEXED BY analysis_ready WHERE
     control='active' AND attempts=0 AND status='pending' AND next_attempt<=?
     AND (SELECT paused FROM analysis_queue_settings WHERE id=1)=0 LIMIT 1`).bind(Date.now()).first();
