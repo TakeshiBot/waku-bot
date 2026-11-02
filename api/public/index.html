@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#111719"><meta name="color-scheme" content="dark"><meta name="description" content="Kho ảnh riêng của Waku. Tải nhiều ảnh, tự gắn tag và quản lý thư viện.">
-  <title>Kho ảnh · Waku</title><link rel="icon" type="image/jpeg" href="/assets/waku.jpg"><link rel="apple-touch-icon" href="/assets/waku.jpg"><link rel="stylesheet" href="/assets/app.css?v=25">
-  <script type="module" src="/assets/app.js?v=31"></script>
+  <title>Kho ảnh · Waku</title><link rel="icon" type="image/jpeg" href="/assets/waku.jpg"><link rel="apple-touch-icon" href="/assets/waku.jpg"><link rel="stylesheet" href="/assets/app.css?v=26">
+  <script type="module" src="/assets/app.js?v=32"></script>
 </head>
 <body data-view="library">
   <svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
@@ -86,7 +86,7 @@
         <div class="edit-classification"><label class="field">Phân loại<select id="edit-rating"><option value="unknown">Chưa phân loại</option><option value="safe">An toàn</option><option value="r18">R18</option></select></label><label class="field">Kiểu ảnh<select id="edit-type"><option value="">Chưa xác định</option><option value="anime">Vẽ / Anime</option><option value="real">Người thật</option></select></label></div>
         <label class="field">Link nguồn<input id="edit-source" type="url" placeholder="https://…"></label>
         <div class="edit-meta" id="edit-meta"></div><p class="analysis-error" id="edit-ai-error" role="status" hidden></p>
-        <div class="edit-actions"><button class="primary" id="save-image" type="submit">Lưu thay đổi</button><button class="secondary" id="analyze-image" type="button">✦ AI gắn tag</button></div>
+        <div class="edit-actions"><button class="primary" id="save-image" type="submit">Lưu thay đổi</button><button class="secondary" id="analyze-image" type="button"><svg aria-hidden="true"><use href="#i-spark"/></svg><span>AI gắn tag</span></button></div>
         <div class="edit-bottom"><button class="icon-button" type="button" id="copy-link" aria-label="Sao chép link ảnh" title="Sao chép link"><svg><use href="#i-copy"/></svg></button><button class="icon-button danger-icon" type="button" id="delete-image" aria-label="Xóa ảnh" title="Xóa ảnh"><svg><use href="#i-trash"/></svg></button></div>
       </form>
       <div class="viewer-toolbar"><button class="icon-button" type="button" id="viewer-copy" aria-label="Sao chép link ảnh" title="Sao chép link"><svg><use href="#i-copy"/></svg></button><div class="viewer-edit-tools"><button class="icon-button" type="button" id="toggle-editor-details" aria-label="Sửa chi tiết ảnh" title="Sửa chi tiết" aria-expanded="false" aria-controls="edit-form"><svg><use href="#i-edit"/></svg></button><button class="icon-button" type="button" id="viewer-ai" aria-label="AI gắn tag ảnh" title="AI gắn tag" hidden><svg><use href="#i-spark"/></svg></button></div><button class="icon-button danger-icon" type="button" id="viewer-delete" aria-label="Xóa ảnh" title="Xóa ảnh"><svg><use href="#i-trash"/></svg></button></div>
