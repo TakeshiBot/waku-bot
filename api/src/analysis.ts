@@ -185,6 +185,9 @@ async function analyzeOne(env:Env,config:AiConnection,job:AnalysisJob,notify?:(j
         WHERE image_id=? AND status IN ('pending','running')
         AND EXISTS(SELECT 1 FROM image_analysis WHERE image_id=? AND lease_token=?)`).bind(row.id,row.metadata_version,row.id,row.id,job.lease_token),
       env.DB.prepare('UPDATE ai_providers SET cooldown_until=0,last_error=NULL WHERE id=? AND config_version=?').bind(config.provider_id,config.config_version),
+      env.DB.prepare(`UPDATE images SET metadata_version=metadata_version+1 WHERE id=? AND metadata_version=?
+        AND EXISTS(SELECT 1 FROM image_analysis WHERE image_id=? AND lease_token=? AND status='done')`)
+        .bind(row.id,row.metadata_version,row.id,job.lease_token),
     ]);
     if (!results[0].meta.changes) console.info('AI result discarded: job stopped or metadata changed');
     await recordProviderOutcome(env,job.image_id,job.lease_token,config.provider_id,config.config_version,null);

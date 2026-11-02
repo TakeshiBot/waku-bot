@@ -56,7 +56,7 @@ test('sidebar tab counts match classified and pending lists while tagged images 
   ]);
   try{
     const data=await(await call('/v1/state')).json() as any;
-    assert.equal(data.tabs.all,before.tabs.all);assert.equal(data.tabs.safe,before.tabs.safe-1);assert.equal(data.tabs.r18,before.tabs.r18-1);assert.equal(data.tabs.pending,before.tabs.pending+2);
+    assert.equal(data.tabs.all,before.tabs.all);assert.equal(data.tabs.safe,before.tabs.safe);assert.equal(data.tabs.r18,before.tabs.r18);assert.equal(data.tabs.pending,before.tabs.pending);
     for(const [key,query]of Object.entries({all:'',safe:'view=classified&rating=safe',r18:'view=classified&rating=r18',pending:'view=pending'})){
       const list=await(await call('/v1/images?limit=100&'+query)).json() as any;assert.equal(data.tabs[key],list.images.length);
     }
@@ -75,7 +75,7 @@ test('only images with all four metadata fields enter classified tabs; source UR
     await db.prepare('UPDATE library_revision SET version=version+1 WHERE id=1').run();
     const ready=await(await call('/v1/images?view=classified&q=qa_metadata&limit=100')).json() as any;
     const waiting=await(await call('/v1/images?view=pending&q=qa_metadata&limit=100')).json() as any;
-    assert.deepEqual(new Set(ready.images.map((image:any)=>image.id)),new Set([ids[0],ids[5]]));assert.equal(waiting.images.length,5);
+    assert.deepEqual(new Set(ready.images.map((image:any)=>image.id)),new Set([ids[0],ids[5],ids[6]]));assert.equal(waiting.images.length,4);
     assert.ok(ready.images.every((image:any)=>image.classified&&image.source_url===null));assert.ok(waiting.images.every((image:any)=>!image.classified));
     const stats=await(await call('/v1/state')).json() as any;assert.equal(stats.tabs.safe+stats.tabs.r18+stats.tabs.pending,stats.tabs.all);
     for(const [key,query]of Object.entries({safe:'view=classified&rating=safe',r18:'view=classified&rating=r18',pending:'view=pending'})){

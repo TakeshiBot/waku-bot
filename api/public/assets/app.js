@@ -4,7 +4,7 @@ import {GalleryThumbnails} from './gallery-cache.js?v=17';
 const $=id=>document.getElementById(id);
 const state={authenticated:false,maxMb:10,images:new Map(),cursor:null,query:'',rating:'',queue:[],pumping:false,paused:true,editing:null,listVersion:0,statsBusy:false,
   selected:new Set(),allSelected:false,selectionBusy:false,bulkBusy:false,deleteTargets:[],editTargets:[],loadedLimit:0,uploadIds:new Set(),uploadResults:new Map(),starting:false,aiBatchId:null,aiProgress:null,aiPending:0,aiEnqueueing:false,
-  revision:null,lastStats:0,galleryDirty:false,gallerySignature:'',galleryScope:null,galleryViews:new Map(),cards:new Map(),dayGroups:new Map(),listController:null,quotaUntil:0,filterTags:new Set(),filterTypes:new Set(),tagOptions:[],tagsLoaded:0,checking:0,aiAvailable:false,aiQueue:null,aiControlBusy:false,aiResult:null,
+  revision:null,galleryRevision:null,lastStats:0,galleryDirty:false,gallerySignature:'',galleryScope:null,galleryViews:new Map(),cards:new Map(),dayGroups:new Map(),listController:null,quotaUntil:0,filterTags:new Set(),filterTypes:new Set(),tagOptions:[],tagsLoaded:0,checking:0,aiAvailable:false,aiQueue:null,aiControlBusy:false,aiResult:null,
   editorIds:[],editorVersion:0,editorNavigationBusy:false,editorNavigationRun:0};
 const thumbnails=new GalleryThumbnails($('library-results'));
 const number=n=>new Intl.NumberFormat('vi-VN').format(n || 0);
@@ -53,7 +53,7 @@ function analysisError(code){
 }
 function showLogin(message=''){
   clearTimeout(aiRenderTimer);state.aiProgress=null;state.aiBatchId=null;
-  state.listVersion++;state.listController?.abort();state.galleryViews.clear();state.galleryScope=null;
+  state.listVersion++;state.listController?.abort();state.galleryViews.clear();state.galleryScope=null;state.galleryRevision=null;
   state.dayGroups.clear();$('scroll-date').hidden=true;
   for(const card of state.cards.values()){const img=card.querySelector('.thumb img');if(img)thumbnails.release(img);}state.cards.clear();thumbnails.clear();$('gallery').replaceChildren();state.gallerySignature='';
   state.authenticated=false;state.paused=true;clearTimeout(pollTimer);$('app').hidden=true;$('login').hidden=false;$('login-error').textContent=message;
@@ -108,7 +108,7 @@ async function refreshStats(updateGallery=false,force=false){
     const pending=Number(stats.ai_pending)+Number(stats.uploads_pending);$('stat-pending').textContent=number(pending);$('nav-processing').title=pending?`${number(stats.ai_pending)} AI · ${number(stats.uploads_pending)} upload`:'Mọi thứ đã sẵn sàng';
     state.aiPending=Number(stats.ai_pending);state.aiQueue=stats.ai_queue;state.aiProgress=stats.ai_session||null;state.aiBatchId=stats.ai_session?.id||null;renderAiProgress();
     const changed=state.revision!==null&&state.revision!==stats.revision;state.revision=stats.revision;state.galleryDirty ||= changed;if(changed)state.galleryViews.clear();
-    if(updateGallery&&state.galleryDirty){await loadImages(false);state.galleryDirty=false;}
+    if(updateGallery&&state.galleryDirty&&await syncImages())state.galleryDirty=false;
   }catch(error){if(state.authenticated)$('list-status').textContent=error.message;}
   finally{state.statsBusy=false;schedulePoll();}
 }
@@ -116,7 +116,7 @@ function rememberGalleryView(){
   if(state.galleryScope===null)return;
   const previous=state.galleryViews.get(state.galleryScope);
   state.galleryViews.delete(state.galleryScope);
-  state.galleryViews.set(state.galleryScope,{images:new Map(state.images),cursor:state.cursor,limit:state.loadedLimit,scroll:$('library-results').scrollTop,at:previous?.at || Date.now()});
+  state.galleryViews.set(state.galleryScope,{images:new Map(state.images),cursor:state.cursor,revision:state.galleryRevision,limit:state.loadedLimit,scroll:$('library-results').scrollTop,at:previous?.at || Date.now()});
   while(state.galleryViews.size>8)state.galleryViews.delete(state.galleryViews.keys().next().value);
 }
 async function loadImages(reset=false,more=false,useCache=false){
@@ -126,8 +126,8 @@ async function loadImages(reset=false,more=false,useCache=false){
   state.listController?.abort();state.listController=null;
   const cached=useCache&&!state.galleryDirty?state.galleryViews.get(scope):null;
   if(cached&&Date.now()-cached.at<60000){
-    state.images=new Map(cached.images);state.cursor=cached.cursor;state.loadedLimit=cached.limit;state.galleryScope=scope;
-    $('list-status').textContent='';renderGallery();$('library-results').scrollTop=cached.scroll;return;
+    state.images=new Map(cached.images);state.cursor=cached.cursor;state.galleryRevision=cached.revision;state.loadedLimit=cached.limit;state.galleryScope=scope;
+    $('list-status').textContent='';renderGallery();$('library-results').scrollTop=cached.scroll;return true;
   }
   if(!useCache&&!more)state.galleryViews.clear();
   const wanted=reset||!sameScope?pageSize:(state.loadedLimit||pageSize)+(more?pageSize:0),controller=new AbortController();state.listController=controller;
@@ -135,16 +135,58 @@ async function loadImages(reset=false,more=false,useCache=false){
   if(!sameScope){state.images=new Map();state.cursor=null;state.galleryScope=null;renderGallery();}
   if(reset)$('list-status').textContent='Đang mở thư viện…';
   try{
-    const images=more&&sameScope?new Map(state.images):new Map();let cursor=more&&sameScope?state.cursor:null;
+    const images=more&&sameScope?new Map(state.images):new Map();let cursor=more&&sameScope?state.cursor:null,watermark=more&&sameScope?state.galleryRevision:null;
     do{
       const params=new URLSearchParams(base);params.set('limit',String(Math.min(100,wanted-images.size)));if(cursor)params.set('before',cursor);
       const data=await api('/v1/images?'+params,{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(30000)])});if(version!==state.listVersion)return;
+      watermark??=data.revision;
       for(const image of data.images)images.set(image.id,image);cursor=data.next;
     }while(cursor && images.size<wanted);
-    state.images=images;state.cursor=cursor;state.loadedLimit=wanted;state.galleryScope=scope;$('list-status').textContent='';renderGallery();$('library-results').scrollTop=scroll;
+    state.images=images;state.cursor=cursor;state.galleryRevision=watermark;state.loadedLimit=wanted;state.galleryScope=scope;$('list-status').textContent='';renderGallery();$('library-results').scrollTop=scroll;
     state.galleryViews.delete(scope);rememberGalleryView();
+    return true;
   }catch(error){if(version===state.listVersion&&!controller.signal.aborted)$('list-status').textContent=error.message;}
   finally{if(state.listController===controller)state.listController=null;}
+}
+async function syncImages(){
+  const base=listParameters(),scope=base.toString();
+  if(state.galleryScope!==scope||!Number.isSafeInteger(state.galleryRevision))return loadImages(false);
+  const version=++state.listVersion,controller=new AbortController(),scroll=$('library-results').scrollTop;
+  state.listController?.abort();state.listController=controller;
+  let revision=state.galleryRevision,more=false;
+  const images=new Map(state.images),removed=new Set();
+  try{
+    // Bounded pages keep catch-up work responsive after a long offline period.
+    for(let n=0;n<10;n++){
+      const params=new URLSearchParams(base);params.set('since',String(revision));if(state.cursor)params.set('window',state.cursor);
+      const data=await api('/v1/images/changes?'+params,{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(30000)])});
+      if(version!==state.listVersion)return false;
+      for(const id of data.ids){if(images.has(id))removed.add(id);images.delete(id);}
+      for(const image of data.images){images.set(image.id,image);removed.delete(image.id);}
+      revision=data.revision;more=data.more;if(!more)break;
+    }
+    const ordered=[...images.values()].sort((a,b)=>b.created_at.localeCompare(a.created_at)||b.id.localeCompare(a.id));
+    if(ordered.length>state.loadedLimit){
+      const kept=ordered.slice(0,state.loadedLimit),last=kept.at(-1);
+      state.images=new Map(kept.map(image=>[image.id,image]));
+      state.cursor=btoa(JSON.stringify({time:Date.parse(last.created_at),id:last.id}));
+    }else state.images=images;
+    for(const id of removed)state.selected.delete(id);
+    state.galleryRevision=revision;state.galleryViews.clear();$('list-status').textContent='';renderGallery();$('library-results').scrollTop=scroll;rememberGalleryView();
+    return !more;
+  }catch(error){
+    if(error.code==='sync_reset'&&version===state.listVersion)return loadImages(true);
+    if(version===state.listVersion&&!controller.signal.aborted)$('list-status').textContent=error.message;
+    return false;
+  }finally{if(state.listController===controller)state.listController=null;}
+}
+function imageMatchesView(image){
+  const classified=isClassified(image);
+  if(state.rating==='unknown'?classified:state.rating&&(!classified||image.rating!==state.rating))return false;
+  if(state.filterTypes.size&&!state.filterTypes.has(image.image_type))return false;
+  if(state.filterTags.size&&!image.tags.some(tag=>state.filterTags.has(tag)))return false;
+  const query=state.query.toLowerCase(),lowerAscii=text=>text.replace(/[A-Z]/g,char=>char.toLowerCase());
+  return !query||lowerAscii(image.title).includes(query)||image.tags.some(tag=>tag.includes(query));
 }
 function listParameters(){
   const params=new URLSearchParams();
@@ -589,7 +631,8 @@ async function worker(){
       }
       state.uploadResults.set(item.id,data.duplicate?'duplicate':'done');
       state.queue=state.queue.filter(queued=>queued!==item);if(item.preview)URL.revokeObjectURL(item.preview);
-      if(state.rating==='' || state.rating==='unknown'&&!isClassified(data.image) || state.rating===data.image.rating&&isClassified(data.image))state.images.set(data.image.id,data.image);
+      state.galleryDirty=true;state.galleryViews.clear();
+      if(state.galleryScope===listParameters().toString()&&imageMatchesView(data.image))state.images.set(data.image.id,data.image);
     }catch(error){item.status='error';item.error=error.message || 'Tải ảnh chưa thành công.';item.retryAfter=error.status===429?error.retryAfter:0;}
     renderQueue();renderGallery();
     if(!state.paused&&state.authenticated)await sleep(400);
@@ -749,7 +792,7 @@ $('editor').addEventListener('pointerdown',event=>outsideEditor=event.target===$
 $('editor').addEventListener('click',event=>{if(outsideEditor&&event.target===$('editor')&&editorOutside(event))$('editor').close();outsideEditor=false;});
 $('edit-form').addEventListener('submit',async event=>{
   event.preventDefault();const image=state.editing,version=state.editorVersion;if(!image)return;$('save-image').disabled=true;updateEditorNavigation();
-  try{const {image:updated}=await api('/v1/images/'+image.id,{method:'PATCH',body:JSON.stringify({title:$('edit-title').value,tags:tagList($('edit-tags').value),rating:$('edit-rating').value,image_type:$('edit-type').value || null,source_url:$('edit-source').value.trim() || null})});state.images.set(image.id,updated);state.selected.delete(image.id);renderGallery();if(version===state.editorVersion&&state.editing?.id===image.id)$('editor').close();toast('Đã lưu thay đổi.');loadImages(false);refreshStats(false,true);}
+  try{const {image:updated}=await api('/v1/images/'+image.id,{method:'PATCH',body:JSON.stringify({title:$('edit-title').value,tags:tagList($('edit-tags').value),rating:$('edit-rating').value,image_type:$('edit-type').value || null,source_url:$('edit-source').value.trim() || null,metadata_version:image.metadata_version})});state.images.set(image.id,updated);state.selected.delete(image.id);renderGallery();if(version===state.editorVersion&&state.editing?.id===image.id)$('editor').close();toast('Đã lưu thay đổi.');state.galleryDirty=true;refreshStats(true,true);}
   catch(error){toast(error.message);}finally{$('save-image').disabled=false;updateEditorNavigation();}
 });
 const analyzeEditingImage=async()=>{

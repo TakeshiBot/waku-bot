@@ -13,9 +13,10 @@ async function runQueue(behavior:(id:string,attempt:number)=>string){
     const Date={now:()=>now};
     const state={authenticated:true,starting:false,checking:0,paused:true,pumping:false,
       queue:['a','b','c'].map(id=>({id,name:id,file:{name:id},status:'queued'})),
-      uploadIds:new Set(),uploadResults:new Map(),images:new Map(),rating:'',filterTags:new Set(),filterTypes:new Set()};
+      uploadIds:new Set(),uploadResults:new Map(),images:new Map(),galleryViews:new Map(),galleryScope:null,rating:'',filterTags:new Set(),filterTypes:new Set()};
     const el={value:'',checked:false,textContent:'',checkValidity:()=>true},$=()=>el,document={querySelectorAll:()=>[]};
     const options=()=>({tags:[],manual:true}),renderQueue=()=>{},renderGallery=()=>{},renderAiProgress=()=>{},schedulePoll=()=>{},refreshStats=()=>{},changeFilter=()=>{},setView=()=>{},setAiBatch=()=>{},toast=()=>{},isClassified=()=>false,sleep=async(ms)=>{now+=ms;};
+    const clearFinishedUploadDuplicates=()=>{},listParameters=()=>new URLSearchParams(),imageMatchesView=()=>true;
     async function fileUpload(item){
       calls.push(item.id);attempts[item.id]=(attempts[item.id]||0)+1;
       const outcome=behavior(item.id,attempts[item.id]);

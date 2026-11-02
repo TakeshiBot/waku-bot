@@ -191,6 +191,28 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     const rows=await choose(env,url.searchParams.get('rating') || 'safe',filterTags,integer(url.searchParams.get('count'),1,10),exclude,url.searchParams.get('image_type'),url.searchParams.get('q')||'');
     return response({images:await presentMany(env,rows,base),count:rows.length});
   }
+  if(path==='/v1/images/changes'&&request.method==='GET'){
+    const since=Number(url.searchParams.get('since'));
+    if(!url.searchParams.has('since')||!Number.isSafeInteger(since)||since<0)throw new HttpError(400,'invalid_revision','Phiên đồng bộ không hợp lệ.');
+    const {revision}=await libraryState(env);
+    if(since>revision)throw new HttpError(409,'sync_reset','Thư viện đã được khôi phục. Vui lòng tải lại danh sách.');
+    const changes=await env.DB.prepare('SELECT image_id,revision FROM library_changes WHERE revision>? AND revision<=? ORDER BY revision LIMIT 101')
+      .bind(since,revision).all<{image_id:string;revision:number}>();
+    const page=changes.results.slice(0,100),{filters,params,view}=imageFilters(url);
+    const window=url.searchParams.get('window');
+    if(window){
+      let cursor;try{cursor=JSON.parse(atob(window));}catch{throw new HttpError(400,'invalid_cursor','Cursor không hợp lệ.');}
+      if(!cursor||!Number.isSafeInteger(cursor.time)||!uuid.test(cursor.id))throw new HttpError(400,'invalid_cursor','Cursor không hợp lệ.');
+      filters.push('(i.created_at>? OR (i.created_at=? AND i.id>=?))');params.push(cursor.time,cursor.time,cursor.id);
+    }
+    const ids=page.map(row=>row.image_id);
+    const rows=ids.length?await env.DB.prepare(`SELECT i.* FROM images i WHERE i.id IN (SELECT value FROM json_each(?))${filters.length?' AND '+filters.join(' AND '):''}`)
+      .bind(JSON.stringify(ids),...params).all<ImageRow>():{results:[]};
+    const presented=await presentMany(env,rows.results,base);
+    const visible=view==='pending'?presented.filter(image=>!image.classified):view==='classified'?presented.filter(image=>image.classified):presented;
+    const more=changes.results.length>100;
+    return response({ids,images:visible,revision:more?page.at(-1)!.revision:revision,more});
+  }
   if(path==='/v1/images/bulk'&&request.method==='PATCH'){
     const body=await json(request),hasRating=Object.hasOwn(body,'rating'),hasType=Object.hasOwn(body,'image_type');
     if(!Array.isArray(body.ids)||!body.ids.length||body.ids.length>100||body.ids.some(id=>typeof id!=='string'||!uuid.test(id)))
@@ -208,6 +230,9 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     return response({updated:updated.length,ids:updated,missing:ids.filter(id=>!found.has(id))});
   }
   if (path==='/v1/images' && request.method==='GET') {
+    // Take the watermark before reading pages. Changes racing a list read are
+    // replayed safely rather than silently skipped by the next synchronization.
+    const {revision}=await libraryState(env);
     const limit=integer(url.searchParams.get('limit'),20,100);
     const before=url.searchParams.get('before');
     let cursor:{time:number;id:string}|undefined;
@@ -231,7 +256,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     // pending view during that race; pagination still advances over the IDs.
     const presented=await presentMany(env,page,base);
     const visible=view==='pending'?presented.filter(image=>!image.classified):view==='classified'?presented.filter(image=>image.classified):presented;
-    return response({images:visible,next:rows.results.length>limit && last?btoa(JSON.stringify({time:last.created_at,id:last.id})):null});
+    return response({images:visible,next:rows.results.length>limit && last?btoa(JSON.stringify({time:last.created_at,id:last.id})):null,revision});
   }
   if (path==='/v1/images' && request.method==='POST') {
     // Keep the operation and its slot cleanup alive if the browser disconnects
@@ -299,8 +324,9 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     if (request.method==='GET') return response({image:await present(env,row,base)});
     if (request.method==='PATCH') {
       const current=await present(env,row,base), body=await json(request);
+      if(body.metadata_version!==undefined&&(!Number.isSafeInteger(body.metadata_version)||Number(body.metadata_version)<0))throw new HttpError(400,'invalid_version','Phiên bản ảnh không hợp lệ.');
       const info=metadata({...current,...body});
-      const changed=await update(env,id,info);
+      const changed=await update(env,id,info,body.metadata_version as number|undefined??row.metadata_version);
       if (Object.hasOwn(body,'tags')) await stopPendingAnalysis(env,id);
       return response({image:await present(env,changed,base)});
     }

@@ -50,7 +50,7 @@ export async function presentMany(env:Env, rows:ImageRow[], base:string) {
       id:row.id, url:`${base}/media/${row.id}`, filename:row.filename,
       telegram_file_url:env.TELEGRAM_BOT_USERNAME && /^[A-Za-z0-9_]{5,32}$/.test(env.TELEGRAM_BOT_USERNAME)
         ? `https://t.me/${env.TELEGRAM_BOT_USERNAME}?start=file_${row.id.replaceAll('-','')}` : null,
-      mime_type:row.mime_type, size:row.size, sha256:row.sha256, title:row.title,
+      mime_type:row.mime_type, size:row.size, sha256:row.sha256, title:row.title, metadata_version:row.metadata_version,
       width:sizes.get(row.id)?.width??null,height:sizes.get(row.id)?.height??null,
       source_url:row.source_url, rating:row.rating, image_type:row.image_type, original_name:row.original_name, tags:allTags.get(row.id) || [],
       created_at:new Date(row.created_at).toISOString(),
@@ -70,7 +70,7 @@ async function importedSource(env:Env,row:ImageRow,source:string|null,importUrl:
   if(importUrl&&source&&row.source_url!==source){
     // Refresh only the source on duplicate imports. A concurrent manual edit
     // wins, and the existing title, tags and classification stay intact.
-    const changed=await env.DB.prepare('UPDATE images SET source_url=? WHERE id=? AND metadata_version=? RETURNING *')
+    const changed=await env.DB.prepare('UPDATE images SET source_url=?,metadata_version=metadata_version+1 WHERE id=? AND metadata_version=? RETURNING *')
       .bind(source,row.id,row.metadata_version).first<ImageRow>();
     if(changed){await libraryChanged(env);return changed;}
     return image(env,row.id);
@@ -93,16 +93,22 @@ export async function save(env: Env, bytes: ArrayBuffer, info: Metadata, uploade
   // Unique object keys prevent a pending delete from removing a re-upload of
   // the same hash. The UNIQUE hash in D1 remains the deduplication authority.
   const key = `images/${id}.${kind.ext}`;
+  // Journal BEFORE writing R2. Keep the intent when a database response is
+  // uncertain: deleting the object immediately could delete a committed image.
+  await env.DB.prepare('INSERT INTO object_uploads(object_key,expires_at) VALUES (?,?)').bind(key,Date.now()+3600000).run();
   await env.IMAGES.put(key, bytes, {httpMetadata:{contentType:kind.mime}});
   await env.DB.batch([env.DB.prepare(`INSERT OR IGNORE INTO images
     (id,sha256,object_key,filename,mime_type,size,title,source_url,rating,uploader_id,random_key,created_at,image_type,original_name,import_url)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+    SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM object_uploads WHERE object_key=?)`).bind(
       id,hash,key,`${id}.${kind.ext}`,kind.mime,bytes.byteLength,info.title,info.source_url,
-      info.rating,uploader,crypto.getRandomValues(new Uint32Array(1))[0]/2**32,Date.now(),info.image_type || null,originalName?.slice(0,255) || null,importUrl,
+      info.rating,uploader,crypto.getRandomValues(new Uint32Array(1))[0]/2**32,Date.now(),info.image_type || null,originalName?.slice(0,255) || null,importUrl,key,
     ),env.DB.prepare(`INSERT OR IGNORE INTO image_tags(image_id,tag)
       SELECT i.id,t.value FROM images i,json_each(?) t WHERE i.id=?`).bind(JSON.stringify(info.tags),id),
     ...(dimensions?[env.DB.prepare(`INSERT OR IGNORE INTO image_dimensions(image_id,width,height)
-      SELECT id,?,? FROM images WHERE id=?`).bind(dimensions.width,dimensions.height,id)]:[])]);
+      SELECT id,?,? FROM images WHERE id=?`).bind(dimensions.width,dimensions.height,id)]:[]),
+    // Duplicates written concurrently still need their unused object removed.
+    env.DB.prepare(`INSERT OR IGNORE INTO object_deletions(object_key) SELECT ? WHERE NOT EXISTS(SELECT 1 FROM images WHERE object_key=?)`).bind(key,key),
+    env.DB.prepare('DELETE FROM object_uploads WHERE object_key=?').bind(key)]);
   const row = await env.DB.prepare('SELECT * FROM images WHERE sha256 = ?').bind(hash).first<ImageRow>();
   if (!row) throw new Error('Metadata persistence failed');
   if (row.id!==id) {
@@ -114,13 +120,14 @@ export async function save(env: Env, bytes: ArrayBuffer, info: Metadata, uploade
   return {row:await importedSource(env,row,info.source_url,importUrl), duplicate:row.id !== id};
 }
 
-export async function update(env: Env, id: string, info: Metadata) {
-  await image(env,id);
-  await env.DB.batch([
-    env.DB.prepare('UPDATE images SET title=?,source_url=?,rating=?,image_type=?,metadata_version=metadata_version+1 WHERE id=?').bind(info.title,info.source_url,info.rating,info.image_type || null,id),
-    env.DB.prepare('DELETE FROM image_tags WHERE image_id=?').bind(id),
-    env.DB.prepare('INSERT INTO image_tags(image_id,tag) SELECT ?,value FROM json_each(?)').bind(id,JSON.stringify(info.tags)),
+export async function update(env: Env, id: string, info: Metadata, expectedVersion?:number) {
+  const current=await image(env,id),version=expectedVersion??current.metadata_version;
+  const result=await env.DB.batch([
+    env.DB.prepare('DELETE FROM image_tags WHERE image_id=? AND EXISTS(SELECT 1 FROM images WHERE id=? AND metadata_version=?)').bind(id,id,version),
+    env.DB.prepare(`INSERT INTO image_tags(image_id,tag) SELECT i.id,t.value FROM images i,json_each(?) t WHERE i.id=? AND i.metadata_version=?`).bind(JSON.stringify(info.tags),id,version),
+    env.DB.prepare('UPDATE images SET title=?,source_url=?,rating=?,image_type=?,metadata_version=metadata_version+1 WHERE id=? AND metadata_version=?').bind(info.title,info.source_url,info.rating,info.image_type || null,id,version),
   ]);
+  if(!result[2].meta.changes)throw new HttpError(409,'metadata_conflict','Ảnh đã được thay đổi ở nơi khác hoặc bởi AI. Nội dung bạn đang nhập vẫn được giữ. Đóng rồi mở lại ảnh để xem bản mới trước khi sửa tiếp.');
   await libraryChanged(env);return image(env,id);
 }
 
@@ -143,6 +150,14 @@ async function deleteObject(env: Env, key: string) {
 }
 
 export async function cleanupObjects(env: Env) {
+  // Claim expired intents atomically. A late metadata transaction must still
+  // own its intent to commit, so cleanup cannot remove a referenced image.
+  await env.DB.batch([
+    env.DB.prepare(`INSERT OR IGNORE INTO object_deletions(object_key) SELECT object_key FROM object_uploads
+      WHERE object_key IN (SELECT object_key FROM object_uploads WHERE expires_at<? ORDER BY expires_at LIMIT 5)
+      AND NOT EXISTS(SELECT 1 FROM images WHERE images.object_key=object_uploads.object_key)`).bind(Date.now()),
+    env.DB.prepare('DELETE FROM object_uploads WHERE object_key IN (SELECT object_key FROM object_deletions)'),
+  ]);
   const rows = await env.DB.prepare('SELECT object_key FROM object_deletions LIMIT 5').all<{object_key:string}>();
   for (const row of rows.results) await deleteObject(env,row.object_key);
 }

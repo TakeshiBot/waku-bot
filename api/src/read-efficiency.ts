@@ -5,6 +5,7 @@ import keepClassified from '../migrations/0014_keep_classified_during_analysis.s
 import dimensions from '../migrations/0015_image_dimensions.sql';
 import sessions from '../migrations/0016_shared_analysis_sessions.sql';
 import inlineAnalysis from '../migrations/0017_inline_analysis.sql';
+import librarySync from '../migrations/0018_library_sync.sql';
 import {migrationStatements} from './sql';
 import type {Env} from './types';
 
@@ -17,7 +18,7 @@ export async function ensureReadEfficiency(env:Env){
       try{
         const row=await env.DB.prepare('SELECT version FROM api_schema WHERE id=1').first<{version:number}>();
         version=Number(row?.version||0);
-        if(version>=17)return;
+        if(version>=18)return;
       }
       catch(error){
         const message=String((error as Error)?.message)+' '+String((error as Error)?.cause);
@@ -28,7 +29,8 @@ export async function ensureReadEfficiency(env:Env){
       const statements=[...(version<12?[...migrationStatements(schema),...migrationStatements(counters)]:[]),
         ...(version<13?migrationStatements(pendingIndex):[]),
         ...(version<14?migrationStatements(keepClassified):[]),
-        ...(version<15?migrationStatements(dimensions):[]),...(version<16?migrationStatements(sessions):[]),...migrationStatements(inlineAnalysis)];
+        ...(version<15?migrationStatements(dimensions):[]),...(version<16?migrationStatements(sessions):[]),
+        ...(version<17?migrationStatements(inlineAnalysis):[]),...migrationStatements(librarySync)];
       await env.DB.batch(statements.map(sql=>env.DB.prepare(sql)));
     })().catch(error=>{ready.delete(env.DB);throw error;});
     ready.set(env.DB,promise);
