@@ -23,6 +23,7 @@ async function runQueue(behavior:(id:string,attempt:number)=>string){
       if(outcome==='busy'){const e=Error('busy');e.status=429;e.code='busy';e.retryAfter=2;throw e;}
       if(outcome==='outage'){const e=Error('unavailable');e.status=503;e.retryAfter=30;throw e;}
       if(outcome==='fail')throw Error('upload failed');
+      if(outcome==='full'){const e=Error('storage full');e.status=507;e.code='storage_full';throw e;}
       return {duplicate:false,image:{id:item.id,rating:'safe'}};
     }
     ${code}
@@ -59,5 +60,12 @@ test('a persistent outage pauses and keeps files instead of marking them failed'
   const result=await runQueue(()=>'outage');
   assert.equal(result.paused,true);
   assert.ok(result.queue.length>0);
+  assert.ok(result.queue.every(item=>item.status==='queued'));
+});
+
+test('full storage pauses both workers, retains files and never auto-retries',async()=>{
+  const result=await runQueue(()=>'full');
+  assert.equal(result.paused,true);assert.equal(result.results.size,0);
+  assert.ok(result.calls.length<=2);assert.equal(result.queue.length,3);
   assert.ok(result.queue.every(item=>item.status==='queued'));
 });

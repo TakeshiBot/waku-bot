@@ -39,19 +39,33 @@ async function api(path:string,method='GET',body?:unknown,authenticated=true){
 }
 test('vision test verifies random image pixels with the saved target key/model without enabling it or changing selections',async()=>{
   const before=(await api('/v1/ai/settings')).data;
-  for(const kind of ['ok','native']){mode=kind;const result=await api('/v1/ai/models/'+modelId+'/test','POST',{});assert.equal(result.status,200);assert.equal(result.data.ok,true);assert.equal(result.data.code,'vision_verified');assert.ok(result.data.elapsed_ms>=0);}
-  assert.deepEqual((await api('/v1/ai/settings')).data,before);
+  assert.equal(before.providers.find((p:any)=>p.id===providerId).models.find((m:any)=>m.id===modelId).test_elapsed_ms,null);
+  for(const kind of ['ok','native']){
+    mode=kind;const result=await api('/v1/ai/models/'+modelId+'/test','POST',{});assert.equal(result.status,200);assert.equal(result.data.ok,true);assert.equal(result.data.code,'vision_verified');assert.ok(result.data.elapsed_ms>=0);
+    // A fresh request (as from another browser) reads the persisted result.
+    const settings=(await api('/v1/ai/settings')).data;
+    assert.equal(settings.providers.find((p:any)=>p.id===providerId).models.find((m:any)=>m.id===modelId).test_elapsed_ms,result.data.elapsed_ms);
+  }
+  const withoutTimings=(settings:any)=>({...settings,providers:settings.providers.map((p:any)=>({...p,models:p.models.map(({test_elapsed_ms,...m}:any)=>m)}))});
+  assert.deepEqual(withoutTimings((await api('/v1/ai/settings')).data),withoutTimings(before));
   const db=await mf.getD1Database('DB');assert.equal((await db.prepare('SELECT COUNT(*) n FROM ai_provider_slots WHERE token IS NOT NULL').first())!.n,0);
   assert.equal((await db.prepare('SELECT COUNT(*) n FROM images').first())!.n,0);assert.equal((await(await mf.getR2Bucket('IMAGES')).list()).objects.length,0);
 });
 test('wrong answers, provider refusal and HTTP errors never report verified vision or expose upstream secrets',async()=>{
-  for(const [kind,code]of [['wrong','image_mismatch'],['refusal','content_filtered'],['http','http_401']]){mode=kind;const result=await api('/v1/ai/models/'+modelId+'/test','POST',{});assert.equal(result.status,200);assert.equal(result.data.ok,false);assert.equal(result.data.code,code);assert.ok(!JSON.stringify(result.data).includes('private-target-key'));}
+  const db=await mf.getD1Database('DB');
+  for(const [kind,code]of [['wrong','image_mismatch'],['refusal','content_filtered'],['http','http_401']]){
+    await db.prepare('UPDATE ai_model_tests SET elapsed_ms=123456 WHERE model_id=?').bind(modelId).run();
+    mode=kind;const result=await api('/v1/ai/models/'+modelId+'/test','POST',{});assert.equal(result.status,200);assert.equal(result.data.ok,false);assert.equal(result.data.code,code);assert.ok(!JSON.stringify(result.data).includes('private-target-key'));
+    assert.equal((await db.prepare('SELECT elapsed_ms FROM ai_model_tests WHERE model_id=?').bind(modelId).first())!.elapsed_ms,result.data.elapsed_ms);
+  }
 });
 test('vision test respects provider slot limits and admin authentication',async()=>{
   const db=await mf.getD1Database('DB'),before=calls;
+  const previous=await db.prepare('SELECT elapsed_ms FROM ai_model_tests WHERE model_id=?').bind(modelId).first();
   await db.prepare("UPDATE ai_provider_slots SET token='busy-'||slot,lease_until=? WHERE provider_id=?").bind(Date.now()+60000,providerId).run();
   try{assert.equal((await api('/v1/ai/models/'+modelId+'/test','POST',{})).status,429);assert.equal(calls,before);}finally{await db.prepare('UPDATE ai_provider_slots SET token=NULL,lease_until=0 WHERE provider_id=?').bind(providerId).run();}
   assert.equal((await api('/v1/ai/models/'+modelId+'/test','POST',{},false)).status,401);assert.equal(calls,before);
+  assert.deepEqual(await db.prepare('SELECT elapsed_ms FROM ai_model_tests WHERE model_id=?').bind(modelId).first(),previous);
 });
 test('a stalled body stops at the ten-second deadline and releases the provider slot',async()=>{
   mode='stall';const start=Date.now(),result=await api('/v1/ai/models/'+modelId+'/test','POST',{});assert.equal(result.data.code,'timeout');assert.equal(result.data.ok,false);assert.ok(Date.now()-start<12500);

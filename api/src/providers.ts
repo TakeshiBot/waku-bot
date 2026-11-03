@@ -4,7 +4,7 @@ import {testVision} from './vision-test';
 
 export interface AiConnection {base_url:string;api_key:string;model:string;provider_id:string;config_version:number;}
 interface Provider {id:string;name:string;base_url:string;key_cipher:string;preferred_model_id:string|null;enabled:number;config_version:number;cooldown_until:number;last_error:string|null;}
-interface Model {id:string;provider_id:string;model:string;}
+interface Model {id:string;provider_id:string;model:string;test_elapsed_ms?:number|null;}
 interface Preference {initialized:number;provider_id:string|null;model_id:string|null;}
 const legacyProvider='00000000-0000-4000-8000-000000000001',legacyModel='00000000-0000-4000-8000-000000000002';
 
@@ -56,7 +56,8 @@ export async function providerSettings(env:Env) {
   await initializeAiProviders(env);
   const [providers,models]=await Promise.all([
     env.DB.prepare('SELECT id,name,base_url,preferred_model_id,enabled,cooldown_until,last_error FROM ai_providers ORDER BY rowid').all<Omit<Provider,'key_cipher'>>(),
-    env.DB.prepare('SELECT * FROM ai_models ORDER BY rowid').all<Model>(),
+    env.DB.prepare(`SELECT m.*,t.elapsed_ms test_elapsed_ms FROM ai_models m
+      LEFT JOIN ai_model_tests t ON t.model_id=m.id ORDER BY m.rowid`).all<Model>(),
   ]);
   const active=providers.results.filter(p=>p.enabled&&models.results.some(m=>m.id===p.preferred_model_id&&m.provider_id===p.id));
   return {providers:providers.results.map(provider=>({...provider,enabled:Boolean(provider.enabled),has_key:true,models:models.results.filter(model=>model.provider_id===provider.id)})),
@@ -119,7 +120,13 @@ export async function manageProviders(request:Request,env:Env,body:Record<string
         if(method!=='POST')throw new HttpError(405,'method_not_allowed','Thao tác không hỗ trợ.');
         const p=await provider(env,model.provider_id);let api_key;
         try{api_key=await decrypt(env,p.id,p.key_cipher);}catch{return {ok:false,code:'key_decryption_failed',message:'Không đọc được key đã lưu. Hãy sửa API và nhập lại key.',elapsed_ms:0};}
-        return testVision(env,{base_url:p.base_url,api_key,model:model.model,provider_id:p.id,config_version:p.config_version});
+        const result=await testVision(env,{base_url:p.base_url,api_key,model:model.model,provider_id:p.id,config_version:p.config_version});
+        // Keep the most recent completed test across browsers and API edits.
+        // If the model was removed while testing, do not recreate its history.
+        await env.DB.prepare(`INSERT INTO ai_model_tests(model_id,elapsed_ms)
+          SELECT id,? FROM ai_models WHERE id=? ON CONFLICT(model_id) DO UPDATE SET elapsed_ms=excluded.elapsed_ms`)
+          .bind(result.elapsed_ms,model.id).run();
+        return result;
       }
       if(method==='PATCH'){
         const name=text(body.model,'Model ID',200),duplicate=await env.DB.prepare('SELECT id FROM ai_models WHERE provider_id=? AND model=? AND id!=?').bind(model.provider_id,name,model.id).first();

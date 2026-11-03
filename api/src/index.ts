@@ -15,6 +15,7 @@ import {ensureReadEfficiency} from './read-efficiency';
 import {withDatabase} from './libsql';
 import {imageTimeline} from './timeline';
 import {sharedSessionProgress} from './sessions';
+import {storageUsage} from './storage';
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 function integer(value:string|null, fallback:number, max:number) {
@@ -158,7 +159,8 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     const session=await sharedSessionProgress(env);
     let batch=null;const batchId=url.searchParams.get('batch');
     if(batchId && uuid.test(batchId))try{batch=await batchProgress(env,batchId);}catch(error){if(!(error instanceof HttpError && error.status===404))throw error;}
-    const result=response({images,tabs,ai_pending:Number(ai.pending)+Number(ai.running),uploads_pending:uploads?.pending || 0,revision,batch,ai_queue:ai,ai_session:session});
+    const storage=await storageUsage(env);
+    const result=response({images,tabs,storage,ai_pending:Number(ai.pending)+Number(ai.running),uploads_pending:uploads?.pending || 0,revision,batch,ai_queue:ai,ai_session:session});
     result.headers.set('x-waku-stats-source','counters');return result;
   }
   if(path==='/v1/images/timeline'&&request.method==='GET'){

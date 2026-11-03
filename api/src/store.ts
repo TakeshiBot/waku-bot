@@ -1,6 +1,7 @@
 import { imageType } from './input';
 import {dimensionsForRows,imageDimensions,recordDimensions} from './dimensions';
 import { HttpError, type Env, type ImageRow, type Metadata } from './types';
+import {ensureStorage,reserveStorage} from './storage';
 
 // Classification follows saved metadata, including when AI is reanalysing it.
 export const CLASSIFIED_IMAGE_SQL=`(length(trim(i.title))>0 AND i.rating IN ('safe','r18')
@@ -96,6 +97,13 @@ export async function save(env: Env, bytes: ArrayBuffer, info: Metadata, uploade
   // Journal BEFORE writing R2. Keep the intent when a database response is
   // uncertain: deleting the object immediately could delete a committed image.
   await env.DB.prepare('INSERT INTO object_uploads(object_key,expires_at) VALUES (?,?)').bind(key,Date.now()+3600000).run();
+  try{await reserveStorage(env,key,bytes.byteLength);}
+  catch(error){
+    // A lost DB acknowledgement may already own a reservation. Retain its
+    // journal for cleanup rather than freeing uncertain capacity prematurely.
+    if(error instanceof HttpError&&error.code==='storage_full')await env.DB.prepare('DELETE FROM object_uploads WHERE object_key=?').bind(key).run();
+    throw error;
+  }
   await env.IMAGES.put(key, bytes, {httpMetadata:{contentType:kind.mime}});
   await env.DB.batch([env.DB.prepare(`INSERT OR IGNORE INTO images
     (id,sha256,object_key,filename,mime_type,size,title,source_url,rating,uploader_id,random_key,created_at,image_type,original_name,import_url)
@@ -132,6 +140,7 @@ export async function update(env: Env, id: string, info: Metadata, expectedVersi
 }
 
 export async function remove(env: Env, id: string) {
+  await ensureStorage(env);
   const row = await image(env,id);
   // Drop access through the API before deleting the private object.
   await env.DB.batch([
@@ -145,11 +154,17 @@ export async function remove(env: Env, id: string) {
 async function deleteObject(env: Env, key: string) {
   try {
     await env.IMAGES.delete(key);
-    await env.DB.prepare('DELETE FROM object_deletions WHERE object_key=?').bind(key).run();
+    // Only a confirmed physical delete returns capacity. Retrying this batch
+    // after an uncertain acknowledgement cannot subtract the same bytes twice.
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM storage_objects WHERE object_key=?').bind(key),
+      env.DB.prepare('DELETE FROM object_deletions WHERE object_key=?').bind(key),
+    ]);
   } catch { console.warn('Object deletion queued for retry'); }
 }
 
 export async function cleanupObjects(env: Env) {
+  await ensureStorage(env);
   // Claim expired intents atomically. A late metadata transaction must still
   // own its intent to commit, so cleanup cannot remove a referenced image.
   await env.DB.batch([

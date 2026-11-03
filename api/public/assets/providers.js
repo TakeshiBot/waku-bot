@@ -43,7 +43,12 @@ export function setupProviders({api,toast,onChange}){
       test.addEventListener('click',()=>testModel(model,test));
       const edit=iconButton('edit','Sửa model '+model.model);edit.addEventListener('click',()=>{editingModel=model.id;$('model-name').value=model.model;$('model-form-label').textContent='Sửa model';modelAction(true);$('cancel-model').hidden=false;$('model-name').focus();});
       const remove=iconButton('trash','Xóa model '+model.model,'danger-icon');remove.addEventListener('click',async()=>{if(!confirm('Xóa model '+model.model+'?'))return;await mutate('/v1/ai/models/'+model.id,'DELETE');});
-      const actions=node('div','model-actions');actions.append(test,edit,remove);row.append(label,actions);models.append(row);
+      const actions=node('div','model-actions');
+      if(Number.isFinite(model.test_elapsed_ms)){
+        const timing=node('span','model-test-time',`${(model.test_elapsed_ms/1000).toFixed(1)}s`);
+        timing.title='Thời gian test gần nhất';actions.append(timing);
+      }
+      actions.append(test,edit,remove);row.append(label,actions);models.append(row);
     }
     if(!provider.models.length)models.append(node('p','api-note','Chưa có model. Thêm Model ID bên dưới rồi tích chọn để dùng.'));
   }
@@ -57,6 +62,7 @@ export function setupProviders({api,toast,onChange}){
     if(busy)return;error();lock(true);button.classList.add('is-testing');button.setAttribute('aria-busy','true');button.title='Đang test vision…';button.querySelector('use').setAttribute('href','#i-refresh');
     try{
       const result=await api('/v1/ai/models/'+model.id+'/test',{method:'POST',body:'{}'});testResults.set(model.id,result);
+      if(Number.isFinite(result.elapsed_ms))model.test_elapsed_ms=result.elapsed_ms;
       testNotice={ok:result.ok,message:model.model+': '+result.message+(Number.isFinite(result.elapsed_ms)?` (${(result.elapsed_ms/1000).toFixed(1)} giây)`:'')};
     }catch(cause){testResults.set(model.id,{ok:false,message:cause.message});testNotice={ok:false,message:model.model+': '+cause.message};}
     finally{lock(false);render();}

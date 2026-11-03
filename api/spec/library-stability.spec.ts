@@ -6,6 +6,7 @@ import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
 import {LibsqlDatabase} from '../src/libsql.ts';
 import {migrationStatements} from '../src/sql.ts';
 import {save,update,cleanupObjects} from '../src/store.ts';
+import {ensureStorage} from '../src/storage.ts';
 
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
 const info={title:'Original title',tags:['anime'],rating:'safe',image_type:'anime',source_url:null} as const;
@@ -19,6 +20,7 @@ for(const backend of ['d1','libsql'])test(`${backend}: upload intents recover fa
     if(client)await client.execute('PRAGMA foreign_keys=ON');
     for(const name of(await readdir('migrations')).filter(n=>n.endsWith('.sql')).sort())await db.batch(migrationStatements(await readFile('migrations/'+name,'utf8')).map(sql=>db.prepare(sql)));
     const bucket=await mf.getR2Bucket('IMAGES'),env:any={DB:db,IMAGES:bucket};
+    await ensureStorage(env);
     const metadata={...info,tags:[...info.tags]};
     const fault={...env,DB:{prepare:db.prepare.bind(db),batch:async()=>{throw Error('simulated write failure');}}};
     await assert.rejects(save(fault,payload('failed'),metadata,null),/simulated write failure/);
