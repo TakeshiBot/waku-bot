@@ -88,7 +88,7 @@ async function inferResponse(config:AiConnection,url:string,info:Metadata,signal
   try {
     response=await fetch(endpoint,{
       method:'POST',redirect:'manual',headers:{authorization:`Bearer ${config.api_key}`,'content-type':'application/json'},
-      body:JSON.stringify({model:config.model,stream:false,max_tokens:700,messages:[
+      body:JSON.stringify({model:config.model,stream:false,max_tokens:700,...(config.model==='openrouter/nvidia/nemotron-3.5-super-vl:free'||config.model==='openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free'?{reasoning:{enabled:false}}:{}),messages:[
         {role:'system',content:PROMPT},
         {role:'user',content:[
           {type:'text',text:`Existing user metadata (preserve user choices): ${JSON.stringify(info)}`},
