@@ -2,7 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
 import {createClient} from '@libsql/client';
-import {LibsqlDatabase} from '../src/libsql.ts';
+import {LibsqlDatabase,withDatabase} from '../src/libsql.ts';
+import type {Env} from '../src/types.ts';
 import {migrationStatements} from '../src/sql.ts';
 
 test('libSQL adapter preserves migrations, atomic batches, result metadata and cascades',async()=>{
@@ -49,4 +50,22 @@ test('database outages are reported separately from SQL errors',async()=>{
   const sqlError=Object.assign(new Error('no such table'),{code:'SQLITE_ERROR'});
   const broken=new LibsqlDatabase({execute:async()=>{throw sqlError;}} as any);
   await assert.rejects(broken.prepare('SELECT 1').first(),e=>e===sqlError);
+});
+
+test('private libSQL uses the VPC binding with authentication and a deadline',async()=>{
+  const requests:Request[]=[];
+  const service={fetch:async function(input:RequestInfo|URL,init?:RequestInit){
+    assert.equal(this,service);
+    const request=new Request(input,init);requests.push(request);
+    const payload=await request.json() as {requests:{type:string}[]};
+    return Response.json({baton:null,base_url:null,results:payload.requests.map(r=>({type:'ok',response:r.type==='execute'?{
+      type:'execute',result:{cols:[{name:'n',decltype:'INTEGER'}],rows:[[{type:'integer',value:'1'}]],affected_row_count:0,last_insert_rowid:null},
+    }:{type:'close'}}))});
+  }};
+  const env=withDatabase({DATABASE_BACKEND:'libsql',LIBSQL_URL:'http://127.0.0.1:18783',LIBSQL_AUTH_TOKEN:'test-auth',LIBSQL_SERVICE:service} as unknown as Env);
+  assert.equal(await env.DB.prepare('SELECT 1 n').first('n'),1);
+  assert.equal(requests.length,1);
+  assert.equal(requests[0].headers.get('authorization'),'Bearer test-auth');
+  assert.equal(new URL(requests[0].url).host,'127.0.0.1:18783');
+  assert.ok(requests[0].signal);
 });

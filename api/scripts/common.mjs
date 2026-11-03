@@ -9,13 +9,25 @@ export const localConfig=path.join(root,'wrangler.local.json');
 const secretPath=path.join(root,'.secrets.json');
 export function argument(name) {const i=process.argv.indexOf(name);return i>=0?process.argv[i+1]:undefined;}
 
+export function cloudflareCredentials(text,selectedAccount,explicitToken) {
+  const tokens=[...text.matchAll(/^(?:cloudflare_token|token\s+cloudflare)(?:\s*[:=]\s*|\s+)([^\s]+)\s*$/gim)].map(m=>m[1].replace(/^['"]|['"]$/g,''));
+  const accounts=[...text.matchAll(/^(?:account_id|account\s+id)(?:\s*[:=]\s*|\s+)([a-f0-9]{32})\s*$/gim)].map(m=>m[1]);
+  if(explicitToken&&selectedAccount)return {token:explicitToken,account:selectedAccount};
+  if(tokens.length!==accounts.length)throw new Error('Account ID/token Cloudflare không ghép đủ cặp.');
+  const index=selectedAccount?accounts.findIndex(a=>a.toLowerCase()===selectedAccount.toLowerCase()):accounts.length===1?0:-1;
+  if(index<0&&(tokens.length||accounts.length))throw new Error('Account ID cấu hình không khớp thông tin đăng nhập. Dùng --account hoặc CLOUDFLARE_ACCOUNT_ID để chọn rõ account.');
+  return {token:explicitToken||tokens[index],account:selectedAccount||accounts[index]};
+}
+
 export async function credentials() {
   const filename=argument('--credentials');
   const text=filename?await readFile(path.resolve(filename),'utf8'):'';
   const field=(pattern)=>text.match(pattern)?.[1]?.trim().replace(/^['"]|['"]$/g,'');
+  let configuredAccount;
+  try {configuredAccount=JSON.parse(await readFile(localConfig,'utf8')).account_id;}catch(error){if(error.code!=='ENOENT')throw error;}
+  const cloudflare=cloudflareCredentials(text,process.env.CLOUDFLARE_ACCOUNT_ID||argument('--account')||configuredAccount,process.env.CLOUDFLARE_API_TOKEN);
   const result={
-    token:process.env.CLOUDFLARE_API_TOKEN || field(/^(?:cloudflare_token|token\s+cloudflare)(?:\s*[:=]\s*|\s+)([^\s]+)\s*$/im),
-    account:process.env.CLOUDFLARE_ACCOUNT_ID || field(/^(?:account_id|account\s+id)(?:\s*[:=]\s*|\s+)([a-f0-9]{32})\s*$/im),
+    ...cloudflare,
     bot:process.env.TELEGRAM_BOT_TOKEN || text.match(/\b\d{8,12}:[A-Za-z0-9_-]{30,}\b/)?.[0],
     owners:process.env.OWNER_IDS || field(/^(?:admin\s+id|owners?|owner_ids)(?:\s*[:=]\s*|\s+)([\d,\s]+)$/im)?.replace(/\s+/g,','),
     aiUrl:process.env.AI_BASE_URL || field(/^ai_base_url(?:\s*[:=]\s*|\s+)([^\s]+)\s*$/im),

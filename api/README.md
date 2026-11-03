@@ -18,6 +18,12 @@ Timer tạo bản sao SQLite nhất quán mỗi ngày, kiểm tra tính toàn v�
 
 `api/.secrets.json` chứa `LIBSQL_URL`, `LIBSQL_AUTH_TOKEN` và `API_KEY`; giữ bí mật và sao lưu an toàn, vì `API_KEY` còn dùng để giải mã key AI đã lưu. `private.pem` và `tunnel-token` trên VPS cũng là thông tin nhạy cảm. Không mở cổng database ra Internet và không lưu các file này trong Git.
 
+Khi không dùng domain riêng, nối DB qua Workers VPC: tạo Tunnel trên cùng account với Worker, tạo HTTP VPC Service trỏ đến `127.0.0.1:18783` trên VPS, rồi thêm binding `LIBSQL_SERVICE` trong `vpc_services` của `wrangler.local.json`. Đặt `LIBSQL_URL=http://127.0.0.1:18783`; Worker dùng binding riêng để gửi yêu cầu, không gọi địa chỉ loopback của Worker. Script deploy giữ lại binding này. Web và API vẫn dùng địa chỉ `workers.dev`; không cần mở cổng DB hoặc chuyển zone DNS.
+
+Các công cụ sao lưu/chuyển D1 chạy bằng Node ngoài Worker không có VPC binding. Chạy chúng ngay trên VPS, hoặc mở SSH forwarding `ssh -N -L 18783:127.0.0.1:18783 ubuntu@VPS` rồi chạy công cụ trên máy local trong lúc giữ phiên SSH. Không đổi `LIBSQL_URL` sang endpoint công khai chỉ để chạy công cụ.
+
+Nếu file credentials có nhiều account, các script chọn token khớp `account_id` trong `wrangler.local.json`; có thể chỉ định rõ bằng `--account` hoặc `CLOUDFLARE_ACCOUNT_ID`. Deploy dừng khi account khác bản đang cấu hình, tránh vô tình nối Worker mới với tài nguyên của account cũ. Chuyển account cần sao chép R2, giữ khóa giải mã/API key và kiểm tra DB trước khi đổi cấu hình, webhook và URL dịch vụ trong bot.
+
 Khi cần khôi phục, trước tiên tạm dừng ghi và giữ nguyên bản hiện tại. Giải nén bản sao vào một nơi riêng, kiểm tra SQLite, rồi dùng `sqlite3` xuất SQL hoặc Python `sqlite3.Connection.iterdump()`. Script `scripts/import-libsql.mjs` chỉ nhập SQL vào một libSQL **trống**, yêu cầu `LIBSQL_URL` và `LIBSQL_AUTH_TOKEN` qua biến môi trường, và kiểm tra khóa ngoại. Đối chiếu nội dung trước khi chuyển Worker sang server khôi phục; không ghi đè trực tiếp file `data` đang chạy hoặc quay về D1 cũ mà không đồng bộ dữ liệu.
 
 ### Chuẩn bị hoặc chuyển về D1
@@ -62,9 +68,9 @@ Mở URL gốc của Worker, ví dụ `https://waku-api.your-account.workers.dev
 
 Với ảnh đã phân loại, API còn trả `telegram_file_url`: mở link này trong Telegram để bot upload gửi file gốc trong DM. Người nhận không có quyền upload hay quản lý thư viện. Script deploy tự lấy username từ bot Telegram; không cần thêm config thủ công. Telegram không hỗ trợ spoiler cho `sendDocument`, vì vậy file gốc không có bảo đảm làm mờ như ảnh gửi bằng `sendPhoto`.
 
-Gọi ảnh: `GET https://waku-api.takeshi.dev/v1/images/random?rating=safe&count=3&tags=maid` với header `Authorization: Bearer <key dịch vụ>`. Hỗ trợ `rating=safe|r18|mixed`, `image_type=anime|real` (tùy chọn), `count=1..10`, nhiều tag ngăn bằng dấu phẩy (khớp tất cả), `exclude` chứa ID cần tránh. Các bộ lọc kết hợp AND; chỉ ảnh đủ tên, tag, phân loại và kiểu ảnh mới vào API random.
+Gọi ảnh: `GET https://waku-api.takeshi7502.workers.dev/v1/images/random?rating=safe&count=3&tags=maid` với header `Authorization: Bearer <key dịch vụ>`. Hỗ trợ `rating=safe|r18|mixed`, `image_type=anime|real` (tùy chọn), `count=1..10`, nhiều tag ngăn bằng dấu phẩy (khớp tất cả), `exclude` chứa ID cần tránh. Các bộ lọc kết hợp AND; chỉ ảnh đủ tên, tag, phân loại và kiểu ảnh mới vào API random.
 
-Trong bot Waku, điền `waku_api_url = "https://waku-api.takeshi.dev/v1"`, `waku_api_key` bằng key dịch vụ, bật `waku_api_enabled`. `/config → Service` có công tắc riêng ManyACG/Waku API, mỗi công tắc nằm trên hàng URL/Key tương ứng. Bật cả hai để chọn nguồn ngẫu nhiên, bật nguồn nào chỉ dùng nguồn đó; tắt cả hai không gọi nguồn dự phòng ngầm. Lệnh ảnh báo chưa cấu hình dịch vụ; tool AI trả trạng thái cho model tự diễn đạt. Telegram và Discord cùng dùng bộ chọn nguồn, bộ lọc Safe/R18, metadata caption và chống lặp hiện có.
+Trong bot Waku, điền `waku_api_url = "https://waku-api.takeshi7502.workers.dev/v1"`, `waku_api_key` bằng key dịch vụ, bật `waku_api_enabled`. `/config → Service` có công tắc riêng ManyACG/Waku API, mỗi công tắc nằm trên hàng URL/Key tương ứng. Bật cả hai để chọn nguồn ngẫu nhiên, bật nguồn nào chỉ dùng nguồn đó; tắt cả hai không gọi nguồn dự phòng ngầm. Lệnh ảnh báo chưa cấu hình dịch vụ; tool AI trả trạng thái cho model tự diễn đạt. Telegram và Discord cùng dùng bộ chọn nguồn, bộ lọc Safe/R18, metadata caption và chống lặp hiện có.
 
 - Chọn/kéo thả nhiều ảnh, hoặc dán nhiều URL ảnh trực tiếp (mỗi dòng một link).
 - Chọn tag chung, phân loại và bật/tắt AI cho đợt upload; mặc định dùng AI. Các lựa chọn này được chốt khi bấm bắt đầu.

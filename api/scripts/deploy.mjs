@@ -7,6 +7,7 @@ try {
   const values=await secrets();
   let previous;
   try{previous=JSON.parse(await readFile(localConfig,'utf8'));}catch(error){if(error.code!=='ENOENT')throw error;}
+  if(previous?.account_id&&previous.account_id!==creds.account)throw new Error('Account ID khác bản đang cấu hình. Cần chuyển dữ liệu trước khi deploy sang account khác.');
   const backend=previous?.vars?.DATABASE_BACKEND || (values.LIBSQL_URL?'libsql':'d1');
   if(!['libsql','d1'].includes(backend))throw new Error('Không nhận diện được database đang dùng.');
   const libsql=backend==='libsql';
@@ -32,6 +33,7 @@ try {
     config.d1_databases=previous?.d1_databases || [];
   }
   config.vars.DATABASE_BACKEND=backend;
+  if(libsql&&previous?.vpc_services)config.vpc_services=previous.vpc_services;
   if(previous?.vars?.D1_QUOTA_SCOPE)config.vars.D1_QUOTA_SCOPE=previous.vars.D1_QUOTA_SCOPE;
   if(previous?.vars?.MIGRATION_MAINTENANCE)config.vars.MIGRATION_MAINTENANCE=previous.vars.MIGRATION_MAINTENANCE;
   config.vars.OWNER_IDS=creds.owners;

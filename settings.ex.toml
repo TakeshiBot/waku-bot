@@ -45,7 +45,7 @@ manyacg_enabled = true
 manyacg_api_url = "https://api.manyacg.top/v1"
 manyacg_api_key = ""
 waku_api_enabled = false
-waku_api_url = "https://waku-api.takeshi.dev/v1"
+waku_api_url = "https://waku-api.takeshi7502.workers.dev/v1"
 waku_api_key = ""
 
 # Mirror: chỉ admin bot được nhờ AI tải; 0/trống để tắt.

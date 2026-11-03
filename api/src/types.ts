@@ -2,6 +2,7 @@ export interface Env {
   DB: D1Database;
   LIBSQL_URL?: string;
   LIBSQL_AUTH_TOKEN?: string;
+  LIBSQL_SERVICE?: Fetcher;
   DATABASE_BACKEND?: 'libsql'|'d1';
   D1_QUOTA_SCOPE?: string;
   MIGRATION_MAINTENANCE?: string;

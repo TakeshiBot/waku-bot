@@ -4,6 +4,7 @@ import {HttpError, usesLibsql, type Env} from './types';
 function databaseError(error:unknown):never {
   const e=error as {code?:string;name?:string;message?:string};
   if(e?.code==='FETCH_ERROR'||e?.name==='AbortError'||e?.name==='TimeoutError'||
+    /^ProxyError:/.test(e?.message||'') ||
     (e?.code==='SERVER_ERROR' && /HTTP status (?:429|5\d\d)\b/.test(e.message||'')) ||
     (e?.name==='TypeError' && /fetch|network/i.test(e.message||''))) {
     throw new HttpError(503,'database_unavailable','Không kết nối được cơ sở dữ liệu kho ảnh. Các file chưa tải vẫn được giữ; hãy thử lại khi kết nối phục hồi.',30);
@@ -41,7 +42,9 @@ export class LibsqlDatabase {
 export function withDatabase(env:Env):Env{
   if(!usesLibsql(env))return env;
   if(!env.LIBSQL_URL||!env.LIBSQL_AUTH_TOKEN)throw new Error('LibSQL authentication is not configured');
+  // VPC bindings keep the database private and do not require a public domain.
+  const transport=env.LIBSQL_SERVICE?env.LIBSQL_SERVICE.fetch.bind(env.LIBSQL_SERVICE):fetch;
   const client=createClient({url:env.LIBSQL_URL,authToken:env.LIBSQL_AUTH_TOKEN,
-    fetch:(input:RequestInfo|URL,init?:RequestInit)=>fetch(input,{...init,signal:init?.signal?AbortSignal.any([init.signal,AbortSignal.timeout(15000)]):AbortSignal.timeout(15000)})});
+    fetch:(input:RequestInfo|URL,init?:RequestInit)=>transport(input,{...init,signal:init?.signal?AbortSignal.any([init.signal,AbortSignal.timeout(15000)]):AbortSignal.timeout(15000)})});
   return {...env,DB:new LibsqlDatabase(client) as unknown as D1Database};
 }
