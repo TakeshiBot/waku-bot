@@ -6,7 +6,7 @@ import asyncio
 import json
 from datetime import datetime
 
-from pyrogram import enums
+from pyrogram import enums, types
 
 from waku import database
 from waku.common.memory_store import memttlcache
@@ -128,7 +128,7 @@ async def _welcome_and_tag(client, chat, user, joined_at: datetime | None) -> No
                 )
                 await client.send_message(
                     chat.id, text, parse_mode=enums.ParseMode.HTML,
-                    disable_web_page_preview=True,
+                    link_preview_options=types.LinkPreviewOptions(is_disabled=True),
                 )
             except Exception as error:
                 logger.warning("Custom join greeting failed: {}", type(error).__name__)

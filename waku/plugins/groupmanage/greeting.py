@@ -69,7 +69,7 @@ async def set_greeting_command(client: Client, message: pyrogram.types.Message):
                     await message.reply(
                         greeting_text,
                         parse_mode=pyrogram.enums.ParseMode.HTML,
-                        disable_web_page_preview=True,
+                        link_preview_options=pyrogram.types.LinkPreviewOptions(is_disabled=True),
                     )
                 except Exception as e:
                     logger.error(
