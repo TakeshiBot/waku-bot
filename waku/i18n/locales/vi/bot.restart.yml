@@ -6,6 +6,13 @@ bot:
     menu: "<b>🔄 Khởi động lại Waku</b>\n\nChọn khởi động lại bot, hoặc cập nhật source từ Git rồi build và triển khai cả bot cùng Mini App."
     restart_button: '1. Khởi động lại'
     update_button: '2. Cập nhật'
+    confirm_restart: "<b>Khởi động lại bot?</b>\nChọn Yes để thực hiện, No để quay lại."
+    confirm_update: "<b>Cập nhật bot và Mini App?</b>\nSource mới sẽ được pull, build và triển khai. Chọn Yes để thực hiện, No để quay lại."
+    update_available: "⚠️ Có {count} commit mới.\nĐang chạy: <code>{current}</code>\nMới nhất: <code>{latest}</code>"
+    up_to_date: '✅ Bot đang chạy commit mới nhất: <code>{current}</code>.'
+    local_ahead: 'Commit đang chạy <code>{current}</code> mới hơn trên repo; chưa có bản cập nhật.'
+    diverged: '⚠️ Commit đang chạy và repo đã phân nhánh khác nhau. Cần kiểm tra Git trước khi cập nhật.'
+    check_unavailable: 'Không kiểm tra được commit mới trên repo. Bạn vẫn có thể chọn khởi động lại hoặc cập nhật.'
     close: Đóng
     expired: Menu đã hết hạn hoặc không thuộc về bạn. Mở lại /restart.
     worker_unavailable: 'Cầu nối cập nhật trên VPS chưa chạy. Chạy bash run.sh restart trên VPS để bật lại; VPS cần Python 3.'

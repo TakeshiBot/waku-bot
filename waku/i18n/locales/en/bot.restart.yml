@@ -6,6 +6,13 @@ bot:
     menu: "<b>🔄 Restart Waku</b>\n\nRestart the bot, or pull Git updates and build/deploy both the bot and Mini App."
     restart_button: '1. Restart'
     update_button: '2. Update'
+    confirm_restart: "<b>Restart the bot?</b>\nChoose Yes to proceed or No to go back."
+    confirm_update: "<b>Update the bot and Mini App?</b>\nNew source will be pulled, built and deployed. Choose Yes to proceed or No to go back."
+    update_available: "⚠️ {count} new commits available.\nRunning: <code>{current}</code>\nLatest: <code>{latest}</code>"
+    up_to_date: '✅ The bot is running the latest commit: <code>{current}</code>.'
+    local_ahead: 'Running commit <code>{current}</code> is ahead of the repository; no update is available.'
+    diverged: '⚠️ The running commit and repository have diverged. Check Git before updating.'
+    check_unavailable: 'Could not check the repository for updates. You can still choose restart or update.'
     close: Close
     expired: This menu expired or belongs to another user. Open /restart again.
     worker_unavailable: 'The VPS update bridge is unavailable. Run bash run.sh restart on the VPS to start it; Python 3 is required on the host.'

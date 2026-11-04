@@ -4,6 +4,7 @@ import asyncio
 import secrets
 import time
 from dataclasses import dataclass
+from html import escape
 from pathlib import Path
 
 import pyrogram
@@ -17,6 +18,7 @@ from waku.plugins.menu_cleanup import stop_watching_menu, watch_menu
 from waku.services import maintenance
 from waku.services.process_restart import request_restart
 from waku.services.settings_editor import SettingsEditError, SettingsEditor
+from waku.version import check_updates
 
 _MENUS = {}
 
@@ -28,10 +30,30 @@ class RestartMenu:
     message_id: int
     locale: str
     expires: float
+    text: str = ""
+    has_update: bool = False
+    pending_action: str = ""
 
 
 def _text(key, locale):
     return t("bot.restart." + key, locale=locale)
+
+
+def _buttons(token, lang, *, has_update=False, confirm=False):
+    button = pyrogram.types.InlineKeyboardButton
+    if confirm:
+        rows = [[
+            button("Yes", callback_data=f"rst:{token}:yes", style=pyrogram.enums.ButtonStyle.SUCCESS),
+            button("No", callback_data=f"rst:{token}:no", style=pyrogram.enums.ButtonStyle.DANGER),
+        ]]
+    else:
+        rows = [[
+            button(_text("restart_button", lang), callback_data=f"rst:{token}:restart"),
+            button(("⚠️ " if has_update else "") + _text("update_button", lang), callback_data=f"rst:{token}:update"),
+        ], [
+            button(_text("close", lang), callback_data=f"rst:{token}:close", style=pyrogram.enums.ButtonStyle.DANGER),
+        ]]
+    return pyrogram.types.InlineKeyboardMarkup(rows)
 
 
 async def _operator(user_id):
@@ -75,40 +97,28 @@ async def restart_command(client: Client, message: pyrogram.types.Message):
     if len(_MENUS) >= 100:
         _MENUS.pop(next(iter(_MENUS)))
     token = secrets.token_hex(8)
-    button = pyrogram.types.InlineKeyboardButton
+    update = await asyncio.to_thread(check_updates)
+    status_key = {
+        "ahead": "update_available", "identical": "up_to_date",
+        "behind": "local_ahead", "diverged": "diverged",
+    }.get(update["status"], "check_unavailable")
+    text = _text("menu", lang) + "\n\n" + _text(status_key, lang).format(
+        current=escape(update["current"]), latest=escape(update["latest"]), count=update["count"]
+    )
+    has_update = update["status"] == "ahead"
     reply = await message.reply_text(
-        _text("menu", lang),
+        text,
         parse_mode=pyrogram.enums.ParseMode.HTML,
-        reply_markup=pyrogram.types.InlineKeyboardMarkup(
-            [
-                [
-                    button(
-                        _text("restart_button", lang),
-                        callback_data=f"rst:{token}:restart",
-                    ),
-                    button(
-                        _text("update_button", lang),
-                        callback_data=f"rst:{token}:update",
-                    ),
-                ],
-                [
-                    button(
-                        _text("close", lang),
-                        callback_data=f"rst:{token}:close",
-                        style=pyrogram.enums.ButtonStyle.DANGER,
-                    )
-                ],
-            ]
-        ),
+        reply_markup=_buttons(token, lang, has_update=has_update),
     )
     _MENUS[token] = RestartMenu(
-        user.id, reply.chat.id, reply.id, lang, time.monotonic() + 600
+        user.id, reply.chat.id, reply.id, lang, time.monotonic() + 600, text, has_update
     )
     watch_menu(client, reply, session=_MENUS[token])
 
 
 @Client.on_callback_query(
-    pyrogram.filters.regex(r"^rst:[0-9a-f]{16}:(restart|update|close)$"), group=0
+    pyrogram.filters.regex(r"^rst:[0-9a-f]{16}:(restart|update|close|yes|no)$"), group=0
 )
 async def restart_callback(client: Client, query: pyrogram.types.CallbackQuery):
     data = query.data.decode() if isinstance(query.data, bytes) else str(query.data)
@@ -138,8 +148,30 @@ async def restart_callback(client: Client, query: pyrogram.types.CallbackQuery):
             await query.message.delete()
             _MENUS.pop(token, None)
             return
-        if action not in {"restart", "update"}:
+        if action in {"restart", "update"}:
+            await query.answer()
+            if menu.pending_action == action:
+                return
+            await query.message.edit_text(
+                _text("confirm_" + action, lang),
+                parse_mode=pyrogram.enums.ParseMode.HTML,
+                reply_markup=_buttons(token, lang, confirm=True),
+            )
+            menu.pending_action = action
             return
+        if action == "no":
+            await query.answer()
+            if menu.pending_action:
+                await query.message.edit_text(
+                    menu.text, parse_mode=pyrogram.enums.ParseMode.HTML,
+                    reply_markup=_buttons(token, lang, has_update=menu.has_update),
+                )
+                menu.pending_action = ""
+            return
+        if action != "yes" or not menu.pending_action:
+            await query.answer(_text("expired", lang), show_alert=True)
+            return
+        action = menu.pending_action
         if action == "update" and not await asyncio.to_thread(maintenance.worker_ready):
             await query.answer(_text("worker_unavailable", lang), show_alert=True)
             return

@@ -9,6 +9,8 @@ services:
         WAKU_COMMIT: ${WAKU_COMMIT:-unknown}
         WAKU_COMMIT_SUBJECT: ${WAKU_COMMIT_SUBJECT:-}
         WAKU_COMMIT_DATE: ${WAKU_COMMIT_DATE:-}
+        WAKU_REPOSITORY: ${WAKU_REPOSITORY:-}
+        WAKU_GIT_REF: ${WAKU_GIT_REF:-}
     image: ${WAKU_IMAGE_NAME:-waku-bot:local}
     restart: unless-stopped
     stop_signal: SIGINT

@@ -6,6 +6,13 @@ bot:
     menu: "<b>🔄 Restart Waku</b>\n\nRestart the bot, or pull Git updates and build/deploy both the bot and Mini App."
     restart_button: '1. Restart'
     update_button: '2. Update'
+    confirm_restart: "<b>重启机器人？</b>\n选择 Yes 执行，No 返回。"
+    confirm_update: "<b>更新机器人和 Mini App？</b>\n将拉取源码、构建并部署。选择 Yes 执行，No 返回。"
+    update_available: "⚠️ 有 {count} 个新提交。\n当前：<code>{current}</code>\n最新：<code>{latest}</code>"
+    up_to_date: '✅ 机器人已运行最新提交：<code>{current}</code>。'
+    local_ahead: '当前提交 <code>{current}</code> 领先于仓库，暂无更新。'
+    diverged: '⚠️ 当前提交与仓库已分叉，更新前请检查 Git。'
+    check_unavailable: '无法检查仓库更新，仍可选择重启或更新。'
     close: Close
     expired: This menu expired or belongs to another user. Open /restart again.
     worker_unavailable: 'The VPS update bridge is unavailable. Run bash run.sh restart on the VPS to start it; Python 3 is required on the host.'

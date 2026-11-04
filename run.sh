@@ -289,6 +289,15 @@ deploy() {
   WAKU_VERSION="$(git describe --tags --always --dirty 2>/dev/null || printf local)"
   WAKU_COMMIT_SUBJECT="$(git log -1 --format=%s 2>/dev/null || true)"
   WAKU_COMMIT_DATE="$(git log -1 --format=%cI 2>/dev/null || true)"
+  export WAKU_REPOSITORY WAKU_GIT_REF
+  local git_head git_remote
+  git_head="$(git symbolic-ref --quiet HEAD 2>/dev/null || true)"
+  git_remote="$(git for-each-ref --format='%(upstream:remotename)' "$git_head" 2>/dev/null || true)"
+  WAKU_GIT_REF="$(git for-each-ref --format='%(upstream:remoteref)' "$git_head" 2>/dev/null || true)"
+  WAKU_GIT_REF="${WAKU_GIT_REF#refs/heads/}"
+  # Store only the public repository slug, never credentials from a remote URL.
+  WAKU_REPOSITORY="$(git remote get-url "$git_remote" 2>/dev/null | sed -nE 's#^.*github\.com[:/]([^/]+/[^/]+)/?$#\1#p' || true)"
+  WAKU_REPOSITORY="${WAKU_REPOSITORY%.git}"
   log "Build cả bot và Mini App trong Docker; container hiện tại tiếp tục chạy trong lúc build."
   compose build waku
   check_config
