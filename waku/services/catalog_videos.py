@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import httpx
 import pyrogram
 
-from waku.common.image_caption import wrapped_image_caption
+from waku.common.image_caption import telegram_image_caption
 from waku.common.safe_http import safe_download_bytes
 from waku.config import app_config
 from waku.logger import logger
@@ -181,7 +181,10 @@ async def send_telegram_video(message, row):
         return await pending.edit_media(
             media=pyrogram.types.InputMediaVideo(
                 media=file,
-                caption=wrapped_image_caption(str(row.get("title") or "")),
+                caption=telegram_image_caption(
+                    str(row.get("title") or ""),
+                    max_width=max(8, min(28, dimensions.get("width", 240) // 8)),
+                ),
                 parse_mode=pyrogram.enums.ParseMode.DISABLED,
                 supports_streaming=True,
                 has_spoiler=row["rating"] == "r18",

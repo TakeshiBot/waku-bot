@@ -106,7 +106,7 @@ async def parse_artwork(client: PyrogramClient, message: pyrogram.types.Message)
             videos.sort(key=lambda x: x.index)
             medias += [video for video in videos]
         assert len(medias) > 0, "No media found in artwork"
-        caption = f"{html.escape(telegram_image_caption(artwork.title))}\n<blockquote expandable=true>{html.escape(artwork.description)}</blockquote>"
+        caption = f"{html.escape(telegram_image_caption(artwork.title, album=len(medias) > 1))}\n<blockquote expandable=true>{html.escape(artwork.description)}</blockquote>"
         if (count := len(medias)) > 10:
             caption += i18n.t(
                 "bot.msg.manyacg.artwork_pictures_count",

@@ -686,7 +686,7 @@ async def _deliver_anime_photos(ctx, fetched, prepared):
         pyrogram.types.InputMediaPhoto(
             media=prepared[i],
             caption=(
-                telegram_image_caption(artwork['title'])
+                telegram_image_caption(artwork['title'], album=True)
                 if i == 0
                 else ""
             ),
