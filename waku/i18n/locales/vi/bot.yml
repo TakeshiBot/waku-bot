@@ -409,8 +409,9 @@ bot:
         Các thao tác: set, remove, show
         - set &lt;lời chào&gt;:
           Đặt lời chào của nhóm. Có thể dùng các biến:
-          ${user} - Tên người dùng của thành viên mới
-          ${chat} - Tên nhóm
+          ${user} hoặc {user} - Nhắc tên thành viên mới
+          ${chat} hoặc {chat} - Tên nhóm
+          {name} - Tên hiển thị; {id} - ID thành viên
           Hỗ trợ HTML.
         - remove:
           Xóa lời chào của nhóm.
@@ -419,8 +420,9 @@ bot:
       set_usage: |
         Cách dùng: /greet set &lt;lời chào&gt;
         Các biến được hỗ trợ:
-        ${user} - Tên người dùng của thành viên mới
-        ${chat} - Tên nhóm
+        ${user} hoặc {user} - Nhắc tên thành viên mới
+        ${chat} hoặc {chat} - Tên nhóm
+        {name} - Tên hiển thị; {id} - ID thành viên
         Hỗ trợ HTML.
       too_long: Lời chào quá dài!
       set_success: Đã đặt lời chào của nhóm!

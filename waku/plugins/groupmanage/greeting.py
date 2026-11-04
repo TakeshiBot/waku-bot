@@ -1,12 +1,11 @@
-from string import Template
-
 import pyrogram
 from pyrogram.client import Client
 
-from waku import common, database, i18n
+from waku import database, i18n
 from waku.common.telegram_authority import can_manage_group_settings
 from waku.logger import logger
 from waku.plugins.preference_save import preview_preference
+from waku.services.greeting_template import render_greeting
 from waku.services.new_member_tags import is_present, queue_new_members
 
 
@@ -30,12 +29,13 @@ async def set_greeting_command(client: Client, message: pyrogram.types.Message):
     action = message.command[1].lower()
     match action:
         case "set":
-            if len(message.command) < 3:
+            parts = (message.text or message.caption or "").split(None, 2)
+            if len(parts) < 3 or not parts[2].strip():
                 await message.reply(
                     i18n.t("bot.msg.greeting.set_usage", locale=chat_config.lang)
                 )
                 return
-            greeting_text = " ".join(message.command[2:])
+            greeting_text = parts[2]
             if len(greeting_text) > 1024:
                 await message.reply(
                     i18n.t("bot.msg.greeting.too_long", locale=chat_config.lang)
@@ -63,16 +63,13 @@ async def set_greeting_command(client: Client, message: pyrogram.types.Message):
                 )
             else:
                 try:
-                    t = Template(chat_config.greeting)
-                    greeting_text = t.safe_substitute(
-                        user=user.mention(style="html")
-                        if isinstance(user, pyrogram.types.User)
-                        else common.mention_html(user),
-                        chat=chat.title,
+                    greeting_text = render_greeting(
+                        chat_config.greeting, user=user, chat_title=chat.title or "",
                     )
                     await message.reply(
                         greeting_text,
                         parse_mode=pyrogram.enums.ParseMode.HTML,
+                        disable_web_page_preview=True,
                     )
                 except Exception as e:
                     logger.error(

@@ -235,8 +235,9 @@ bot:
         Available actions: set, remove, show
         - set <welcome_message>:
           Sets the group welcome message. You can use these variables:
-          ${user} - New member's username
-          ${chat} - Group title
+          ${user} or {user} - Mention the new member
+          ${chat} or {chat} - Group title
+          {name} - Display name; {id} - Member ID
           HTML is supported.
         - remove:
           Removes the group welcome message.
@@ -245,8 +246,9 @@ bot:
       set_usage: |
         Usage: /greet set <welcome_message>
         Available variables:
-        ${user} - New member's username
-        ${chat} - Group title
+        ${user} or {user} - Mention the new member
+        ${chat} or {chat} - Group title
+        {name} - Display name; {id} - Member ID
         HTML is supported.
       too_long: It's too long! It won't fit!
       set_success: Welcome message has been set!

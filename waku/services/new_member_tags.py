@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import html
 import json
 from datetime import datetime
-from string import Template
 
 from pyrogram import enums
 
@@ -15,6 +13,7 @@ from waku.common.memory_store import memttlcache
 from waku.config import app_config
 from waku.logger import logger
 from waku.plugins.title.authority import TitleDenied, has_right, validate_title
+from waku.services.greeting_template import render_greeting
 
 _tasks: set[asyncio.Task] = set()
 _generation_slots = asyncio.Semaphore(3)
@@ -124,15 +123,12 @@ async def _welcome_and_tag(client, chat, user, joined_at: datetime | None) -> No
         custom_greeting = bool(config.greeting)
         if custom_greeting:
             try:
-                text = Template(config.greeting).safe_substitute(
-                    user=(
-                        f'<a href="tg://user?id={user.id}">'
-                        f"{html.escape(user.full_name or user.first_name or str(user.id))}</a>"
-                    ),
-                    chat=html.escape(chat.title or ""),
+                text = render_greeting(
+                    config.greeting, user=user, chat_title=chat.title or "",
                 )
                 await client.send_message(
-                    chat.id, text, parse_mode=enums.ParseMode.HTML
+                    chat.id, text, parse_mode=enums.ParseMode.HTML,
+                    disable_web_page_preview=True,
                 )
             except Exception as error:
                 logger.warning("Custom join greeting failed: {}", type(error).__name__)

@@ -109,8 +109,9 @@ bot:
         可用动作: set, remove, show
         - set <欢迎语>:     
           设置群组欢迎语, 可以使用以下变量:
-          ${user} - 新群u用户名
-          ${chat} - 群组标题
+          ${user} 或 {user} - 提及新成员
+          ${chat} 或 {chat} - 群组标题
+          {name} - 显示名称；{id} - 成员 ID
           可使用 HTML
         - remove:
           移除群组欢迎语
@@ -119,8 +120,9 @@ bot:
       set_usage: |
         使用方法: /greet set <欢迎语>
         可用变量:
-        ${user} - 新群u用户名
-        ${chat} - 群组标题
+        ${user} 或 {user} - 提及新成员
+        ${chat} 或 {chat} - 群组标题
+        {name} - 显示名称；{id} - 成员 ID
         可使用 HTML
       too_long: 太长了! 不行!
       set_success: 群组欢迎语设置好啦
