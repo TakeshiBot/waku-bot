@@ -26,8 +26,11 @@ Discord còn nhận `!vseg maid`. Chat AI có tool gửi video riêng và trả 
 nhiên trước khi gửi file. Video R18 gửi với spoiler, giới hạn phân loại vẫn
 theo cấu hình cuộc chat. Nếu giới hạn đính kèm của kênh Discord thấp hơn 20 MiB,
 bot báo rõ thay vì giả vờ đã gửi thành công.
-Video catalog gửi Telegram dùng kích thước hiển thị giữ nguyên tỷ lệ, cạnh dài
-tối đa 426 px; đọc metadata bằng `ffprobe`, không mã hoá lại hay giảm chất lượng file.
+Video catalog gửi Telegram dùng khung tối đa 240 × 426 px, giữ nguyên tỷ lệ;
+caption xuống dòng để không kéo rộng khung. Đọc metadata bằng `ffprobe`, không
+mã hoá lại hay giảm chất lượng file.
+Bot gửi tin chờ trước khi tải video, rồi thay chính tin đó bằng video; nếu lỗi,
+tin chờ được xoá để không lưu trạng thái đang tải mãi.
 
 Kho ảnh riêng chạy trên Cloudflare Workers + R2 + D1. Bot Telegram nhận ảnh hoặc link ảnh, lưu vào R2, trả link trực tiếp. Source nằm trong thư mục `api/` trên nhánh chính `v2` của repo Waku. API ảnh deploy độc lập lên Cloudflare, không chạy trong container bot; không cần VPS. Có thể thêm API vision để tự gắn tag, hoặc dùng hoàn toàn thủ công.
 

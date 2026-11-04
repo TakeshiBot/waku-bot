@@ -11,7 +11,6 @@ from waku.services.catalog_videos import (
     VideoError,
     catalog_notice,
     fetch_catalog_video,
-    prepare_video,
     send_telegram_video,
 )
 from waku.services.telegram_images import telegram_image_settings
@@ -38,11 +37,9 @@ async def video_command(client, message):
         await message.reply(i18n.t("bot.msg.manyacg.setu_cd", locale=config.lang))
         return
     await common.memttlcache.set(key, True, ttl=app_config.manyacg_setu_cd)
-    file = None
     try:
         row = await fetch_catalog_video(keyword, mode)
-        file = await prepare_video(row)
-        await send_telegram_video(message, row, file)
+        await send_telegram_video(message, row)
     except VideoError as error:
         await message.reply(
             catalog_notice(keyword=keyword, lang=config.lang, code=error.code),
@@ -51,6 +48,3 @@ async def video_command(client, message):
     except Exception as error:
         logger.warning("Catalog video failed: {}", type(error).__name__)
         await message.reply(catalog_notice(lang=config.lang, code="unavailable"))
-    finally:
-        if file:
-            file.close()

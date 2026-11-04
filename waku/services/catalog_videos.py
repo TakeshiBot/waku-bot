@@ -4,11 +4,13 @@ import asyncio
 import io
 import json
 import subprocess
+from contextlib import suppress
 from dataclasses import dataclass
 
 import httpx
 import pyrogram
 
+from waku.common.image_caption import wrapped_image_caption
 from waku.common.safe_http import safe_download_bytes
 from waku.config import app_config
 from waku.logger import logger
@@ -158,28 +160,41 @@ def _telegram_video_dimensions(file):
         )
         if round(float(rotation)) % 180 == 90:
             width, height = height, width
-        scale = min(1, 426 / max(width, height))
+        scale = min(1, 240 / width, 426 / height)
         return {"width": max(1, round(width * scale)), "height": max(1, round(height * scale))}
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, IndexError, TypeError) as error:
         logger.warning("Video dimensions unavailable; using Telegram sizing: {}", type(error).__name__)
         return {}
 
 
-async def send_telegram_video(message, row, file):
-    dimensions = await asyncio.to_thread(_telegram_video_dimensions, file)
+async def send_telegram_video(message, row):
     buttons = []
     if source := _web_url(row.get("source_url")):
         buttons.append(pyrogram.types.InlineKeyboardButton("Bản gốc", url=source))
     if detail := _web_url(row.get("telegram_file_url")):
         buttons.append(pyrogram.types.InlineKeyboardButton("Chi tiết", url=detail))
-    return await message.reply_video(
-        video=file,
-        caption=str(row.get("title") or "")[:1024],
-        parse_mode=pyrogram.enums.ParseMode.DISABLED,
-        supports_streaming=True,
-        has_spoiler=row["rating"] == "r18",
-        **dimensions,
-        reply_markup=pyrogram.types.InlineKeyboardMarkup([buttons])
-        if buttons
-        else None,
-    )
+    pending = await message.reply_text("Video đang tới nè, chờ xíu nha 🎬")
+    file = None
+    try:
+        file = await prepare_video(row)
+        dimensions = await asyncio.to_thread(_telegram_video_dimensions, file)
+        return await pending.edit_media(
+            media=pyrogram.types.InputMediaVideo(
+                media=file,
+                caption=wrapped_image_caption(str(row.get("title") or "")),
+                parse_mode=pyrogram.enums.ParseMode.DISABLED,
+                supports_streaming=True,
+                has_spoiler=row["rating"] == "r18",
+                **dimensions,
+            ),
+            reply_markup=pyrogram.types.InlineKeyboardMarkup([buttons])
+            if buttons
+            else None,
+        )
+    except BaseException:
+        with suppress(Exception):
+            await pending.delete()
+        raise
+    finally:
+        if file is not None:
+            file.close()

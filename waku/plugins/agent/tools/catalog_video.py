@@ -9,7 +9,6 @@ from waku.services.catalog_videos import (
     VideoResult,
     catalog_notice,
     fetch_catalog_video,
-    prepare_video,
     send_telegram_video,
 )
 from waku.services.telegram_images import telegram_image_settings
@@ -20,7 +19,7 @@ async def send_catalog_video(
     keyword: str = "",
     image_type: Literal["anime", "real"] | None = None,
 ) -> VideoResult:
-    """Prepare ONE video from Waku API, only when the user asks to send a video/clip.
+    """Select ONE video from Waku API, only when the user asks to send a video/clip.
 
     Empty keyword means random. Otherwise pass requested exact tag(s), comma
     separated; preserve r18/sfw in keyword. image_type is an optional explicitly
@@ -41,7 +40,6 @@ async def send_catalog_video(
         row = await fetch_catalog_video(
             keyword, mode, image_type, request_text=message_plain_text(message)
         )
-        file = await prepare_video(row)
     except VideoError as error:
         return VideoResult(
             success=False,
@@ -50,15 +48,15 @@ async def send_catalog_video(
     except Exception:
         return VideoResult(
             success=False,
-            message="Video download failed; no video was prepared or sent.",
+            message="Video lookup failed; no video was selected or sent.",
         )
 
     async def deliver():
-        await send_telegram_video(message, row, file)
+        await send_telegram_video(message, row)
         return VideoResult(sent_count=1)
 
     async def cleanup():
-        file.close()
+        pass  # The delivery owns and closes its download.
 
     if queue := ctx.deps.deferred_images:
         queue.add(deliver, cleanup)
