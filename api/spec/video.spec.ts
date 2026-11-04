@@ -15,7 +15,7 @@ test('video MIME detection distinguishes AVIF/images and rejects unsupported con
  assert.throws(()=>mediaType(payload(Buffer.from('<html>fake.mp4</html>'))));
 });
 
-test('videos upload manually, filter separately, remain outside AI and support byte ranges',async()=>{
+test('videos without a frame stay manual, filter separately and support byte ranges',async()=>{
  const mf=new Miniflare(convertV4MiniflareOptions({modules:true,scriptPath:'.test/worker.mjs',compatibilityDate:'2026-07-01',d1Databases:['DB'],r2Buckets:['IMAGES'],bindings:{API_KEY:'video-qa',PUBLIC_BASE_URL:'https://media.example.com'},outboundService:async(request:Request)=>{
   if(new URL(request.url).hostname==='cdn.example.com')return new MockResponse(mp4,{headers:{'content-type':'video/mp4'}});
   throw Error('Unexpected upstream request');
@@ -45,5 +45,41 @@ test('videos upload manually, filter separately, remain outside AI and support b
   const oversized=new Uint8Array(MAX_VIDEO_BYTES+1);oversized.set(mp4);
   await assert.rejects(save(env,oversized.buffer,{title:'Large',tags:[],rating:'unknown',source_url:null},null),(error:any)=>error.status===413);
   assert.equal((await bucket.list()).objects.length,1,'oversized upload reserves no storage');
+ }finally{await mf.dispose();}
+});
+
+test('video AI uses one persisted JPEG, survives retry, preserves manual choices and cleans up storage',async()=>{
+ const jpeg=Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCAAIAAgDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AJVAA//Z','base64');
+ let calls=0,fail=true;
+ const mf=new Miniflare(convertV4MiniflareOptions({modules:true,scriptPath:'.test/worker.mjs',compatibilityDate:'2026-07-01',d1Databases:['DB'],r2Buckets:['IMAGES'],bindings:{API_KEY:'qa',PUBLIC_BASE_URL:'https://media.example.com',AI_BASE_URL:'https://vision.example.com/v1',AI_API_KEY:'vision-key',AI_MODEL:'vision'},outboundService:async(request:Request)=>{
+  const url=new URL(request.url);
+  if(url.hostname==='media.example.com'&&url.pathname==='/internal/jobs')return mf.dispatchFetch(url.href,{method:'POST',headers:Object.fromEntries(request.headers),body:await request.text()});
+  assert.equal(url.hostname,'vision.example.com');calls++;
+  const body=await request.json() as any;
+  assert.equal(body.messages[1].content[1].image_url.url,'data:image/jpeg;base64,'+jpeg.toString('base64'));
+  assert.match(body.messages[0].content,/ONE sampled frame/);
+  return fail?new MockResponse('{}',{status:503}):MockResponse.json({choices:[{message:{content:JSON.stringify({title:'AI title',tags:['cat_ears'],rating:'safe',image_type:'anime'})}}]});
+ }}));
+ try{
+  const db=await mf.getD1Database('DB'),bucket=await mf.getR2Bucket('IMAGES');
+  for(const name of(await readdir('migrations')).filter(n=>n.endsWith('.sql')).sort())await db.batch(migrationStatements(await readFile('migrations/'+name,'utf8')).map(sql=>db.prepare(sql)));
+  const call=(path:string,options:any={})=>mf.dispatchFetch('https://media.example.com'+path,{...options,headers:{authorization:'Bearer qa',...options.headers}});
+  const uploaded=await call('/v1/images',{method:'POST',headers:{'content-type':'application/octet-stream','x-waku-upload-metadata':encodeURIComponent(JSON.stringify({filename:'clip.mp4',title:'My video',rating:'r18',manual:true}))},body:mp4});
+  assert.equal(uploaded.status,201);const {image:video}=await uploaded.json() as any,id=video.id;
+  const framePath='/v1/images/'+id+'/frame',analyzePath='/v1/images/'+id+'/analyze';
+  assert.equal((await call(framePath,{method:'POST',body:mp4})).status,400);
+  assert.equal((await call(framePath,{method:'POST',body:new Uint8Array(512*1024+1)})).status,413);
+  for(let i=0;i<2;i++)assert.equal((await call(framePath,{method:'POST',headers:{'content-type':'image/jpeg'},body:jpeg})).status,200);
+  assert.equal((await bucket.list()).objects.length,2,'one frame only, no duplicate storage');
+  const wait=async(status:string)=>{for(let i=0;i<150;i++){const row=await db.prepare('SELECT status FROM image_analysis WHERE image_id=?').bind(id).first();if(row?.status===status)return;await new Promise(r=>setTimeout(r,50));}assert.fail('analysis did not reach '+status);};
+  assert.equal((await call(analyzePath,{method:'POST'})).status,200);await wait('failed');assert.equal(calls,1);
+  fail=false;
+  assert.equal((await call(analyzePath,{method:'POST'})).status,200);await wait('done');assert.equal(calls,2);
+  const updated=(await(await call('/v1/images/'+id)).json() as any).image;
+  assert.equal(updated.analysis_frame,true);assert.equal(updated.title,'My video');assert.equal(updated.rating,'r18');assert.equal(updated.image_type,'anime');assert.deepEqual(updated.tags,['cat_ears']);assert.equal(updated.classified,true);
+  assert.equal((await call('/v1/images/'+id,{method:'DELETE'})).status,200);
+  assert.equal(await db.prepare('SELECT image_id FROM video_frames WHERE image_id=?').bind(id).first(),null);
+  const {cleanupObjects}=await import('../src/store.ts');await cleanupObjects({DB:db,IMAGES:bucket} as any);
+  assert.equal((await bucket.list()).objects.length,0);assert.equal((await db.prepare('SELECT bytes FROM storage_usage WHERE id=1').first() as any).bytes,0);
  }finally{await mf.dispose();}
 });

@@ -10,6 +10,7 @@ import storageQuota from '../migrations/0019_storage_quota.sql';
 import modelTestTiming from '../migrations/0020_model_test_timing.sql';
 import librarySources from '../migrations/0021_library_sources.sql';
 import sourceProfiles from '../migrations/0022_source_profiles.sql';
+import videoFrames from '../migrations/0023_video_frames.sql';
 import {migrationStatements} from './sql';
 import type {Env} from './types';
 
@@ -22,7 +23,7 @@ export async function ensureReadEfficiency(env:Env){
       try{
         const row=await env.DB.prepare('SELECT version FROM api_schema WHERE id=1').first<{version:number}>();
         version=Number(row?.version||0);
-        if(version>=22)return;
+        if(version>=23)return;
       }
       catch(error){
         const message=String((error as Error)?.message)+' '+String((error as Error)?.cause);
@@ -36,7 +37,7 @@ export async function ensureReadEfficiency(env:Env){
         ...(version<15?migrationStatements(dimensions):[]),...(version<16?migrationStatements(sessions):[]),
         ...(version<17?migrationStatements(inlineAnalysis):[]),...(version<18?migrationStatements(librarySync):[]),
         ...(version<19?migrationStatements(storageQuota):[]),...(version<20?migrationStatements(modelTestTiming):[]),
-        ...(version<21?migrationStatements(librarySources):[]),...migrationStatements(sourceProfiles)];
+        ...(version<21?migrationStatements(librarySources):[]),...(version<22?migrationStatements(sourceProfiles):[]),...migrationStatements(videoFrames)];
       await env.DB.batch(statements.map(sql=>env.DB.prepare(sql)));
     })().catch(error=>{ready.delete(env.DB);throw error;});
     ready.set(env.DB,promise);

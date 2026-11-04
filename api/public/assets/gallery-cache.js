@@ -15,19 +15,19 @@ async function preview(blob){
   }finally{bitmap.close();}
 }
 
-function videoPreview(src){
+export function videoPreview(src,analysis=false){
   return new Promise((resolve,reject)=>{
     const video=document.createElement('video');video.muted=true;video.playsInline=true;video.preload='metadata';
-    let settled=false;
+    let settled=false,capturing=false;
     const done=(error,blob)=>{if(settled)return;settled=true;clearTimeout(timer);video.onloadedmetadata=video.onloadeddata=video.onseeked=video.onerror=null;video.pause();video.removeAttribute('src');video.load();error?reject(error):resolve(blob);};
     const timer=setTimeout(()=>done(new Error('video preview timeout')),12000);
-    const capture=()=>{try{
-      const scale=Math.min(1,384/video.videoWidth,768/video.videoHeight),width=Math.round(video.videoWidth*scale),height=Math.round(video.videoHeight*scale);
+    const capture=()=>{if(settled||capturing)return;capturing=true;try{
+      const scale=Math.min(1,(analysis?768:384)/video.videoWidth,768/video.videoHeight),width=Math.round(video.videoWidth*scale),height=Math.round(video.videoHeight*scale);
       if(!width||!height)throw new Error('video unavailable');
       const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;canvas.getContext('2d').drawImage(video,0,0,width,height);
-      canvas.toBlob(blob=>blob?done(null,blob):done(new Error('video preview unavailable')),'image/webp',.8);
+      canvas.toBlob(blob=>blob?done(null,blob):done(new Error('video preview unavailable')),analysis?'image/jpeg':'image/webp',.8);
     }catch(error){done(error);}};
-    video.onloadedmetadata=()=>{if(Number.isFinite(video.duration)&&video.duration>.2)video.currentTime=Math.min(.5,video.duration/2);};
+    video.onloadedmetadata=()=>{if(Number.isFinite(video.duration)&&video.duration>.2)video.currentTime=video.duration*.25;};
     video.onseeked=capture;video.onloadeddata=()=>{if(!video.seeking)capture();};
     video.onerror=()=>done(new Error('video unavailable'));video.src=src;
   });

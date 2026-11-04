@@ -4,11 +4,12 @@ import type {Env,Metadata,ImageRow} from './types';
 import {releaseAiSlot,continueWork,dispatchAnalysis} from './queue';
 import {hasAiConnection,initializeAiProviders,connectionForProvider,type AiConnection} from './providers';
 import {ensureSession,attachSessionImages,recordProviderOutcome,sessionForBatch} from './sessions';
+import {videoFrame} from './video-frames';
 
 export async function aiEnabled(env:Env) {return hasAiConnection(env);}
 
 export async function enqueueAnalysis(env:Env,id:string,manual=false,force=false,batchId?:string) {
-  if((await image(env,id)).mime_type.startsWith('video/'))return;
+  if((await image(env,id)).mime_type.startsWith('video/')&&!await videoFrame(env,id))return;
   const enabled=!manual&&await aiEnabled(env);
   const linked=batchId?await sessionForBatch(env,batchId):null,cancelled=linked?.phase==='cancelled';
   const result=await env.DB.prepare(`INSERT INTO image_analysis(image_id,status,last_error) VALUES (?,?,?)
@@ -85,7 +86,7 @@ export function parseVisionResponse(value:unknown):Metadata {
   return parseAnalysis(content);
 }
 
-async function inferResponse(config:AiConnection,url:string,info:Metadata,signal:AbortSignal):Promise<Metadata> {
+async function inferResponse(config:AiConnection,url:string,info:Metadata,signal:AbortSignal,video=false):Promise<Metadata> {
   const endpoint=new URL(config.base_url.replace(/\/$/,'')+'/chat/completions');
   if (endpoint.protocol!=='https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) throw new AnalysisError('invalid_provider');
   let response:Response;
@@ -93,7 +94,7 @@ async function inferResponse(config:AiConnection,url:string,info:Metadata,signal
     response=await fetch(endpoint,{
       method:'POST',redirect:'manual',headers:{authorization:`Bearer ${config.api_key}`,'content-type':'application/json'},
       body:JSON.stringify({model:config.model,stream:false,max_tokens:700,...(config.model==='openrouter/nvidia/nemotron-3.5-super-vl:free'||config.model==='openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free'?{reasoning:{enabled:false}}:{}),messages:[
-        {role:'system',content:PROMPT},
+        {role:'system',content:PROMPT+(video?'\nThis is ONE sampled frame of a video. Describe and tag only visible evidence in this frame. The rating classifies this frame, not the full video. Never claim to have watched the video or heard its audio.':'')},
         {role:'user',content:[
           {type:'text',text:`Existing user metadata (preserve user choices): ${JSON.stringify(info)}`},
           {type:'image_url',image_url:{url,detail:'auto'}},
@@ -120,12 +121,14 @@ async function infer(env:Env,row:ImageRow,config:AiConnection,info:Metadata):Pro
   const work=async()=>{
     // Some compatible vision gateways reject remote image URLs. Read our own
     // stored object instead: no public-CDN download or extra Worker request.
-    const object=await env.IMAGES.get(row.object_key);
+    const video=row.mime_type.startsWith('video/'),frame=video?await videoFrame(env,row.id):null;
+    if(video&&!frame)throw new AnalysisError('image_missing');
+    const object=await env.IMAGES.get(frame?.object_key||row.object_key);
     if(!object)throw new AnalysisError('image_missing');
     const bytes=new Uint8Array(await object.arrayBuffer());let binary='';
     for(let offset=0;offset<bytes.length;offset+=16384)binary+=String.fromCharCode(...bytes.subarray(offset,offset+16384));
     if(controller.signal.aborted)throw new AnalysisError('provider_timeout');
-    return inferResponse(config,`data:${row.mime_type};base64,${btoa(binary)}`,info,controller.signal);
+    return inferResponse(config,`data:${video?'image/jpeg':row.mime_type};base64,${btoa(binary)}`,info,controller.signal,video);
   };
   try{return await Promise.race([work(),new Promise<never>((_,reject)=>{
     timer=setTimeout(()=>{reject(new AnalysisError('provider_timeout'));controller.abort();},10000);

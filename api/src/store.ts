@@ -48,8 +48,10 @@ export async function presentMany(env:Env, rows:ImageRow[], base:string) {
   const [list,analysis,sizes,profiles]=await Promise.all([
     env.DB.prepare(`SELECT image_id,tag FROM image_tags WHERE image_id IN (${rows.map(()=>'?').join(',')}) ORDER BY tag`)
       .bind(...rows.map(row=>row.id)).all<{image_id:string;tag:string}>(),
-    env.DB.prepare(`SELECT image_id,status,last_error FROM image_analysis WHERE image_id IN (${rows.map(()=>'?').join(',')})`)
-      .bind(...rows.map(row=>row.id)).all<{image_id:string;status:string;last_error:string|null}>(),
+    env.DB.prepare(`SELECT i.id image_id,a.status,a.last_error,f.object_key frame FROM images i
+      LEFT JOIN image_analysis a ON a.image_id=i.id LEFT JOIN video_frames f ON f.image_id=i.id
+      WHERE i.id IN (${rows.map(()=>'?').join(',')})`)
+      .bind(...rows.map(row=>row.id)).all<{image_id:string;status:string;last_error:string|null;frame:string|null}>(),
     dimensionsForRows(env,rows),
     sourceProfiles(env,rows.flatMap(row=>row.source_url?[row.source_url]:[])),
   ]);
@@ -70,6 +72,7 @@ export async function presentMany(env:Env, rows:ImageRow[], base:string) {
       source_url:row.source_url, source_group:sourceGroup,source_aliases:sourceGroup?[...new Set([source!,sourceGroup,...aliases.get(sourceGroup)||[]])]:[], rating:row.rating, image_type:row.image_type, original_name:row.original_name, tags:allTags.get(row.id) || [],
       created_at:new Date(row.created_at).toISOString(),
       ai_status:states.get(row.id)?.status || 'off',
+      analysis_frame:isVideo(row)&&Boolean(states.get(row.id)?.frame),
       // A previous analysis failure does not invalidate complete saved metadata.
       ai_error:!classified&&states.get(row.id)?.status==='failed'?safeAnalysisError(states.get(row.id)?.last_error):null,
       classified,
@@ -184,7 +187,8 @@ export async function cleanupObjects(env: Env) {
   await env.DB.batch([
     env.DB.prepare(`INSERT OR IGNORE INTO object_deletions(object_key) SELECT object_key FROM object_uploads
       WHERE object_key IN (SELECT object_key FROM object_uploads WHERE expires_at<? ORDER BY expires_at LIMIT 5)
-      AND NOT EXISTS(SELECT 1 FROM images WHERE images.object_key=object_uploads.object_key)`).bind(Date.now()),
+      AND NOT EXISTS(SELECT 1 FROM images WHERE images.object_key=object_uploads.object_key)
+      AND NOT EXISTS(SELECT 1 FROM video_frames WHERE video_frames.object_key=object_uploads.object_key)`).bind(Date.now()),
     env.DB.prepare('DELETE FROM object_uploads WHERE object_key IN (SELECT object_key FROM object_deletions)'),
   ]);
   const rows = await env.DB.prepare('SELECT object_key FROM object_deletions LIMIT 5').all<{object_key:string}>();

@@ -18,6 +18,7 @@ import {sharedSessionProgress} from './sessions';
 import {storageUsage} from './storage';
 import {sourceLibrary,sourceUrls,invalidateSourceGroups} from './library-sources';
 import {refreshSourceProfiles,refreshDueSourceProfiles} from './source-profiles';
+import {MAX_FRAME_BYTES,saveVideoFrame,videoFrame} from './video-frames';
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 function integer(value:string|null, fallback:number, max:number) {
@@ -358,9 +359,14 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     }
     if (request.method==='DELETE') {await remove(env,id); return response({deleted:true,id});}
   }
+  const frame=path.match(/^\/v1\/images\/([a-f0-9-]{36})\/frame$/);
+  if(frame&&request.method==='POST'){
+    await saveVideoFrame(env,await image(env,frame[1]),await boundedBody(request,MAX_FRAME_BYTES));
+    return response({saved:true});
+  }
   const analyze=path.match(/^\/v1\/images\/([a-f0-9-]{36})\/analyze$/);
   if (analyze && request.method==='POST') {
-    if(isVideo(await image(env,analyze[1])))throw new HttpError(400,'video_manual_only','Video chỉ hỗ trợ gắn thông tin thủ công.');
+    if(isVideo(await image(env,analyze[1]))&&!await videoFrame(env,analyze[1]))throw new HttpError(400,'video_frame_required','Cần trích một khung hình video trước khi AI gắn tag.');
     if (!await aiEnabled(env)) throw new HttpError(503,'ai_not_configured','Chưa cấu hình API AI.');
     const inline=request.headers.get('content-type')?.includes('application/json')&&(await json(request)).inline===true;
     const batchId=await createBatch(env,Boolean(inline));await attachBatch(env,batchId,[analyze[1]],true,Boolean(inline));

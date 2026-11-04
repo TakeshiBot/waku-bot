@@ -3,9 +3,14 @@
 ## Video
 
 Web và bot upload nhận video **MP4, MOV, WebM tối đa 20 MiB/file**, dùng chung
-kho R2, chống trùng và hạn mức Data 10 GB với ảnh. Video không chạy vision/AI
-gắn tag, kể cả khi bật AI cho lượt upload; nhập tên, tag, Safe/R18 và kiểu
-Vẽ/Anime hoặc Người thật thủ công để video xuất hiện trong API random.
+kho R2, chống trùng và hạn mức Data 10 GB với ảnh. Trên web, AI gắn tag video
+bằng **một khung hình** (khoảng 25% thời lượng nếu đọc được), không xem toàn bộ
+video hoặc nghe âm thanh. Web trích JPEG tối đa 768 px rồi lưu trên R2 để phiên
+AI và các lượt chạy lại tiếp tục trên máy chủ dù đóng trình duyệt. Bật AI khi
+upload hoặc dùng nút AI riêng/chọn nhiều file. Phân loại chỉ dựa vào khung đã
+xem; cần tự kiểm tra Safe/R18 cho toàn video. Codec không được trình duyệt hỗ
+trợ thì vẫn giữ video đã upload và nhập thông tin thủ công. Video upload qua
+Telegram hoặc API chưa có khung hình cũng có thể mở trên web để gắn tag.
 Trình xem web phát video và hỗ trợ tua bằng HTTP byte ranges. Việc phát MOV
 còn phụ thuộc codec và trình duyệt; MP4 H.264/AAC phù hợp nhất để gửi Telegram.
 
@@ -346,7 +351,11 @@ Danh sách nhóm phân trang từ toàn bộ thư viện, không chỉ gom các 
 
 Nút **Sửa** hỗ trợ giữ nguyên, thay hoặc xóa link nguồn hàng loạt. Facebook chuẩn hóa host và link `profile.php?id=…`/`people/…/ID`; X hỗ trợ `/i/user/ID`. Web tra tối đa 2 hồ sơ công khai mỗi lượt ở nền, phần chưa tra được lưu để Cron tiếp tục 2 hồ sơ/phút. Tên và cặp username/ID đã xác minh được lưu trong 7 ngày; tra thất bại nghỉ 1 ngày, giữ tên/nguồn cũ. Pixiv lấy tên qua hồ sơ công khai. Trang yêu cầu đăng nhập/chặn truy cập sẽ giữ ID, không đoán hai tài khoản là một. Link `pbs.twimg.com/media/…` không chứa chủ tài khoản; muốn gộp các file này hãy chọn chúng và sửa nguồn sang link profile.
 
-Video có ảnh xem trước tạo ở trình duyệt, dùng chung cache thumbnail với ảnh và tối đa 2 lượt xử lý. Không chuyển mã video trên VPS, không tạo thêm object tính dung lượng R2; định dạng trình duyệt không giải mã được giữ biểu tượng phát. Bìa nhóm ưu tiên ảnh có sẵn. Trình xem video chỉ cung cấp phát/dừng và bật/tắt âm thanh.
+Video có ảnh xem trước tạo ở trình duyệt, dùng chung cache thumbnail với ảnh và tối đa 2 lượt xử lý. Không chuyển mã video trên VPS; riêng khung hình dùng cho AI được lưu trên R2, tính vào Data và dọn khi xoá video. Định dạng trình duyệt không giải mã được giữ biểu tượng phát. Bìa nhóm ưu tiên ảnh có sẵn. Trình xem video chỉ cung cấp phát/dừng và bật/tắt âm thanh.
+
+API: gửi JPEG (tối đa 512 KB, 1280 px) tới `POST /v1/images/:id/frame`
+trước khi gọi `/analyze` hoặc thêm video vào phiên AI. Khung đã lưu không bị
+ghi đè; `analysis_frame` trong thông tin video cho biết đã có khung hay chưa.
 
 ## Độ bền và giới hạn
 

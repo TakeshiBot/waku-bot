@@ -20,7 +20,8 @@ export async function createBatch(env:Env,inline=false) {
 export async function attachBatch(env:Env,batchId:string,ids:string[],force=false,inline=false) {
   await getBatch(env,batchId);
   if (!ids.length) return 0;
-  const rows=await env.DB.prepare("SELECT id FROM images WHERE id IN (SELECT value FROM json_each(?)) AND mime_type NOT LIKE 'video/%'").bind(JSON.stringify([...new Set(ids)])).all<{id:string}>();
+  const rows=await env.DB.prepare(`SELECT id FROM images WHERE id IN (SELECT value FROM json_each(?))
+    AND (mime_type NOT LIKE 'video/%' OR EXISTS(SELECT 1 FROM video_frames f WHERE f.image_id=images.id))`).bind(JSON.stringify([...new Set(ids)])).all<{id:string}>();
   ids=rows.results.map(row=>row.id);if(!ids.length)return 0;
   const linked=await sessionForBatch(env,batchId),session=linked?.phase==='cancelled'?linked:await ensureSession(env,null,false,inline?'inline':'batch');
   batchId=session.current_batch_id;
