@@ -102,6 +102,7 @@ async def help_command(interaction: discord.Interaction) -> None:
         "`/forget` — xoá ngữ cảnh của bạn ở kênh hiện tại.\n"
         "`/invite` — link mời Waku vào server.\n"
         "`/seg [keyword] [count]` — gửi 1–10 ảnh theo tag hoặc random; lệnh chữ: `!seg 5 tai mèo`.\n"
+        "`/vseg [keyword]` — gửi một video theo tag hoặc random; lệnh chữ: `!vseg maid`.\n"
         "`/clean [amount]` — dọn tối đa 50 tin của Waku (người có quyền)."
     )
     if _is_discord_user_bot_admin(interaction.user):

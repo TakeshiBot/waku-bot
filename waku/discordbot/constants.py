@@ -43,7 +43,7 @@ _MENTION_RE = re.compile(r"<@!?\d+>")
 
 _KEYWORD_SEPARATORS = (" ", "\n", "\t", ",", ":", "，", "：", "!", "！", "?", "？")
 
-_SEG_COMMANDS = ("seg", "!seg", ".seg", "涩图", "色图")
+_SEG_COMMANDS = ("seg", "!seg", ".seg", "涩图", "色图", "vseg", "!vseg", ".vseg")
 
 # A reaction is a whole sequence, not its individual Unicode code points.
 # Keep modifiers/variation selectors, ZWJ families, flags and keycaps intact.

@@ -1,4 +1,4 @@
-import { imageType } from './input';
+import { mediaType } from './input';
 import {dimensionsForRows,imageDimensions,recordDimensions} from './dimensions';
 import { HttpError, type Env, type ImageRow, type Metadata } from './types';
 import {ensureStorage,reserveStorage} from './storage';
@@ -11,6 +11,9 @@ export const CLASSIFIED_IMAGE_SQL=`(length(trim(i.title))>0 AND i.rating IN ('sa
 export function maxBytes(env: Env): number {
   return Math.min(20, Math.max(1, Number(env.MAX_IMAGE_MB) || 10)) * 1024 * 1024;
 }
+export const MAX_VIDEO_BYTES=20*1024*1024;
+export function maxMediaBytes(env:Env){return Math.max(maxBytes(env),MAX_VIDEO_BYTES);}
+export const isVideo=(row:{mime_type:string})=>row.mime_type.startsWith('video/');
 
 export async function libraryChanged(env:Env) {
   await env.DB.prepare('UPDATE library_revision SET version=version+1 WHERE id=1').run();
@@ -51,7 +54,7 @@ export async function presentMany(env:Env, rows:ImageRow[], base:string) {
       id:row.id, url:`${base}/media/${row.id}`, filename:row.filename,
       telegram_file_url:env.TELEGRAM_BOT_USERNAME && /^[A-Za-z0-9_]{5,32}$/.test(env.TELEGRAM_BOT_USERNAME)
         ? `https://t.me/${env.TELEGRAM_BOT_USERNAME}?start=file_${row.id.replaceAll('-','')}` : null,
-      mime_type:row.mime_type, size:row.size, sha256:row.sha256, title:row.title, metadata_version:row.metadata_version,
+      mime_type:row.mime_type, media_type:isVideo(row)?'video':'image', size:row.size, sha256:row.sha256, title:row.title, metadata_version:row.metadata_version,
       width:sizes.get(row.id)?.width??null,height:sizes.get(row.id)?.height??null,
       source_url:row.source_url, rating:row.rating, image_type:row.image_type, original_name:row.original_name, tags:allTags.get(row.id) || [],
       created_at:new Date(row.created_at).toISOString(),
@@ -80,9 +83,9 @@ async function importedSource(env:Env,row:ImageRow,source:string|null,importUrl:
 }
 
 export async function save(env: Env, bytes: ArrayBuffer, info: Metadata, uploader: string | null, originalName:string|null=null, importUrl:string|null=null) {
-  if (bytes.byteLength > maxBytes(env)) throw new HttpError(413,'too_large','Ảnh vượt giới hạn dung lượng.');
-  const kind = imageType(bytes);
-  const dimensions=imageDimensions(bytes);
+  const kind = mediaType(bytes),video=kind.mime.startsWith('video/');
+  if (bytes.byteLength > (video?MAX_VIDEO_BYTES:maxBytes(env))) throw new HttpError(413,'too_large',video?'Video vượt giới hạn 20 MB.':'Ảnh vượt giới hạn dung lượng.');
+  const dimensions=video?null:imageDimensions(bytes);
   const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(x=>x.toString(16).padStart(2,'0')).join('');
   const existing = await env.DB.prepare('SELECT * FROM images WHERE sha256 = ?').bind(hash).first<ImageRow>();
   if (existing) {
@@ -177,7 +180,9 @@ export async function cleanupObjects(env: Env) {
   for (const row of rows.results) await deleteObject(env,row.object_key);
 }
 
-export async function choose(env: Env, rating: string, tags: string[], count: number, exclude: string[], imageType: string | null = null, subject = '') {
+export async function choose(env: Env, rating: string, tags: string[], count: number, exclude: string[], imageType: string | null = null, subject = '', media = 'image') {
+  if (!['image','video'].includes(media)) throw new HttpError(400,'invalid_media_type','media_type: image hoặc video.');
+  if (media==='video') count=1;
   if (!['safe','r18','mixed'].includes(rating)) throw new HttpError(400,'invalid_rating','rating: safe, r18 hoặc mixed.');
   if (imageType !== null && !['anime','real'].includes(imageType)) throw new HttpError(400,'invalid_type','Kiểu ảnh không hợp lệ.');
   const ratings = rating === 'mixed' ? ['safe','r18'] : [rating];
@@ -189,6 +194,7 @@ export async function choose(env: Env, rating: string, tags: string[], count: nu
   const words=(column:string)=>`' '||${[...'_-()[]:,.!?/'].reduce((sql,char)=>`replace(${sql},'${char}',' ')`,`lower(${column})`)}||' '`;
   const filters = [
     CLASSIFIED_IMAGE_SQL,
+    media==='video'?"i.mime_type LIKE 'video/%'":"i.mime_type NOT LIKE 'video/%'",
     `i.rating IN (${ratings.map(()=>'?').join(',')})`,
     ...(imageType ? ['i.image_type=?'] : []),
     ...tags.map(()=> 'EXISTS (SELECT 1 FROM image_tags t WHERE t.image_id=i.id AND t.tag=?)'),

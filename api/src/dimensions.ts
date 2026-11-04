@@ -26,7 +26,7 @@ export async function dimensionsForRows(env:Env,rows:ImageRow[]){
     WHERE image_id IN (${rows.map(()=>'?').join(',')})`).bind(...rows.map(row=>row.id))
     .all<Dimensions&{image_id:string}>();
   const sizes=new Map<string,Dimensions>(known.results.map(size=>[size.image_id,size]));
-  const missing=rows.filter(row=>!sizes.has(row.id)),found:Array<Dimensions&{id:string}>=[];
+  const missing=rows.filter(row=>!row.mime_type.startsWith('video/')&&!sizes.has(row.id)),found:Array<Dimensions&{id:string}>=[];
   let next=0;
   const read=async()=>{
     while(next<missing.length){

@@ -164,6 +164,7 @@ async def init_bot(client: Client = client):
         ),
         BotCommand("help", i18n.t("bot.cmd.help", locale=app_config.lang)),
         BotCommand("seg", i18n.t("bot.cmd.seg", locale=app_config.lang)),
+        BotCommand("vseg", "Video theo tag hoặc ngẫu nhiên · 1 video/lượt" if app_config.lang != "en" else "One video by tag or at random"),
         BotCommand("nemchai", i18n.t("bot.cmd.nemchai", locale=app_config.lang)),
         BotCommand("nhatchai", i18n.t("bot.cmd.nhatchai", locale=app_config.lang)),
     ]

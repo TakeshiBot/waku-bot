@@ -31,6 +31,7 @@ from .scheduling import (
 from .settings import _discord_dm_settings, _discord_guild_settings
 from .tools.generated_images import discord_image_ops, prepare_discord_image_tools
 from .tools.images import send_discord_anime_photo, send_discord_web_image
+from .videos import send_discord_catalog_video
 from .tools.mirror import (
     cancel_discord_mirror,
     mirror_discord,
@@ -124,6 +125,7 @@ async def _start_discord_bot() -> None:
             Tool(read_discord_web_page, prepare=prepare_web_reader),
             Tool(send_discord_web_media, sequential=True),
             Tool(send_discord_anime_photo, sequential=True),
+            Tool(send_discord_catalog_video, sequential=True),
             Tool(discord_image_ops, sequential=True, prepare=prepare_discord_image_tools),
             Tool(schedule_discord_message, sequential=True),
             Tool(schedule_discord_image_action, sequential=True),
@@ -179,6 +181,8 @@ async def _start_discord_bot() -> None:
             "When a request is to inspect/describe/analyze an image, answer from the "
             "provided media, without fetching or generating another image. "
             "For ordinary anime/Pixiv photo requests, when the user asks for "
+            "a catalog video or clip, use send_discord_catalog_video instead, one video per turn. "
+            "For photos, when the user asks for "
             "a new anime/Pixiv image, photo, picture, seg, ảnh, or hình, call "
             "send_discord_anime_photo at most once successfully in the turn. "
             "After a no-match result you may try an obvious spelling/common-name "

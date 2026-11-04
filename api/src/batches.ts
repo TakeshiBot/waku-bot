@@ -20,10 +20,11 @@ export async function createBatch(env:Env,inline=false) {
 export async function attachBatch(env:Env,batchId:string,ids:string[],force=false,inline=false) {
   await getBatch(env,batchId);
   if (!ids.length) return 0;
+  const rows=await env.DB.prepare("SELECT id FROM images WHERE id IN (SELECT value FROM json_each(?)) AND mime_type NOT LIKE 'video/%'").bind(JSON.stringify([...new Set(ids)])).all<{id:string}>();
+  ids=rows.results.map(row=>row.id);if(!ids.length)return 0;
   const linked=await sessionForBatch(env,batchId),session=linked?.phase==='cancelled'?linked:await ensureSession(env,null,false,inline?'inline':'batch');
   batchId=session.current_batch_id;
-  const encoded=JSON.stringify([...new Set(ids)]);
-  const rows=await env.DB.prepare('SELECT id FROM images WHERE id IN (SELECT value FROM json_each(?))').bind(encoded).all<{id:string}>();
+  const encoded=JSON.stringify(ids);
   const updates:D1PreparedStatement[]=[];
   if (force) updates.push(env.DB.prepare(`INSERT INTO image_analysis(image_id,status,control,last_error)
     SELECT i.id,CASE WHEN b.control='cancelled' THEN 'skipped' ELSE 'pending' END,b.control,

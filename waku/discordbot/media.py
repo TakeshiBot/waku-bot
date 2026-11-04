@@ -18,6 +18,7 @@ from waku.config import app_config
 from waku.i18n import i18n
 from waku.logger import logger
 from waku.services import manyacg as manyacg_service
+from waku.services.catalog_videos import catalog_notice
 from .media_links import artwork_source, linked_title
 from waku.services.anime_images import (
     NoFreshImageError,
@@ -475,7 +476,7 @@ async def _send_discord_seg(message: discord.Message, keyword: str = "", count: 
             async with image_lock:
                 fetched = await _fetch_discord_anime_batch(keyword, r18_mode, count, scope=f"discord:{message.channel.id}")
                 if not fetched:
-                    await _send_discord_media_notice(message, "Could not fetch an image from the available image sources.")
+                    await _send_discord_media_notice(message, catalog_notice("image", keyword, lang=settings.lang))
                     return True
                 await _send_discord_anime_photos(message, fetched)
             return True
@@ -569,7 +570,7 @@ async def _send_discord_seg_interaction(
             if not fetched:
                 await _respond_to_discord_seg_interaction(
                     interaction,
-                    notice("Không lấy được ảnh. Thử lại sau nhé.", "Could not fetch an image. Please try again later."),
+                    catalog_notice("image", keyword or "", lang=settings.lang),
                 )
                 return
             sent = await _send_discord_anime_photos(request_context, fetched)

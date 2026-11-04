@@ -28,6 +28,7 @@ from .history import (
     _remember_discord_reaction_style,
 )
 from .media import _send_discord_seg_interaction
+from .videos import send_discord_vseg
 from .messages import _is_seg_command, _matches_keyword, _should_wake
 from .permissions import _is_discord_user_bot_admin
 from .settings import _discord_global_ai_enabled
@@ -100,6 +101,17 @@ def _create_client() -> discord.Client:
     @app_commands.describe(keyword="Tag/chủ đề, ví dụ tai mèo, maid; bỏ trống để random. Có thể thêm r18/sfw", count="Số ảnh muốn gửi, từ 1 đến 10")
     async def seg(interaction: discord.Interaction, keyword: str | None = None, count: app_commands.Range[int, 1, 10] = 1) -> None:
         await _send_discord_seg_interaction(interaction, keyword, count)
+
+    @command_tree.command(name="vseg", description="Gửi một video theo tag hoặc ngẫu nhiên")
+    @app_commands.describe(keyword="Tag, có thể thêm r18/sfw; bỏ trống để random")
+    async def vseg(interaction: discord.Interaction, keyword: str | None = None) -> None:
+        from types import SimpleNamespace
+        if not isinstance(interaction.channel, discord.abc.Messageable):
+            await interaction.response.send_message("Không thể gửi video trong kênh này.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        context = SimpleNamespace(guild=interaction.guild, channel=interaction.channel, author=interaction.user)
+        await send_discord_vseg(context, keyword or "", interaction=interaction)
 
     @client.event
     async def on_ready() -> None:

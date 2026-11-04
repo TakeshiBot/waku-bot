@@ -31,6 +31,7 @@ from waku.services.manyacg import (
     manyacg_client,
 )
 from waku.services.telegram_images import image_allowed, telegram_image_settings
+from waku.services.catalog_videos import catalog_notice
 
 from . import utils
 
@@ -214,7 +215,8 @@ async def setu_command(client: PyrogramClient, message: pyrogram.types.Message):
         )
         if item is None:
             await message.reply(
-                i18n.t("bot.msg.manyacg.setu_error", locale=lang),
+                catalog_notice("image", keyword, lang=lang),
+                parse_mode=pyrogram.enums.ParseMode.DISABLED,
             )
             return
         artwork, picture = item

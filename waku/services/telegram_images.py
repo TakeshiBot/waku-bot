@@ -36,6 +36,7 @@ async def telegram_image_context(chat_id: int) -> str:
             "tag must be passed to send_anime_photo so it selects that rating/tag. "
             "Do not apply group image settings or repeat an old group-lock claim. "
             "Use the image tool before reporting availability or success."
+            " For a catalog video/clip request use send_catalog_video (one video), not send_anime_photo or mirror."
         )
     policy = {0: "Safe only", 1: "R18 only", 2: "mixed (Safe and R18)"}[mode]
     return (
@@ -43,6 +44,7 @@ async def telegram_image_context(chat_id: int) -> str:
         f"{policy if enabled else 'disabled by group settings'}. "
         "Use the image tool to check the current request; do not infer policy "
         "from old replies in conversation history."
+        " For a catalog video/clip request use send_catalog_video (one video), not send_anime_photo or mirror."
     )
 
 

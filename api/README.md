@@ -1,5 +1,27 @@
 # Waku API
 
+## Video
+
+Web và bot upload nhận video **MP4, MOV, WebM tối đa 20 MiB/file**, dùng chung
+kho R2, chống trùng và hạn mức Data 10 GB với ảnh. Video không chạy vision/AI
+gắn tag, kể cả khi bật AI cho lượt upload; nhập tên, tag, Safe/R18 và kiểu
+Vẽ/Anime hoặc Người thật thủ công để video xuất hiện trong API random.
+Trình xem web phát video và hỗ trợ tua bằng HTTP byte ranges. Việc phát MOV
+còn phụ thuộc codec và trình duyệt; MP4 H.264/AAC phù hợp nhất để gửi Telegram.
+
+Danh sách nhận `media_types=image`, `media_types=video` hoặc cả hai (mặc định).
+API random mặc định chỉ lấy ảnh; thêm `media_type=video` để lấy **một video**,
+kể cả khi `count` lớn hơn 1. Ví dụ:
+`/v1/images/random?media_type=video&rating=mixed&tags=maid`.
+Tag kết hợp AND, giữ nguyên phân loại và kiểu ảnh; không trả video ngẫu nhiên
+khác tag khi tìm không có. Kết quả có `media_type`, `mime_type`, `size` và URL.
+
+Bot Telegram/Discord: `/vseg`, `/vseg maid`, `/vseg r18, maid` (hoặc `r18 maid`).
+Discord còn nhận `!vseg maid`. Chat AI có tool gửi video riêng và trả lời tự
+nhiên trước khi gửi file. Video R18 gửi với spoiler, giới hạn phân loại vẫn
+theo cấu hình cuộc chat. Nếu giới hạn đính kèm của kênh Discord thấp hơn 20 MiB,
+bot báo rõ thay vì giả vờ đã gửi thành công.
+
 Kho ảnh riêng chạy trên Cloudflare Workers + R2 + D1. Bot Telegram nhận ảnh hoặc link ảnh, lưu vào R2, trả link trực tiếp. Source nằm trong thư mục `api/` trên nhánh chính `v2` của repo Waku. API ảnh deploy độc lập lên Cloudflare, không chạy trong container bot; không cần VPS. Có thể thêm API vision để tự gắn tag, hoặc dùng hoàn toàn thủ công.
 
 ## LibSQL trên VPS

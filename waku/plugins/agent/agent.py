@@ -293,6 +293,10 @@ if app_config.agent and app_config.agent_chat_model:
                 sequential=True,
             ),
             Tool(
+                tools.send_catalog_video,
+                sequential=True,
+            ),
+            Tool(
                 tools.send_anime_photo,
                 prepare=tools.prepare_manyacg_tools,
                 sequential=True,

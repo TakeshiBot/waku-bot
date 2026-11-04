@@ -31,6 +31,7 @@ from .history import (
     _strip_multimodal_history_for_text_model,
 )
 from .media import _find_artwork_url, _send_discord_artwork, _send_discord_seg
+from .videos import send_discord_vseg
 from .messages import (
     _build_prompt,
     _is_seg_command,
@@ -89,6 +90,8 @@ async def _maybe_handle_discord_media_request(message: discord.Message) -> bool:
         )
         return await _send_discord_artwork(message, artwork_url)
     if _is_seg_command(content):
+        if content.strip().split(maxsplit=1)[0].lower() in {"vseg", "!vseg", ".vseg"}:
+            return await send_discord_vseg(message, _seg_command_keyword(content))
         logger.info(
             f"Discord command seg request: guild={_guild_name(message)!r} "
             f"channel={_channel_name(message)!r} user={message.author.id}"

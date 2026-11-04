@@ -8,6 +8,7 @@ import {ensureSession,attachSessionImages,recordProviderOutcome,sessionForBatch}
 export async function aiEnabled(env:Env) {return hasAiConnection(env);}
 
 export async function enqueueAnalysis(env:Env,id:string,manual=false,force=false,batchId?:string) {
+  if((await image(env,id)).mime_type.startsWith('video/'))return;
   const enabled=!manual&&await aiEnabled(env);
   const linked=batchId?await sessionForBatch(env,batchId):null,cancelled=linked?.phase==='cancelled';
   const result=await env.DB.prepare(`INSERT INTO image_analysis(image_id,status,last_error) VALUES (?,?,?)

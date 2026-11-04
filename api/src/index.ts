@@ -1,5 +1,5 @@
 import { boundedBody, equalSecret, downloadImage, metadata, tags,publicUrl,type ImageDownload } from './input';
-import { choose, image, maxBytes, present, presentMany, remove, save, update,recordImportAliases,libraryChanged,CLASSIFIED_IMAGE_SQL } from './store';
+import { choose, image, maxBytes, maxMediaBytes, MAX_VIDEO_BYTES, isVideo, present, presentMany, remove, save, update,recordImportAliases,libraryChanged,CLASSIFIED_IMAGE_SQL } from './store';
 import { processJobs, refreshAnalysisReceipt, webhook } from './telegram';
 import {aiEnabled,enqueueAnalysis,processAnalysis} from './analysis';
 import { HttpError, usesLibsql, type Env, type ImageRow } from './types';
@@ -54,6 +54,9 @@ function imageFilters(url:URL){
   const types=(url.searchParams.get('types') || '').split(',').filter(Boolean);
   if(types.some(type=>!['anime','real'].includes(type)))throw new HttpError(400,'invalid_type','Kiểu ảnh không hợp lệ.');
   if(types.length){filters.push('i.image_type IN (SELECT value FROM json_each(?))');params.push(JSON.stringify(types));}
+  const media=(url.searchParams.get('media_types') || '').split(',').filter(Boolean);
+  if(media.some(type=>!['image','video'].includes(type)))throw new HttpError(400,'invalid_media_type','Loại file không hợp lệ.');
+  if(new Set(media).size===1)filters.push(media[0]==='video'?"i.mime_type LIKE 'video/%'":"i.mime_type NOT LIKE 'video/%'");
   const query=(url.searchParams.get('q') || '').trim();
   if (query.length>100) throw new HttpError(400,'invalid_query','Từ khóa tối đa 100 ký tự.');
   if (query) {
@@ -69,7 +72,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
   if (request.method==='GET' && (path==='/' || /^\/assets\/[\w.-]+$/.test(path)) && env.ASSETS) {
     const result=await env.ASSETS.fetch(request);
     const headers=new Headers(result.headers);
-    headers.set('content-security-policy',"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; font-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+    headers.set('content-security-policy',"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; font-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     headers.set('x-content-type-options','nosniff');headers.set('referrer-policy','no-referrer');
     headers.set('cache-control',path==='/'?'no-store':'public, max-age=300');
     return new Response(result.body,{status:result.status,headers});
@@ -88,22 +91,30 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     const id=path.slice(7);
     if (!uuid.test(id)) throw new HttpError(404,'not_found','Không tìm thấy ảnh.');
     const row=await image(env,id);
-    const object=await env.IMAGES.get(row.object_key);
-    if (!object) throw new HttpError(404,'not_found','Không tìm thấy ảnh.');
-    const headers=new Headers({
-      'content-type':row.mime_type,'content-length':String(row.size),
-      'content-disposition':`inline; filename="${row.filename}"`,
-      // IDs never reuse image bytes, so previews/editor can reuse the original
-      // browser response while metadata continues to refresh independently.
-      'etag':object.httpEtag,'cache-control':'public, max-age=86400',
-      'x-content-type-options':'nosniff',
-    });
-    if (request.headers.get('if-none-match')===object.httpEtag) {
-      await object.body.cancel(); headers.delete('content-length');
-      return new Response(null,{status:304,headers});
+    const etag='"'+row.sha256+'"';
+    const headers=new Headers({'content-type':row.mime_type,'content-length':String(row.size),
+      'content-disposition':`inline; filename="${row.filename}"`,'etag':etag,
+      'cache-control':'public, max-age=86400','x-content-type-options':'nosniff','accept-ranges':'bytes'});
+    if(request.headers.get('if-none-match')===etag){headers.delete('content-length');return new Response(null,{status:304,headers});}
+    if(request.method==='HEAD')return new Response(null,{headers});
+    let range:{offset:number;length:number}|undefined;
+    const value=request.headers.get('range'),ifRange=request.headers.get('if-range');
+    if(value&&(!ifRange||ifRange===etag)){
+      const match=/^bytes=(\d*)-(\d*)$/.exec(value);
+      let first=NaN,last=NaN;
+      if(match&&(match[1]||match[2])){
+        first=match[1]?Number(match[1]):Math.max(0,row.size-Number(match[2]));
+        last=match[1]?(match[2]?Math.min(Number(match[2]),row.size-1):row.size-1):row.size-1;
+        if(!match[1]&&Number(match[2])===0)first=NaN;
+      }
+      if(!Number.isSafeInteger(first)||!Number.isSafeInteger(last)||first<0||first>=row.size||last<first){
+        headers.set('content-range',`bytes */${row.size}`);headers.delete('content-length');return new Response(null,{status:416,headers});
+      }
+      range={offset:first,length:last-first+1};headers.set('content-range',`bytes ${first}-${last}/${row.size}`);headers.set('content-length',String(range.length));
     }
-    if (request.method==='HEAD') {await object.body.cancel(); return new Response(null,{headers});}
-    return new Response(object.body,{headers});
+    const object=await env.IMAGES.get(row.object_key,range?{range}:undefined);
+    if(!object)throw new HttpError(404,'not_found','Không tìm thấy file.');
+    return new Response(object.body,{status:range?206:200,headers});
   }
   if (!path.startsWith('/v1/')) throw new HttpError(404,'not_found','Không tìm thấy đường dẫn.');
   await authorize(request,env);
@@ -116,7 +127,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
   }
   if (path==='/v1/session') {
     if (request.method==='POST') return Response.json({ok:true},{headers:{'set-cookie':await sessionCookie(env),'cache-control':'no-store'}});
-    if (request.method==='GET') return response({ok:true,max_image_mb:maxBytes(env)/1024/1024,concurrency:2,ai_enabled:await aiEnabled(env),database:usesLibsql(env)?'libsql':'d1'});
+    if (request.method==='GET') return response({ok:true,max_image_mb:maxBytes(env)/1024/1024,max_video_mb:MAX_VIDEO_BYTES/1024/1024,concurrency:2,ai_enabled:await aiEnabled(env),database:usesLibsql(env)?'libsql':'d1'});
     if (request.method==='DELETE') return Response.json({ok:true},{headers:{'set-cookie':clearSession(),'cache-control':'no-store'}});
   }
   if (path==='/v1/analysis-batches' && request.method==='POST') {
@@ -190,7 +201,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     if (exclude.length>100 || exclude.some(x=>!uuid.test(x))) throw new HttpError(400,'invalid_exclude','exclude: tối đa 100 ID ảnh.');
     const filterTags=tags(url.searchParams.get('tags'));
     if (exclude.length+filterTags.length>96) throw new HttpError(400,'too_many_filters','Tổng tag và ID loại trừ tối đa 96.');
-    const rows=await choose(env,url.searchParams.get('rating') || 'safe',filterTags,integer(url.searchParams.get('count'),1,10),exclude,url.searchParams.get('image_type'),url.searchParams.get('q')||'');
+    const rows=await choose(env,url.searchParams.get('rating') || 'safe',filterTags,integer(url.searchParams.get('count'),1,10),exclude,url.searchParams.get('image_type'),url.searchParams.get('q')||'',url.searchParams.get('media_type')||'image');
     return response({images:await presentMany(env,rows,base),count:rows.length});
   }
   if(path==='/v1/images/changes'&&request.method==='GET'){
@@ -275,12 +286,12 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
       let fields:Record<string,unknown>;
       try{const data=JSON.parse(decodeURIComponent(raw));if(!data||typeof data!=='object'||Array.isArray(data))throw new Error();fields=data;}
       catch{throw new HttpError(400,'invalid_metadata','Thông tin ảnh không hợp lệ.');}
-      bytes=await boundedBody(request,maxBytes(env));
+      bytes=await boundedBody(request,maxMediaBytes(env));
       originalName=typeof fields.filename==='string'?fields.filename:null;
       manual=fields.manual===true;batchId=fields.batch_id;
       info=metadata(fields);
     } else if (request.headers.get('content-type')?.startsWith('multipart/form-data')) {
-      const body=await boundedBody(request,maxBytes(env)+65536);
+      const body=await boundedBody(request,maxMediaBytes(env)+65536);
       let form:FormData;
       try {form=await new Response(body,{headers:{'content-type':request.headers.get('content-type')!}}).formData();}
       catch {throw new HttpError(400,'invalid_form','Form không hợp lệ.');}
@@ -298,7 +309,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
       importUrl=publicUrl(body.url).href;
       manual=body.manual===true;
       batchId=body.batch_id;
-      download=await downloadImage(importUrl,maxBytes(env));bytes=download.bytes;info.source_url=download.url;
+      download=await downloadImage(importUrl,maxMediaBytes(env));bytes=download.bytes;info.source_url=download.url;
     }
     if (batchId) {
       if (typeof batchId!=='string' || !uuid.test(batchId)) throw new HttpError(400,'invalid_batch','Đợt AI không hợp lệ.');
@@ -311,9 +322,9 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     if (!slot) return Response.json({error:{code:'busy',message:'Đang xử lý 2 ảnh. File này sẽ được thử lại sau.'}},{status:429,headers:{'retry-after':'2','cache-control':'no-store'}});
     const result=await save(env,bytes,info,null,originalName,importUrl);
     if(download)await recordImportAliases(env,result.row.id,[download.input,download.url,...(download.used_original?[download.identity]:[])]);
-    await enqueueAnalysis(env,result.row.id,manual,false,typeof batchId==='string'?batchId:undefined);
-    if (batchId && typeof batchId==='string') await attachBatch(env,batchId,[result.row.id]);
-    background(ctx,env,()=>processAnalysis(env,result.row.id,job=>refreshAnalysisReceipt(env,job)));
+    if(!isVideo(result.row))await enqueueAnalysis(env,result.row.id,manual,false,typeof batchId==='string'?batchId:undefined);
+    if (!isVideo(result.row) && batchId && typeof batchId==='string') await attachBatch(env,batchId,[result.row.id]);
+    if(!isVideo(result.row))background(ctx,env,()=>processAnalysis(env,result.row.id,job=>refreshAnalysisReceipt(env,job)));
     return response({image:await present(env,result.row,base),duplicate:result.duplicate,...(download?{import:{source:download.source,preferred_url:download.preferred_url,fetched_url:download.url,used_original:download.used_original,fallback_reason:download.fallback_reason}}:{})},result.duplicate?200:201);
     } finally {if(slot){try{await releaseSlot(env,slot);}catch{console.warn('Upload slot release failed; lease will expire');}background(ctx,env,()=>continueWork(env,'upload'));}}
     })();
@@ -336,7 +347,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
   }
   const analyze=path.match(/^\/v1\/images\/([a-f0-9-]{36})\/analyze$/);
   if (analyze && request.method==='POST') {
-    await image(env,analyze[1]);
+    if(isVideo(await image(env,analyze[1])))throw new HttpError(400,'video_manual_only','Video chỉ hỗ trợ gắn thông tin thủ công.');
     if (!await aiEnabled(env)) throw new HttpError(503,'ai_not_configured','Chưa cấu hình API AI.');
     const inline=request.headers.get('content-type')?.includes('application/json')&&(await json(request)).inline===true;
     const batchId=await createBatch(env,Boolean(inline));await attachBatch(env,batchId,[analyze[1]],true,Boolean(inline));

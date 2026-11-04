@@ -221,7 +221,7 @@ test('raw browser upload preserves metadata, deduplicates and validates input',a
     assert.equal(image.original_name,fields.filename);assert.equal(image.rating,'r18');assert.equal(image.image_type,'real');assert.deepEqual(image.tags,['cat','cosplay']);
     const duplicate=await send(file,encodeURIComponent(JSON.stringify(fields)));assert.equal(duplicate.status,200);assert.equal((await duplicate.json() as any).duplicate,true);
     assert.equal((await send(file,'%not-json')).status,400);
-    assert.equal((await send(Buffer.alloc(1048577),encodeURIComponent(JSON.stringify(fields)))).status,413);
+    assert.equal((await send(Buffer.concat([png,Buffer.alloc(1048577-png.length)]),encodeURIComponent(JSON.stringify(fields)))).status,413);
   }finally{await call('/v1/images/'+image.id,'DELETE');}
 });
 
@@ -271,7 +271,7 @@ test('URL imports, unsupported files, unsafe redirects, size and malformed metad
   for (const bad of ['http://localhost/a','http://127.0.0.1/a','http://0x7f000001/a','http://[::1]/a','http://user:pass@host.com/a','http://site.local/a']) assert.throws(()=>publicUrl(bad));
   const html=new FormData();html.set('file',new Blob(['<html>not an image</html>']),'image.png');
   assert.equal((await call('/v1/images','POST',html)).status,415);
-  const large=new FormData();large.set('file',new Blob([new Uint8Array(1024*1024+1)]),'big.png');
+  const large=new FormData();large.set('file',new Blob([png,new Uint8Array(1024*1024+1-png.length)]),'big.png');
   assert.equal((await call('/v1/images','POST',large)).status,413);
   assert.deepEqual(captionMetadata('Mèo #cat #safe https://www.pixiv.net/a'),{title:'Mèo',tags:['cat'],rating:'safe',source_url:'https://www.pixiv.net/a',image_type:null});
 });

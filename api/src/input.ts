@@ -61,6 +61,7 @@ export function captionMetadata(caption: string): Metadata {
   return metadata({
     title: caption.replace(/#[\p{L}\p{N}_-]+/gu, '').replace(/https?:\/\/[^\s<>]+/g, '').trim().slice(0,200),
     tags: matches.filter(x => !/^(r18|nsfw|safe|sfw|manual)$/i.test(x)), rating, source_url: link,
+    image_type:matches.some(x=>/^real$/i.test(x))?'real':matches.some(x=>/^anime$/i.test(x))?'anime':null,
   });
 }
 
@@ -75,11 +76,25 @@ export function imageType(data: ArrayBuffer): {mime: string; ext: string} {
   throw new HttpError(415, 'not_image', 'Chỉ nhận ảnh JPEG, PNG, WebP, GIF hoặc AVIF; không nhận trang HTML/SVG.');
 }
 
+export function mediaType(data:ArrayBuffer):{mime:string;ext:string} {
+  const b=new Uint8Array(data),text=(a:number,z:number)=>String.fromCharCode(...b.subarray(a,z));
+  if(b.length>=16&&text(4,8)==='ftyp'){
+    const brand=text(8,12);
+    if(brand==='qt  ')return {mime:'video/quicktime',ext:'mov'};
+    if(/^(isom|iso[2-9]|mp4[12]|avc1|M4V |MSNV|dash|cmfc|cmfs)$/.test(brand))return {mime:'video/mp4',ext:'mp4'};
+  }
+  if(b.length>=16&&[0x1a,0x45,0xdf,0xa3].every((value,i)=>b[i]===value)&&/\x42\x82[\x80-\xff]webm/.test(text(0,4096)))return {mime:'video/webm',ext:'webm'};
+  try{return imageType(data);}catch{throw new HttpError(415,'not_media','Chỉ nhận ảnh JPEG, PNG, WebP, GIF, AVIF hoặc video MP4, MOV, WebM.');}
+}
+
 export async function boundedBody(response: Response | Request, limit: number): Promise<ArrayBuffer> {
   const length = response.headers.get('content-length');
   if (length && (!/^\d+$/.test(length) || Number(length) > limit)) throw new HttpError(413, 'too_large', 'Ảnh vượt giới hạn dung lượng.');
   if (!response.body) throw new HttpError(400, 'empty_body', 'Nội dung trống.');
   const reader = response.body.getReader();
+  // Raw browser uploads declare their length. Fill one buffer directly so two
+  // 20 MiB videos do not also retain two complete lists of incoming chunks.
+  const target=length&&Number(length)>0&&(!response.headers.get('content-encoding')||response.headers.get('content-encoding')==='identity')?new Uint8Array(Number(length)):null;
   const chunks: Uint8Array[] = [];
   let size = 0;
   try {
@@ -87,11 +102,15 @@ export async function boundedBody(response: Response | Request, limit: number): 
       const {value, done} = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > limit) { await reader.cancel(); throw new HttpError(413, 'too_large', 'Ảnh vượt giới hạn dung lượng.'); }
-      chunks.push(value);
+      if (size > limit) { await reader.cancel(); throw new HttpError(413, 'too_large', 'File vượt giới hạn dung lượng.'); }
+      if(target){
+        if(size>target.length){await reader.cancel();throw new HttpError(400,'invalid_length','Dung lượng file không khớp.');}
+        target.set(value,size-value.length);
+      }else chunks.push(value);
     }
   } finally { reader.releaseLock(); }
-  if (!size) throw new HttpError(400, 'empty_body', 'Ảnh trống.');
+  if (!size) throw new HttpError(400, 'empty_body', 'File trống.');
+  if(target){if(size!==target.length)throw new HttpError(400,'invalid_length','Dung lượng file không khớp.');return target.buffer;}
   const joined = new Uint8Array(size);
   let offset = 0;
   for (const chunk of chunks) { joined.set(chunk, offset); offset += chunk.length; }
@@ -112,7 +131,7 @@ async function requestImage(raw:string,limit:number,timeout:number):Promise<{byt
       continue;
     }
     if (!response.ok) { await response.body?.cancel(); throw new HttpError(422, 'download_failed', `Nguồn ảnh trả HTTP ${response.status}.`); }
-    try{const bytes=await boundedBody(response,limit);imageType(bytes);return {bytes,url:url.href};}
+    try{const bytes=await boundedBody(response,limit);mediaType(bytes);return {bytes,url:url.href};}
     catch(error){try{await response.body?.cancel();}catch{}throw error;}
   }
   throw new HttpError(400, 'redirect_limit', 'Link chuyển hướng quá nhiều lần.');

@@ -16,6 +16,7 @@ _MEDIA_TOOLS = {
     "send_discord_web_image",
     "send_discord_web_media",
     "send_discord_anime_photo",
+    "send_discord_catalog_video",
 }
 
 
