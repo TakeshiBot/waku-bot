@@ -1,6 +1,18 @@
 [Unit]
 Description=Back up the Waku image library database
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/python3 /home/ubuntu/waku-api-db/backup.py
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=25%
+MemoryMax=256M
+TimeoutStartSec=15min
+Restart=on-failure
+RestartSec=5min
+NoNewPrivileges=true

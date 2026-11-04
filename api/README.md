@@ -26,6 +26,8 @@ Discord còn nhận `!vseg maid`. Chat AI có tool gửi video riêng và trả 
 nhiên trước khi gửi file. Video R18 gửi với spoiler, giới hạn phân loại vẫn
 theo cấu hình cuộc chat. Nếu giới hạn đính kèm của kênh Discord thấp hơn 20 MiB,
 bot báo rõ thay vì giả vờ đã gửi thành công.
+Video catalog gửi Telegram dùng kích thước hiển thị giữ nguyên tỷ lệ, cạnh dài
+tối đa 426 px; đọc metadata bằng `ffprobe`, không mã hoá lại hay giảm chất lượng file.
 
 Kho ảnh riêng chạy trên Cloudflare Workers + R2 + D1. Bot Telegram nhận ảnh hoặc link ảnh, lưu vào R2, trả link trực tiếp. Source nằm trong thư mục `api/` trên nhánh chính `v2` của repo Waku. API ảnh deploy độc lập lên Cloudflare, không chạy trong container bot; không cần VPS. Có thể thêm API vision để tự gắn tag, hoặc dùng hoàn toàn thủ công.
 
@@ -41,7 +43,36 @@ systemctl status waku-api-db-backup.timer
 sudo ls -lh /home/ubuntu/waku-api-db/backups
 ```
 
-Timer tạo bản sao SQLite nhất quán mỗi ngày, kiểm tra tính toàn vẹn và giữ 14 bản tại `backups/`. Bản sao này nằm cùng VPS, nên cần sao chép định kỳ sang nơi khác nếu muốn bảo vệ khi VPS hoặc ổ đĩa hỏng. Ảnh gốc vẫn ở R2 và không nằm trong bản sao database. D1 cũ không đồng bộ thay đổi phát sinh sau khi chuyển.
+Timer tạo bản sao SQLite nhất quán lúc **00:00 và 12:00 giờ Việt Nam** mỗi ngày,
+kiểm tra tính toàn vẹn rồi gửi thẳng bản nén `.sqlite3.gz` qua bot upload vào DM
+của chủ bot. Sau khi Telegram xác nhận đúng file và dung lượng, VPS giữ **2 bản
+gần nhất** tại `backups/`. Gửi lỗi thì giữ bản chờ cùng các bản cũ, thử lại sau
+5 phút và dùng lại bản chờ để tránh sinh thêm file. VPS có thể tạm có 3 bản khi
+gửi lỗi. Service giới hạn 256 MiB RAM, 25% CPU và tối đa 15 phút mỗi lượt;
+riêng truyền Telegram tối đa 10 phút để chịu được đường truyền chậm.
+Ảnh/video gốc vẫn ở R2, không nằm trong bản sao database. D1 cũ không đồng bộ
+thay đổi phát sinh sau khi chuyển.
+
+`backup-telegram.json` trong `/home/ubuntu/waku-api-db/` có quyền `0600`, chứa
+`bot_token` của bot upload và `chat_id` nhận backup.
+Cần `curl` và Python 3. Copy script
+`vps/backup.py` vào thư mục DB, cài hai unit trong `vps/` vào `/etc/systemd/system/`,
+rồi chạy `sudo systemctl daemon-reload` và
+`sudo systemctl enable --now waku-api-db-backup.timer`. Khi sửa lịch đã tồn tại,
+restart timer. Lịch dùng múi giờ rõ ràng, không phụ thuộc timezone của VPS.
+`backup-last-sent.json` lưu xác nhận Telegram; `backup-pending.json` ghi bản chờ.
+Backup mới không mã hoá, không cần khóa: tải file `.sqlite3.gz` từ Telegram rồi
+giải nén trực tiếp hoặc khôi phục vào **file SQLite mới**:
+
+```bash
+python3 api/vps/restore-backup.py backup.sqlite3.gz restored.sqlite3
+```
+
+Lệnh kiểm tra SQLite trước khi tạo file đích và từ chối ghi đè file đã có.
+Riêng các bản `.fernet.bin` đã gửi trước đây vẫn cần thêm
+`--key-file api/.backups/backup-telegram.key` và thư viện `cryptography` để khôi phục.
+Kiểm tra luồng backup bằng `python3 api/vps/check_backup.py` trên Linux; chỉ dùng
+database tạm và Telegram giả, không chạm dữ liệu thật hoặc gửi tin nhắn.
 
 `api/.secrets.json` chứa `LIBSQL_URL`, `LIBSQL_AUTH_TOKEN` và `API_KEY`; giữ bí mật và sao lưu an toàn, vì `API_KEY` còn dùng để giải mã key AI đã lưu. `private.pem` và `tunnel-token` trên VPS cũng là thông tin nhạy cảm. Không mở cổng database ra Internet và không lưu các file này trong Git.
 

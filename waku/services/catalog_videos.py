@@ -1,6 +1,9 @@
 """Single-video retrieval from Waku API, sharing catalog rating/tag policy."""
 
+import asyncio
 import io
+import json
+import subprocess
 from dataclasses import dataclass
 
 import httpx
@@ -8,6 +11,7 @@ import pyrogram
 
 from waku.common.safe_http import safe_download_bytes
 from waku.config import app_config
+from waku.logger import logger
 from waku.services.anime_images import (
     _requested_tags,
     _web_url,
@@ -133,7 +137,36 @@ async def prepare_video(row, *, limit=MAX_VIDEO_BYTES):
     return file
 
 
+def _telegram_video_dimensions(file):
+    """Keep the original video; only bound Telegram's display dimensions."""
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-protocol_whitelist", "pipe",
+             "-select_streams", "v:0", "-show_entries",
+             "stream=width,height:stream_tags=rotate:stream_side_data=rotation",
+             "-of", "json", "pipe:0"],
+            input=file.getvalue(), stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, timeout=5, check=True,
+        )
+        stream = json.loads(result.stdout)["streams"][0]
+        width, height = int(stream["width"]), int(stream["height"])
+        if not 0 < width <= 32768 or not 0 < height <= 32768:
+            raise ValueError("Invalid video dimensions")
+        rotation = next(
+            (item["rotation"] for item in stream.get("side_data_list", []) if "rotation" in item),
+            stream.get("tags", {}).get("rotate", 0),
+        )
+        if round(float(rotation)) % 180 == 90:
+            width, height = height, width
+        scale = min(1, 426 / max(width, height))
+        return {"width": max(1, round(width * scale)), "height": max(1, round(height * scale))}
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, IndexError, TypeError) as error:
+        logger.warning("Video dimensions unavailable; using Telegram sizing: {}", type(error).__name__)
+        return {}
+
+
 async def send_telegram_video(message, row, file):
+    dimensions = await asyncio.to_thread(_telegram_video_dimensions, file)
     buttons = []
     if source := _web_url(row.get("source_url")):
         buttons.append(pyrogram.types.InlineKeyboardButton("Bản gốc", url=source))
@@ -145,6 +178,7 @@ async def send_telegram_video(message, row, file):
         parse_mode=pyrogram.enums.ParseMode.DISABLED,
         supports_streaming=True,
         has_spoiler=row["rating"] == "r18",
+        **dimensions,
         reply_markup=pyrogram.types.InlineKeyboardMarkup([buttons])
         if buttons
         else None,

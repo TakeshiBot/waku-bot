@@ -1,10 +1,11 @@
 [Unit]
-Description=Daily Waku image library database backup
+Description=Waku image library database backup at noon and midnight (UTC+7)
 
 [Timer]
-OnCalendar=daily
+OnCalendar=*-*-* 00,12:00:00 Asia/Ho_Chi_Minh
 Persistent=true
-RandomizedDelaySec=15m
+AccuracySec=1s
+RandomizedDelaySec=0
 
 [Install]
 WantedBy=timers.target
