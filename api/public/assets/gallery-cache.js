@@ -15,6 +15,24 @@ async function preview(blob){
   }finally{bitmap.close();}
 }
 
+function videoPreview(src){
+  return new Promise((resolve,reject)=>{
+    const video=document.createElement('video');video.muted=true;video.playsInline=true;video.preload='metadata';
+    let settled=false;
+    const done=(error,blob)=>{if(settled)return;settled=true;clearTimeout(timer);video.onloadedmetadata=video.onloadeddata=video.onseeked=video.onerror=null;video.pause();video.removeAttribute('src');video.load();error?reject(error):resolve(blob);};
+    const timer=setTimeout(()=>done(new Error('video preview timeout')),12000);
+    const capture=()=>{try{
+      const scale=Math.min(1,384/video.videoWidth,768/video.videoHeight),width=Math.round(video.videoWidth*scale),height=Math.round(video.videoHeight*scale);
+      if(!width||!height)throw new Error('video unavailable');
+      const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;canvas.getContext('2d').drawImage(video,0,0,width,height);
+      canvas.toBlob(blob=>blob?done(null,blob):done(new Error('video preview unavailable')),'image/webp',.8);
+    }catch(error){done(error);}};
+    video.onloadedmetadata=()=>{if(Number.isFinite(video.duration)&&video.duration>.2)video.currentTime=Math.min(.5,video.duration/2);};
+    video.onseeked=capture;video.onloadeddata=()=>{if(!video.seeking)capture();};
+    video.onerror=()=>done(new Error('video unavailable'));video.src=src;
+  });
+}
+
 export class GalleryThumbnails{
   constructor(root){
     this.items=new WeakMap();this.queue=[];this.running=0;this.pending=new Map();this.epoch=0;
@@ -25,7 +43,7 @@ export class GalleryThumbnails{
   }
   observe(img,image){
     if(this.items.has(img))return;
-    this.items.set(img,{key:new URL('/__gallery_preview/'+encodeURIComponent(image.id)+'/'+encodeURIComponent(image.sha256 || 'original'),location.origin).href,src:'/media/'+encodeURIComponent(image.id),epoch:this.epoch});
+    this.items.set(img,{key:new URL('/__gallery_preview/'+encodeURIComponent(image.id)+'/'+encodeURIComponent(image.sha256 || 'original'),location.origin).href,src:'/media/'+encodeURIComponent(image.id),video:image.media_type==='video'||image.mime_type?.startsWith('video/'),epoch:this.epoch});
     if(this.observer)this.observer.observe(img);else this.enqueue(img);
   }
   enqueue(img){
@@ -42,7 +60,7 @@ export class GalleryThumbnails{
         img.src=URL.createObjectURL(blob);
       }).catch(()=>{
         // Native decoding remains a fallback for unsupported image formats.
-        if(this.items.get(img)===item&&item.epoch===this.epoch)img.src=item.src;
+        if(this.items.get(img)===item&&item.epoch===this.epoch&&!item.video)img.src=item.src;
       }).finally(()=>{this.running--;this.pump();});
     }
   }
@@ -51,9 +69,13 @@ export class GalleryThumbnails{
     const job=(async()=>{
       const cache=await this.cache;
       try{const hit=await cache?.match(item.key);if(hit)return await hit.blob();}catch{}
-      const result=await fetch(item.src,{cache:'force-cache',signal:AbortSignal.timeout(20000)});
-      if(!result.ok)throw new Error('image unavailable');
-      const blob=await preview(await result.blob());
+      let blob;
+      if(item.video)blob=await videoPreview(item.src);
+      else{
+        const result=await fetch(item.src,{cache:'force-cache',signal:AbortSignal.timeout(20000)});
+        if(!result.ok)throw new Error('image unavailable');
+        blob=await preview(await result.blob());
+      }
       if(item.epoch===this.epoch&&cache)try{
         await cache.put(item.key,new Response(blob,{headers:{'content-type':blob.type}}));
         const keys=await cache.keys();if(keys.length>MAX_DISK+16)await Promise.all(keys.slice(0,keys.length-MAX_DISK).map(key=>cache.delete(key)));

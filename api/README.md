@@ -334,6 +334,20 @@ Lỗi có HTTP status và `{ "error": { "code", "message" } }`.
 
 Bucket R2 không public. Link `/media/ID` là **link chia sẻ công khai**: ai có link đều xem được, kể cả ảnh chưa phân loại hoặc R18. Xóa sẽ chặn các lần đọc mới tại Worker; bản tải hoặc cache cũ có thể tồn tại đến 1 giờ. API key bảo vệ danh sách, upload và chỉnh sửa, không làm link ảnh thành riêng tư.
 
+## Nhóm theo nguồn trên web
+
+Tab **Tất cả** gom các file có nguồn thành nhóm theo tài khoản/trang nguồn, gồm cả ảnh và video. Chỉ tạo thẻ nhóm khi có ít nhất 2 file phù hợp bộ lọc; nguồn chỉ có 1 file hiển thị như file lẻ, giữ nguyên link nguồn. Ví dụ link trang cá nhân, media và bài đăng của cùng một tài khoản X/Twitter vào một nhóm. Link không thể suy ra tác giả, như URL ảnh CDN, được giữ theo trang/link đó; không tự đoán tài khoản. File chưa có nguồn hiển thị bên ngoài các nhóm.
+
+Bấm nhóm để xem và lọc file bên trong; nút **Tất cả** quay lại danh sách nhóm. Các tab An toàn, R18 và Chờ phân loại vẫn hiển thị file riêng. Tích checkbox nhóm để chọn mọi file phù hợp bộ lọc trong nhóm, gồm cả các file chưa tải lên màn hình; Sửa/Xóa áp dụng cho các ID đã chọn. Chọn tất cả gồm cả nhóm nguồn và file lẻ. Việc chọn chỉ tải ID, loại file và mã nhóm, không đọc ảnh hay dữ liệu AI.
+
+Khi đã chọn bất kỳ file/nhóm nào, bấm ô **Chọn tất cả** để bỏ chọn hết; khi chưa chọn gì, ô này chọn toàn bộ. Trong chế độ chọn, giữ **Ctrl** và rê chuột qua các thẻ để chọn thêm, không đảo trạng thái thẻ đã chọn. Trên mobile, giữ một thẻ khoảng 0,4 giây rồi vuốt qua các thẻ khác để chọn thêm; vuốt ngay không giữ vẫn cuộn bình thường. Vuốt chuyển tab chỉ hoạt động khi chưa chọn file. **Ctrl + click** vẫn mở trình xem.
+
+Danh sách nhóm phân trang từ toàn bộ thư viện, không chỉ gom các ảnh vừa tải trên trình duyệt. Thống kê nguồn dùng index và cache, chỉ tổng hợp lại tối đa mỗi phút khi thư viện thay đổi; làm mới hoặc sửa nguồn trên web cập nhật trực tiếp. Các màn hình đã mở được giữ tối đa 5 phút để ra/vào nhóm ngay, gồm vị trí cuộn; thay đổi thư viện làm mất hiệu lực cache. Việc gom nhóm không đổi link nguồn đã lưu hay di chuyển file R2.
+
+Nút **Sửa** hỗ trợ giữ nguyên, thay hoặc xóa link nguồn hàng loạt. Facebook chuẩn hóa host và link `profile.php?id=…`/`people/…/ID`; X hỗ trợ `/i/user/ID`. Web tra tối đa 2 hồ sơ công khai mỗi lượt ở nền, phần chưa tra được lưu để Cron tiếp tục 2 hồ sơ/phút. Tên và cặp username/ID đã xác minh được lưu trong 7 ngày; tra thất bại nghỉ 1 ngày, giữ tên/nguồn cũ. Pixiv lấy tên qua hồ sơ công khai. Trang yêu cầu đăng nhập/chặn truy cập sẽ giữ ID, không đoán hai tài khoản là một. Link `pbs.twimg.com/media/…` không chứa chủ tài khoản; muốn gộp các file này hãy chọn chúng và sửa nguồn sang link profile.
+
+Video có ảnh xem trước tạo ở trình duyệt, dùng chung cache thumbnail với ảnh và tối đa 2 lượt xử lý. Không chuyển mã video trên VPS, không tạo thêm object tính dung lượng R2; định dạng trình duyệt không giải mã được giữ biểu tượng phát. Bìa nhóm ưu tiên ảnh có sẵn. Trình xem video chỉ cung cấp phát/dừng và bật/tắt âm thanh.
+
 ## Độ bền và giới hạn
 
 Kho ảnh chặn upload vượt **10.000.000.000 byte (10 GB)** ở máy chủ, dùng chung cho web, API và bot upload Telegram. `Data` hiển thị tổng object R2 cộng dung lượng đã giữ cho các lượt đang ghi, theo GB thập phân; vì vậy số này có thể lớn hơn tổng file trong danh sách ảnh. Lần đầu sau schema 19, hệ thống kiểm kê toàn bộ bucket một lần; khi kiểm kê chưa hoàn tất hoặc DB lỗi, không cho ghi thêm R2. Chỉ một thao tác giữ chỗ nguyên tử được phép tiêu phần dung lượng còn lại, tránh hai upload đồng thời vượt ngưỡng. Chỉ trả dung lượng sau khi R2 xác nhận xoá object; file lỗi chưa dọn vẫn được tính. HTTP `507 / storage_full` dừng hàng đợi web và giữ các file chưa tải, không tự thử lại liên tục. Xoá bớt ảnh rồi tiếp tục khi đã đủ chỗ.

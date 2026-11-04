@@ -1,5 +1,5 @@
 import { boundedBody, equalSecret, downloadImage, metadata, tags,publicUrl,type ImageDownload } from './input';
-import { choose, image, maxBytes, maxMediaBytes, MAX_VIDEO_BYTES, isVideo, present, presentMany, remove, save, update,recordImportAliases,libraryChanged,CLASSIFIED_IMAGE_SQL } from './store';
+import { choose, image, maxBytes, maxMediaBytes, MAX_VIDEO_BYTES, isVideo, present, presentMany, selectionItems, remove, save, update,recordImportAliases,libraryChanged,CLASSIFIED_IMAGE_SQL } from './store';
 import { processJobs, refreshAnalysisReceipt, webhook } from './telegram';
 import {aiEnabled,enqueueAnalysis,processAnalysis} from './analysis';
 import { HttpError, usesLibsql, type Env, type ImageRow } from './types';
@@ -16,6 +16,8 @@ import {withDatabase} from './libsql';
 import {imageTimeline} from './timeline';
 import {sharedSessionProgress} from './sessions';
 import {storageUsage} from './storage';
+import {sourceLibrary,sourceUrls,invalidateSourceGroups} from './library-sources';
+import {refreshSourceProfiles,refreshDueSourceProfiles} from './source-profiles';
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 function integer(value:string|null, fallback:number, max:number) {
@@ -38,8 +40,11 @@ function background(ctx:ExecutionContext,env:Env,work:()=>Promise<unknown>){
   if(env.MIGRATION_MAINTENANCE==='1')return;
   ctx.waitUntil(protectD1(env,async()=>{await ensureReadEfficiency(env);await work();}));
 }
-function imageFilters(url:URL){
+async function imageFilters(url:URL,env:Env){
   const filters:string[]=[],params:(string|number)[]=[];
+  const source=url.searchParams.get('source');
+  let sourcesRefreshAt:number|null=null;
+  if(source){const scoped=await sourceUrls(env,source,url.searchParams.get('refresh_sources')==='1');filters.push('i.source_url IN (SELECT value FROM json_each(?))');params.push(JSON.stringify(scoped.urls));sourcesRefreshAt=scoped.refreshAt;}
   const view=url.searchParams.get('view');
   if (view && !['pending','classified'].includes(view)) throw new HttpError(400,'invalid_view','Mục ảnh không hợp lệ.');
   if (view==='pending') filters.push('i.id IN (SELECT image_id FROM image_catalog_state WHERE classified=0)');
@@ -63,7 +68,7 @@ function imageFilters(url:URL){
     const escaped='%'+query.toLowerCase().replace(/[\\%_]/g,'\\$&')+'%';
     filters.push("(LOWER(i.title) LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM image_tags t WHERE t.image_id=i.id AND t.tag LIKE ? ESCAPE '\\'))");params.push(escaped,escaped);
   }
-  return {filters,params,view};
+  return {filters,params,view,sourcesRefreshAt};
 }
 
 async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Response> {
@@ -175,7 +180,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     result.headers.set('x-waku-stats-source','counters');return result;
   }
   if(path==='/v1/images/timeline'&&request.method==='GET'){
-    const {filters,params}=imageFilters(url);
+    const {filters,params}=await imageFilters(url,env);
     return response({days:await imageTimeline(env,filters,params),timezone:'Asia/Ho_Chi_Minh'});
   }
   if(path==='/v1/filters' && request.method==='GET') {
@@ -211,7 +216,7 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     if(since>revision)throw new HttpError(409,'sync_reset','Thư viện đã được khôi phục. Vui lòng tải lại danh sách.');
     const changes=await env.DB.prepare('SELECT image_id,revision FROM library_changes WHERE revision>? AND revision<=? ORDER BY revision LIMIT 101')
       .bind(since,revision).all<{image_id:string;revision:number}>();
-    const page=changes.results.slice(0,100),{filters,params,view}=imageFilters(url);
+    const page=changes.results.slice(0,100),{filters,params,view,sourcesRefreshAt}=await imageFilters(url,env);
     const window=url.searchParams.get('window');
     if(window){
       let cursor;try{cursor=JSON.parse(atob(window));}catch{throw new HttpError(400,'invalid_cursor','Cursor không hợp lệ.');}
@@ -224,18 +229,19 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     const presented=await presentMany(env,rows.results,base);
     const visible=view==='pending'?presented.filter(image=>!image.classified):view==='classified'?presented.filter(image=>image.classified):presented;
     const more=changes.results.length>100;
-    return response({ids,images:visible,revision:more?page.at(-1)!.revision:revision,more});
+    return response({ids,images:visible,revision:more?page.at(-1)!.revision:revision,more,sources_refresh_at:sourcesRefreshAt});
   }
   if(path==='/v1/images/bulk'&&request.method==='PATCH'){
-    const body=await json(request),hasRating=Object.hasOwn(body,'rating'),hasType=Object.hasOwn(body,'image_type');
+    const body=await json(request),hasRating=Object.hasOwn(body,'rating'),hasType=Object.hasOwn(body,'image_type'),hasSource=Object.hasOwn(body,'source_url');
     if(!Array.isArray(body.ids)||!body.ids.length||body.ids.length>100||body.ids.some(id=>typeof id!=='string'||!uuid.test(id)))
       throw new HttpError(400,'invalid_ids','Chọn 1–100 ID ảnh mỗi lượt.');
-    if(!hasRating&&!hasType)throw new HttpError(400,'missing_changes','Chọn Phân loại hoặc Kiểu ảnh cần sửa.');
+    if(!hasRating&&!hasType&&!hasSource)throw new HttpError(400,'missing_changes','Chọn mục cần sửa.');
     if(hasRating&&!['safe','r18','unknown'].includes(String(body.rating)))throw new HttpError(400,'invalid_rating','Phân loại không hợp lệ.');
     if(hasType&&body.image_type!==null&&!['anime','real'].includes(String(body.image_type)))throw new HttpError(400,'invalid_type','Kiểu ảnh không hợp lệ.');
     const ids=[...new Set(body.ids as string[])],sets=['metadata_version=metadata_version+1'],values:(string|null)[]=[];
     if(hasRating){sets.push('rating=?');values.push(body.rating as string);}
     if(hasType){sets.push('image_type=?');values.push(body.image_type as string|null);}
+    if(hasSource){sets.push('source_url=?');values.push(body.source_url===null?null:publicUrl(body.source_url).href);}
     const rows=await env.DB.prepare(`UPDATE images SET ${sets.join(',')} WHERE id IN (SELECT value FROM json_each(?)) RETURNING id`)
       .bind(...values,JSON.stringify(ids)).all<{id:string}>();
     const updated=rows.results.map(row=>row.id),found=new Set(updated);
@@ -246,14 +252,20 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
     // Take the watermark before reading pages. Changes racing a list read are
     // replayed safely rather than silently skipped by the next synchronization.
     const {revision}=await libraryState(env);
-    const limit=integer(url.searchParams.get('limit'),20,100);
+    const selection=url.searchParams.get('selection')==='1',limit=integer(url.searchParams.get('limit'),20,selection?1000:100);
+    const grouped=!selection&&url.searchParams.get('group_sources')==='1'&&!url.searchParams.has('source');
     const before=url.searchParams.get('before');
     let cursor:{time:number;id:string}|undefined;
     if (before) {
       try {cursor=JSON.parse(atob(before));} catch {throw new HttpError(400,'invalid_cursor','Cursor không hợp lệ.');}
-      if (!cursor || !Number.isSafeInteger(cursor.time) || !uuid.test(cursor.id)) throw new HttpError(400,'invalid_cursor','Cursor không hợp lệ.');
+      if (!cursor || !Number.isSafeInteger(cursor.time) || typeof cursor.id!=='string'||!(uuid.test(cursor.id)||grouped&&cursor.id.startsWith('source:')&&cursor.id.length<=4103)) throw new HttpError(400,'invalid_cursor','Cursor không hợp lệ.');
     }
-    const {filters,params,view}=imageFilters(url);
+    const {filters,params,view,sourcesRefreshAt}=await imageFilters(url,env);
+    if(grouped){
+      const page=await sourceLibrary(env,filters,params,limit,cursor,base,revision,url.searchParams.get('refresh_sources')==='1');
+      background(ctx,env,async()=>{if(await refreshSourceProfiles(env,[...page.groups.map(group=>group.key),...page.images.flatMap(image=>image.source_group?[image.source_group]:[])]))invalidateSourceGroups();});
+      return response(page);
+    }
     const until=url.searchParams.get('until');
     if(until!==null){
       const time=Number(until);
@@ -261,15 +273,16 @@ async function route(request:Request,env:Env,ctx:ExecutionContext):Promise<Respo
       filters.push('i.created_at<?');params.push(time);
     }
     if (cursor) {filters.push('(i.created_at<? OR (i.created_at=? AND i.id<?))');params.push(cursor.time,cursor.time,cursor.id);}
-    const rows=await env.DB.prepare(`SELECT i.* FROM images i ${filters.length?'WHERE '+filters.join(' AND '):''} ORDER BY i.created_at DESC,i.id DESC LIMIT ?`)
+    const rows=await env.DB.prepare(`SELECT ${selection?'i.id,i.mime_type,i.source_url,i.created_at':'i.*'} FROM images i ${filters.length?'WHERE '+filters.join(' AND '):''} ORDER BY i.created_at DESC,i.id DESC LIMIT ?`)
       .bind(...params,limit+1).all<ImageRow>();
     const page=rows.results.slice(0,limit), last=page.at(-1);
+    if(selection)return response({images:await selectionItems(env,page),next:rows.results.length>limit&&last?btoa(JSON.stringify({time:last.created_at,id:last.id})):null,revision});
     // Analysis may finish between selecting IDs and fetching their metadata.
     // Recheck the final state to avoid showing a newly classified image in the
     // pending view during that race; pagination still advances over the IDs.
     const presented=await presentMany(env,page,base);
     const visible=view==='pending'?presented.filter(image=>!image.classified):view==='classified'?presented.filter(image=>image.classified):presented;
-    return response({images:visible,next:rows.results.length>limit && last?btoa(JSON.stringify({time:last.created_at,id:last.id})):null,revision});
+    return response({images:visible,next:rows.results.length>limit && last?btoa(JSON.stringify({time:last.created_at,id:last.id})):null,revision,sources_refresh_at:sourcesRefreshAt});
   }
   if (path==='/v1/images' && request.method==='POST') {
     // Keep the operation and its slot cleanup alive if the browser disconnects
@@ -384,6 +397,7 @@ export default {
   scheduled(_event:ScheduledController,env:Env,ctx:ExecutionContext) {
     if(env.MIGRATION_MAINTENANCE==='1')return;
     env=withDatabase(env);
+    background(ctx,env,async()=>{if(await refreshDueSourceProfiles(env))invalidateSourceGroups();});
     background(ctx,env,async()=>{
       await processJobs(env,1,undefined,false);
       await processAnalysis(env,undefined,job=>refreshAnalysisReceipt(env,job));

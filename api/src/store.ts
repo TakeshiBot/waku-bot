@@ -2,6 +2,8 @@ import { mediaType } from './input';
 import {dimensionsForRows,imageDimensions,recordDimensions} from './dimensions';
 import { HttpError, type Env, type ImageRow, type Metadata } from './types';
 import {ensureStorage,reserveStorage} from './storage';
+import {sourceIdentity} from './source-identity';
+import {sourceProfiles} from './source-profiles';
 
 // Classification follows saved metadata, including when AI is reanalysing it.
 export const CLASSIFIED_IMAGE_SQL=`(length(trim(i.title))>0 AND i.rating IN ('safe','r18')
@@ -29,6 +31,12 @@ export async function present(env: Env, row: ImageRow, base: string) {
   return (await presentMany(env,[row],base))[0];
 }
 
+export async function selectionItems(env:Env,rows:Pick<ImageRow,'id'|'mime_type'|'source_url'>[]){
+  const profiles=await sourceProfiles(env,rows.flatMap(row=>row.source_url?[row.source_url]:[]));
+  return rows.map(row=>{const key=row.source_url?.trim()?sourceIdentity(row.source_url).key:null;
+    return {id:row.id,mime_type:row.mime_type,source_group:key?profiles.get(key)?.identity_key||key:null};});
+}
+
 export async function recordImportAliases(env:Env,id:string,urls:string[]) {
   const aliases=[...new Set(urls)];if(!aliases.length)return;
   await env.DB.prepare(`INSERT INTO image_import_urls(url,image_id) SELECT value,? FROM json_each(?) WHERE true
@@ -37,17 +45,20 @@ export async function recordImportAliases(env:Env,id:string,urls:string[]) {
 
 export async function presentMany(env:Env, rows:ImageRow[], base:string) {
   if (!rows.length) return [];
-  const [list,analysis,sizes]=await Promise.all([
+  const [list,analysis,sizes,profiles]=await Promise.all([
     env.DB.prepare(`SELECT image_id,tag FROM image_tags WHERE image_id IN (${rows.map(()=>'?').join(',')}) ORDER BY tag`)
       .bind(...rows.map(row=>row.id)).all<{image_id:string;tag:string}>(),
     env.DB.prepare(`SELECT image_id,status,last_error FROM image_analysis WHERE image_id IN (${rows.map(()=>'?').join(',')})`)
       .bind(...rows.map(row=>row.id)).all<{image_id:string;status:string;last_error:string|null}>(),
     dimensionsForRows(env,rows),
+    sourceProfiles(env,rows.flatMap(row=>row.source_url?[row.source_url]:[])),
   ]);
   const allTags=new Map<string,string[]>();
   for (const item of list.results) {const values=allTags.get(item.image_id) || [];values.push(item.tag);allTags.set(item.image_id,values);}
   const states=new Map(analysis.results.map(item=>[item.image_id,item]));
+  const aliases=new Map<string,string[]>();for(const profile of profiles.values()){const keys=aliases.get(profile.identity_key)||[];keys.push(profile.source_key);aliases.set(profile.identity_key,keys);}
   return rows.map(row=>{
+    const source=row.source_url?.trim()?sourceIdentity(row.source_url).key:null,sourceGroup=source?profiles.get(source)?.identity_key||source:null;
     const classified=Boolean(row.title.trim()&&['safe','r18'].includes(row.rating)&&['anime','real'].includes(row.image_type||'')
       &&(allTags.get(row.id)||[]).some(tag=>tag.trim()));
     return {
@@ -56,7 +67,7 @@ export async function presentMany(env:Env, rows:ImageRow[], base:string) {
         ? `https://t.me/${env.TELEGRAM_BOT_USERNAME}?start=file_${row.id.replaceAll('-','')}` : null,
       mime_type:row.mime_type, media_type:isVideo(row)?'video':'image', size:row.size, sha256:row.sha256, title:row.title, metadata_version:row.metadata_version,
       width:sizes.get(row.id)?.width??null,height:sizes.get(row.id)?.height??null,
-      source_url:row.source_url, rating:row.rating, image_type:row.image_type, original_name:row.original_name, tags:allTags.get(row.id) || [],
+      source_url:row.source_url, source_group:sourceGroup,source_aliases:sourceGroup?[...new Set([source!,sourceGroup,...aliases.get(sourceGroup)||[]])]:[], rating:row.rating, image_type:row.image_type, original_name:row.original_name, tags:allTags.get(row.id) || [],
       created_at:new Date(row.created_at).toISOString(),
       ai_status:states.get(row.id)?.status || 'off',
       // A previous analysis failure does not invalidate complete saved metadata.
