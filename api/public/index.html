@@ -4,7 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#111719"><meta name="color-scheme" content="dark"><meta name="description" content="Kho ảnh riêng của Waku. Tải nhiều ảnh, tự gắn tag và quản lý thư viện.">
   <title>Kho ảnh · Waku</title><link rel="icon" type="image/jpeg" href="/assets/waku.jpg"><link rel="apple-touch-icon" href="/assets/waku.jpg"><link rel="stylesheet" href="/assets/app.css?v=37">
-  <script type="module" src="/assets/app.js?v=47"></script>
+  <script type="module" src="/assets/app.js?v=48"></script>
 </head>
 <body data-view="library">
   <svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
@@ -61,7 +61,7 @@
         </section>
 
         <aside class="upload-panel" id="upload-panel" aria-label="Tải file lên" hidden><div class="panel-heading"><div><span class="eyebrow">THÊM VÀO BỘ SƯU TẬP</span><h2>Tải file lên</h2></div><button type="button" class="icon-button" id="close-upload" aria-label="Thu bảng tải lên" title="Thu bảng, tiếp tục tải"><svg><use href="#i-close"/></svg></button></div>
-          <div class="dropzone" id="dropzone"><div class="upload-icon"><svg><use href="#i-upload"/></svg></div><strong>Thả ảnh hoặc video</strong><span>hoặc chọn nhiều file từ máy</span><button class="secondary" id="choose-files">Chọn file</button><small id="upload-limits">JPG, PNG, WebP, GIF, AVIF · tối đa 10 MB/ảnh</small><input id="file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.jpg,.jpeg,.png,.webp,.gif,.avif" multiple hidden></div>
+          <div class="dropzone" id="dropzone"><div class="upload-icon"><svg><use href="#i-upload"/></svg></div><strong>Thả ảnh hoặc video</strong><span>hoặc chọn nhiều file từ máy</span><button class="secondary" id="choose-files">Chọn file</button><small id="upload-limits">JPG, PNG, WebP, GIF, AVIF · tối đa 10 MB/ảnh</small><input id="file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.jpg,.jpeg,.png,.webp,.gif,.avif,.txt,text/plain" multiple hidden></div>
           <details class="url-import"><summary><svg><use href="#i-link"/></svg>Thêm từ link ảnh / video <span>+</span></summary><textarea id="image-urls" placeholder="Dán link ảnh hoặc video trực tiếp, mỗi link một dòng" rows="3" aria-label="Link ảnh"></textarea><button class="secondary" id="add-urls">Thêm vào hàng đợi</button></details>
           <div class="upload-options"><div class="toggle-row"><button id="upload-options-toggle" class="upload-options-toggle" type="button" popovertarget="upload-settings" aria-expanded="false" aria-controls="upload-settings"><svg><use href="#i-spark"/></svg><span>AI tự gắn tag<small>Chỉ áp dụng cho ảnh</small></span><span class="upload-settings-mark" aria-hidden="true"></span></button><input id="use-ai" type="checkbox" role="switch" aria-label="AI tự gắn tag" checked></div>
             <section class="upload-settings" id="upload-settings" popover="auto" aria-label="Tùy chọn tải lên">

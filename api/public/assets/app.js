@@ -644,8 +644,31 @@ $('bulk-edit-form').addEventListener('submit',async event=>{
   }
 });
 
-function addFiles(files){
-  const added=[];for(const file of files){
+function parseUploadSource(text){
+  const link=text.match(/^Link hồ sơ:[ \t]*(\S+)[ \t]*$/im)?.[1];
+  const username=text.match(/^Tài khoản:[ \t]*@?([^\s@]{1,120})[ \t]*$/im)?.[1];
+  if(!link||!username)throw new Error('#nguon.txt cần có dòng Tài khoản và Link hồ sơ.');
+  const url=new URL(link);
+  if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.href.length>4096)throw new Error('Link hồ sơ trong #nguon.txt không hợp lệ.');
+  return {source:url.href,username};
+}
+async function addFiles(files){
+  const selected=[...files],sources=selected.filter(file=>file.name.toLowerCase()==='#nguon.txt');
+  if(sources.length){
+    state.checking++;renderQueue();
+    try{
+      if(state.pumping||state.starting)throw new Error('Hoàn tất lượt tải hiện tại trước khi nhập #nguon.txt.');
+      if(sources.length>1)throw new Error('Mỗi lượt chỉ nhận một file #nguon.txt.');
+      if(sources[0].size>65536)throw new Error('#nguon.txt quá lớn. Chỉ nhận file tối đa 64 KB.');
+      const {source,username}=parseUploadSource((await sources[0].text()).replace(/^\uFEFF/,''));
+      const tags=[...new Set([...tagList($('upload-tags').value),username])].join(', ');
+      if(tagList(tags).length>30||tags.length>2000)throw new Error('Tag chung vượt giới hạn. Giảm số tag rồi thêm lại file.');
+      $('upload-tags').value=tags;$('upload-source').value=source;
+    }catch(error){toast(error.message);return;}
+    finally{state.checking--;renderQueue();}
+  }
+  const added=[];for(const file of selected){
+    if(file.name.toLowerCase()==='#nguon.txt')continue;
     const fingerprint=`${file.name}:${file.size}:${file.lastModified}`;
     const video=/\.(mp4|mov|webm)$/i.test(file.name)||/^video\/(mp4|quicktime|webm)$/.test(file.type),limit=video?state.maxVideoMb:state.maxMb;
     const valid=video||/\.(jpe?g|png|webp|gif|avif)$/i.test(file.name) || /^image\/(jpeg|png|webp|gif|avif)$/.test(file.type);
@@ -854,7 +877,13 @@ async function start(){
     state.paused=true;toast(error.message);
   }finally{
     state.starting=false;if(ownsWorkers)state.pumping=false;
-    if(ownsWorkers)clearFinishedUploadDuplicates();
+    if(ownsWorkers){
+      clearFinishedUploadDuplicates();
+      if(!state.queue.length&&!state.checking){
+        for(const id of ['upload-tags','upload-type','upload-source'])$(id).value='';
+        $('upload-rating').value='unknown';state.activeOptions=null;
+      }
+    }
     renderQueue();renderGallery();refreshStats(true,true);
   }
 }
