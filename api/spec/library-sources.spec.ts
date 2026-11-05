@@ -50,6 +50,7 @@ test('source overview paginates groups and loose files; source contents retain f
     assert.equal(entries.length,4);assert.equal(new Set(entries).size,4);assert.ok(entries.includes(loose)&&entries.includes(empty));
     const root=await call('/v1/images?group_sources=1&refresh_sources=1');const group=root.groups.find((row:any)=>row.key==='https://x.com/artist');
     assert.equal(group.count,35);assert.equal(group.image_count,34);assert.equal(group.video_count,1);assert.equal(group.cover.id,artist.at(-2));assert.equal(root.images.length,3);
+    assert.deepEqual(root.library,{sources:2,images:37,videos:1});assert.equal(group.url,'https://x.com/artist');
     assert.equal(root.groups.length,1);assert.ok(root.images.some((row:any)=>row.id===other),'a source containing one file stays an ordinary file');
     assert.equal(root.images.find((row:any)=>row.id===other).source_label,'@other · X');assert.equal(root.images.find((row:any)=>row.id===loose).source_label,null);
     const second=await insert('https://x.com/Other/status/2',1050,true);
@@ -75,6 +76,12 @@ test('source overview paginates groups and loose files; source contents retain f
     for(const key of ['https://x.com/artist','https://x.com/i/user/123'])await db.prepare('INSERT OR REPLACE INTO source_profiles VALUES(?,?,?,?,?)').bind(key,'https://x.com/i/user/123','@Artist · X','https://x.com/artist',Date.now()+86400000).run();
     await insert('https://x.com/i/user/123',2000);
     const merged=await call('/v1/images?group_sources=1&refresh_sources=1');assert.equal(merged.groups.length,1);assert.equal(merged.groups[0].count,37);assert.equal(merged.groups[0].key,'https://x.com/i/user/123');
+    assert.equal(merged.groups[0].url,'https://x.com/artist');assert.deepEqual(merged.library,{sources:1,images:37,videos:1});
+    await insert(null,4000,true);
+    const totals=await call('/v1/images?group_sources=1&refresh_sources=1&limit=1');
+    const filtered=await call('/v1/images?group_sources=1&media_types=video&refresh_sources=1');
+    assert.deepEqual(totals.library,{sources:1,images:37,videos:2},'totals include unlinked files and ignore pagination');
+    assert.deepEqual(filtered.library,totals.library,'filters do not change whole-library totals');
     const aliases=await call('/v1/images?limit=100&refresh_sources=1'+source);assert.equal(aliases.images.length,37);assert.ok(aliases.images.every((row:any)=>row.source_aliases.includes('https://x.com/artist')));
   }finally{await mf.dispose();}
 });

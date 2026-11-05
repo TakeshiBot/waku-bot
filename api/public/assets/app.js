@@ -55,7 +55,7 @@ function analysisError(code){
   return messages[code]||(/^provider_http_\d{3}$/.test(code||'')?`API vision trả lỗi HTTP ${code.slice(-3)}. Kiểm tra API, key và model đang chọn.`:'Chưa phân tích được ảnh. Kiểm tra API/model rồi chủ động chạy lại.');
 }
 function showLogin(message=''){
-  state.groups.clear();state.source=null;
+  state.groups.clear();state.source=null;state.librarySummary=null;
   clearTimeout(aiRenderTimer);state.aiProgress=null;state.aiBatchId=null;
   state.listVersion++;state.listController?.abort();state.galleryViews.clear();state.galleryScope=null;state.galleryRevision=null;
   state.dayGroups.clear();$('scroll-date').hidden=true;
@@ -107,13 +107,12 @@ async function refreshStats(updateGallery=false,force=false){
   try{
     if(!force&&Date.now()-state.lastStats<2000)return;
     const stats=await api('/v1/state');state.lastStats=Date.now();
-    $('nav-count').textContent=number(stats.images.total);$('nav-library').setAttribute('aria-label',`Kho ảnh · ${number(stats.images.total)} ảnh`);
+    $('nav-count').textContent=number(stats.images.total);$('nav-library').setAttribute('aria-label',`Kho · ${number(stats.images.total)}`);
     state.storage=stats.storage;
     const used=stats.storage?.bytes??stats.images.bytes,limit=stats.storage?.limit_bytes??10000000000;
     $('stat-size').textContent=`${(used/1e9).toFixed(1)}/${limit/1e9} GB`;
     $('stat-size').title=`${number(used)} / ${number(limit)} byte · gồm file R2 và dung lượng đang tải`;
     for(const count of document.querySelectorAll('[data-tab-count]'))count.textContent=`(${number(stats.tabs?.[count.dataset.tabCount])})`;
-    const pending=Number(stats.ai_pending)+Number(stats.uploads_pending);$('stat-pending').textContent=number(pending);$('nav-processing').title=pending?`${number(stats.ai_pending)} AI · ${number(stats.uploads_pending)} upload`:'Mọi thứ đã sẵn sàng';
     state.aiPending=Number(stats.ai_pending);state.aiQueue=stats.ai_queue;state.aiProgress=stats.ai_session||null;state.aiBatchId=stats.ai_session?.id||null;renderAiProgress();
     renderQueue();
     const changed=state.revision!==null&&state.revision!==stats.revision;state.revision=stats.revision;state.galleryDirty ||= changed;if(changed)state.galleryViews.clear();
@@ -150,6 +149,7 @@ async function loadImages(reset=false,more=false,useCache=false){
       const params=new URLSearchParams(base);params.set('limit',String(Math.min(100,wanted-images.size-groups.size)));if(cursor)params.set('before',cursor);
       if(!useCache&&!more&&!cursor&&(state.source||base.has('group_sources')))params.set('refresh_sources','1');
       const data=await api('/v1/images?'+params,{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(30000)])});if(version!==state.listVersion)return;
+      if(data.library)state.librarySummary=data.library;
       watermark??=data.revision;
       state.sourcesRefreshAt=data.sources_refresh_at||0;
       for(const image of data.images)images.set(image.id,image);for(const group of data.groups||[])groups.set(group.key,group);cursor=data.next;
@@ -197,6 +197,18 @@ async function syncImages(){
 }
 const isVideo=image=>image?.media_type==='video'||image?.mime_type?.startsWith('video/');
 function isSourceOverview(){return !state.rating&&!state.source;}
+function renderLibraryCount(){
+  const summary=state.librarySummary,count=state.images.size+state.groups.size;
+  $('visible-count').replaceChildren(...(isSourceOverview()&&summary?
+    [['NGUỒN',summary.sources],['ẢNH',summary.images],['VIDEO',summary.videos]].map(([label,value])=>element('span','library-stat',`${label} ${number(value)}`)):
+    count?[document.createTextNode(number(count))]:[]));
+}
+function sourceLink(label,url){
+  let href;try{const parsed=new URL(url);if(['http:','https:'].includes(parsed.protocol)&&!parsed.username&&!parsed.password)href=parsed.href;}catch{}
+  const link=element(href?'a':'span','card-title',label);
+  if(href){link.href=href;link.target='_blank';link.rel='noopener noreferrer';link.title=href;}
+  return link;
+}
 function openSource(group){
   state.source=group;clearSelection();
   loadImages(true,false,true);renderSelection();
@@ -214,8 +226,8 @@ function sourceCard(group){
   if(cover){const img=element('img');img.alt='';img.decoding='async';thumb.append(img);thumbnails.observe(img,cover);if(isVideo(cover))thumb.append(element('span','video-play','▶'));}
   else thumb.append(element('span','video-play',cover?'▶':'▦'));
   const badge=element('span','source-badge');badge.append(icon('grid'),document.createTextNode(number(group.count)));thumb.append(badge);
-  const title=element('button','card-title',group.label);title.type='button';title.title=group.key;
-  for(const button of [thumb,title])button.addEventListener('click',event=>{if(state.bulkBusy||state.selectionBusy)return;if(state.selected.size&&!event.ctrlKey)selectGroup(group,!groupSelected(group.key).checked);else openSource(group);});
+  const title=sourceLink(group.label,group.url||group.key);
+  thumb.addEventListener('click',event=>{if(state.bulkBusy||state.selectionBusy)return;if(state.selected.size&&!event.ctrlKey)selectGroup(group,!groupSelected(group.key).checked);else openSource(group);});
   const counts=[group.image_count?number(group.image_count)+' ảnh':'',group.video_count?number(group.video_count)+' video':''].filter(Boolean).join(' · ');
   card.append(thumb,title,element('div','source-count',counts));state.cards.delete(id);state.cards.set(id,card);return card;
 }
@@ -247,13 +259,13 @@ function changeFilter(rating,clearSearch=false){
   loadImages(true,false,true);renderSelection();renderAiProgress();
 }
 function renderGallery(){
-  $('source-path').hidden=!state.source;$('source-name').textContent=state.source?.label||'';
+  $('source-path').hidden=!state.source;$('source-name').replaceChildren(...(state.source?[sourceLink(state.source.label,state.source.url||state.source.key)]:[]));renderLibraryCount();
   const signature=JSON.stringify([[...state.images.values()],[...state.groups.values()],state.source,[...state.selected],state.bulkBusy,state.selectionBusy,state.cursor,state.rating,state.query,[...state.filterTags],[...state.filterTypes],[...state.filterMedia]]);
   if(signature===state.gallerySignature){renderSelection();return;}state.gallerySignature=signature;
   const gallery=$('gallery'),desired=[];
   const count=state.images.size+state.groups.size;$('empty').hidden=count>0;
   if(!count){$('empty').querySelector('h3').textContent=state.query || state.rating?'Chưa có ảnh phù hợp.':'Một khởi đầu mới.';$('empty').querySelector('p').textContent=state.query || state.rating?'Thử từ khóa hoặc bộ lọc khác nhé.':'Thêm những tấm ảnh đầu tiên. Phần sắp xếp, cứ để Waku lo.';}
-  $('visible-count').textContent=count?number(count):'';$('load-more').hidden=!state.cursor;
+  $('load-more').hidden=!state.cursor;
   for(const image of [...state.images.values()].sort((a,b)=>b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))){
     const overview=isSourceOverview(),content=JSON.stringify([image,overview]),old=state.cards.get(image.id);
     if(old?.dataset.content===content){state.cards.delete(image.id);state.cards.set(image.id,old);desired.push(old);continue;}
@@ -274,7 +286,8 @@ function renderGallery(){
     }
     const classified=isClassified(image);thumb.append(element('span','rating-label '+(classified?image.rating:'unknown'),classified?(image.rating==='safe'?'An toàn':'R18'):'Chờ phân loại'));
     const copy=element('span','copy-mini');copy.append(icon('link'));copy.title='Mở chi tiết để sao chép link';thumb.append(copy);thumb.addEventListener('click',event=>selectOrOpen(image.id,event));
-    const title=element('button','card-title',overview?(image.source_label||image.source_url||'Chưa có nguồn'):image.title || (isVideo(image)?'Video chưa có tên':['pending','running'].includes(image.ai_status)?'AI đang đặt tên…':'Ảnh chưa có tên'));title.type='button';title.title=overview?image.source_url||'Chưa có nguồn':image.title || '';title.addEventListener('click',event=>selectOrOpen(image.id,event));
+    const title=overview&&image.source_url?sourceLink(image.source_label||image.source_url,image.source_profile_url||image.source_url):element('button','card-title',overview?'Chưa có nguồn':image.title || (isVideo(image)?'Video chưa có tên':['pending','running'].includes(image.ai_status)?'AI đang đặt tên…':'Ảnh chưa có tên'));
+    if(title.tagName==='BUTTON'){title.type='button';title.title=image.title||'';title.addEventListener('click',event=>selectOrOpen(image.id,event));}
     const tags=element('div','card-tags');for(const tag of image.tags.slice(0,2))tags.append(element('span','',tag));
     if(image.tags.length>2)tags.append(element('span','',`+${image.tags.length-2}`));
     if(['pending','running'].includes(image.ai_status))tags.append(element('span','ai-state busy','✦ AI'));
@@ -637,7 +650,7 @@ function addFiles(files){
     const video=/\.(mp4|mov|webm)$/i.test(file.name)||/^video\/(mp4|quicktime|webm)$/.test(file.type),limit=video?state.maxVideoMb:state.maxMb;
     const valid=video||/\.(jpe?g|png|webp|gif|avif)$/i.test(file.name) || /^image\/(jpeg|png|webp|gif|avif)$/.test(file.type);
     const error=!valid?'Định dạng file chưa được hỗ trợ.':file.size>limit*1048576?`File vượt ${limit} MB.`:'';
-    const item={id:crypto.randomUUID(),fingerprint,file,mediaType:video?'video':'image',name:file.name,preview:valid&&!error&&!video?URL.createObjectURL(file):null,status:error?'error':'checking',error,progress:0,needsCheck:!error};state.queue.push(item);if(!error)added.push(item);
+    const item={id:crypto.randomUUID(),fingerprint,file,mediaType:valid?(video?'video':'image'):null,unsupported:!valid,name:file.name,preview:valid&&!error&&!video?URL.createObjectURL(file):null,status:error?'error':'checking',error,progress:0,needsCheck:!error};state.queue.push(item);if(!error)added.push(item);
   }
   renderQueue();if(added.length)checkUploads(added);
 }
@@ -681,14 +694,29 @@ $('add-urls').addEventListener('click',()=>{
 function options(){return {tags:tagList($('upload-tags').value),rating:$('upload-rating').value,image_type:$('upload-type').value || null,manual:!$('use-ai').checked,source_url:$('upload-source').value.trim() || null};}
 const queueRows=new Map();
 function clearFinishedUploadDuplicates(){
-  if(state.pumping||state.starting||state.checking||state.queue.some(item=>item.status!=='duplicate'))return;
+  if(state.pumping||state.starting||state.checking||state.queue.some(item=>item.status!=='duplicate'&&!item.unsupported))return;
+  for(const item of state.queue){if(item.preview)URL.revokeObjectURL(item.preview);state.uploadIds.delete(item.id);}
   state.queue=[];for(const [id,status]of state.uploadResults)if(status==='duplicate')state.uploadResults.delete(id);
   renderQueue();
 }
+function queueFormat(item){
+  const extension=item.file?.name.match(/\.([a-z0-9]{2,10})$/i)?.[1];if(extension)return extension.toUpperCase();
+  const mime=item.file?.type?.split('/')[1]?.split(';')[0];
+  if(mime&&mime!=='octet-stream')return ({jpeg:'JPG',quicktime:'MOV','svg+xml':'SVG'})[mime]||mime.toUpperCase();
+  let path=item.name;try{const url=new URL(item.url);path=url.searchParams.get('format')||url.pathname;}catch{}
+  return (path.match(/(?:\.|^)([a-z0-9]{2,10})$/i)?.[1]||'LINK').toUpperCase();
+}
+$('clear-queue').addEventListener('click',()=>{
+  const keep=[];for(const item of state.queue){if(item.status==='uploading'){keep.push(item);continue;}if(item.preview)URL.revokeObjectURL(item.preview);state.uploadIds.delete(item.id);}
+  state.queue=keep;clearFinishedUploadDuplicates();renderQueue();
+});
 function renderQueue(){
   const list=$('queue-list');const visible=state.queue.filter(x=>x.status!=='duplicate');$('queue-count').textContent=number(visible.length);
+  const videos=visible.filter(item=>!item.unsupported&&(item.mediaType==='video'||/^(MP4|MOV|WEBM)$/.test(queueFormat(item)))).length,other=visible.filter(item=>item.unsupported).length;
+  $('queue-types').textContent=`${number(visible.length-videos-other)} ảnh · ${number(videos)} video${other?' · '+number(other)+' khác':''}`;
+  $('clear-queue').disabled=!state.queue.some(item=>item.status!=='uploading');
   $('upload-badge').hidden=!visible.length;$('upload-badge').textContent=number(visible.length);$('show-upload').classList.toggle('uploading',state.pumping&&!state.paused);
-  const errors=state.queue.filter(x=>x.status==='error').length,pending=state.queue.filter(x=>x.status==='queued').length,active=state.queue.filter(x=>x.status==='uploading').length;
+  const errors=state.queue.filter(x=>x.status==='error'&&!x.unsupported).length,pending=state.queue.filter(x=>x.status==='queued').length,active=state.queue.filter(x=>x.status==='uploading').length;
   const ids=new Set(visible.map(item=>item.id));
   for(const [id,row] of queueRows)if(!ids.has(id)){row.remove();queueRows.delete(id);}
   const empty=list.querySelector('.queue-empty');
@@ -699,7 +727,7 @@ function renderQueue(){
     if(!row){
       row=element('div');row.dataset.id=item.id;
       if(item.preview){const img=element('img');img.src=item.preview;img.alt='';img.loading='lazy';row.append(img);}else{const mark=element('span','queue-file-icon');mark.append(icon('link'));row.append(mark);}
-      const text=element('div');text.append(element('strong','',item.name),element('small'));const progress=element('progress');progress.max=100;text.append(progress);
+      const text=element('div'),details=element('div','queue-file-details');details.append(element('small'),element('span','queue-format',queueFormat(item)));text.append(element('strong','',item.name),details);const progress=element('progress');progress.max=100;text.append(progress);
       const remove=element('button','','×');remove.type='button';remove.setAttribute('aria-label','Bỏ '+item.name+' khỏi hàng đợi');remove.addEventListener('click',()=>{state.queue=state.queue.filter(x=>x!==item);if(item.preview)URL.revokeObjectURL(item.preview);renderQueue();});row.append(text,remove);queueRows.set(item.id,row);list.append(row);
     }
     const className='queue-item '+item.status;if(row.className!==className)row.className=className;
@@ -813,7 +841,7 @@ async function start(){
     // Retry only failures from this batch, once, after every original upload
     // has finished. Validation errors and an explicitly paused queue stay put.
     if(!state.paused&&state.authenticated){
-      const retry=state.queue.filter(item=>state.uploadIds.has(item.id)&&item.status==='error'&&!item.autoRetried&&!item.needsCheck);
+      const retry=state.queue.filter(item=>state.uploadIds.has(item.id)&&item.status==='error'&&!item.unsupported&&!item.autoRetried&&!item.needsCheck);
       for(const item of retry){item.autoRetried=true;item.status='queued';item.error='';item.progress=0;}
       if(retry.length){renderQueue();await Promise.all([worker(),worker()]);}
     }
@@ -831,7 +859,7 @@ async function start(){
   }
 }
 $('start-upload').addEventListener('click',start);$('pause-upload').addEventListener('click',()=>{state.paused=true;renderQueue();toast('Đã tạm dừng. Các file đang tải sẽ hoàn tất trước.');});
-$('retry-errors').addEventListener('click',async()=>{const checking=[];for(const item of state.queue)if(item.status==='error'){item.status=item.needsCheck?'checking':'queued';item.error='';item.progress=0;item.autoRetried=false;item.retryAfter=0;if(item.needsCheck)checking.push(item);}if(checking.length)await checkUploads(checking);start();});
+$('retry-errors').addEventListener('click',async()=>{const checking=[];for(const item of state.queue)if(item.status==='error'&&!item.unsupported){item.status=item.needsCheck?'checking':'queued';item.error='';item.progress=0;item.autoRetried=false;item.retryAfter=0;if(item.needsCheck)checking.push(item);}if(checking.length)await checkUploads(checking);start();});
 window.addEventListener('beforeunload',event=>{if(state.pumping || state.queue.some(x=>x.status==='queued')){event.preventDefault();event.returnValue='';}});
 
 const galleryImageIds=()=>[...state.images.values()].sort((a,b)=>b.created_at.localeCompare(a.created_at)||b.id.localeCompare(a.id)).map(image=>image.id);

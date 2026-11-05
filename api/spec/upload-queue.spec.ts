@@ -13,9 +13,9 @@ async function runQueue(behavior:(id:string,attempt:number)=>string){
     const Date={now:()=>now};
     const state={authenticated:true,starting:false,checking:0,paused:true,pumping:false,
       queue:['a','b','c'].map(id=>({id,name:id,file:{name:id},status:'queued'})),
-      uploadIds:new Set(),uploadResults:new Map(),images:new Map(),galleryViews:new Map(),galleryScope:null,rating:'',filterTags:new Set(),filterTypes:new Set()};
+      uploadIds:new Set(),uploadResults:new Map(),images:new Map(),galleryViews:new Map(),galleryScope:null,rating:'',filterTags:new Set(),filterTypes:new Set(),filterMedia:new Set()};
     const el={value:'',checked:false,textContent:'',checkValidity:()=>true},$=()=>el,document={querySelectorAll:()=>[]};
-    const options=()=>({tags:[],manual:true}),renderQueue=()=>{},renderGallery=()=>{},renderAiProgress=()=>{},schedulePoll=()=>{},refreshStats=()=>{},changeFilter=()=>{},setView=()=>{},setAiBatch=()=>{},toast=()=>{},isClassified=()=>false,sleep=async(ms)=>{now+=ms;};
+    const options=()=>({tags:[],manual:true}),renderQueue=()=>{},renderGallery=()=>{},renderAiProgress=()=>{},schedulePoll=()=>{},refreshStats=()=>{},changeFilter=()=>{},setView=()=>{},setAiBatch=()=>{},toast=()=>{},isClassified=()=>false,isVideo=()=>false,sleep=async(ms)=>{now+=ms;};
     const clearFinishedUploadDuplicates=()=>{},listParameters=()=>new URLSearchParams(),imageMatchesView=()=>true;
     async function fileUpload(item){
       calls.push(item.id);attempts[item.id]=(attempts[item.id]||0)+1;
@@ -68,4 +68,20 @@ test('full storage pauses both workers, retains files and never auto-retries',as
   assert.equal(result.paused,true);assert.equal(result.results.size,0);
   assert.ok(result.calls.length<=2);assert.equal(result.queue.length,3);
   assert.ok(result.queue.every(item=>item.status==='queued'));
+});
+
+test('completion clears unsupported files and duplicates, but preserves supported errors and pending work',async()=>{
+  const script=await readFile('public/assets/app.js','utf8');
+  const code=script.slice(script.indexOf('function clearFinishedUploadDuplicates(){'),script.indexOf('function queueFormat('));
+  const finish=new Function('queue','busy',`
+    const state={queue,pumping:busy,uploadIds:new Set(queue.map(x=>x.id)),uploadResults:new Map([['duplicate','duplicate'],['saved','done']])},URL={revokeObjectURL(){}};
+    function renderQueue(){};${code};clearFinishedUploadDuplicates();return state;
+  `);
+  const unsupported={id:'text',status:'error',unsupported:true};
+  let result=finish([unsupported,{id:'duplicate',status:'duplicate'}],false);
+  assert.equal(result.queue.length,0);assert.ok(!result.uploadResults.has('duplicate'));assert.equal(result.uploadResults.get('saved'),'done');
+  for(const item of [{id:'jpg',status:'error'},{id:'large',status:'error'},{id:'waiting',status:'queued'}]){
+    result=finish([unsupported,item],false);assert.equal(result.queue.length,2);
+  }
+  assert.equal(finish([unsupported],true).queue.length,1);
 });
